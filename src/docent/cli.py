@@ -7,11 +7,19 @@ import typer
 from pydantic import BaseModel
 from rich import box
 from rich.panel import Panel
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
 from rich.table import Table
 
 from docent import __version__
 from docent.config import load_settings
-from docent.core import Context, Tool, all_tools, collect_actions
+from docent.core import Context, ProgressEvent, Tool, all_tools, collect_actions
 from docent.execution import Executor
 from docent.llm import LLMClient
 from docent.tools import discover_tools
@@ -129,6 +137,55 @@ def _format_field(fname: str, finfo: Any) -> str:
     return f"--{fname.replace('_', '-')}: {annot} {status}{desc}"
 
 
+def _drive_progress(gen: Any) -> Any:
+    """Drive a generator-based action, rendering events with Rich Progress.
+
+    Phase changes swap to a fresh task. Events with (current, total) advance
+    a bar; events without it (or with level=warn/error) print a console line.
+    The action's `return` value is captured from `StopIteration.value`.
+    """
+    console = get_console()
+    columns = (
+        SpinnerColumn(),
+        TextColumn("[bold cyan]{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TextColumn("[dim]{task.fields[item]}"),
+        TimeElapsedColumn(),
+    )
+    result: Any = None
+    with Progress(*columns, console=console, transient=False) as progress:
+        task_id: int | None = None
+        current_phase: str | None = None
+        try:
+            while True:
+                evt = next(gen)
+                if not isinstance(evt, ProgressEvent):
+                    progress.console.print(f"[yellow]warn[/] non-event yielded: {evt!r}")
+                    continue
+                if evt.level in ("warn", "error"):
+                    tag = "[yellow]warn[/]" if evt.level == "warn" else "[red]error[/]"
+                    text = evt.message or (f"{evt.phase}: {evt.item}" if evt.item else evt.phase)
+                    progress.console.print(f"{tag} {text}")
+                    continue
+                if evt.total is not None:
+                    if task_id is None or evt.phase != current_phase:
+                        if task_id is not None:
+                            progress.remove_task(task_id)
+                        task_id = progress.add_task(
+                            evt.phase, total=evt.total, item=evt.item or ""
+                        )
+                        current_phase = evt.phase
+                    progress.update(
+                        task_id, completed=evt.current or 0, item=evt.item or ""
+                    )
+                elif evt.message:
+                    progress.console.print(f"[dim]{evt.phase}[/] {evt.message}")
+        except StopIteration as stop:
+            result = stop.value
+    return result
+
+
 def _build_callback(
     schema: type[BaseModel],
     invoke: Callable[[BaseModel, Context], Any],
@@ -146,7 +203,8 @@ def _build_callback(
         ctx: typer.Context = kwargs.pop("ctx")
         inputs = schema(**kwargs)
         context: Context = ctx.obj
-        result = invoke(inputs, context)
+        maybe = invoke(inputs, context)
+        result = _drive_progress(maybe) if inspect.isgenerator(maybe) else maybe
         if result is not None:
             get_console().print(result)
 

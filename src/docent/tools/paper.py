@@ -16,7 +16,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from docent.core import Context, Tool, action, register_tool
+from docent.core import Context, ProgressEvent, Tool, action, register_tool
 from docent.learning import RunLog
 from docent.utils.paths import data_dir
 
@@ -419,7 +419,7 @@ class PaperPipeline(Tool):
         return ExportResult(format=inputs.format, count=len(filtered), content=content)
 
     @action(description="Scan a folder of PDFs and add each to the reading queue.", input_schema=ScanInputs)
-    def scan(self, inputs: ScanInputs, context: Context) -> ScanResult:
+    def scan(self, inputs: ScanInputs, context: Context):
         folder = Path(inputs.folder)
         if not folder.is_dir():
             return ScanResult(
@@ -429,12 +429,18 @@ class PaperPipeline(Tool):
                 banner=self._banner_counts(),
                 message=f"Folder not found: {inputs.folder!r}.",
             )
+        yield ProgressEvent(phase="discover", message=f"Scanning {folder}")
         pdfs = sorted(folder.rglob("*.pdf"))
+        yield ProgressEvent(phase="discover", message=f"Found {len(pdfs)} PDF(s).")
+
         added: list[AddResult] = []
         skipped: list[AddResult] = []
         failed: list[dict[str, str]] = []
 
-        for pdf in pdfs:
+        for i, pdf in enumerate(pdfs, 1):
+            yield ProgressEvent(
+                phase="add", current=i, total=len(pdfs), item=pdf.name
+            )
             sub_inputs = AddInputs(
                 pdf=str(pdf),
                 course=inputs.course,
@@ -445,11 +451,19 @@ class PaperPipeline(Tool):
                 result = self.add(sub_inputs, context)
             except Exception as e:
                 failed.append({"path": str(pdf), "error": str(e)})
+                yield ProgressEvent(
+                    phase="add", level="error",
+                    message=f"{pdf.name}: {e}",
+                )
                 continue
             if result.added:
                 added.append(result)
             else:
                 skipped.append(result)
+                yield ProgressEvent(
+                    phase="add", level="warn",
+                    message=f"skipped {pdf.name}: {result.message}",
+                )
 
         return ScanResult(
             folder=str(folder.resolve()),
