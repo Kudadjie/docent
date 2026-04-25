@@ -4,15 +4,22 @@
 
 A personal CLI control center for grad-school workflows — papers, research, writing tools, subprocess wrappers — all behind a single `docent <tool>` command. Built so a web dashboard can wrap the same tool registry later without rewriting anything.
 
-> **Status:** early. Steps 1–4 of a 10-step build are done. No real tools are wired up yet.
+> **Status:** Steps 1–9 of a 13-step build are done. The `paper` tool is fully usable as a reading queue (port of the `paper-pipeline` skill, minus Mendeley sync — that's Step 11).
 
 > **Heads up:** this is a vibe-coded project. Every design decision gets talked through with Claude in the loop, the code is written in the loop, and the commits land small. It's a working document, not a reference architecture.
 
 ## What works today
 
 - `docent --version`, `docent --help`, `docent list`, `docent info <tool>`
-- Drop a file in `src/docent/tools/`, subclass `Tool`, decorate with `@register_tool`, and it auto-becomes a subcommand with typed `--flag` arguments generated from its Pydantic input schema.
-- Config loader (`~/.docent/config.toml`, overridable via env vars) and a themed Rich console singleton.
+- **Tool contract — two shapes:**
+  - *Single-action*: subclass `Tool`, set `input_schema`, override `run()`. CLI: `docent <tool> --flag ...`
+  - *Multi-action*: decorate methods with `@action(...)`. CLI: `docent <tool> <action> --flag ...`
+  - A tool is one or the other — registry enforces mutual exclusivity at import time.
+- **Auto-discovery**: drop a file in `src/docent/tools/`, decorate with `@register_tool`, and Typer commands generate at startup from the Pydantic input schema. No CLI edits.
+- **Context plumbing**: `context.settings` (Pydantic + `~/.docent/config.toml` + env overrides), `context.llm` (lazy litellm wrapper), `context.executor` (list-args subprocess, no shell-injection surface).
+- **`docent.learning.RunLog`**: per-namespace JSONL run-log with cap-and-roll, for tools that want a "what did I do recently" history (used by `paper`'s mutators).
+- **`paper` tool** (the first ported skill, 12 actions): `add` (with `--pdf` for PDF-driven metadata extraction via DOI → CrossRef → PDF info → filename fallback), `scan --folder <path>` (batch ingest a folder of PDFs), plus `next / show / search / stats / remove / edit / done / ready-to-read / mark-keeping / export`.
+- Themed Rich console singleton; tools never touch it directly (they return typed data; CLI renders).
 
 ## Install
 
@@ -43,18 +50,23 @@ See [`Docent_Architecture.md`](Docent_Architecture.md) for the full design. The 
 
 - [x] 1. Project skeleton + `docent --version`
 - [x] 2. Config loader + Rich console singleton
-- [x] 3. Tool base class + registry + `@register_tool` decorator
+- [x] 3. Tool base class + registry + `@register_tool` + `Context`
 - [x] 4. Dynamic Typer commands + `docent list` / `docent info`
-- [ ] 5. litellm wrapper
-- [ ] 6. Subprocess executor
-- [ ] 7. First real tool (port easiest skill)
-- [ ] 8. Second tool (prove the interface generalizes)
-- [ ] 9. External plugin discovery (`~/.docent/plugins/`)
-- [ ] 10. MCP adapter
+- [x] 5. litellm wrapper (`LLMClient`, lazy-imported, on `Context.llm`)
+- [x] 6. Subprocess executor (`Executor`, on `Context.executor`)
+- [x] 7a. Multi-action contract extension (`@action` decorator)
+- [x] 7b. First real tool: `paper add` stub (validates the contract end-to-end)
+- [x] 7c. `docent.learning.RunLog` (per-namespace JSONL run-log; cap-and-roll)
+- [x] 8. Simple paper CRUD actions (next/show/search/stats/remove/edit/done/ready-to-read/mark-keeping/export); `add` integrated with `RunLog`
+- [x] 9. PDF-driven `paper add` (DOI→CrossRef→PDF-DOI→CrossRef→PDF-info→filename fallback) + new `paper scan --folder` action
+- [ ] 10. Progress streaming extension (motivated by long-running ops)
+- [ ] 11. Paper sync ops (sync-status/pull/promote/mendeley) + minimal MCP adapter
+- [ ] 12. External `~/.docent/plugins/` discovery
+- [ ] 13. Full MCP adapter
 
 ## Adding a tool
 
-Once Step 5+ lands you'll have LLM and subprocess helpers to lean on. Today the minimum is:
+Single-action tools are the simplest shape:
 
 ```python
 # src/docent/tools/echo.py
@@ -79,6 +91,8 @@ class Echo(Tool):
 ```
 
 Then `docent echo --msg hi --count 3` just works. No CLI edits, no registration code — the decorator is enough.
+
+For tools with several related operations on shared state (a reading queue, a research notebook, a browser session), use the multi-action shape — decorate methods with `@action(...)` instead of overriding `run()`. Each action gets its own Pydantic input schema and becomes `docent <tool> <action> --flag ...`. See `src/docent/tools/paper.py` for the reference implementation.
 
 ## Why
 
