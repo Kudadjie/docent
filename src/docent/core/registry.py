@@ -4,7 +4,7 @@ from typing import TypeVar
 
 from pydantic import BaseModel
 
-from docent.core.tool import Tool
+from docent.core.tool import Tool, collect_actions
 
 _REGISTRY: dict[str, type[Tool]] = {}
 _RESERVED_NAMES = frozenset({"list", "info", "config", "version"})
@@ -24,7 +24,7 @@ def register_tool(cls: type[T]) -> type[T]:
             f"@register_tool must decorate a Tool subclass; got {cls!r}"
         )
 
-    for attr in ("name", "description", "input_schema"):
+    for attr in ("name", "description"):
         if not hasattr(cls, attr):
             raise TypeError(
                 f"Tool {cls.__name__} is missing required class attribute '{attr}'"
@@ -40,10 +40,39 @@ def register_tool(cls: type[T]) -> type[T]:
             f"Tool name '{cls.name}' is reserved for a built-in CLI command; choose another"
         )
 
-    if not isinstance(cls.input_schema, type) or not issubclass(cls.input_schema, BaseModel):
+    actions = collect_actions(cls)
+    has_run = "run" in cls.__dict__
+    has_input_schema = cls.input_schema is not None
+
+    if actions and (has_run or has_input_schema):
         raise TypeError(
-            f"Tool {cls.__name__}.input_schema must be a Pydantic BaseModel subclass"
+            f"Tool {cls.__name__} declares both @action methods and run()/input_schema. "
+            f"A tool must be single-action OR multi-action, not both."
         )
+
+    if not actions:
+        if not has_run:
+            raise TypeError(
+                f"Tool {cls.__name__} must define run() or at least one @action method"
+            )
+        if not has_input_schema:
+            raise TypeError(
+                f"Tool {cls.__name__}.input_schema must be set for single-action tools"
+            )
+        if not (isinstance(cls.input_schema, type) and issubclass(cls.input_schema, BaseModel)):
+            raise TypeError(
+                f"Tool {cls.__name__}.input_schema must be a Pydantic BaseModel subclass"
+            )
+    else:
+        for cli_name, (method_name, meta) in actions.items():
+            if not (
+                isinstance(meta.input_schema, type)
+                and issubclass(meta.input_schema, BaseModel)
+            ):
+                raise TypeError(
+                    f"Tool {cls.__name__}.{method_name}: @action input_schema must be a "
+                    f"Pydantic BaseModel subclass"
+                )
 
     if cls.name in _REGISTRY:
         existing = _REGISTRY[cls.name]

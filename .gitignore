@@ -15,3 +15,5 @@ wheels/
 memory/
 CLAUDE.md
 claudemap-*.json
+
+skills/*
