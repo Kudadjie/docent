@@ -1,14 +1,31 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
+
+
+class PaperSettings(BaseModel):
+    """First-party `paper` tool settings. Stored under `[paper]` in config.toml.
+
+    Env-overridable as `DOCENT_PAPER__<FIELD>` (note the double underscore for
+    nesting). `database_dir` accepts a path with `~`; expansion is the caller's
+    job (`Path(...).expanduser()`).
+    `mendeley_watch_subdir` is a path *relative* to `database_dir` (e.g.
+    "Watch") - encodes the structural truth that the watch folder lives inside
+    the database. Validated at use-time.
+    """
+
+    database_dir: Path | None = None
+    mendeley_watch_subdir: str | None = None
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="DOCENT_",
+        env_nested_delimiter="__",
         extra="ignore",
     )
 
@@ -18,6 +35,8 @@ class Settings(BaseSettings):
 
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None
+
+    paper: PaperSettings = Field(default_factory=PaperSettings)
 
     tools: dict[str, dict[str, Any]] = Field(default_factory=dict)
 

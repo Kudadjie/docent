@@ -16,12 +16,17 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from docent.config import write_setting
 from docent.core import Context, ProgressEvent, Tool, action, register_tool
 from docent.learning import RunLog
 from docent.utils.paths import data_dir
+from docent.utils.prompt import NoInteractiveError, prompt_for_path
 
 
 PRIORITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+
+_DEFAULT_DATABASE_DIR = "~/Documents/Papers"
+_KNOWN_PAPER_KEYS = {"database_dir", "mendeley_watch_subdir"}
 
 
 class QueueEntry(BaseModel):
@@ -106,10 +111,34 @@ class ExportInputs(BaseModel):
 
 
 class ScanInputs(BaseModel):
-    folder: str = Field(..., description="Folder to walk recursively for *.pdf files.")
+    folder: str | None = Field(None, description="Folder to walk recursively for *.pdf files. Defaults to the configured paper.database_dir.")
     course: str | None = Field(None, description="Course shortname applied to every added entry.")
     priority: str = Field("medium", description="Priority applied to every added entry.")
     force: bool = Field(False, description="Overwrite collisions (passed through to per-file add).")
+
+
+class ConfigShowInputs(BaseModel):
+    pass
+
+
+class ConfigSetInputs(BaseModel):
+    key: str = Field(..., description="Setting key under the (paper) section, e.g. 'database_dir' or 'mendeley_watch_subdir'.")
+    value: str = Field(..., description="New value. Use '' to clear. Paths may use '~'.")
+
+
+class ConfigShowResult(BaseModel):
+    config_path: str
+    database_dir: str | None
+    mendeley_watch_subdir: str | None
+    mendeley_watch_resolved: str | None  # absolute path = database_dir / subdir, when both set
+
+
+class ConfigSetResult(BaseModel):
+    ok: bool
+    key: str
+    value: str
+    config_path: str
+    message: str
 
 
 class MutationResult(BaseModel):
@@ -418,16 +447,80 @@ class PaperPipeline(Tool):
             raise ValueError(f"Unsupported format: {inputs.format!r}. Use 'json' or 'markdown'.")
         return ExportResult(format=inputs.format, count=len(filtered), content=content)
 
+    @action(description="Show the configured paper settings (database, Mendeley watch).", input_schema=ConfigShowInputs, name="config-show")
+    def config_show(self, inputs: ConfigShowInputs, context: Context) -> ConfigShowResult:
+        from docent.utils.paths import config_file
+        ps = context.settings.paper
+        db = str(ps.database_dir) if ps.database_dir else None
+        sub = ps.mendeley_watch_subdir
+        resolved = (
+            str((ps.database_dir.expanduser() / sub).resolve())
+            if ps.database_dir and sub
+            else None
+        )
+        return ConfigShowResult(
+            config_path=str(config_file()),
+            database_dir=db,
+            mendeley_watch_subdir=sub,
+            mendeley_watch_resolved=resolved,
+        )
+
+    @action(description="Set a paper setting (database_dir, mendeley_watch_subdir).", input_schema=ConfigSetInputs, name="config-set")
+    def config_set(self, inputs: ConfigSetInputs, context: Context) -> ConfigSetResult:
+        from docent.utils.paths import config_file
+        if inputs.key not in _KNOWN_PAPER_KEYS:
+            return ConfigSetResult(
+                ok=False, key=inputs.key, value=inputs.value,
+                config_path=str(config_file()),
+                message=f"Unknown key {inputs.key!r}. Known: {sorted(_KNOWN_PAPER_KEYS)}.",
+            )
+        if inputs.key == "mendeley_watch_subdir" and Path(inputs.value).is_absolute():
+            return ConfigSetResult(
+                ok=False, key=inputs.key, value=inputs.value,
+                config_path=str(config_file()),
+                message="mendeley_watch_subdir must be relative to database_dir (e.g. 'Watch'), not an absolute path.",
+            )
+        path = write_setting(f"paper.{inputs.key}", inputs.value)
+        return ConfigSetResult(
+            ok=True, key=inputs.key, value=inputs.value,
+            config_path=str(path),
+            message=f"Set paper.{inputs.key} = {inputs.value!r} in {path}.",
+        )
+
     @action(description="Scan a folder of PDFs and add each to the reading queue.", input_schema=ScanInputs)
     def scan(self, inputs: ScanInputs, context: Context):
-        folder = Path(inputs.folder)
+        if inputs.folder:
+            folder = Path(inputs.folder).expanduser()
+        else:
+            try:
+                folder = self._require_database_dir(context)
+            except NoInteractiveError as e:
+                return ScanResult(
+                    folder="", total_pdfs=0,
+                    added=[], skipped=[], failed=[],
+                    queue_size=len(self._load_index()),
+                    banner=self._banner_counts(),
+                    message=(
+                        f"No --folder given and paper.database_dir not configured. "
+                        f"Run `docent paper config-set database_dir <path>` or set "
+                        f"DOCENT_PAPER__DATABASE_DIR. ({e})"
+                    ),
+                )
+            if folder is None:
+                return ScanResult(
+                    folder="", total_pdfs=0,
+                    added=[], skipped=[], failed=[],
+                    queue_size=len(self._load_index()),
+                    banner=self._banner_counts(),
+                    message="Cancelled - no database folder configured.",
+                )
         if not folder.is_dir():
             return ScanResult(
-                folder=inputs.folder, total_pdfs=0,
+                folder=str(folder), total_pdfs=0,
                 added=[], skipped=[], failed=[],
                 queue_size=len(self._load_index()),
                 banner=self._banner_counts(),
-                message=f"Folder not found: {inputs.folder!r}.",
+                message=f"Folder not found: {str(folder)!r}.",
             )
         yield ProgressEvent(phase="discover", message=f"Scanning {folder}")
         pdfs = sorted(folder.rglob("*.pdf"))
@@ -485,6 +578,30 @@ class PaperPipeline(Tool):
 
     def _data_dir(self) -> Path:
         return data_dir() / "paper"
+
+    def _require_database_dir(self, context: Context) -> Path | None:
+        """Return the configured database_dir, prompting on first run if unset.
+
+        First-run flow: prompt the user for a path (or 'create' to scaffold the
+        default), persist it via `write_setting`, mutate the in-memory settings
+        so the rest of this CLI invocation sees it, and return the Path.
+
+        Returns None only if the user typed 'cancel'. Raises NoInteractiveError
+        when DOCENT_NO_INTERACTIVE is set; callers should translate that into
+        a clear remediation message.
+        """
+        ps = context.settings.paper
+        if ps.database_dir is not None:
+            return ps.database_dir.expanduser()
+        path = prompt_for_path(
+            "Where's your paper database? (path, 'create' for default, or 'cancel')",
+            default=_DEFAULT_DATABASE_DIR,
+        )
+        if path is None:
+            return None
+        write_setting("paper.database_dir", str(path))
+        context.settings.paper.database_dir = path
+        return path
 
     def _ensure_dirs(self) -> None:
         d = self._data_dir()
