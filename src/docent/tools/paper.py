@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 from docent.config import write_setting
 from docent.core import Context, ProgressEvent, Tool, action, register_tool
 from docent.learning import RunLog
+from docent.ui import get_console
 from docent.utils.paths import data_dir
 from docent.utils.prompt import NoInteractiveError, prompt_for_path
 
@@ -489,13 +490,23 @@ class PaperPipeline(Tool):
 
     @action(description="Scan a folder of PDFs and add each to the reading queue.", input_schema=ScanInputs)
     def scan(self, inputs: ScanInputs, context: Context):
+        # Resolve folder (and any first-run prompt) outside the generator — Rich Live in `_drive_progress` eats prompts.
+        folder, early = self._resolve_scan_folder(inputs, context)
+        if early is not None:
+            return early
+        return self._scan_folder(folder, inputs, context)
+
+    def _resolve_scan_folder(
+        self, inputs: ScanInputs, context: Context
+    ) -> tuple[Path | None, ScanResult | None]:
+        """Returns (folder, None) on success, or (None, ScanResult(...)) on early exit."""
         if inputs.folder:
             folder = Path(inputs.folder).expanduser()
         else:
             try:
                 folder = self._require_database_dir(context)
             except NoInteractiveError as e:
-                return ScanResult(
+                return None, ScanResult(
                     folder="", total_pdfs=0,
                     added=[], skipped=[], failed=[],
                     queue_size=len(self._load_index()),
@@ -507,7 +518,7 @@ class PaperPipeline(Tool):
                     ),
                 )
             if folder is None:
-                return ScanResult(
+                return None, ScanResult(
                     folder="", total_pdfs=0,
                     added=[], skipped=[], failed=[],
                     queue_size=len(self._load_index()),
@@ -515,13 +526,16 @@ class PaperPipeline(Tool):
                     message="Cancelled - no database folder configured.",
                 )
         if not folder.is_dir():
-            return ScanResult(
+            return None, ScanResult(
                 folder=str(folder), total_pdfs=0,
                 added=[], skipped=[], failed=[],
                 queue_size=len(self._load_index()),
                 banner=self._banner_counts(),
                 message=f"Folder not found: {str(folder)!r}.",
             )
+        return folder, None
+
+    def _scan_folder(self, folder: Path, inputs: ScanInputs, context: Context):
         yield ProgressEvent(phase="discover", message=f"Scanning {folder}")
         pdfs = sorted(folder.rglob("*.pdf"))
         yield ProgressEvent(phase="discover", message=f"Found {len(pdfs)} PDF(s).")
@@ -580,16 +594,7 @@ class PaperPipeline(Tool):
         return data_dir() / "paper"
 
     def _require_database_dir(self, context: Context) -> Path | None:
-        """Return the configured database_dir, prompting on first run if unset.
-
-        First-run flow: prompt the user for a path (or 'create' to scaffold the
-        default), persist it via `write_setting`, mutate the in-memory settings
-        so the rest of this CLI invocation sees it, and return the Path.
-
-        Returns None only if the user typed 'cancel'. Raises NoInteractiveError
-        when DOCENT_NO_INTERACTIVE is set; callers should translate that into
-        a clear remediation message.
-        """
+        """Return configured database_dir, or prompt+persist on first run; None on cancel/invalid; raises NoInteractiveError under DOCENT_NO_INTERACTIVE."""
         ps = context.settings.paper
         if ps.database_dir is not None:
             return ps.database_dir.expanduser()
@@ -598,6 +603,15 @@ class PaperPipeline(Tool):
             default=_DEFAULT_DATABASE_DIR,
         )
         if path is None:
+            return None
+        # Don't persist a path that doesn't exist — silent corruption of config.toml
+        # if the user typos or pastes garbage. Caller treats None as cancel.
+        if not path.is_dir():
+            get_console().print(
+                f"[yellow]Path doesn't exist:[/] {path}\n"
+                f"[dim]Pre-create the folder first, type 'create' next time to scaffold the default, "
+                f"or run `docent paper config-set database_dir <path>` once it exists. Not persisted.[/]"
+            )
             return None
         write_setting("paper.database_dir", str(path))
         context.settings.paper.database_dir = path

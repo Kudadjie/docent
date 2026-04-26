@@ -51,6 +51,9 @@ def prompt_for_path(message: str, *, allow_create: bool = True, default: str | N
 
     console = get_console()
     raw = Prompt.ask(message, default=default or "", console=console).strip()
+    # Windows users reflexively wrap paths with spaces in quotes when pasting.
+    if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in ('"', "'"):
+        raw = raw[1:-1].strip()
     if not raw or raw.lower() == "cancel":
         return None
     if allow_create and raw.lower() == "create" and default:
