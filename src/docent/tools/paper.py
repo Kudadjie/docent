@@ -878,9 +878,14 @@ class PaperPipeline(Tool):
 
     @staticmethod
     def _filename_heuristic(pdf_path: str) -> dict[str, Any]:
-        """Last-resort: title from filename stem, year from any 4-digit number."""
+        """Last-resort: title from filename stem, year from any 4-digit number.
+
+        Year regex runs against the *normalized* title (underscores/hyphens
+        collapsed to spaces) so Mendeley-style `Smith_2019_topic.pdf` resolves
+        to year=2019 — `_` is a Python word char and would otherwise defeat `\b`.
+        """
         stem = Path(pdf_path).stem
-        year_match = re.search(r"\b(?:19|20)\d{2}\b", stem)
-        year = int(year_match.group(0)) if year_match else None
         title = re.sub(r"[_\-]+", " ", stem).strip()
+        year_match = re.search(r"\b(?:19|20)\d{2}\b", title)
+        year = int(year_match.group(0)) if year_match else None
         return {"title": title or "Untitled", "authors": "Unknown", "year": year}
