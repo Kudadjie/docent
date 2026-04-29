@@ -8,7 +8,6 @@ read recent history.
 from __future__ import annotations
 
 import json
-import os
 import re
 from datetime import datetime
 from pathlib import Path
@@ -19,6 +18,7 @@ from pydantic import BaseModel, Field
 from docent.config import write_setting
 from docent.core import Context, ProgressEvent, Tool, action, register_tool
 from docent.learning import RunLog
+from docent.tools.paper_store import BannerCounts, PaperQueueStore
 from docent.ui import get_console
 from docent.utils.paths import data_dir
 from docent.utils.prompt import NoInteractiveError, prompt_for_path
@@ -45,15 +45,6 @@ class QueueEntry(BaseModel):
     file_status: str = "missing"
     keep_in_mendeley: bool = False
     pdf_path: str | None = None  # absolute path; reference-only, no copy. Step 9.
-
-
-class BannerCounts(BaseModel):
-    queued: int = 0
-    reading: int = 0
-    done: int = 0
-    db_files: int = 0
-    watch_files: int = 0
-    mendeley_linked: int = 0
 
 
 class AddInputs(BaseModel):
@@ -196,15 +187,16 @@ class PaperPipeline(Tool):
     description = "Reading queue + Mendeley sync."
     category = "research"
 
+    def __init__(self) -> None:
+        self._store = PaperQueueStore(data_dir() / "paper")
+
     @action(description="Add a paper to the reading queue.", input_schema=AddInputs)
     def add(self, inputs: AddInputs, context: Context) -> AddResult:
-        self._ensure_dirs()
-
         if not inputs.pdf and not inputs.title and not inputs.doi:
             return AddResult(
                 added=False, id="", title="",
-                queue_size=len(self._load_index()),
-                banner=self._banner_counts(),
+                queue_size=len(self._store.load_index()),
+                banner=self._store.banner_counts(),
                 message="Must supply --title, --doi, or --pdf.",
                 metadata_source="none",
             )
@@ -212,8 +204,8 @@ class PaperPipeline(Tool):
         if inputs.pdf and not Path(inputs.pdf).is_file():
             return AddResult(
                 added=False, id="", title="",
-                queue_size=len(self._load_index()),
-                banner=self._banner_counts(),
+                queue_size=len(self._store.load_index()),
+                banner=self._store.banner_counts(),
                 message=f"PDF not found at {inputs.pdf!r}.",
                 metadata_source="none",
             )
@@ -223,8 +215,8 @@ class PaperPipeline(Tool):
         if not title:
             return AddResult(
                 added=False, id="", title="",
-                queue_size=len(self._load_index()),
-                banner=self._banner_counts(),
+                queue_size=len(self._store.load_index()),
+                banner=self._store.banner_counts(),
                 message="Could not extract metadata; supply --title manually.",
                 metadata_source=source,
             )
@@ -234,7 +226,7 @@ class PaperPipeline(Tool):
         pdf_abs = str(Path(inputs.pdf).resolve()) if inputs.pdf else None
 
         entry_id = self._derive_id(authors, year, title)
-        index = self._load_index()
+        index = self._store.load_index()
         collision = index.get(entry_id)
 
         if collision and not inputs.force:
@@ -243,7 +235,7 @@ class PaperPipeline(Tool):
                 id=entry_id,
                 title=collision["title"],
                 queue_size=len(index),
-                banner=self._banner_counts(),
+                banner=self._store.banner_counts(),
                 message=(
                     f"Already in queue as '{entry_id}': {collision['title']!r}. "
                     f"Use --force to overwrite, or `docent paper edit` to change fields."
@@ -265,11 +257,11 @@ class PaperPipeline(Tool):
             file_status="found" if pdf_abs else "missing",
         )
 
-        queue = self._load_queue()
+        queue = self._store.load_queue()
         if collision:
             queue = [e for e in queue if e.get("id") != entry_id]
         queue.append(new_entry.model_dump())
-        self._save_queue(queue)
+        self._store.save_queue(queue)
         self._log_event("add", id=entry_id, replaced=bool(collision),
                         priority=inputs.priority, course=inputs.course,
                         metadata_source=source, has_pdf=bool(pdf_abs))
@@ -283,14 +275,14 @@ class PaperPipeline(Tool):
             id=entry_id,
             title=title,
             queue_size=len(queue),
-            banner=self._banner_counts(),
+            banner=self._store.banner_counts(),
             message=msg,
             metadata_source=source,
         )
 
     @action(description="Show the next paper to read (highest-priority queued).", input_schema=NextInputs)
     def next(self, inputs: NextInputs, context: Context) -> MutationResult:
-        queue = self._load_queue()
+        queue = self._store.load_queue()
         candidates = [e for e in queue if e.get("status") == "queued"]
         if inputs.course:
             candidates = [e for e in candidates if e.get("course") == inputs.course]
@@ -298,7 +290,7 @@ class PaperPipeline(Tool):
             scope = f" for course {inputs.course!r}" if inputs.course else ""
             return MutationResult(
                 ok=False, id="", entry=None, queue_size=len(queue),
-                banner=self._banner_counts(),
+                banner=self._store.banner_counts(),
                 message=f"No queued papers{scope}.",
             )
         best = sorted(
@@ -307,25 +299,25 @@ class PaperPipeline(Tool):
         )[0]
         return MutationResult(
             ok=True, id=best["id"], entry=QueueEntry(**best),
-            queue_size=len(queue), banner=self._banner_counts(),
+            queue_size=len(queue), banner=self._store.banner_counts(),
             message=f"Read next: {best['title']!r} ({best.get('priority','medium')}, added {best.get('added','')}).",
         )
 
     @action(description="Show one entry's details.", input_schema=IdOnlyInputs)
     def show(self, inputs: IdOnlyInputs, context: Context) -> MutationResult:
-        queue = self._load_queue()
+        queue = self._store.load_queue()
         entry = self._find_entry(queue, inputs.id)
         if not entry:
             return self._not_found(inputs.id, queue)
         return MutationResult(
             ok=True, id=inputs.id, entry=QueueEntry(**entry),
-            queue_size=len(queue), banner=self._banner_counts(),
+            queue_size=len(queue), banner=self._store.banner_counts(),
             message=f"Found {inputs.id!r}: {entry['title']!r}.",
         )
 
     @action(description="Search the queue for matching entries.", input_schema=SearchInputs)
     def search(self, inputs: SearchInputs, context: Context) -> SearchResult:
-        queue = self._load_queue()
+        queue = self._store.load_queue()
         q = inputs.query.lower()
         matches: list[QueueEntry] = []
         for e in queue:
@@ -343,7 +335,7 @@ class PaperPipeline(Tool):
 
     @action(description="Show queue statistics.", input_schema=StatsInputs)
     def stats(self, inputs: StatsInputs, context: Context) -> StatsResult:
-        queue = self._load_queue()
+        queue = self._store.load_queue()
         by_status: dict[str, int] = {}
         by_priority: dict[str, int] = {}
         by_course: dict[str, int] = {}
@@ -359,27 +351,27 @@ class PaperPipeline(Tool):
                 keeping += 1
         return StatsResult(
             total=len(queue), by_status=by_status, by_priority=by_priority,
-            by_course=by_course, keeping=keeping, banner=self._banner_counts(),
+            by_course=by_course, keeping=keeping, banner=self._store.banner_counts(),
         )
 
     @action(description="Remove an entry from the queue.", input_schema=IdOnlyInputs)
     def remove(self, inputs: IdOnlyInputs, context: Context) -> MutationResult:
-        queue = self._load_queue()
+        queue = self._store.load_queue()
         entry = self._find_entry(queue, inputs.id)
         if not entry:
             return self._not_found(inputs.id, queue)
         new_queue = [e for e in queue if e.get("id") != inputs.id]
-        self._save_queue(new_queue)
+        self._store.save_queue(new_queue)
         self._log_event("remove", id=inputs.id, title=entry.get("title"))
         return MutationResult(
             ok=True, id=inputs.id, entry=QueueEntry(**entry),
-            queue_size=len(new_queue), banner=self._banner_counts(),
+            queue_size=len(new_queue), banner=self._store.banner_counts(),
             message=f"Removed {inputs.id!r}.",
         )
 
     @action(description="Edit fields on an existing entry.", input_schema=EditInputs)
     def edit(self, inputs: EditInputs, context: Context) -> MutationResult:
-        queue = self._load_queue()
+        queue = self._store.load_queue()
         entry = self._find_entry(queue, inputs.id)
         if not entry:
             return self._not_found(inputs.id, queue)
@@ -387,15 +379,15 @@ class PaperPipeline(Tool):
         if not updates:
             return MutationResult(
                 ok=False, id=inputs.id, entry=QueueEntry(**entry),
-                queue_size=len(queue), banner=self._banner_counts(),
+                queue_size=len(queue), banner=self._store.banner_counts(),
                 message="No fields supplied; nothing to edit.",
             )
         entry.update(updates)
-        self._save_queue(queue)
+        self._store.save_queue(queue)
         self._log_event("edit", id=inputs.id, fields=sorted(updates.keys()))
         return MutationResult(
             ok=True, id=inputs.id, entry=QueueEntry(**entry),
-            queue_size=len(queue), banner=self._banner_counts(),
+            queue_size=len(queue), banner=self._store.banner_counts(),
             message=f"Updated {inputs.id!r}: {sorted(updates.keys())}.",
         )
 
@@ -409,22 +401,22 @@ class PaperPipeline(Tool):
 
     @action(description="Flag an entry to be kept in Mendeley (used by future sync ops).", input_schema=IdOnlyInputs)
     def mark_keeping(self, inputs: IdOnlyInputs, context: Context) -> MutationResult:
-        queue = self._load_queue()
+        queue = self._store.load_queue()
         entry = self._find_entry(queue, inputs.id)
         if not entry:
             return self._not_found(inputs.id, queue)
         entry["keep_in_mendeley"] = True
-        self._save_queue(queue)
+        self._store.save_queue(queue)
         self._log_event("mark_keeping", id=inputs.id)
         return MutationResult(
             ok=True, id=inputs.id, entry=QueueEntry(**entry),
-            queue_size=len(queue), banner=self._banner_counts(),
+            queue_size=len(queue), banner=self._store.banner_counts(),
             message=f"Marked {inputs.id!r} for keeping.",
         )
 
     @action(description="Export the queue (or a filtered subset).", input_schema=ExportInputs)
     def export(self, inputs: ExportInputs, context: Context) -> ExportResult:
-        queue = self._load_queue()
+        queue = self._store.load_queue()
         filtered = queue
         if inputs.course:
             filtered = [e for e in filtered if e.get("course") == inputs.course]
@@ -509,8 +501,8 @@ class PaperPipeline(Tool):
                 return None, ScanResult(
                     folder="", total_pdfs=0,
                     added=[], skipped=[], failed=[],
-                    queue_size=len(self._load_index()),
-                    banner=self._banner_counts(),
+                    queue_size=len(self._store.load_index()),
+                    banner=self._store.banner_counts(),
                     message=(
                         f"No --folder given and paper.database_dir not configured. "
                         f"Run `docent paper config-set database_dir <path>` or set "
@@ -521,16 +513,16 @@ class PaperPipeline(Tool):
                 return None, ScanResult(
                     folder="", total_pdfs=0,
                     added=[], skipped=[], failed=[],
-                    queue_size=len(self._load_index()),
-                    banner=self._banner_counts(),
+                    queue_size=len(self._store.load_index()),
+                    banner=self._store.banner_counts(),
                     message="Cancelled - no database folder configured.",
                 )
         if not folder.is_dir():
             return None, ScanResult(
                 folder=str(folder), total_pdfs=0,
                 added=[], skipped=[], failed=[],
-                queue_size=len(self._load_index()),
-                banner=self._banner_counts(),
+                queue_size=len(self._store.load_index()),
+                banner=self._store.banner_counts(),
                 message=f"Folder not found: {str(folder)!r}.",
             )
         return folder, None
@@ -578,8 +570,8 @@ class PaperPipeline(Tool):
             added=added,
             skipped=skipped,
             failed=failed,
-            queue_size=len(self._load_index()),
-            banner=self._banner_counts(),
+            queue_size=len(self._store.load_index()),
+            banner=self._store.banner_counts(),
             message=(
                 f"Scanned {len(pdfs)} PDF(s) in {folder}: "
                 f"{len(added)} added, {len(skipped)} skipped, {len(failed)} failed."
@@ -588,10 +580,8 @@ class PaperPipeline(Tool):
 
     # ------------------------------------------------------------------
     # Shared helpers - every paper action reuses these.
+    # Persistence + state-recompute helpers moved to PaperQueueStore at Step 10.7.
     # ------------------------------------------------------------------
-
-    def _data_dir(self) -> Path:
-        return data_dir() / "paper"
 
     def _require_database_dir(self, context: Context) -> Path | None:
         """Return configured database_dir, or prompt+persist on first run; None on cancel/invalid; raises NoInteractiveError under DOCENT_NO_INTERACTIVE."""
@@ -617,88 +607,6 @@ class PaperPipeline(Tool):
         context.settings.paper.database_dir = path
         return path
 
-    def _ensure_dirs(self) -> None:
-        d = self._data_dir()
-        d.mkdir(parents=True, exist_ok=True)
-        if not (d / "queue.json").exists():
-            self._atomic_write_json(d / "queue.json", [])
-        if not (d / "queue-index.json").exists():
-            self._atomic_write_json(d / "queue-index.json", {})
-        if not (d / "state.json").exists():
-            self._atomic_write_json(
-                d / "state.json",
-                {
-                    "queued": 0,
-                    "reading": 0,
-                    "done": 0,
-                    "db_files": 0,
-                    "watch_files": 0,
-                    "mendeley_linked": 0,
-                    "last_updated": datetime.now().isoformat(),
-                },
-            )
-
-    def _load_queue(self) -> list[dict[str, Any]]:
-        path = self._data_dir() / "queue.json"
-        if not path.exists():
-            return []
-        return json.loads(path.read_text(encoding="utf-8"))
-
-    def _load_index(self) -> dict[str, dict[str, Any]]:
-        path = self._data_dir() / "queue-index.json"
-        if not path.exists():
-            return {}
-        return json.loads(path.read_text(encoding="utf-8"))
-
-    def _atomic_write_json(self, path: Path, data: Any) -> None:
-        tmp = path.with_suffix(path.suffix + ".tmp")
-        tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-        os.replace(tmp, path)
-
-    def _save_queue(self, queue: list[dict[str, Any]]) -> None:
-        d = self._data_dir()
-        d.mkdir(parents=True, exist_ok=True)
-        self._atomic_write_json(d / "queue.json", queue)
-        self._atomic_write_json(d / "queue-index.json", self._recompute_index(queue))
-        self._recompute_state(queue)
-
-    def _recompute_index(self, queue: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-        return {
-            e["id"]: {
-                "title": e["title"],
-                "status": e["status"],
-                "priority": e["priority"],
-                "file_status": e["file_status"],
-            }
-            for e in queue
-        }
-
-    def _recompute_state(self, queue: list[dict[str, Any]]) -> None:
-        state = {
-            "queued": sum(1 for e in queue if e["status"] == "queued"),
-            "reading": sum(1 for e in queue if e["status"] == "reading"),
-            "done": sum(1 for e in queue if e["status"] == "done"),
-            "db_files": 0,
-            "watch_files": 0,
-            "mendeley_linked": 0,
-            "last_updated": datetime.now().isoformat(),
-        }
-        self._atomic_write_json(self._data_dir() / "state.json", state)
-
-    def _banner_counts(self) -> BannerCounts:
-        path = self._data_dir() / "state.json"
-        if not path.exists():
-            return BannerCounts()
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return BannerCounts(
-            queued=data.get("queued", 0),
-            reading=data.get("reading", 0),
-            done=data.get("done", 0),
-            db_files=data.get("db_files", 0),
-            watch_files=data.get("watch_files", 0),
-            mendeley_linked=data.get("mendeley_linked", 0),
-        )
-
     def _find_entry(self, queue: list[dict[str, Any]], entry_id: str) -> dict[str, Any] | None:
         for e in queue:
             if e.get("id") == entry_id:
@@ -708,22 +616,22 @@ class PaperPipeline(Tool):
     def _not_found(self, entry_id: str, queue: list[dict[str, Any]]) -> MutationResult:
         return MutationResult(
             ok=False, id=entry_id, entry=None, queue_size=len(queue),
-            banner=self._banner_counts(),
+            banner=self._store.banner_counts(),
             message=f"No entry with id {entry_id!r}.",
         )
 
     def _set_status(self, entry_id: str, status: str) -> MutationResult:
-        queue = self._load_queue()
+        queue = self._store.load_queue()
         entry = self._find_entry(queue, entry_id)
         if not entry:
             return self._not_found(entry_id, queue)
         previous = entry.get("status")
         entry["status"] = status
-        self._save_queue(queue)
+        self._store.save_queue(queue)
         self._log_event("set_status", id=entry_id, status=status, previous=previous)
         return MutationResult(
             ok=True, id=entry_id, entry=QueueEntry(**entry),
-            queue_size=len(queue), banner=self._banner_counts(),
+            queue_size=len(queue), banner=self._store.banner_counts(),
             message=f"Set status to {status!r} for {entry_id!r} (was {previous!r}).",
         )
 
