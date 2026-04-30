@@ -76,6 +76,30 @@ class PaperQueueStore:
         )
 
     @staticmethod
+    def list_database_pdfs(
+        database_dir: Path, watch_subdir: str | None
+    ) -> tuple[list[Path], list[Path]]:
+        """Walk `database_dir`, splitting PDFs into (db, watch) lists.
+
+        `watch_subdir` is the relative path to the Mendeley watch folder
+        inside `database_dir`; PDFs under it are returned in the watch list
+        and excluded from the db list. Both lists are sorted. Missing
+        directories yield empty lists, not errors.
+        """
+        if not database_dir.is_dir():
+            return [], []
+        watch_dir = (database_dir / watch_subdir).resolve() if watch_subdir else None
+        db_pdfs: list[Path] = []
+        watch_pdfs: list[Path] = []
+        for pdf in database_dir.rglob("*.pdf"):
+            resolved = pdf.resolve()
+            if watch_dir is not None and watch_dir in resolved.parents:
+                watch_pdfs.append(pdf)
+            else:
+                db_pdfs.append(pdf)
+        return sorted(db_pdfs), sorted(watch_pdfs)
+
+    @staticmethod
     def _recompute_index(queue: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
         return {
             e["id"]: {

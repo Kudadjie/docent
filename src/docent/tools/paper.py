@@ -19,7 +19,6 @@ from docent.config import write_setting
 from docent.core import Context, ProgressEvent, Tool, action, register_tool
 from docent.learning import RunLog
 from docent.tools.paper_store import BannerCounts, PaperQueueStore
-from docent.ui import get_console
 from docent.utils.paths import data_dir
 from docent.utils.prompt import NoInteractiveError, prompt_for_path
 
@@ -27,7 +26,7 @@ from docent.utils.prompt import NoInteractiveError, prompt_for_path
 PRIORITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 
 _DEFAULT_DATABASE_DIR = "~/Documents/Papers"
-_KNOWN_PAPER_KEYS = {"database_dir", "mendeley_watch_subdir"}
+_KNOWN_PAPER_KEYS = {"database_dir", "mendeley_watch_subdir", "unpaywall_email"}
 
 
 class QueueEntry(BaseModel):
@@ -123,6 +122,7 @@ class ConfigShowResult(BaseModel):
     database_dir: str | None
     mendeley_watch_subdir: str | None
     mendeley_watch_resolved: str | None  # absolute path = database_dir / subdir, when both set
+    unpaywall_email: str | None
 
 
 class ConfigSetResult(BaseModel):
@@ -173,6 +173,49 @@ class ScanResult(BaseModel):
     queue_size: int
     banner: BannerCounts
     message: str
+
+
+class SyncStatusInputs(BaseModel):
+    pass
+
+
+class SyncPullInputs(BaseModel):
+    id: str | None = Field(None, description="Single entry id; if omitted, all queued entries with no PDF are tried.")
+    dry_run: bool = Field(False, description="Resolve OA URLs but skip download; nothing is written.")
+
+
+class SyncPullResult(BaseModel):
+    """Per-entry buckets after running sync-pull.
+
+    `downloaded`: {id, path}; `no_oa`: {id, doi_url, journal} (closed-access — user
+    may have institutional access via the link); `not_found`: {id, reason}
+    (no DOI resolvable, or DOI not in Unpaywall); `network_error`:
+    {id, reason}; `already_has_file`: [id]; `dry_run_oa`: {id, pdf_url, doi_url}
+    (only populated when dry_run=True). `message` is set on early-exit
+    (missing config, etc.) and otherwise empty.
+    """
+
+    database_dir: str | None
+    downloaded: list[dict[str, str]]
+    no_oa: list[dict[str, str]]
+    not_found: list[dict[str, str]]
+    network_error: list[dict[str, str]]
+    already_has_file: list[str]
+    dry_run_oa: list[dict[str, str]]
+    summary: str
+    message: str = ""
+
+
+class SyncStatusResult(BaseModel):
+    database_dir: str | None
+    watch_dir: str | None
+    in_queue_with_file: list[str]  # ids
+    in_queue_missing_file: list[str]  # ids — queue says we have it, disk says no
+    orphan_pdfs: list[str]  # paths under database_dir not referenced by any queue entry
+    promotable: list[str]  # ids: keep_in_mendeley=True + file present + not yet in Watch
+    in_watch: list[str]  # filenames in Watch folder (sanity surface)
+    summary: str
+    message: str = ""  # populated only on early-exit (no database configured)
 
 
 @register_tool
@@ -456,9 +499,10 @@ class PaperPipeline(Tool):
             database_dir=db,
             mendeley_watch_subdir=sub,
             mendeley_watch_resolved=resolved,
+            unpaywall_email=ps.unpaywall_email,
         )
 
-    @action(description="Set a paper setting (database_dir, mendeley_watch_subdir).", input_schema=ConfigSetInputs, name="config-set")
+    @action(description="Set a paper setting (database_dir, mendeley_watch_subdir, unpaywall_email).", input_schema=ConfigSetInputs, name="config-set")
     def config_set(self, inputs: ConfigSetInputs, context: Context) -> ConfigSetResult:
         from docent.utils.paths import config_file
         if inputs.key not in _KNOWN_PAPER_KEYS:
@@ -496,7 +540,7 @@ class PaperPipeline(Tool):
             folder = Path(inputs.folder).expanduser()
         else:
             try:
-                folder = self._require_database_dir(context)
+                folder, err = self._require_database_dir(context)
             except NoInteractiveError as e:
                 return None, ScanResult(
                     folder="", total_pdfs=0,
@@ -515,7 +559,7 @@ class PaperPipeline(Tool):
                     added=[], skipped=[], failed=[],
                     queue_size=len(self._store.load_index()),
                     banner=self._store.banner_counts(),
-                    message="Cancelled - no database folder configured.",
+                    message=err or "Cancelled - no database folder configured.",
                 )
         if not folder.is_dir():
             return None, ScanResult(
@@ -578,34 +622,289 @@ class PaperPipeline(Tool):
             ),
         )
 
+    @action(
+        description="Cross-tab queue against database_dir + Watch folder; report orphans, missing files, and promotable entries.",
+        input_schema=SyncStatusInputs,
+        name="sync-status",
+    )
+    def sync_status(self, inputs: SyncStatusInputs, context: Context) -> SyncStatusResult:
+        empty = SyncStatusResult(
+            database_dir=None, watch_dir=None,
+            in_queue_with_file=[], in_queue_missing_file=[],
+            orphan_pdfs=[], promotable=[], in_watch=[],
+            summary="",
+        )
+        try:
+            database_dir, err = self._require_database_dir(context)
+        except NoInteractiveError as e:
+            return empty.model_copy(update={"message": (
+                f"paper.database_dir not configured. Run "
+                f"`docent paper config-set database_dir <path>` or set "
+                f"DOCENT_PAPER__DATABASE_DIR. ({e})"
+            )})
+        if database_dir is None:
+            return empty.model_copy(update={
+                "message": err or "Cancelled - no database folder configured.",
+            })
+        if not database_dir.is_dir():
+            return empty.model_copy(update={
+                "database_dir": str(database_dir),
+                "message": f"database_dir does not exist: {database_dir}.",
+            })
+
+        watch_subdir = context.settings.paper.mendeley_watch_subdir
+        watch_dir = (database_dir / watch_subdir) if watch_subdir else None
+        db_pdfs, watch_pdfs = PaperQueueStore.list_database_pdfs(database_dir, watch_subdir)
+
+        queue = self._store.load_queue()
+        tracked: dict[str, dict[str, Any]] = {}
+        in_queue_with_file: list[str] = []
+        in_queue_missing_file: list[str] = []
+        for e in queue:
+            pdf_path = e.get("pdf_path")
+            if pdf_path:
+                tracked[str(Path(pdf_path).resolve())] = e
+                if Path(pdf_path).exists():
+                    in_queue_with_file.append(e["id"])
+                else:
+                    in_queue_missing_file.append(e["id"])
+            else:
+                in_queue_missing_file.append(e["id"])
+
+        orphan_pdfs = [
+            str(p) for p in db_pdfs if str(p.resolve()) not in tracked
+        ]
+        watch_filenames = {p.name for p in watch_pdfs}
+        promotable = [
+            e["id"] for e in queue
+            if e.get("keep_in_mendeley")
+            and e.get("pdf_path")
+            and Path(e["pdf_path"]).exists()
+            and Path(e["pdf_path"]).name not in watch_filenames
+        ]
+
+        summary = (
+            f"{len(in_queue_with_file)} matched, "
+            f"{len(in_queue_missing_file)} missing, "
+            f"{len(orphan_pdfs)} orphan PDF(s), "
+            f"{len(promotable)} promotable, "
+            f"{len(watch_pdfs)} in Watch."
+        )
+        return SyncStatusResult(
+            database_dir=str(database_dir),
+            watch_dir=str(watch_dir) if watch_dir else None,
+            in_queue_with_file=sorted(in_queue_with_file),
+            in_queue_missing_file=sorted(in_queue_missing_file),
+            orphan_pdfs=sorted(orphan_pdfs),
+            promotable=sorted(promotable),
+            in_watch=sorted(watch_filenames),
+            summary=summary,
+        )
+
+    @action(
+        description="Try to fetch open-access PDFs for queued entries missing a file (Unpaywall + CrossRef title fallback).",
+        input_schema=SyncPullInputs,
+        name="sync-pull",
+    )
+    def sync_pull(self, inputs: SyncPullInputs, context: Context):
+        empty = SyncPullResult(
+            database_dir=None, downloaded=[], no_oa=[], not_found=[],
+            network_error=[], already_has_file=[], dry_run_oa=[], summary="",
+        )
+        try:
+            database_dir, err = self._require_database_dir(context)
+        except NoInteractiveError as e:
+            return empty.model_copy(update={"message": (
+                f"paper.database_dir not configured. Run "
+                f"`docent paper config-set database_dir <path>` or set "
+                f"DOCENT_PAPER__DATABASE_DIR. ({e})"
+            )})
+        if database_dir is None:
+            return empty.model_copy(update={"message": err or "Cancelled - no database folder configured."})
+        if not database_dir.is_dir():
+            return empty.model_copy(update={
+                "database_dir": str(database_dir),
+                "message": f"database_dir does not exist: {database_dir}.",
+            })
+
+        email = context.settings.paper.unpaywall_email
+        if not email:
+            return empty.model_copy(update={
+                "database_dir": str(database_dir),
+                "message": (
+                    "Unpaywall requires an email to identify clients. Set one with "
+                    "`docent paper config-set unpaywall_email <you@example.com>` "
+                    "(used in the API request header only)."
+                ),
+            })
+
+        queue = self._store.load_queue()
+        if inputs.id is not None:
+            targets = [e for e in queue if e.get("id") == inputs.id]
+            if not targets:
+                return empty.model_copy(update={
+                    "database_dir": str(database_dir),
+                    "message": f"No entry with id {inputs.id!r}.",
+                })
+        else:
+            targets = [
+                e for e in queue
+                if not (e.get("pdf_path") and Path(e["pdf_path"]).exists())
+            ]
+
+        return self._sync_pull_run(targets, database_dir, email, inputs.dry_run, context)
+
+    def _sync_pull_run(
+        self,
+        targets: list[dict[str, Any]],
+        database_dir: Path,
+        email: str,
+        dry_run: bool,
+        context: Context,
+    ):
+        downloaded: list[dict[str, str]] = []
+        no_oa: list[dict[str, str]] = []
+        not_found: list[dict[str, str]] = []
+        network_error: list[dict[str, str]] = []
+        already_has_file: list[str] = []
+        dry_run_oa: list[dict[str, str]] = []
+        mutated_ids: set[str] = set()
+
+        yield ProgressEvent(phase="discover", message=f"{len(targets)} entry/entries to try.")
+
+        for i, entry in enumerate(targets, 1):
+            eid = entry.get("id", "?")
+            yield ProgressEvent(phase="pull", current=i, total=len(targets), item=eid)
+
+            pdf_path = entry.get("pdf_path")
+            if pdf_path and Path(pdf_path).exists():
+                already_has_file.append(eid)
+                continue
+
+            doi = entry.get("doi")
+            if not doi:
+                yield ProgressEvent(phase="pull", message=f"{eid}: searching CrossRef by title", item=eid)
+                doi = self._crossref_title_search(
+                    entry.get("title", ""), entry.get("authors", ""), context.executor
+                )
+                if doi:
+                    entry["doi"] = doi  # persisted at end of loop iteration
+                    mutated_ids.add(eid)
+                else:
+                    not_found.append({"id": eid, "reason": "no DOI on entry and CrossRef title search returned nothing"})
+                    yield ProgressEvent(phase="pull", level="warn", message=f"{eid}: no DOI resolvable")
+                    continue
+
+            up = self._unpaywall_lookup(doi, email, context.executor)
+            if up is None:
+                network_error.append({"id": eid, "reason": "Unpaywall lookup failed (network or rate limit)"})
+                yield ProgressEvent(phase="pull", level="error", message=f"{eid}: Unpaywall lookup failed")
+                continue
+            if up.get("status") == "not_found":
+                not_found.append({"id": eid, "reason": "DOI not in Unpaywall index"})
+                yield ProgressEvent(phase="pull", level="warn", message=f"{eid}: DOI not in Unpaywall")
+                continue
+            if not up.get("is_oa"):
+                no_oa.append({
+                    "id": eid,
+                    "doi_url": up.get("doi_url") or f"https://doi.org/{doi}",
+                    "journal": up.get("journal") or "",
+                })
+                continue
+            pdf_url = up.get("pdf_url")
+            doi_url = up.get("doi_url") or f"https://doi.org/{doi}"
+            if not pdf_url:
+                no_oa.append({"id": eid, "doi_url": doi_url, "journal": up.get("journal") or ""})
+                continue
+
+            if dry_run:
+                dry_run_oa.append({"id": eid, "pdf_url": pdf_url, "doi_url": doi_url})
+                yield ProgressEvent(phase="pull", message=f"{eid}: OA found at {pdf_url}")
+                continue
+
+            dest = database_dir / f"{eid}.pdf"
+            yield ProgressEvent(phase="pull", message=f"{eid}: downloading", item=eid)
+            ok = self._download_pdf(pdf_url, dest, context.executor)
+            if not ok:
+                network_error.append({"id": eid, "reason": f"download failed: {pdf_url}"})
+                yield ProgressEvent(phase="pull", level="error", message=f"{eid}: download failed")
+                continue
+
+            entry["pdf_path"] = str(dest.resolve())
+            entry["file_status"] = "found"
+            downloaded.append({"id": eid, "path": str(dest.resolve())})
+            mutated_ids.add(eid)
+
+        if mutated_ids:
+            queue = self._store.load_queue()
+            by_id = {e.get("id"): e for e in queue}
+            target_by_id = {t.get("id"): t for t in targets}
+            for tid in mutated_ids:
+                if tid in by_id and tid in target_by_id:
+                    src = target_by_id[tid]
+                    by_id[tid].update({
+                        k: src[k] for k in ("doi", "pdf_path", "file_status") if k in src
+                    })
+            self._store.save_queue(queue)
+
+        self._log_event(
+            "sync_pull",
+            tried=len(targets),
+            downloaded=len(downloaded),
+            no_oa=len(no_oa),
+            not_found=len(not_found),
+            network_error=len(network_error),
+            dry_run=dry_run,
+        )
+
+        summary = (
+            f"{len(downloaded)} downloaded, {len(no_oa)} closed-access, "
+            f"{len(not_found)} not found, {len(network_error)} network error, "
+            f"{len(already_has_file)} already had file"
+            + (f", {len(dry_run_oa)} OA (dry-run)" if dry_run else "")
+            + "."
+        )
+        return SyncPullResult(
+            database_dir=str(database_dir),
+            downloaded=downloaded,
+            no_oa=no_oa,
+            not_found=not_found,
+            network_error=network_error,
+            already_has_file=sorted(already_has_file),
+            dry_run_oa=dry_run_oa,
+            summary=summary,
+        )
+
     # ------------------------------------------------------------------
     # Shared helpers - every paper action reuses these.
     # Persistence + state-recompute helpers moved to PaperQueueStore at Step 10.7.
     # ------------------------------------------------------------------
 
-    def _require_database_dir(self, context: Context) -> Path | None:
-        """Return configured database_dir, or prompt+persist on first run; None on cancel/invalid; raises NoInteractiveError under DOCENT_NO_INTERACTIVE."""
+    def _require_database_dir(self, context: Context) -> tuple[Path | None, str | None]:
+        """Return (path, None) on success; (None, None) on user cancel; (None, error_message) on invalid input.
+
+        Raises NoInteractiveError under DOCENT_NO_INTERACTIVE. The CLI/caller
+        owns rendering — this method never prints. Don't persist a path that
+        doesn't exist (silent corruption of config.toml on typos).
+        """
         ps = context.settings.paper
         if ps.database_dir is not None:
-            return ps.database_dir.expanduser()
+            return ps.database_dir.expanduser(), None
         path = prompt_for_path(
             "Where's your paper database? (path, 'create' for default, or 'cancel')",
             default=_DEFAULT_DATABASE_DIR,
         )
         if path is None:
-            return None
-        # Don't persist a path that doesn't exist — silent corruption of config.toml
-        # if the user typos or pastes garbage. Caller treats None as cancel.
+            return None, None
         if not path.is_dir():
-            get_console().print(
-                f"[yellow]Path doesn't exist:[/] {path}\n"
-                f"[dim]Pre-create the folder first, type 'create' next time to scaffold the default, "
-                f"or run `docent paper config-set database_dir <path>` once it exists. Not persisted.[/]"
+            return None, (
+                f"Path doesn't exist: {path}. Pre-create the folder, type 'create' "
+                f"next time to scaffold the default, or run "
+                f"`docent paper config-set database_dir <path>` once it exists. Not persisted."
             )
-            return None
         write_setting("paper.database_dir", str(path))
         context.settings.paper.database_dir = path
-        return path
+        return path, None
 
     def _find_entry(self, queue: list[dict[str, Any]], entry_id: str) -> dict[str, Any] | None:
         for e in queue:
@@ -744,6 +1043,120 @@ class PaperPipeline(Tool):
             except (TypeError, ValueError):
                 pass
         return {"title": title, "authors": authors_str, "year": year, "doi": clean}
+
+    def _unpaywall_lookup(self, doi: str, email: str, executor: Any) -> dict[str, Any] | None:
+        """Shell out to curl for Unpaywall. Returns a dict on success, None on transport failure.
+
+        Success dict keys: `is_oa: bool`, `pdf_url: str | None`, `doi_url: str`,
+        `journal: str | None`. A 404 (DOI not indexed) returns
+        `{"status": "not_found"}` rather than None — we want to bucket it as
+        not-found, not as a network error.
+        """
+        clean = doi.strip()
+        for prefix in ("https://doi.org/", "http://doi.org/", "doi:"):
+            if clean.lower().startswith(prefix):
+                clean = clean[len(prefix):]
+                break
+        url = f"https://api.unpaywall.org/v2/{clean}?email={email}"
+        try:
+            result = executor.run(
+                ["curl", "-sS", "--max-time", "15",
+                 "-w", "\n__HTTP_STATUS__%{http_code}",
+                 "-H", "User-Agent: docent/0.1.0",
+                 url],
+                check=False,
+            )
+        except Exception:
+            return None
+        if result.returncode != 0 or not result.stdout:
+            return None
+        body, _, status_line = result.stdout.rpartition("\n__HTTP_STATUS__")
+        try:
+            status_code = int(status_line.strip())
+        except ValueError:
+            status_code = 0
+        if status_code == 404:
+            return {"status": "not_found"}
+        if status_code != 200:
+            return None
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            return None
+        best = data.get("best_oa_location") or {}
+        journal = data.get("journal_name")
+        return {
+            "is_oa": bool(data.get("is_oa")),
+            "pdf_url": best.get("url_for_pdf"),
+            "doi_url": data.get("doi_url") or f"https://doi.org/{clean}",
+            "journal": journal,
+        }
+
+    def _crossref_title_search(self, title: str, authors: str, executor: Any) -> str | None:
+        """Resolve a DOI from a title (and optional first-author surname) via CrossRef.
+
+        Returns the top hit's DOI or None. We do not fuzzy-match — CrossRef's
+        relevance ranking is the filter. Caller decides whether to trust it.
+        """
+        if not title:
+            return None
+        from urllib.parse import quote_plus
+        query = quote_plus(title.strip())
+        url = f"https://api.crossref.org/works?query.bibliographic={query}&rows=3"
+        if authors:
+            first = authors.split(",")[0].strip().split()
+            if first:
+                surname = first[-1]
+                url += f"&query.author={quote_plus(surname)}"
+        try:
+            result = executor.run(
+                ["curl", "-sS", "--max-time", "10",
+                 "-H", "User-Agent: docent/0.1.0",
+                 url],
+                check=False,
+            )
+        except Exception:
+            return None
+        if result.returncode != 0 or not result.stdout:
+            return None
+        try:
+            data = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            return None
+        items = (data.get("message") or {}).get("items") or []
+        for item in items:
+            doi = item.get("DOI")
+            if doi:
+                return doi
+        return None
+
+    @staticmethod
+    def _download_pdf(url: str, dest: Path, executor: Any) -> bool:
+        """Download `url` to `dest`. Returns True iff curl exited 0 and a non-empty file landed.
+
+        We don't sniff magic bytes — premature; revisit if real-data testing
+        shows publishers handing back HTML paywall pages that masquerade as
+        PDFs.
+        """
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            result = executor.run(
+                ["curl", "-sSL", "--max-time", "60",
+                 "-H", "User-Agent: docent/0.1.0",
+                 "-o", str(dest),
+                 url],
+                check=False,
+            )
+        except Exception:
+            return False
+        if result.returncode != 0:
+            if dest.exists():
+                try:
+                    dest.unlink()
+                except OSError:
+                    pass
+            return False
+        return dest.exists() and dest.stat().st_size > 0
 
     @staticmethod
     def _extract_pdf_metadata(pdf_path: str) -> dict[str, Any] | None:

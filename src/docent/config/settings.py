@@ -20,6 +20,7 @@ class PaperSettings(BaseModel):
 
     database_dir: Path | None = None
     mendeley_watch_subdir: str | None = None
+    unpaywall_email: str | None = None
 
 
 class Settings(BaseSettings):

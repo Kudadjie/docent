@@ -62,10 +62,14 @@ Every tool — ported skill, subprocess wrapper, or future MCP client — confor
 2. **Multi-action tool** (e.g. `paper-pipeline`, `alpha-research`, `browse`):
    - One or more methods decorated with `@action(description=..., input_schema=...)`
    - Each action has its own Pydantic input schema
-   - Shared helpers (atomic writes, dedup, banner counts, etc.) live as regular methods on the Tool class — no framework needed
+   - Shared helpers live as regular methods on the Tool class. For tools with non-trivial persistent state, extract a per-tool **Store** class (see `PaperQueueStore` — owns load / save / atomic-write / state-recompute). Actions mutate state via the store, never by reaching into JSON files directly. Establishes a clean seam for tests and future actions.
    - CLI shape: `docent <name> <action> --flag ...`
 
-A tool must be one or the other — never both. Enforced at registration.
+**Action shape — single-shot vs generator:**
+- **Single-shot**: action returns a Pydantic result directly. The default. Use unless there's a concrete UX reason to stream.
+- **Generator**: action `yield`s `ProgressEvent` records during work and `return`s the final result. The CLI dispatcher (`_drive_progress`) detects generator actions, drives them inside a Rich progress context, and renders the final return value identically. Opt in only when a slow phase justifies live feedback (e.g. `paper scan`, `paper sync-pull`). Designed when a concrete consumer existed — not in the abstract.
+
+A tool must be single-action or multi-action — never both. Enforced at registration.
 
 The `context` object passed to every tool provides the shared runtime: `settings`, `llm` (litellm wrapper), `executor` (subprocess), and later `logger`. **Tools never receive the Rich console** — UI rendering is cli.py/ui's job. Tools return typed data; the CLI renders, the future web UI serializes to JSON.
 
@@ -130,6 +134,7 @@ For workers like `feynman`:
 
 - **Config file**: `~/.docent/config.toml` — API keys, default model, tool-specific settings.
 - **Pydantic Settings** loads and validates it; env vars override file values.
+- **Per-tool config** lives under a tool-named table. Pattern: `paper.database_dir`, `paper.mendeley_watch_subdir`, `paper.unpaywall_email`. Keys are nested Pydantic models on `Settings`; `config.loader.write_setting` does TOML round-trips for `config-set` actions. Required-but-unset paths trigger a first-run prompt (`prompt_for_path`) with a `NO_INTERACTIVE` escape for CI.
 - **Cache directory**: `~/.docent/cache/` — for anything expensive to recompute.
 - **Tool data directory**: `~/.docent/data/<toolname>/` — per-tool persistent state (queues, indexes, counters). Tools must never reach into `~/.claude/skills/`.
 - **No state in the package itself** — installed code is read-only; all mutable state lives in `~/.docent/`.
@@ -171,10 +176,18 @@ Current status in `memory/build_progress.md`.
 6. ✅ Subprocess executor (`Executor.run()`, `ProcessResult`, `ProcessExecutionError`, `Context.executor`)
 7a. ✅ **Multi-action contract extension** — `@action` decorator, multi-action CLI generation, registry validation. Motivated by paper-pipeline (16 ops on shared state) and research-to-notebook (6 modes on shared pipeline). Evidence-based, not speculation.
 7b. ✅ **First real tool: `paper add`** (stubbed inputs; no CrossRef yet) — validates the full stack end-to-end on a real workflow. Scaffolds the shared-helper pattern (`_load_queue`, `_atomic_write_json`, `_recompute_state`, `_derive_id`, `_banner_counts`) every subsequent paper action reuses.
-8. **Simple paper CRUD actions** (batch): `next`, `show`, `search`, `stats`, `remove`, `edit`, `done`, `ready-to-read`, `mark-keeping`, `export`. Pure queue operations, no external APIs. After this step: a useful standalone paper-pipeline minus Mendeley/sync. Ships `docent.learning` alongside (see Layer 8).
-9. **`paper add` with CrossRef + `process_inbox`** — real DOI resolution via `context.executor`, DOI/fuzzy-title dedup, inbox manifest processing.
-10. **Progress streaming extension** — yield-events path for long-running actions. Motivated by research-to-notebook pipeline and paper-pipeline `sync-status`. Designed only when a concrete consumer exists (karpathy: don't design event vocabulary in the abstract).
-11. **Paper sync ops** (`sync-status`, `sync-pull`, `sync-promote`, `sync-mendeley`) + minimal MCP adapter (Mendeley integration). Long-running; motivates the streaming extension from step 10.
+8. ✅ **Simple paper CRUD actions** (batch): `next`, `show`, `search`, `stats`, `remove`, `edit`, `done`, `ready-to-read`, `mark-keeping`, `export`. Pure queue operations, no external APIs. Ships `docent.learning.RunLog` alongside (see Layer 8).
+9. ✅ **PDF-driven `paper add` + `paper scan`** — metadata fallback chain DOI → CrossRef → PDF DOI → CrossRef → PDF info → filename. New `scan --folder` action for batch ingestion (replaces the originally-planned `process_inbox`; same shape, better name). `pypdf` lazy-imported.
+10. ✅ **Progress streaming extension** — `ProgressEvent` type; generator-actions (action `yield`s events, `return`s result); CLI dispatcher (`_drive_progress`) drives generators in a Rich progress context. Designed when a concrete consumer (`paper scan`) existed.
+   - 10.5 ✅ Per-tool config — `paper.database_dir`, `paper.mendeley_watch_subdir`; `config-show` / `config-set` actions; `write_setting` TOML round-trip; first-run prompt with `NO_INTERACTIVE` escape.
+   - 10.6 ✅ pytest harness — `[dependency-groups] dev`, `tests/` (~0.6s runtime). Covers registry contract, `RunLog`, `write_setting`, `prompt_for_path`, queue add + collision, metadata fallback chain.
+   - 10.7 ✅ **`PaperQueueStore` extracted** — persistence seam in `tools/paper_store.py`. Owns `load_queue` / `load_index` / `save_queue` / `banner_counts` / `list_database_pdfs`. `paper.py` now mutates state through `self._store`, not by reaching into JSON. Establishes the per-tool Store pattern.
+   - 10.8 ✅ UI-leak cleanup — `paper.py` no longer imports `docent.ui`. Tool/UI boundary stays mechanical.
+11. **Paper sync ops** + Mendeley MCP adapter.
+   - 11.1 ✅ `sync-status` — local cross-tab of queue × `database_dir` × `mendeley_watch_subdir`. Single-shot (sub-100ms; generator overhead unjustified). Buckets: `in_queue_with_file` / `in_queue_missing_file` / `orphan_pdfs` / `promotable` / `in_watch`.
+   - 11.2 ✅ `sync-pull` — Unpaywall via `Context.executor` + curl; generator action; DOI direct path + CrossRef bibliographic title-search fallback (persists resolved DOI). New required `paper.unpaywall_email` config. Closed-access surfaces `doi_url` + `journal` so user can route to institutional access.
+   - 11.3 `sync-promote` — DB → Watch copy-and-stop. Adds `promoted_at` field on `QueueEntry`.
+   - 11.4 `sync-mendeley` + minimal MCP-client adapter (Docent calls Mendeley MCP). MCP-client wiring shape (subprocess via `Context.executor` vs in-process MCP client) settled here.
 12. External `~/.docent/plugins/` discovery.
 13. Full MCP adapter (Docent exposes *itself* via MCP — last, after the native registry is battle-tested).
 
@@ -248,4 +261,4 @@ Summary of what changes in the outline
 Layer 1 (Tool Contract): two paths (single-action, multi-action); require `run`/actions to return typed result objects; forbid UI imports from tools.
 Layer 2 (Registry): store the class (not an instance); directory walk for v1; document entry-points as the v2 migration.
 Layer 4 (UI): the context object exposes a logger (not a console). Enforce with a lint check.
-Build Order: step 7 split into 7a (multi-action) and 7b (first real tool); step 9 inserted for progress streaming extension (motivated by long-running tools, designed when concrete consumer exists).
+Build Order: step 7 split into 7a (multi-action) and 7b (first real tool); step 10 added for progress streaming (`ProgressEvent` + generator actions, motivated by `paper scan`); step 10.7 added the per-tool Store pattern (`PaperQueueStore`) as a persistence seam.
