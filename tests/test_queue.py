@@ -4,15 +4,23 @@ import json
 
 from docent.config import load_settings
 from docent.core.context import Context
-from docent.execution import Executor
+from docent.execution.executor import ProcessResult
 from docent.llm import LLMClient
 from docent.tools.paper import AddInputs, PaperPipeline
 from docent.utils.paths import data_dir
 
 
+class _StubExecutor:
+    """Fail every subprocess so DOI/CrossRef lookups return None and explicit
+    metadata wins. Keeps unit tests offline and deterministic."""
+
+    def run(self, args, *, timeout=None, cwd=None, env=None, check=True):
+        return ProcessResult(args=list(args), returncode=1, stdout="", stderr="stub", duration=0.0)
+
+
 def _make_context() -> Context:
     settings = load_settings()
-    return Context(settings=settings, llm=LLMClient(settings), executor=Executor())
+    return Context(settings=settings, llm=LLMClient(settings), executor=_StubExecutor())
 
 
 def test_add_with_explicit_metadata(tmp_docent_home):
@@ -22,6 +30,7 @@ def test_add_with_explicit_metadata(tmp_docent_home):
         title="A Quiet Paper",
         authors="Smith, Jane; Doe, John",
         year=2024,
+        doi="10.1234/quiet",
         priority="high",
     )
 
@@ -50,10 +59,10 @@ def test_add_with_explicit_metadata(tmp_docent_home):
 def test_add_collision_blocked_without_force(tmp_docent_home):
     tool = PaperPipeline()
     ctx = _make_context()
-    tool.add(AddInputs(title="A Quiet Paper", authors="Smith, Jane", year=2024), ctx)
+    tool.add(AddInputs(title="A Quiet Paper", authors="Smith, Jane", year=2024, doi="10.1234/quiet"), ctx)
 
     result = tool.add(
-        AddInputs(title="A Quiet Paper Repeated", authors="Smith, Jane", year=2024),
+        AddInputs(title="A Quiet Paper Repeated", authors="Smith, Jane", year=2024, doi="10.1234/repeat"),
         ctx,
     )
     assert not result.added
@@ -64,10 +73,10 @@ def test_add_collision_blocked_without_force(tmp_docent_home):
 def test_add_collision_overwritten_with_force(tmp_docent_home):
     tool = PaperPipeline()
     ctx = _make_context()
-    tool.add(AddInputs(title="A Quiet Paper", authors="Smith, Jane", year=2024), ctx)
+    tool.add(AddInputs(title="A Quiet Paper", authors="Smith, Jane", year=2024, doi="10.1234/quiet"), ctx)
 
     result = tool.add(
-        AddInputs(title="A Newer Title", authors="Smith, Jane", year=2024, force=True),
+        AddInputs(title="A Newer Title", authors="Smith, Jane", year=2024, doi="10.1234/newer", force=True),
         ctx,
     )
     assert result.added
@@ -84,4 +93,4 @@ def test_add_without_metadata_returns_message(tmp_docent_home):
     ctx = _make_context()
     result = tool.add(AddInputs(), ctx)
     assert not result.added
-    assert "title" in result.message.lower() or "doi" in result.message.lower()
+    assert "--pdf" in result.message and "--doi" in result.message

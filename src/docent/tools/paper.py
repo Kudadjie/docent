@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from docent.config import write_setting
 from docent.core import Context, ProgressEvent, Tool, action, register_tool
@@ -44,12 +44,22 @@ class QueueEntry(BaseModel):
     file_status: str = "missing"
     keep_in_mendeley: bool = False
     pdf_path: str | None = None  # absolute path; reference-only, no copy. Step 9.
-    title_is_filename_stub: bool = False  # title came from filename heuristic, not PDF metadata or user. Used by sync-pull to skip CrossRef title search.
+    title_is_filename_stub: bool = False  # legacy: marked when title came from filename heuristic. Kept for backward-compat on existing queues; no longer drives logic.
+
+    @model_validator(mode="after")
+    def _require_pdf_or_doi(self) -> "QueueEntry":
+        # Identifier-free entries (no PDF AND no DOI) caused real-data sync-pull
+        # to fetch random papers. Hard-block them at construction.
+        if not self.pdf_path and not self.doi:
+            raise ValueError(
+                "QueueEntry requires pdf_path or doi — identifier-free entries are not allowed."
+            )
+        return self
 
 
 class AddInputs(BaseModel):
-    title: str | None = Field(None, description="Paper title. Optional if --pdf supplied; explicit value overrides extracted.")
-    authors: str | None = Field(None, description="Authors, comma-separated. Optional if --pdf supplied.")
+    title: str | None = Field(None, description="Optional title override; only meaningful with --pdf or --doi (title alone no longer adds).")
+    authors: str | None = Field(None, description="Optional authors override (comma-separated).")
     year: int | None = Field(None, description="Publication year.")
     doi: str | None = Field(None, description="DOI (e.g. '10.1234/foo'); triggers CrossRef lookup if supplied.")
     pdf: str | None = Field(None, description="Path to a PDF; metadata is extracted via DOI/CrossRef/PDF-info/filename fallback.")
@@ -246,14 +256,19 @@ class PaperPipeline(Tool):
     def __init__(self) -> None:
         self._store = PaperQueueStore(data_dir() / "paper")
 
-    @action(description="Add a paper to the reading queue.", input_schema=AddInputs)
+    @action(description="Add a paper to the reading queue (requires --pdf or --doi).", input_schema=AddInputs)
     def add(self, inputs: AddInputs, context: Context) -> AddResult:
-        if not inputs.pdf and not inputs.title and not inputs.doi:
+        if not inputs.pdf and not inputs.doi:
             return AddResult(
                 added=False, id="", title="",
                 queue_size=len(self._store.load_index()),
                 banner=self._store.banner_counts(),
-                message="Must supply --title, --doi, or --pdf.",
+                message=(
+                    "Must supply --pdf or --doi. Title-only adds were removed: "
+                    "without an identifier, the queue can't be reliably synced "
+                    "(CrossRef title search returned wrong papers). "
+                    "Use Scholar to search by title, then add by DOI."
+                ),
                 metadata_source="none",
             )
 
@@ -742,7 +757,7 @@ class PaperPipeline(Tool):
         )
 
     @action(
-        description="Try to fetch open-access PDFs for queued entries missing a file (Unpaywall + CrossRef title fallback).",
+        description="Try to fetch open-access PDFs for queued entries missing a file (Unpaywall by DOI).",
         input_schema=SyncPullInputs,
         name="sync-pull",
     )
@@ -823,21 +838,12 @@ class PaperPipeline(Tool):
 
             doi = entry.get("doi")
             if not doi:
-                if entry.get("title_is_filename_stub"):
-                    not_found.append({"id": eid, "reason": "insufficient-identifiers (no DOI; title came from filename heuristic, not trustworthy for CrossRef search)"})
-                    yield ProgressEvent(phase="pull", level="warn", message=f"{eid}: insufficient identifiers")
-                    continue
-                yield ProgressEvent(phase="pull", message=f"{eid}: searching CrossRef by title", item=eid)
-                doi = self._crossref_title_search(
-                    entry.get("title", ""), entry.get("authors", ""), context.executor
-                )
-                if doi:
-                    entry["doi"] = doi  # persisted at end of loop iteration
-                    mutated_ids.add(eid)
-                else:
-                    not_found.append({"id": eid, "reason": "no DOI on entry and CrossRef title search returned no confident match"})
-                    yield ProgressEvent(phase="pull", level="warn", message=f"{eid}: no DOI resolvable")
-                    continue
+                # Post-invariant: an entry with neither pdf_path nor doi can't
+                # be persisted. If we still see one (legacy queue, manual edit),
+                # fail fast — title-search produced wrong papers in real data.
+                not_found.append({"id": eid, "reason": "insufficient-identifiers (no DOI; identifier-free entries can't be synced)"})
+                yield ProgressEvent(phase="pull", level="warn", message=f"{eid}: insufficient identifiers")
+                continue
 
             up = self._unpaywall_lookup(doi, email, context.executor)
             if up is None:
@@ -1140,65 +1146,6 @@ class PaperPipeline(Tool):
             "doi_url": data.get("doi_url") or f"https://doi.org/{clean}",
             "journal": journal,
         }
-
-    def _crossref_title_search(self, title: str, authors: str, executor: Any) -> str | None:
-        """Resolve a DOI from a title (and optional first-author surname) via CrossRef.
-
-        Returns the top hit's DOI only when its CrossRef-returned title matches
-        the query title closely (token-sorted SequenceMatcher ratio ≥ 0.6).
-        CrossRef's relevance ranking is not enough — for filename-stub queries
-        it confidently returns unrelated papers.
-        """
-        if not title:
-            return None
-        from urllib.parse import quote_plus
-        query = quote_plus(title.strip())
-        url = f"https://api.crossref.org/works?query.bibliographic={query}&rows=3"
-        if authors:
-            first = authors.split(",")[0].strip().split()
-            if first:
-                surname = first[-1]
-                url += f"&query.author={quote_plus(surname)}"
-        try:
-            result = executor.run(
-                ["curl", "-sS", "--max-time", "10",
-                 "-H", "User-Agent: docent/0.1.0",
-                 url],
-                check=False,
-            )
-        except Exception:
-            return None
-        if result.returncode != 0 or not result.stdout:
-            return None
-        try:
-            data = json.loads(result.stdout)
-        except json.JSONDecodeError:
-            return None
-        items = (data.get("message") or {}).get("items") or []
-        for item in items:
-            doi = item.get("DOI")
-            if not doi:
-                continue
-            returned_title_list = item.get("title") or []
-            returned_title = returned_title_list[0] if returned_title_list else ""
-            if self._title_match_ratio(title, returned_title) >= 0.6:
-                return doi
-        return None
-
-    @staticmethod
-    def _title_match_ratio(a: str, b: str) -> float:
-        """Order- and case-insensitive title similarity in [0, 1].
-
-        Uses difflib.SequenceMatcher over space-joined sorted word tokens,
-        so subtitle additions still rank high while unrelated text drops near 0.
-        """
-        from difflib import SequenceMatcher
-        def norm(s: str) -> str:
-            return " ".join(sorted(re.findall(r"\w+", (s or "").lower())))
-        na, nb = norm(a), norm(b)
-        if not na or not nb:
-            return 0.0
-        return SequenceMatcher(None, na, nb).ratio()
 
     @staticmethod
     def _download_pdf(url: str, dest: Path, executor: Any) -> bool:

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from docent.config import load_settings
 from docent.core.context import Context
-from docent.execution.executor import Executor
+from docent.execution.executor import ProcessResult
 from docent.llm import LLMClient
 from docent.tools.paper import (
     AddInputs,
@@ -16,16 +16,21 @@ from docent.tools.paper import (
 )
 
 
+class _StubExecutor:
+    def run(self, args, *, timeout=None, cwd=None, env=None, check=True):
+        return ProcessResult(args=list(args), returncode=1, stdout="", stderr="stub", duration=0.0)
+
+
 def _ctx() -> Context:
     settings = load_settings()
-    return Context(settings=settings, llm=LLMClient(settings), executor=Executor())
+    return Context(settings=settings, llm=LLMClient(settings), executor=_StubExecutor())
 
 
 def test_queue_clear_without_yes_is_a_dry_report(tmp_docent_home):
     tool = PaperPipeline()
     ctx = _ctx()
-    tool.add(AddInputs(title="A", authors="X, Y", year=2024), ctx)
-    tool.add(AddInputs(title="B", authors="X, Y", year=2025), ctx)
+    tool.add(AddInputs(title="A", authors="X, Y", year=2024, doi="10.1234/a"), ctx)
+    tool.add(AddInputs(title="B", authors="X, Y", year=2025, doi="10.1234/b"), ctx)
 
     result = tool.queue_clear(QueueClearInputs(), ctx)
     assert result.cleared is False
@@ -39,8 +44,8 @@ def test_queue_clear_without_yes_is_a_dry_report(tmp_docent_home):
 def test_queue_clear_with_yes_empties_queue(tmp_docent_home):
     tool = PaperPipeline()
     ctx = _ctx()
-    tool.add(AddInputs(title="A", authors="X, Y", year=2024), ctx)
-    tool.add(AddInputs(title="B", authors="X, Y", year=2025), ctx)
+    tool.add(AddInputs(title="A", authors="X, Y", year=2024, doi="10.1234/a"), ctx)
+    tool.add(AddInputs(title="B", authors="X, Y", year=2025, doi="10.1234/b"), ctx)
 
     result = tool.queue_clear(QueueClearInputs(yes=True), ctx)
     assert result.cleared is True

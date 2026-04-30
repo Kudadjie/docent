@@ -211,62 +211,18 @@ def test_network_error_buckets_correctly(tmp_docent_home, tmp_path):
     assert result.downloaded == []
 
 
-def test_title_fallback_resolves_doi_then_pulls(tmp_docent_home, tmp_path):
+def test_legacy_no_doi_entry_fails_fast(tmp_docent_home, tmp_path):
+    """Post-invariant: identifier-free entries can't be persisted via add().
+    A legacy queue file with such an entry must surface as insufficient-identifiers,
+    not trigger any network call. Persisting via _store directly bypasses the
+    pydantic validator the same way a hand-edited queue.json would."""
     db = tmp_path / "Papers"
     db.mkdir()
 
-    def crossref(args):
-        if any("api.crossref.org/works?" in a for a in args):
-            return _ok(args, json.dumps({
-                "message": {"items": [
-                    {"DOI": "10.1234/resolved", "title": ["Resolved Topic"]}
-                ]}
-            }))
-        return None
+    def any_call(args):
+        raise AssertionError(f"network must not be hit for identifier-free entry: {args}")
 
-    def unpaywall(args):
-        if any("api.unpaywall.org" in a for a in args):
-            assert "10.1234/resolved" in args[-1]
-            return _ok(args, json.dumps({
-                "is_oa": True,
-                "doi_url": "https://doi.org/10.1234/resolved",
-                "journal_name": "OA J",
-                "best_oa_location": {"url_for_pdf": "https://example.org/r.pdf"},
-            }))
-        return None
-
-    def download(args):
-        if "-o" in args:
-            Path(args[args.index("-o") + 1]).write_bytes(b"%PDF-1.4\n")
-            return ProcessResult(args=list(args), returncode=0, stdout="", stderr="", duration=0.0)
-        return None
-
-    ctx = _ctx(database_dir=db, executor=FakeExecutor(handlers=[crossref, unpaywall, download]))
-    tool = PaperPipeline()
-    tool.add(AddInputs(title="Resolved Topic", authors="Doe, A", year=2023), ctx)
-
-    result = _drain(tool.sync_pull(SyncPullInputs(), ctx))
-    assert len(result.downloaded) == 1
-    queue = tool._store.load_queue()
-    assert queue[0]["doi"] == "10.1234/resolved"
-
-
-def test_filename_stub_with_no_doi_fails_fast(tmp_docent_home, tmp_path):
-    """Bug 1: identifier-free entries (no DOI, title from filename) must not
-    trigger CrossRef title search — that's what fetched the wrong Arabic paper
-    in real-data testing."""
-    db = tmp_path / "Papers"
-    db.mkdir()
-
-    crossref_called = {"flag": False}
-
-    def crossref(args):
-        if any("api.crossref.org" in a for a in args):
-            crossref_called["flag"] = True
-            return _ok(args, json.dumps({"message": {"items": []}}))
-        return None
-
-    ctx = _ctx(database_dir=db, executor=FakeExecutor(handlers=[crossref]))
+    ctx = _ctx(database_dir=db, executor=FakeExecutor(handlers=[any_call]))
     tool = PaperPipeline()
     tool._store.save_queue([{
         "id": "unknown-nd-01",
@@ -286,77 +242,21 @@ def test_filename_stub_with_no_doi_fails_fast(tmp_docent_home, tmp_path):
     }])
 
     result = _drain(tool.sync_pull(SyncPullInputs(id="unknown-nd-01"), ctx))
-    assert crossref_called["flag"] is False, "CrossRef must not be called for filename-stub entries"
     assert len(result.not_found) == 1
     assert "insufficient-identifiers" in result.not_found[0]["reason"]
 
 
-def test_crossref_title_search_rejects_unrelated_match(tmp_docent_home, tmp_path):
-    """Bug 1: even when a title is provided, CrossRef's top hit must be
-    rejected if it has nothing to do with the query (the fuzzy guard)."""
+def test_add_rejects_title_only(tmp_docent_home, tmp_path):
+    """Identifier-free adds removed: title without --pdf or --doi is rejected."""
     db = tmp_path / "Papers"
     db.mkdir()
-
-    def crossref(args):
-        if any("api.crossref.org/works?" in a for a in args):
-            return _ok(args, json.dumps({
-                "message": {"items": [
-                    {"DOI": "10.9999/garbage", "title": ["Quantum Field Theory in Curved Spacetime"]}
-                ]}
-            }))
-        return None
-
-    def unpaywall(args):
-        if any("api.unpaywall.org" in a for a in args):
-            raise AssertionError("Unpaywall must not be called when CrossRef returned a non-matching title")
-        return None
-
-    ctx = _ctx(database_dir=db, executor=FakeExecutor(handlers=[crossref, unpaywall]))
+    ctx = _ctx(database_dir=db)
     tool = PaperPipeline()
-    tool.add(AddInputs(title="Vehicle Dynamics Control Survey", authors="Doe, J", year=2021), ctx)
 
-    result = _drain(tool.sync_pull(SyncPullInputs(), ctx))
-    assert result.downloaded == []
-    assert len(result.not_found) == 1
-    assert "no confident match" in result.not_found[0]["reason"]
-
-
-def test_crossref_title_search_accepts_close_match(tmp_docent_home, tmp_path):
-    """Bug 1 regression guard: subtitle additions must still pass the fuzzy gate."""
-    db = tmp_path / "Papers"
-    db.mkdir()
-
-    def crossref(args):
-        if any("api.crossref.org/works?" in a for a in args):
-            return _ok(args, json.dumps({
-                "message": {"items": [
-                    {"DOI": "10.1234/match", "title": ["Transformers for Computer Vision: A Comprehensive Survey"]}
-                ]}
-            }))
-        return None
-
-    def unpaywall(args):
-        if any("api.unpaywall.org" in a for a in args):
-            return _ok(args, json.dumps({
-                "is_oa": True,
-                "doi_url": "https://doi.org/10.1234/match",
-                "journal_name": "OA",
-                "best_oa_location": {"url_for_pdf": "https://example.org/m.pdf"},
-            }))
-        return None
-
-    def download(args):
-        if "-o" in args:
-            Path(args[args.index("-o") + 1]).write_bytes(b"%PDF-1.4\n")
-            return ProcessResult(args=list(args), returncode=0, stdout="application/pdf", stderr="", duration=0.0)
-        return None
-
-    ctx = _ctx(database_dir=db, executor=FakeExecutor(handlers=[crossref, unpaywall, download]))
-    tool = PaperPipeline()
-    tool.add(AddInputs(title="Transformers for Computer Vision", authors="Doe, J", year=2023), ctx)
-
-    result = _drain(tool.sync_pull(SyncPullInputs(), ctx))
-    assert len(result.downloaded) == 1
+    result = tool.add(AddInputs(title="Just a title", authors="X, Y", year=2024), ctx)
+    assert result.added is False
+    assert "--pdf or --doi" in result.message
+    assert tool._store.load_queue() == []
 
 
 def test_no_oa_summary_includes_institutional_hint(tmp_docent_home, tmp_path):
