@@ -44,6 +44,7 @@ class QueueEntry(BaseModel):
     file_status: str = "missing"
     keep_in_mendeley: bool = False
     pdf_path: str | None = None  # absolute path; reference-only, no copy. Step 9.
+    title_is_filename_stub: bool = False  # title came from filename heuristic, not PDF metadata or user. Used by sync-pull to skip CrossRef title search.
 
 
 class AddInputs(BaseModel):
@@ -175,6 +176,18 @@ class ScanResult(BaseModel):
     message: str
 
 
+class QueueClearInputs(BaseModel):
+    yes: bool = Field(False, description="Confirm: actually clear the queue. Without this, the action reports the size and exits.")
+
+
+class QueueClearResult(BaseModel):
+    cleared: bool
+    removed_count: int
+    queue_size: int
+    banner: BannerCounts
+    message: str
+
+
 class SyncStatusInputs(BaseModel):
     pass
 
@@ -298,6 +311,7 @@ class PaperPipeline(Tool):
             notes=inputs.notes,
             pdf_path=pdf_abs,
             file_status="found" if pdf_abs else "missing",
+            title_is_filename_stub=(source == "filename"),
         )
 
         queue = self._store.load_queue()
@@ -432,6 +446,32 @@ class PaperPipeline(Tool):
             ok=True, id=inputs.id, entry=QueueEntry(**entry),
             queue_size=len(queue), banner=self._store.banner_counts(),
             message=f"Updated {inputs.id!r}: {sorted(updates.keys())}.",
+        )
+
+    @action(
+        description="Empty the reading queue (irreversible). Re-run with --yes to actually clear.",
+        input_schema=QueueClearInputs,
+        name="queue-clear",
+    )
+    def queue_clear(self, inputs: QueueClearInputs, context: Context) -> QueueClearResult:
+        queue = self._store.load_queue()
+        n = len(queue)
+        if not inputs.yes:
+            return QueueClearResult(
+                cleared=False,
+                removed_count=0,
+                queue_size=n,
+                banner=self._store.banner_counts(),
+                message=f"{n} entries in queue. Re-run with --yes to clear.",
+            )
+        self._store.save_queue([])
+        self._log_event("queue_clear", removed=n)
+        return QueueClearResult(
+            cleared=True,
+            removed_count=n,
+            queue_size=0,
+            banner=self._store.banner_counts(),
+            message=f"Cleared {n} entries from the queue.",
         )
 
     @action(description="Mark an entry as done.", input_schema=IdOnlyInputs)
@@ -783,6 +823,10 @@ class PaperPipeline(Tool):
 
             doi = entry.get("doi")
             if not doi:
+                if entry.get("title_is_filename_stub"):
+                    not_found.append({"id": eid, "reason": "insufficient-identifiers (no DOI; title came from filename heuristic, not trustworthy for CrossRef search)"})
+                    yield ProgressEvent(phase="pull", level="warn", message=f"{eid}: insufficient identifiers")
+                    continue
                 yield ProgressEvent(phase="pull", message=f"{eid}: searching CrossRef by title", item=eid)
                 doi = self._crossref_title_search(
                     entry.get("title", ""), entry.get("authors", ""), context.executor
@@ -791,7 +835,7 @@ class PaperPipeline(Tool):
                     entry["doi"] = doi  # persisted at end of loop iteration
                     mutated_ids.add(eid)
                 else:
-                    not_found.append({"id": eid, "reason": "no DOI on entry and CrossRef title search returned nothing"})
+                    not_found.append({"id": eid, "reason": "no DOI on entry and CrossRef title search returned no confident match"})
                     yield ProgressEvent(phase="pull", level="warn", message=f"{eid}: no DOI resolvable")
                     continue
 
@@ -864,6 +908,11 @@ class PaperPipeline(Tool):
             + (f", {len(dry_run_oa)} OA (dry-run)" if dry_run else "")
             + "."
         )
+        if no_oa:
+            summary += (
+                f" Closed-access papers expose `doi_url` — try institutional access "
+                f"(VPN / library proxy / OpenAthens) or interlibrary loan via the link."
+            )
         return SyncPullResult(
             database_dir=str(database_dir),
             downloaded=downloaded,
@@ -1095,8 +1144,10 @@ class PaperPipeline(Tool):
     def _crossref_title_search(self, title: str, authors: str, executor: Any) -> str | None:
         """Resolve a DOI from a title (and optional first-author surname) via CrossRef.
 
-        Returns the top hit's DOI or None. We do not fuzzy-match — CrossRef's
-        relevance ranking is the filter. Caller decides whether to trust it.
+        Returns the top hit's DOI only when its CrossRef-returned title matches
+        the query title closely (token-sorted SequenceMatcher ratio ≥ 0.6).
+        CrossRef's relevance ranking is not enough — for filename-stub queries
+        it confidently returns unrelated papers.
         """
         if not title:
             return None
@@ -1126,37 +1177,80 @@ class PaperPipeline(Tool):
         items = (data.get("message") or {}).get("items") or []
         for item in items:
             doi = item.get("DOI")
-            if doi:
+            if not doi:
+                continue
+            returned_title_list = item.get("title") or []
+            returned_title = returned_title_list[0] if returned_title_list else ""
+            if self._title_match_ratio(title, returned_title) >= 0.6:
                 return doi
         return None
 
     @staticmethod
-    def _download_pdf(url: str, dest: Path, executor: Any) -> bool:
-        """Download `url` to `dest`. Returns True iff curl exited 0 and a non-empty file landed.
+    def _title_match_ratio(a: str, b: str) -> float:
+        """Order- and case-insensitive title similarity in [0, 1].
 
-        We don't sniff magic bytes — premature; revisit if real-data testing
-        shows publishers handing back HTML paywall pages that masquerade as
-        PDFs.
+        Uses difflib.SequenceMatcher over space-joined sorted word tokens,
+        so subtitle additions still rank high while unrelated text drops near 0.
+        """
+        from difflib import SequenceMatcher
+        def norm(s: str) -> str:
+            return " ".join(sorted(re.findall(r"\w+", (s or "").lower())))
+        na, nb = norm(a), norm(b)
+        if not na or not nb:
+            return 0.0
+        return SequenceMatcher(None, na, nb).ratio()
+
+    @staticmethod
+    def _download_pdf(url: str, dest: Path, executor: Any) -> bool:
+        """Download `url` to `dest`. Returns True iff curl succeeded AND the
+        response is actually a PDF.
+
+        Real-data test (10.3390/vehicles3040047) showed Unpaywall pdf_urls can
+        redirect to HTML landing pages; without validation we'd silently write
+        a 1KB HTML file with `.pdf` extension. We check both Content-Type
+        (returned via curl `-w %{content_type}`) and the `%PDF-` magic bytes;
+        either failing discards the file.
         """
         dest.parent.mkdir(parents=True, exist_ok=True)
         try:
             result = executor.run(
                 ["curl", "-sSL", "--max-time", "60",
                  "-H", "User-Agent: docent/0.1.0",
+                 "-w", "%{content_type}",
                  "-o", str(dest),
                  url],
                 check=False,
             )
         except Exception:
             return False
-        if result.returncode != 0:
+
+        def _discard() -> bool:
             if dest.exists():
                 try:
                     dest.unlink()
                 except OSError:
                     pass
             return False
-        return dest.exists() and dest.stat().st_size > 0
+
+        if result.returncode != 0:
+            return _discard()
+        if not dest.exists() or dest.stat().st_size == 0:
+            return _discard()
+
+        content_type = (result.stdout or "").strip().lower()
+        # Some servers omit Content-Type; rely on magic bytes only when we
+        # have nothing to check against.
+        if content_type and "pdf" not in content_type:
+            return _discard()
+
+        try:
+            with dest.open("rb") as f:
+                head = f.read(5)
+        except OSError:
+            return _discard()
+        if head != b"%PDF-":
+            return _discard()
+        return True
 
     @staticmethod
     def _extract_pdf_metadata(pdf_path: str) -> dict[str, Any] | None:
