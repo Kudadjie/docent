@@ -20,7 +20,7 @@ from docent.core import Context, ProgressEvent, Tool, action, register_tool
 from docent.learning import RunLog
 from docent.tools.paper_metadata import resolve_metadata
 from docent.tools.paper_store import BannerCounts, PaperQueueStore
-from docent.tools.paper_sync import download_pdf, unpaywall_lookup
+from docent.tools.paper_sync import download_pdf, move_to_watch, unpaywall_lookup
 from docent.utils.paths import data_dir
 from docent.utils.prompt import NoInteractiveError, prompt_for_path
 
@@ -46,6 +46,7 @@ class QueueEntry(BaseModel):
     file_status: str = "missing"
     keep_in_mendeley: bool = False
     pdf_path: str | None = None  # absolute path; reference-only, no copy. Step 9.
+    promoted_at: str | None = None  # ISO timestamp when sync-promote moved the PDF into Watch. Step 11.3.
     title_is_filename_stub: bool = False  # legacy: marked when title came from filename heuristic. Kept for backward-compat on existing queues; no longer drives logic.
 
     @model_validator(mode="after")
@@ -227,6 +228,36 @@ class SyncPullResult(BaseModel):
     network_error: list[dict[str, str]]
     already_has_file: list[str]
     dry_run_oa: list[dict[str, str]]
+    summary: str
+    message: str = ""
+
+
+class SyncPromoteInputs(BaseModel):
+    id: str | None = Field(None, description="Single entry id; if omitted, all eligible entries (kept + has-file + not promoted) are tried.")
+    dry_run: bool = Field(False, description="Report what would be moved without touching disk or queue.")
+
+
+class SyncPromoteResult(BaseModel):
+    """Per-entry buckets after running sync-promote.
+
+    `promoted`: {id, watch_path} — file moved this run; `already_promoted`:
+    [id] — promoted_at already set or filename already in Watch (no work);
+    `healed`: {id, reason} — metadata updated to reflect a pre-existing
+    Watch placement (manual-move or external-move); `missing_file`:
+    {id, reason}; `not_eligible`: {id, reason} — auto mode skipping
+    non-kept entries; `failed`: {id, error} — collisions or I/O errors.
+    `dry_run_promote`: {id, watch_path} — only populated when dry_run=True.
+    """
+
+    database_dir: str | None
+    watch_dir: str | None
+    promoted: list[dict[str, str]]
+    already_promoted: list[str]
+    healed: list[dict[str, str]]
+    missing_file: list[dict[str, str]]
+    not_eligible: list[dict[str, str]]
+    failed: list[dict[str, str]]
+    dry_run_promote: list[dict[str, str]]
     summary: str
     message: str = ""
 
@@ -737,6 +768,7 @@ class PaperPipeline(Tool):
             if e.get("keep_in_mendeley")
             and e.get("pdf_path")
             and Path(e["pdf_path"]).exists()
+            and not e.get("promoted_at")
             and Path(e["pdf_path"]).name not in watch_filenames
         ]
 
@@ -931,6 +963,204 @@ class PaperPipeline(Tool):
             dry_run_oa=dry_run_oa,
             summary=summary,
         )
+
+    @action(
+        description="Move kept PDFs from database_dir into the Mendeley Watch folder; sets promoted_at.",
+        input_schema=SyncPromoteInputs,
+        name="sync-promote",
+    )
+    def sync_promote(self, inputs: SyncPromoteInputs, context: Context):
+        empty = SyncPromoteResult(
+            database_dir=None, watch_dir=None,
+            promoted=[], already_promoted=[], healed=[],
+            missing_file=[], not_eligible=[], failed=[], dry_run_promote=[],
+            summary="",
+        )
+        try:
+            database_dir, err = self._require_database_dir(context)
+        except NoInteractiveError as e:
+            return empty.model_copy(update={"message": (
+                f"paper.database_dir not configured. Run "
+                f"`docent paper config-set database_dir <path>` or set "
+                f"DOCENT_PAPER__DATABASE_DIR. ({e})"
+            )})
+        if database_dir is None:
+            return empty.model_copy(update={"message": err or "Cancelled - no database folder configured."})
+        if not database_dir.is_dir():
+            return empty.model_copy(update={
+                "database_dir": str(database_dir),
+                "message": f"database_dir does not exist: {database_dir}.",
+            })
+
+        watch_subdir = context.settings.paper.mendeley_watch_subdir
+        if not watch_subdir:
+            return empty.model_copy(update={
+                "database_dir": str(database_dir),
+                "message": (
+                    "paper.mendeley_watch_subdir not configured. Run "
+                    "`docent paper config-set mendeley_watch_subdir <relpath>` "
+                    "(e.g. 'Mendeley Watch')."
+                ),
+            })
+        watch_dir = (database_dir / watch_subdir).expanduser()
+
+        queue = self._store.load_queue()
+        if inputs.id is not None:
+            targets = [e for e in queue if e.get("id") == inputs.id]
+            if not targets:
+                return empty.model_copy(update={
+                    "database_dir": str(database_dir),
+                    "watch_dir": str(watch_dir),
+                    "message": f"No entry with id {inputs.id!r}.",
+                })
+            single_id_mode = True
+        else:
+            targets = list(queue)
+            single_id_mode = False
+
+        return self._sync_promote_run(
+            targets, database_dir, watch_dir, single_id_mode, inputs.dry_run, context
+        )
+
+    def _sync_promote_run(
+        self,
+        targets: list[dict[str, Any]],
+        database_dir: Path,
+        watch_dir: Path,
+        single_id_mode: bool,
+        dry_run: bool,
+        context: Context,
+    ):
+        promoted: list[dict[str, str]] = []
+        already_promoted: list[str] = []
+        healed: list[dict[str, str]] = []
+        missing_file: list[dict[str, str]] = []
+        not_eligible: list[dict[str, str]] = []
+        failed: list[dict[str, str]] = []
+        dry_run_promote: list[dict[str, str]] = []
+        mutated: dict[str, dict[str, Any]] = {}
+
+        yield ProgressEvent(phase="discover", message=f"{len(targets)} entry/entries to consider.")
+
+        for i, entry in enumerate(targets, 1):
+            eid = entry.get("id", "?")
+            yield ProgressEvent(phase="promote", current=i, total=len(targets), item=eid)
+
+            if not single_id_mode and not entry.get("keep_in_mendeley"):
+                not_eligible.append({"id": eid, "reason": "keep_in_mendeley=False (use --id to override)"})
+                continue
+
+            if entry.get("promoted_at"):
+                already_promoted.append(eid)
+                continue
+
+            pdf_path = entry.get("pdf_path")
+            if not pdf_path:
+                missing_file.append({"id": eid, "reason": "no pdf_path tracked"})
+                yield ProgressEvent(phase="promote", level="warn", message=f"{eid}: no pdf_path")
+                continue
+
+            src = Path(pdf_path)
+            src_exists = src.exists()
+
+            # Heal-on-already-in-watch: pdf_path resolves and is already inside watch_dir.
+            if src_exists and self._path_in_watch(src, watch_dir):
+                if dry_run:
+                    already_promoted.append(eid)
+                    continue
+                ts = datetime.now().isoformat()
+                mutated[eid] = {"promoted_at": ts}
+                healed.append({"id": eid, "reason": "pdf_path already inside Watch — set promoted_at"})
+                yield ProgressEvent(phase="promote", message=f"{eid}: already in Watch, healed metadata")
+                continue
+
+            # Heal-on-external-move: pdf_path doesn't resolve, but a file with that filename exists in Watch.
+            if not src_exists:
+                candidate = watch_dir / src.name
+                if candidate.exists():
+                    if dry_run:
+                        already_promoted.append(eid)
+                        continue
+                    ts = datetime.now().isoformat()
+                    new_pdf_path = str(candidate.resolve())
+                    mutated[eid] = {"promoted_at": ts, "pdf_path": new_pdf_path, "file_status": "found"}
+                    healed.append({"id": eid, "reason": f"file found in Watch as {src.name} — pdf_path repointed"})
+                    yield ProgressEvent(phase="promote", message=f"{eid}: external move detected, healed pdf_path")
+                    continue
+                missing_file.append({"id": eid, "reason": f"pdf_path does not exist on disk: {src}"})
+                yield ProgressEvent(phase="promote", level="warn", message=f"{eid}: file missing")
+                continue
+
+            dest = watch_dir / src.name
+            if dry_run:
+                dry_run_promote.append({"id": eid, "watch_path": str(dest)})
+                yield ProgressEvent(phase="promote", message=f"{eid}: would move to {dest}")
+                continue
+
+            try:
+                actual_dest = move_to_watch(src, watch_dir)
+            except FileExistsError as e:
+                failed.append({"id": eid, "error": str(e)})
+                yield ProgressEvent(phase="promote", level="error", message=f"{eid}: {e}")
+                continue
+            except OSError as e:
+                failed.append({"id": eid, "error": f"move failed: {e}"})
+                yield ProgressEvent(phase="promote", level="error", message=f"{eid}: move failed: {e}")
+                continue
+
+            ts = datetime.now().isoformat()
+            mutated[eid] = {
+                "promoted_at": ts,
+                "pdf_path": str(actual_dest.resolve()),
+                "file_status": "found",
+            }
+            promoted.append({"id": eid, "watch_path": str(actual_dest.resolve())})
+
+        if mutated:
+            queue = self._store.load_queue()
+            by_id = {e.get("id"): e for e in queue}
+            for mid, fields in mutated.items():
+                if mid in by_id:
+                    by_id[mid].update(fields)
+            self._store.save_queue(queue)
+
+        self._log_event(
+            "sync_promote",
+            considered=len(targets),
+            promoted=len(promoted),
+            already_promoted=len(already_promoted),
+            healed=len(healed),
+            missing_file=len(missing_file),
+            failed=len(failed),
+            dry_run=dry_run,
+        )
+
+        summary = (
+            f"{len(promoted)} promoted, {len(already_promoted)} already promoted, "
+            f"{len(healed)} healed, {len(missing_file)} missing file, "
+            f"{len(not_eligible)} not eligible, {len(failed)} failed"
+            + (f", {len(dry_run_promote)} would-move (dry-run)" if dry_run else "")
+            + "."
+        )
+        return SyncPromoteResult(
+            database_dir=str(database_dir),
+            watch_dir=str(watch_dir),
+            promoted=promoted,
+            already_promoted=sorted(already_promoted),
+            healed=healed,
+            missing_file=missing_file,
+            not_eligible=not_eligible,
+            failed=failed,
+            dry_run_promote=dry_run_promote,
+            summary=summary,
+        )
+
+    @staticmethod
+    def _path_in_watch(pdf_path: Path, watch_dir: Path) -> bool:
+        try:
+            return watch_dir.resolve() in pdf_path.resolve().parents
+        except OSError:
+            return False
 
     # ------------------------------------------------------------------
     # Shared helpers - every paper action reuses these.
