@@ -20,6 +20,8 @@ from docent.core import Context, ProgressEvent, Tool, action, register_tool
 from docent.learning import RunLog
 from docent.tools.paper_metadata import resolve_metadata
 from docent.tools.paper_store import BannerCounts, PaperQueueStore
+from docent.tools.mendeley_client import lookup_doi as mendeley_lookup_doi
+from docent.tools.mendeley_client import search_library as mendeley_search_library
 from docent.tools.paper_sync import download_pdf, move_to_watch, unpaywall_lookup
 from docent.utils.paths import data_dir
 from docent.utils.prompt import NoInteractiveError, prompt_for_path
@@ -29,6 +31,8 @@ PRIORITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 
 _DEFAULT_DATABASE_DIR = "~/Documents/Papers"
 _KNOWN_PAPER_KEYS = {"database_dir", "mendeley_watch_subdir", "unpaywall_email"}
+# `mendeley_mcp_command` is a list field; config-set only handles strings today.
+# Power users can edit config.toml directly; defaulted to ["uvx", "mendeley-mcp"] in mendeley_client.
 
 
 class QueueEntry(BaseModel):
@@ -47,6 +51,7 @@ class QueueEntry(BaseModel):
     keep_in_mendeley: bool = False
     pdf_path: str | None = None  # absolute path; reference-only, no copy. Step 9.
     promoted_at: str | None = None  # ISO timestamp when sync-promote moved the PDF into Watch. Step 11.3.
+    mendeley_id: str | None = None  # Mendeley document id, populated by sync-mendeley. Step 11.4.
     title_is_filename_stub: bool = False  # legacy: marked when title came from filename heuristic. Kept for backward-compat on existing queues; no longer drives logic.
 
     @model_validator(mode="after")
@@ -258,6 +263,36 @@ class SyncPromoteResult(BaseModel):
     not_eligible: list[dict[str, str]]
     failed: list[dict[str, str]]
     dry_run_promote: list[dict[str, str]]
+    summary: str
+    message: str = ""
+
+
+class SyncMendeleyInputs(BaseModel):
+    id: str | None = Field(None, description="Single entry id; if omitted, all promoted entries lacking mendeley_id are tried.")
+    dry_run: bool = Field(False, description="Resolve Mendeley matches but do not persist mendeley_id.")
+    limit: int = Field(20, description="Max search results per query when DOI is unavailable.")
+
+
+class SyncMendeleyResult(BaseModel):
+    """Per-entry buckets after running sync-mendeley.
+
+    `linked`: {id, mendeley_id} - newly linked this run; `already_linked`:
+    [id] - mendeley_id already set; `not_found`: {id, reason} - Mendeley
+    returned no match; `ambiguous`: {id, candidates} - >1 search hit, user
+    must use `--id` and edit; `not_eligible`: {id, reason} - auto mode
+    skipping non-promoted entries; `failed`: {id, error} - transport / auth
+    failures (run `mendeley-auth login` if auth-shaped); `dry_run_link`:
+    {id, mendeley_id} - only populated when dry_run=True. `message` carries
+    early-exit reasons (no targets, etc.).
+    """
+
+    linked: list[dict[str, str]]
+    already_linked: list[str]
+    not_found: list[dict[str, str]]
+    ambiguous: list[dict[str, Any]]
+    not_eligible: list[dict[str, str]]
+    failed: list[dict[str, str]]
+    dry_run_link: list[dict[str, str]]
     summary: str
     message: str = ""
 
@@ -1154,6 +1189,196 @@ class PaperPipeline(Tool):
             dry_run_promote=dry_run_promote,
             summary=summary,
         )
+
+    @action(
+        description="Cross-check promoted entries against Mendeley library; populate mendeley_id on matches.",
+        input_schema=SyncMendeleyInputs,
+        name="sync-mendeley",
+    )
+    def sync_mendeley(self, inputs: SyncMendeleyInputs, context: Context):
+        empty = SyncMendeleyResult(
+            linked=[], already_linked=[], not_found=[], ambiguous=[],
+            not_eligible=[], failed=[], dry_run_link=[], summary="",
+        )
+
+        queue = self._store.load_queue()
+        if inputs.id is not None:
+            targets = [e for e in queue if e.get("id") == inputs.id]
+            if not targets:
+                return empty.model_copy(update={"message": f"No entry with id {inputs.id!r}."})
+            single_id_mode = True
+        else:
+            targets = list(queue)
+            single_id_mode = False
+
+        launch_command = context.settings.paper.mendeley_mcp_command  # None -> wrapper default
+        return self._sync_mendeley_run(targets, single_id_mode, inputs.dry_run, inputs.limit, launch_command, context)
+
+    def _sync_mendeley_run(
+        self,
+        targets: list[dict[str, Any]],
+        single_id_mode: bool,
+        dry_run: bool,
+        limit: int,
+        launch_command: list[str] | None,
+        context: Context,
+    ):
+        linked: list[dict[str, str]] = []
+        already_linked: list[str] = []
+        not_found: list[dict[str, str]] = []
+        ambiguous: list[dict[str, Any]] = []
+        not_eligible: list[dict[str, str]] = []
+        failed: list[dict[str, str]] = []
+        dry_run_link: list[dict[str, str]] = []
+        mutated: dict[str, str] = {}  # id -> mendeley_id
+
+        yield ProgressEvent(phase="discover", message=f"{len(targets)} entry/entries to consider.")
+
+        for i, entry in enumerate(targets, 1):
+            eid = entry.get("id", "?")
+            yield ProgressEvent(phase="link", current=i, total=len(targets), item=eid)
+
+            if not single_id_mode and not entry.get("promoted_at"):
+                not_eligible.append({"id": eid, "reason": "not promoted (use --id to override)"})
+                continue
+            if entry.get("mendeley_id"):
+                already_linked.append(eid)
+                continue
+
+            doi = entry.get("doi")
+            mid: str | None = None
+            search_candidates: list[dict[str, Any]] = []
+
+            if doi:
+                resp = mendeley_lookup_doi(doi, launch_command)
+                err = resp.get("error")
+                if err:
+                    failed.append({"id": eid, "error": self._mendeley_failure_hint(err)})
+                    yield ProgressEvent(phase="link", level="error", message=f"{eid}: {err}")
+                    continue
+                items = resp.get("items") or []
+                if items:
+                    mid = self._extract_mendeley_id(items[0])
+
+            if mid is None:
+                # Title fallback: build a single-string query (search tool only takes `query`).
+                title = entry.get("title") or ""
+                authors = entry.get("authors") or ""
+                first_author = authors.split(",")[0].strip() if authors else ""
+                query = f"{title} {first_author}".strip()
+                if not query:
+                    not_found.append({"id": eid, "reason": "no DOI or title to query"})
+                    continue
+                resp = mendeley_search_library(query, launch_command, limit=limit)
+                err = resp.get("error")
+                if err:
+                    failed.append({"id": eid, "error": self._mendeley_failure_hint(err)})
+                    yield ProgressEvent(phase="link", level="error", message=f"{eid}: {err}")
+                    continue
+                items = resp.get("items") or []
+                if not items:
+                    not_found.append({"id": eid, "reason": "Mendeley returned no match for DOI or title"})
+                    continue
+                if len(items) == 1:
+                    mid = self._extract_mendeley_id(items[0])
+                else:
+                    search_candidates = items[:5]
+                    ambiguous.append({
+                        "id": eid,
+                        "candidates": [self._candidate_summary(c) for c in search_candidates],
+                    })
+                    yield ProgressEvent(phase="link", level="warn", message=f"{eid}: {len(items)} candidates")
+                    continue
+
+            if mid is None:
+                not_found.append({"id": eid, "reason": "match returned but no Mendeley id field"})
+                continue
+
+            if dry_run:
+                dry_run_link.append({"id": eid, "mendeley_id": mid})
+                yield ProgressEvent(phase="link", message=f"{eid}: would link to {mid}")
+                continue
+
+            mutated[eid] = mid
+            linked.append({"id": eid, "mendeley_id": mid})
+
+        if mutated:
+            queue = self._store.load_queue()
+            by_id = {e.get("id"): e for e in queue}
+            for mid_eid, mendeley_id in mutated.items():
+                if mid_eid in by_id:
+                    by_id[mid_eid]["mendeley_id"] = mendeley_id
+            self._store.save_queue(queue)
+
+        self._log_event(
+            "sync_mendeley",
+            considered=len(targets),
+            linked=len(linked),
+            already_linked=len(already_linked),
+            not_found=len(not_found),
+            ambiguous=len(ambiguous),
+            failed=len(failed),
+            dry_run=dry_run,
+        )
+
+        summary = (
+            f"{len(linked)} linked, {len(already_linked)} already linked, "
+            f"{len(not_found)} not found, {len(ambiguous)} ambiguous, "
+            f"{len(not_eligible)} not eligible, {len(failed)} failed"
+            + (f", {len(dry_run_link)} would-link (dry-run)" if dry_run else "")
+            + "."
+        )
+        if any("auth:" in f.get("error", "") for f in failed):
+            summary += " Auth failure detected — run `mendeley-auth login` and retry."
+
+        return SyncMendeleyResult(
+            linked=linked,
+            already_linked=sorted(already_linked),
+            not_found=not_found,
+            ambiguous=ambiguous,
+            not_eligible=not_eligible,
+            failed=failed,
+            dry_run_link=dry_run_link,
+            summary=summary,
+        )
+
+    @staticmethod
+    def _extract_mendeley_id(item: dict[str, Any]) -> str | None:
+        """Library documents expose `id` (UUID); catalog items returned by
+        `mendeley_get_by_doi` expose `catalog_id` instead. Both are stable
+        Mendeley identifiers — store whichever the response carries.
+        """
+        for key in ("id", "catalog_id", "document_id", "mendeley_id"):
+            v = item.get(key)
+            if isinstance(v, str) and v:
+                return v
+        return None
+
+    @staticmethod
+    def _candidate_summary(item: dict[str, Any]) -> dict[str, str]:
+        title = item.get("title") or ""
+        year = item.get("year")
+        authors = item.get("authors") or item.get("author") or ""
+        if isinstance(authors, list):
+            authors = ", ".join(
+                " ".join(filter(None, [a.get("first_name", ""), a.get("last_name", "")])).strip()
+                if isinstance(a, dict) else str(a)
+                for a in authors[:3]
+            )
+        return {
+            "mendeley_id": PaperPipeline._extract_mendeley_id(item) or "",
+            "title": str(title),
+            "year": str(year) if year is not None else "",
+            "authors": str(authors),
+        }
+
+    @staticmethod
+    def _mendeley_failure_hint(error: str) -> str:
+        if error.startswith("auth:"):
+            return f"{error} (run `mendeley-auth login` to refresh tokens)"
+        if "launch command not found" in error:
+            return f"{error} (install with `uv tool install mendeley-mcp` or set paper.mendeley_mcp_command)"
+        return error
 
     @staticmethod
     def _path_in_watch(pdf_path: Path, watch_dir: Path) -> bool:

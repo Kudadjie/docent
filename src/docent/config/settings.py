@@ -21,6 +21,7 @@ class PaperSettings(BaseModel):
     database_dir: Path | None = None
     mendeley_watch_subdir: str | None = None
     unpaywall_email: str | None = None
+    mendeley_mcp_command: list[str] | None = None  # e.g. ["uvx", "mendeley-mcp"]; None -> default in mendeley_client.
 
 
 class Settings(BaseSettings):

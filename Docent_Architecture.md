@@ -186,8 +186,9 @@ Current status in `memory/build_progress.md`.
 11. **Paper sync ops** + Mendeley MCP adapter.
    - 11.1 ✅ `sync-status` — local cross-tab of queue × `database_dir` × `mendeley_watch_subdir`. Single-shot (sub-100ms; generator overhead unjustified). Buckets: `in_queue_with_file` / `in_queue_missing_file` / `orphan_pdfs` / `promotable` / `in_watch`.
    - 11.2 ✅ `sync-pull` — Unpaywall via `Context.executor` + curl; generator action; DOI direct path + CrossRef bibliographic title-search fallback (persists resolved DOI). New required `paper.unpaywall_email` config. Closed-access surfaces `doi_url` + `journal` so user can route to institutional access.
-   - 11.3 `sync-promote` — DB → Watch copy-and-stop. Adds `promoted_at` field on `QueueEntry`.
-   - 11.4 `sync-mendeley` + minimal MCP-client adapter (Docent calls Mendeley MCP). MCP-client wiring shape (subprocess via `Context.executor` vs in-process MCP client) settled here.
+   - 11.3 ✅ `sync-promote` — DB → Watch **move** (not copy; user prefers no duplicate PDFs — see `memory/decisions.md` 2026-05-01). Generator action. Adds `promoted_at` field on `QueueEntry`. Two heal branches (pdf_path already in Watch, or rotted pdf_path with expected filename in Watch) reconcile inconsistent prior state. Collisions hard-fail.
+   - 11.4 ✅ `sync-mendeley` + MCP-client adapter — **in-process `mcp` SDK chosen** (executor-subprocess was wrong for stateful protocol; see `memory/decisions.md` 2026-05-01). Generator action; auto mode (`promoted_at not None` AND `mendeley_id is None`), `--id` override, `--dry-run`. Buckets: `linked` / `already_linked` / `not_found` / `ambiguous` / `not_eligible` / `failed` / `dry_run_link`. Adds `mendeley_id` field on `QueueEntry`. New `paper.mendeley_mcp_command` setting (defaults to `["uvx", "mendeley-mcp"]`). Auth-shaped failures append `mendeley-auth login` hint to summary.
+   - 11.5 PDF metadata extraction improvements — scan all pages for DOI (today: first 5 only); add CrossRef bibliographic title-search fallback when PDF has `/Title` but no extractable DOI; add `paper scan --reextract` to upgrade existing stub-metadata entries.
 12. External `~/.docent/plugins/` discovery.
 13. Full MCP adapter (Docent exposes *itself* via MCP — last, after the native registry is battle-tested).
 
