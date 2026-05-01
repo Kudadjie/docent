@@ -18,7 +18,9 @@ from pydantic import BaseModel, Field, model_validator
 from docent.config import write_setting
 from docent.core import Context, ProgressEvent, Tool, action, register_tool
 from docent.learning import RunLog
+from docent.tools.paper_metadata import resolve_metadata
 from docent.tools.paper_store import BannerCounts, PaperQueueStore
+from docent.tools.paper_sync import download_pdf, unpaywall_lookup
 from docent.utils.paths import data_dir
 from docent.utils.prompt import NoInteractiveError, prompt_for_path
 
@@ -281,7 +283,7 @@ class PaperPipeline(Tool):
                 metadata_source="none",
             )
 
-        meta, source = self._resolve_metadata(inputs, context)
+        meta, source = resolve_metadata(inputs, context.executor)
         title = meta.get("title")
         if not title:
             return AddResult(
@@ -845,7 +847,7 @@ class PaperPipeline(Tool):
                 yield ProgressEvent(phase="pull", level="warn", message=f"{eid}: insufficient identifiers")
                 continue
 
-            up = self._unpaywall_lookup(doi, email, context.executor)
+            up = unpaywall_lookup(doi, email, context.executor)
             if up is None:
                 network_error.append({"id": eid, "reason": "Unpaywall lookup failed (network or rate limit)"})
                 yield ProgressEvent(phase="pull", level="error", message=f"{eid}: Unpaywall lookup failed")
@@ -874,7 +876,7 @@ class PaperPipeline(Tool):
 
             dest = database_dir / f"{eid}.pdf"
             yield ProgressEvent(phase="pull", message=f"{eid}: downloading", item=eid)
-            ok = self._download_pdf(pdf_url, dest, context.executor)
+            ok = download_pdf(pdf_url, dest, context.executor)
             if not ok:
                 network_error.append({"id": eid, "reason": f"download failed: {pdf_url}"})
                 yield ProgressEvent(phase="pull", level="error", message=f"{eid}: download failed")
@@ -1002,252 +1004,3 @@ class PaperPipeline(Tool):
         title_word = re.sub(r"[^a-zA-Z0-9]", "", first_title_word).lower() or "untitled"
         return f"{last_name}-{year_part}-{title_word}"
 
-    # ------------------------------------------------------------------
-    # Step 9: metadata fallback chain (DOI -> CrossRef -> PDF info -> filename).
-    # All helpers swallow exceptions and return None on failure so the chain
-    # can fall through cleanly.
-    # ------------------------------------------------------------------
-
-    def _resolve_metadata(self, inputs: AddInputs, context: Context) -> tuple[dict[str, Any], str]:
-        """Run fallback chain. Returns (metadata-dict, source-tag).
-
-        Explicit CLI fields are folded in last and always win.
-        """
-        extracted: dict[str, Any] = {}
-        source = "none"
-
-        if inputs.doi:
-            cr = self._crossref_lookup(inputs.doi, context.executor)
-            if cr:
-                extracted = cr
-                source = "doi-crossref"
-
-        if not extracted and inputs.pdf:
-            pdf_meta = self._extract_pdf_metadata(inputs.pdf)
-            if pdf_meta and pdf_meta.get("doi"):
-                cr = self._crossref_lookup(pdf_meta["doi"], context.executor)
-                if cr:
-                    extracted = cr
-                    source = "pdf-doi-crossref"
-            if not extracted and pdf_meta and pdf_meta.get("title"):
-                extracted = {k: v for k, v in pdf_meta.items() if k != "doi"}
-                if pdf_meta.get("doi"):
-                    extracted["doi"] = pdf_meta["doi"]
-                source = "pdf-metadata"
-            if not extracted.get("title"):
-                fallback = self._filename_heuristic(inputs.pdf)
-                # Keep any partial pdf metadata (e.g. /Author) and layer filename on top.
-                extracted = {**fallback, **extracted}
-                source = "filename"
-
-        explicit: dict[str, Any] = {}
-        if inputs.title:
-            explicit["title"] = inputs.title
-        if inputs.authors:
-            explicit["authors"] = inputs.authors
-        if inputs.year is not None:
-            explicit["year"] = inputs.year
-        if inputs.doi:
-            explicit["doi"] = inputs.doi
-
-        merged = {**extracted, **explicit}
-        if source == "none" and explicit:
-            source = "explicit"
-        return merged, source
-
-    def _crossref_lookup(self, doi: str, executor: Any) -> dict[str, Any] | None:
-        """Shell out to curl for CrossRef. Returns {title, authors, year, doi} or None."""
-        clean = doi.strip()
-        for prefix in ("https://doi.org/", "http://doi.org/", "doi:"):
-            if clean.lower().startswith(prefix):
-                clean = clean[len(prefix):]
-                break
-        url = f"https://api.crossref.org/works/{clean}"
-        try:
-            result = executor.run(
-                ["curl", "-sS", "--max-time", "10",
-                 "-H", "User-Agent: docent/0.1.0",
-                 url],
-                check=False,
-            )
-        except Exception:
-            return None
-        if result.returncode != 0 or not result.stdout:
-            return None
-        try:
-            data = json.loads(result.stdout)
-        except json.JSONDecodeError:
-            return None
-        msg = data.get("message")
-        if not isinstance(msg, dict):
-            return None
-        title_list = msg.get("title") or []
-        title = title_list[0].strip() if title_list else None
-        if not title:
-            return None
-        authors_list = msg.get("author") or []
-        # Format "Family Given, Family Given, ..." so _derive_id picks up the surname.
-        authors_str = ", ".join(
-            " ".join(filter(None, [a.get("family"), a.get("given")])) for a in authors_list
-        ) or "Unknown"
-        year = None
-        issued = (msg.get("issued") or {}).get("date-parts") or []
-        if issued and isinstance(issued[0], list) and issued[0]:
-            try:
-                year = int(issued[0][0])
-            except (TypeError, ValueError):
-                pass
-        return {"title": title, "authors": authors_str, "year": year, "doi": clean}
-
-    def _unpaywall_lookup(self, doi: str, email: str, executor: Any) -> dict[str, Any] | None:
-        """Shell out to curl for Unpaywall. Returns a dict on success, None on transport failure.
-
-        Success dict keys: `is_oa: bool`, `pdf_url: str | None`, `doi_url: str`,
-        `journal: str | None`. A 404 (DOI not indexed) returns
-        `{"status": "not_found"}` rather than None — we want to bucket it as
-        not-found, not as a network error.
-        """
-        clean = doi.strip()
-        for prefix in ("https://doi.org/", "http://doi.org/", "doi:"):
-            if clean.lower().startswith(prefix):
-                clean = clean[len(prefix):]
-                break
-        url = f"https://api.unpaywall.org/v2/{clean}?email={email}"
-        try:
-            result = executor.run(
-                ["curl", "-sS", "--max-time", "15",
-                 "-w", "\n__HTTP_STATUS__%{http_code}",
-                 "-H", "User-Agent: docent/0.1.0",
-                 url],
-                check=False,
-            )
-        except Exception:
-            return None
-        if result.returncode != 0 or not result.stdout:
-            return None
-        body, _, status_line = result.stdout.rpartition("\n__HTTP_STATUS__")
-        try:
-            status_code = int(status_line.strip())
-        except ValueError:
-            status_code = 0
-        if status_code == 404:
-            return {"status": "not_found"}
-        if status_code != 200:
-            return None
-        try:
-            data = json.loads(body)
-        except json.JSONDecodeError:
-            return None
-        best = data.get("best_oa_location") or {}
-        journal = data.get("journal_name")
-        return {
-            "is_oa": bool(data.get("is_oa")),
-            "pdf_url": best.get("url_for_pdf"),
-            "doi_url": data.get("doi_url") or f"https://doi.org/{clean}",
-            "journal": journal,
-        }
-
-    @staticmethod
-    def _download_pdf(url: str, dest: Path, executor: Any) -> bool:
-        """Download `url` to `dest`. Returns True iff curl succeeded AND the
-        response is actually a PDF.
-
-        Real-data test (10.3390/vehicles3040047) showed Unpaywall pdf_urls can
-        redirect to HTML landing pages; without validation we'd silently write
-        a 1KB HTML file with `.pdf` extension. We check both Content-Type
-        (returned via curl `-w %{content_type}`) and the `%PDF-` magic bytes;
-        either failing discards the file.
-        """
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            result = executor.run(
-                ["curl", "-sSL", "--max-time", "60",
-                 "-H", "User-Agent: docent/0.1.0",
-                 "-w", "%{content_type}",
-                 "-o", str(dest),
-                 url],
-                check=False,
-            )
-        except Exception:
-            return False
-
-        def _discard() -> bool:
-            if dest.exists():
-                try:
-                    dest.unlink()
-                except OSError:
-                    pass
-            return False
-
-        if result.returncode != 0:
-            return _discard()
-        if not dest.exists() or dest.stat().st_size == 0:
-            return _discard()
-
-        content_type = (result.stdout or "").strip().lower()
-        # Some servers omit Content-Type; rely on magic bytes only when we
-        # have nothing to check against.
-        if content_type and "pdf" not in content_type:
-            return _discard()
-
-        try:
-            with dest.open("rb") as f:
-                head = f.read(5)
-        except OSError:
-            return _discard()
-        if head != b"%PDF-":
-            return _discard()
-        return True
-
-    @staticmethod
-    def _extract_pdf_metadata(pdf_path: str) -> dict[str, Any] | None:
-        """Read PDF info dict + scan first 5 pages for a DOI. Returns dict or None."""
-        p = Path(pdf_path)
-        if not p.is_file():
-            return None
-        try:
-            from pypdf import PdfReader  # lazy import; keeps pypdf out of import-time cost
-            reader = PdfReader(str(p))
-        except Exception:
-            return None
-        out: dict[str, Any] = {}
-        info = getattr(reader, "metadata", None)
-        if info is not None:
-            try:
-                title = info.get("/Title")
-                author = info.get("/Author")
-            except Exception:
-                title = author = None
-            if title:
-                out["title"] = str(title).strip()
-            if author:
-                out["authors"] = str(author).strip()
-        doi_re = re.compile(r"\b10\.\d{4,9}/[-._;()/:A-Za-z0-9]+", re.IGNORECASE)
-        try:
-            pages = reader.pages[:5]
-        except Exception:
-            pages = []
-        for page in pages:
-            try:
-                text = page.extract_text() or ""
-            except Exception:
-                continue
-            m = doi_re.search(text)
-            if m:
-                out["doi"] = m.group(0).rstrip(".,;)")
-                break
-        return out or None
-
-    @staticmethod
-    def _filename_heuristic(pdf_path: str) -> dict[str, Any]:
-        """Last-resort: title from filename stem, year from any 4-digit number.
-
-        Year regex runs against the *normalized* title (underscores/hyphens
-        collapsed to spaces) so Mendeley-style `Smith_2019_topic.pdf` resolves
-        to year=2019 — `_` is a Python word char and would otherwise defeat `\b`.
-        """
-        stem = Path(pdf_path).stem
-        title = re.sub(r"[_\-]+", " ", stem).strip()
-        year_match = re.search(r"\b(?:19|20)\d{2}\b", title)
-        year = int(year_match.group(0)) if year_match else None
-        return {"title": title or "Untitled", "authors": "Unknown", "year": year}
