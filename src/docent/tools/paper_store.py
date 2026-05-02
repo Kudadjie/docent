@@ -2,7 +2,7 @@
 
 Owns three files inside `<root>/`:
 - queue.json - the source-of-truth list of QueueEntry dicts
-- queue-index.json - id -> {title, status, priority, file_status} for fast lookups
+- queue-index.json - id -> {title, status, priority} for fast lookups
 - state.json - banner counts + last_updated timestamp
 
 Reads return safe defaults if a file is missing. Writes self-initialize the
@@ -26,7 +26,6 @@ class BannerCounts(BaseModel):
     reading: int = 0
     done: int = 0
     db_files: int = 0
-    watch_files: int = 0
     mendeley_linked: int = 0
 
 
@@ -71,7 +70,6 @@ class PaperQueueStore:
             reading=data.get("reading", 0),
             done=data.get("done", 0),
             db_files=data.get("db_files", 0),
-            watch_files=data.get("watch_files", 0),
             mendeley_linked=data.get("mendeley_linked", 0),
         )
 
@@ -103,10 +101,9 @@ class PaperQueueStore:
     def _recompute_index(queue: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
         return {
             e["id"]: {
-                "title": e["title"],
+                "title": e.get("title", ""),
                 "status": e["status"],
                 "priority": e["priority"],
-                "file_status": e["file_status"],
             }
             for e in queue
         }
@@ -117,7 +114,6 @@ class PaperQueueStore:
             "reading": sum(1 for e in queue if e["status"] == "reading"),
             "done": sum(1 for e in queue if e["status"] == "done"),
             "db_files": 0,
-            "watch_files": 0,
             "mendeley_linked": 0,
             "last_updated": datetime.now().isoformat(),
         }

@@ -39,8 +39,8 @@ _KNOWN_PAPER_KEYS = {"database_dir", "unpaywall_email", "queue_collection"}
 
 class QueueEntry(BaseModel):
     id: str
-    title: str
-    authors: str
+    title: str = ""  # snapshot from Mendeley; overlay refreshes on read.
+    authors: str = ""  # snapshot from Mendeley; overlay refreshes on read.
     year: int | None = None
     doi: str | None = None
     added: str  # ISO date
@@ -49,22 +49,17 @@ class QueueEntry(BaseModel):
     course: str | None = None
     tags: list[str] = Field(default_factory=list)
     notes: str = ""
-    file_status: str = "missing"
-    keep_in_mendeley: bool = False
-    pdf_path: str | None = None  # absolute path; reference-only, no copy. Step 9.
-    promoted_at: str | None = None  # ISO timestamp when sync-promote moved the PDF into Watch. Step 11.3.
-    mendeley_id: str | None = None  # Mendeley document id, populated by sync-mendeley. Step 11.4.
-    title_is_filename_stub: bool = False  # legacy: marked when title came from filename heuristic. Kept for backward-compat on existing queues; no longer drives logic.
+    mendeley_id: str | None = None  # Mendeley document id; the canonical identifier post-Step 11.10.
+    started: str | None = None  # ISO timestamp when status -> reading.
+    finished: str | None = None  # ISO timestamp when status -> done.
 
     @model_validator(mode="after")
     def _require_identifier(self) -> "QueueEntry":
-        # Identifier-free entries (no PDF AND no DOI AND no Mendeley id) caused
-        # real-data sync-pull to fetch random papers. Mendeley-keyed entries
-        # (Step 11.6 sync-from-mendeley) are persistable without DOI/PDF
-        # because mendeley_id is itself a stable, definitive identifier.
-        if not self.pdf_path and not self.doi and not self.mendeley_id:
+        # Mendeley-keyed entries are the norm; DOI-only entries persist for
+        # sync-pull workflows (queue from a DOI before the PDF lands in Mendeley).
+        if not self.doi and not self.mendeley_id:
             raise ValueError(
-                "QueueEntry requires pdf_path, doi, or mendeley_id — identifier-free entries are not allowed."
+                "QueueEntry requires doi or mendeley_id — identifier-free entries are not allowed."
             )
         return self
 
@@ -164,7 +159,6 @@ class StatsResult(BaseModel):
     by_status: dict[str, int]
     by_priority: dict[str, int]
     by_course: dict[str, int]
-    keeping: int
     banner: BannerCounts
 
 
@@ -172,6 +166,17 @@ class ExportResult(BaseModel):
     format: str
     count: int
     content: str
+
+
+class MigrateInputs(BaseModel):
+    yes: bool = Field(False, description="Confirm: actually wipe queue.json to the new shape. Without this, the action reports what would happen.")
+
+
+class MigrateResult(BaseModel):
+    migrated: bool
+    backup_path: str | None
+    queue_size_before: int
+    message: str
 
 
 class QueueClearInputs(BaseModel):
@@ -250,20 +255,15 @@ class SyncFromMendeleyResult(BaseModel):
 
 class SyncStatusResult(BaseModel):
     database_dir: str | None
-    in_queue_with_file: list[str]  # ids
-    in_queue_missing_file: list[str]  # ids — queue says we have it, disk says no
-    orphan_pdfs: list[str]  # paths under database_dir not referenced by any queue entry
+    queue_size: int
+    database_pdfs: list[str]  # filenames in database_dir; Mendeley owns whether they're indexed.
     summary: str
     message: str = ""  # populated only on early-exit (no database configured)
 
 
 @register_tool
 class PaperPipeline(Tool):
-    """Reading queue + Mendeley sync (port of the paper-pipeline skill).
-
-    Step 7b: `add`. Step 8: `next`, `show`, `search`, `stats`, `remove`,
-    `edit`, `done`, `ready-to-read`, `mark-keeping`, `export`.
-    """
+    """Reading queue + Mendeley sync (port of the paper-pipeline skill)."""
 
     name = "paper"
     description = "Reading queue + Mendeley sync."
@@ -418,7 +418,6 @@ class PaperPipeline(Tool):
         by_status: dict[str, int] = {}
         by_priority: dict[str, int] = {}
         by_course: dict[str, int] = {}
-        keeping = 0
         for e in queue:
             s = e.get("status", "unknown")
             by_status[s] = by_status.get(s, 0) + 1
@@ -426,11 +425,9 @@ class PaperPipeline(Tool):
             by_priority[p] = by_priority.get(p, 0) + 1
             c = e.get("course") or "(none)"
             by_course[c] = by_course.get(c, 0) + 1
-            if e.get("keep_in_mendeley"):
-                keeping += 1
         return StatsResult(
             total=len(queue), by_status=by_status, by_priority=by_priority,
-            by_course=by_course, keeping=keeping, banner=self._store.banner_counts(),
+            by_course=by_course, banner=self._store.banner_counts(),
         )
 
     @action(description="Remove an entry from the queue.", input_schema=IdOnlyInputs)
@@ -496,6 +493,42 @@ class PaperPipeline(Tool):
             message=f"Cleared {n} entries from the queue.",
         )
 
+    @action(
+        description="One-shot: back up legacy queue.json to .bak and wipe to the new (Step 11.10) sidecar shape.",
+        input_schema=MigrateInputs,
+        name="migrate-to-mendeley-truth",
+    )
+    def migrate_to_mendeley_truth(self, inputs: MigrateInputs, context: Context) -> MigrateResult:
+        queue_path = self._store.queue_path
+        n = len(self._store.load_queue()) if queue_path.exists() else 0
+        if not inputs.yes:
+            return MigrateResult(
+                migrated=False,
+                backup_path=None,
+                queue_size_before=n,
+                message=(
+                    f"{n} entries in queue.json. Re-run with --yes to back up to "
+                    f"{queue_path.name}.bak and wipe to the new shape "
+                    f"(mendeley_id-keyed; title/authors/year/doi will be re-pulled from Mendeley)."
+                ),
+            )
+        backup_path: str | None = None
+        if queue_path.exists():
+            bak = queue_path.with_suffix(queue_path.suffix + ".bak")
+            bak.write_bytes(queue_path.read_bytes())
+            backup_path = str(bak)
+        self._store.save_queue([])
+        self._log_event("migrate_to_mendeley_truth", queue_size_before=n, backup_path=backup_path)
+        return MigrateResult(
+            migrated=True,
+            backup_path=backup_path,
+            queue_size_before=n,
+            message=(
+                f"Migrated. {n} entries backed up to {backup_path or '(no prior queue)'} "
+                f"and queue.json wiped. Run `docent paper sync-from-mendeley` to repopulate."
+            ),
+        )
+
     @action(description="Mark an entry as done.", input_schema=IdOnlyInputs)
     def done(self, inputs: IdOnlyInputs, context: Context) -> MutationResult:
         return self._set_status(inputs.id, "done")
@@ -503,21 +536,6 @@ class PaperPipeline(Tool):
     @action(description="Mark an entry as in-progress (currently reading).", input_schema=IdOnlyInputs)
     def ready_to_read(self, inputs: IdOnlyInputs, context: Context) -> MutationResult:
         return self._set_status(inputs.id, "reading")
-
-    @action(description="Flag an entry to be kept in Mendeley (used by future sync ops).", input_schema=IdOnlyInputs)
-    def mark_keeping(self, inputs: IdOnlyInputs, context: Context) -> MutationResult:
-        queue = self._store.load_queue()
-        entry = self._find_entry(queue, inputs.id)
-        if not entry:
-            return self._not_found(inputs.id, queue)
-        entry["keep_in_mendeley"] = True
-        self._store.save_queue(queue)
-        self._log_event("mark_keeping", id=inputs.id)
-        return MutationResult(
-            ok=True, id=inputs.id, entry=QueueEntry(**entry),
-            queue_size=len(queue), banner=self._store.banner_counts(),
-            message=f"Marked {inputs.id!r} for keeping.",
-        )
 
     @action(description="Export the queue (or a filtered subset).", input_schema=ExportInputs)
     def export(self, inputs: ExportInputs, context: Context) -> ExportResult:
@@ -574,15 +592,15 @@ class PaperPipeline(Tool):
         )
 
     @action(
-        description="Cross-tab queue against database_dir; report matched entries, missing files, and orphan PDFs.",
+        description="Report queue size and PDFs sitting in database_dir (Mendeley owns linkage).",
         input_schema=SyncStatusInputs,
         name="sync-status",
     )
     def sync_status(self, inputs: SyncStatusInputs, context: Context) -> SyncStatusResult:
         empty = SyncStatusResult(
             database_dir=None,
-            in_queue_with_file=[], in_queue_missing_file=[],
-            orphan_pdfs=[],
+            queue_size=0,
+            database_pdfs=[],
             summary="",
         )
         try:
@@ -604,36 +622,16 @@ class PaperPipeline(Tool):
             })
 
         db_pdfs, _ = PaperQueueStore.list_database_pdfs(database_dir, None)
-
         queue = self._store.load_queue()
-        tracked: dict[str, dict[str, Any]] = {}
-        in_queue_with_file: list[str] = []
-        in_queue_missing_file: list[str] = []
-        for e in queue:
-            pdf_path = e.get("pdf_path")
-            if pdf_path:
-                tracked[str(Path(pdf_path).resolve())] = e
-                if Path(pdf_path).exists():
-                    in_queue_with_file.append(e["id"])
-                else:
-                    in_queue_missing_file.append(e["id"])
-            else:
-                in_queue_missing_file.append(e["id"])
-
-        orphan_pdfs = [
-            str(p) for p in db_pdfs if str(p.resolve()) not in tracked
-        ]
 
         summary = (
-            f"{len(in_queue_with_file)} matched, "
-            f"{len(in_queue_missing_file)} missing, "
-            f"{len(orphan_pdfs)} orphan PDF(s)."
+            f"{len(queue)} queue entry/entries, "
+            f"{len(db_pdfs)} PDF(s) in database_dir."
         )
         return SyncStatusResult(
             database_dir=str(database_dir),
-            in_queue_with_file=sorted(in_queue_with_file),
-            in_queue_missing_file=sorted(in_queue_missing_file),
-            orphan_pdfs=sorted(orphan_pdfs),
+            queue_size=len(queue),
+            database_pdfs=sorted(p.name for p in db_pdfs),
             summary=summary,
         )
 
@@ -683,9 +681,11 @@ class PaperPipeline(Tool):
                     "message": f"No entry with id {inputs.id!r}.",
                 })
         else:
+            # Skip entries whose expected `{id}.pdf` already sits in database_dir;
+            # Mendeley auto-imports it without further action.
             targets = [
                 e for e in queue
-                if not (e.get("pdf_path") and Path(e["pdf_path"]).exists())
+                if not (database_dir / f"{e.get('id', '')}.pdf").exists()
             ]
 
         return self._sync_pull_run(targets, database_dir, email, inputs.dry_run, context)
@@ -704,7 +704,6 @@ class PaperPipeline(Tool):
         network_error: list[dict[str, str]] = []
         already_has_file: list[str] = []
         dry_run_oa: list[dict[str, str]] = []
-        mutated_ids: set[str] = set()
 
         yield ProgressEvent(phase="discover", message=f"{len(targets)} entry/entries to try.")
 
@@ -712,18 +711,16 @@ class PaperPipeline(Tool):
             eid = entry.get("id", "?")
             yield ProgressEvent(phase="pull", current=i, total=len(targets), item=eid)
 
-            pdf_path = entry.get("pdf_path")
-            if pdf_path and Path(pdf_path).exists():
+            if (database_dir / f"{eid}.pdf").exists():
                 already_has_file.append(eid)
                 continue
 
             doi = entry.get("doi")
             if not doi:
-                # Post-invariant: an entry with neither pdf_path nor doi can't
-                # be persisted. If we still see one (legacy queue, manual edit),
-                # fail fast — title-search produced wrong papers in real data.
-                not_found.append({"id": eid, "reason": "insufficient-identifiers (no DOI; identifier-free entries can't be synced)"})
-                yield ProgressEvent(phase="pull", level="warn", message=f"{eid}: insufficient identifiers")
+                # Without a DOI sync-pull has nothing to query. Mendeley-only
+                # entries still need a manual drop into database_dir.
+                not_found.append({"id": eid, "reason": "no DOI on entry; sync-pull requires a DOI"})
+                yield ProgressEvent(phase="pull", level="warn", message=f"{eid}: no DOI")
                 continue
 
             up = unpaywall_lookup(doi, email, context.executor)
@@ -761,22 +758,11 @@ class PaperPipeline(Tool):
                 yield ProgressEvent(phase="pull", level="error", message=f"{eid}: download failed")
                 continue
 
-            entry["pdf_path"] = str(dest.resolve())
-            entry["file_status"] = "found"
             downloaded.append({"id": eid, "path": str(dest.resolve())})
-            mutated_ids.add(eid)
 
-        if mutated_ids:
-            queue = self._store.load_queue()
-            by_id = {e.get("id"): e for e in queue}
-            target_by_id = {t.get("id"): t for t in targets}
-            for tid in mutated_ids:
-                if tid in by_id and tid in target_by_id:
-                    src = target_by_id[tid]
-                    by_id[tid].update({
-                        k: src[k] for k in ("doi", "pdf_path", "file_status") if k in src
-                    })
-            self._store.save_queue(queue)
+        # No queue mutation: post-Step 11.10, file linkage is Mendeley's job.
+        # The PDF lands in database_dir, Mendeley auto-imports + extracts metadata,
+        # and the next `sync-from-mendeley` reflects it in the sidecar.
 
         self._log_event(
             "sync_pull",
@@ -1028,7 +1014,6 @@ class PaperPipeline(Tool):
             doi=doi,
             added=datetime.now().date().isoformat(),
             mendeley_id=mendeley_id,
-            file_status="missing",  # Mendeley owns the file; docent's pdf_path is unused for these.
         )
 
     @staticmethod
@@ -1214,6 +1199,13 @@ class PaperPipeline(Tool):
             return self._not_found(entry_id, queue)
         previous = entry.get("status")
         entry["status"] = status
+        # Stamp lifecycle timestamps. Set-on-first-transition only — re-setting
+        # the same status doesn't refresh the timestamp.
+        ts = datetime.now().isoformat()
+        if status == "reading" and not entry.get("started"):
+            entry["started"] = ts
+        elif status == "done" and not entry.get("finished"):
+            entry["finished"] = ts
         self._store.save_queue(queue)
         self._log_event("set_status", id=entry_id, status=status, previous=previous)
         return MutationResult(

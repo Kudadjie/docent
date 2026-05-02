@@ -192,7 +192,7 @@ def test_new_doc_creates_snapshot_entry(tmp_docent_home, monkeypatch):
     assert e["year"] == 2024
     assert e["doi"] == "10.1234/surge"
     assert e["status"] == "queued"
-    assert e["pdf_path"] is None  # Mendeley owns the file
+    assert "pdf_path" not in e  # Step 11.10 dropped the field; Mendeley owns the file.
 
 
 def test_doc_without_doi_or_pdf_persists_via_mendeley_id(tmp_docent_home, monkeypatch):
@@ -215,7 +215,8 @@ def test_doc_without_doi_or_pdf_persists_via_mendeley_id(tmp_docent_home, monkey
     assert len(result.added) == 1
     queue = tool._store.load_queue()
     assert queue[0]["mendeley_id"] == "MEND-NO-DOI"
-    assert queue[0]["doi"] is None and queue[0]["pdf_path"] is None
+    assert queue[0]["doi"] is None
+    assert "pdf_path" not in queue[0]
 
 
 def test_idempotent_rerun_unchanged(tmp_docent_home, monkeypatch):
@@ -446,15 +447,15 @@ def test_config_set_queue_collection_round_trips(tmp_docent_home):
 
 
 def test_legacy_validator_still_blocks_identifier_free_entries(tmp_docent_home):
-    """Step 11.2 invariant survives: pdf_path / doi / mendeley_id all None
-    is still rejected — only the third option is new."""
+    """Step 11.2 invariant survives, narrowed by Step 11.10: doi / mendeley_id
+    both None is still rejected (pdf_path field gone)."""
     from pydantic import ValidationError
     from docent.tools.paper import QueueEntry
     import pytest as _pytest
     with _pytest.raises(ValidationError):
         QueueEntry(
             id="x", title="X", authors="Y", added="2024-01-01",
-            pdf_path=None, doi=None, mendeley_id=None,
+            doi=None, mendeley_id=None,
         )
 
 

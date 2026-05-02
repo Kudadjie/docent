@@ -42,26 +42,28 @@ def _seed_queue_entry(
     authors: str = "Smith, J",
     year: int | None = 2024,
     doi: str | None = None,
-    pdf_path: str | Path | None = None,
     mendeley_id: str | None = None,
     id: str | None = None,
     priority: str = "medium",
     course: str | None = None,
     notes: str = "",
-    keep_in_mendeley: bool = False,
-    promoted_at: str | None = None,
     status: str = "queued",
+    started: str | None = None,
+    finished: str | None = None,
 ) -> dict:
     """Build a QueueEntry directly and persist it via the tool's store.
 
-    Bypasses the `paper add` CLI surface (which post Step 11.8 only handles
+    Bypasses the `paper add` CLI surface (post Step 11.8 only handles
     guidance + mendeley-id upsert) so sync-* tests can seed arbitrary
     fixtures. Mirrors PaperPipeline._derive_id when no explicit `id` is given.
+    Defaults to mendeley_id="m-<id>" so the entry passes _require_identifier
+    when the test doesn't supply a doi.
     """
     from docent.tools.paper import PaperPipeline, QueueEntry
 
     entry_id = id or PaperPipeline._derive_id(authors, year, title)
-    pdf_str = str(Path(pdf_path).resolve()) if pdf_path else None
+    if not doi and not mendeley_id:
+        mendeley_id = f"m-{entry_id}"
     entry = QueueEntry(
         id=entry_id,
         title=title,
@@ -73,11 +75,9 @@ def _seed_queue_entry(
         priority=priority,
         course=course,
         notes=notes,
-        file_status="found" if pdf_str else "missing",
-        keep_in_mendeley=keep_in_mendeley,
-        pdf_path=pdf_str,
-        promoted_at=promoted_at,
         mendeley_id=mendeley_id,
+        started=started,
+        finished=finished,
     )
     queue = tool._store.load_queue()
     queue = [e for e in queue if e.get("id") != entry_id]

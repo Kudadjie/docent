@@ -83,17 +83,15 @@ def test_missing_email_returns_message(tmp_docent_home, tmp_path):
 def test_already_has_file(tmp_docent_home, tmp_path, seed_queue_entry):
     db = tmp_path / "Papers"
     db.mkdir()
-    pdf = db / "smith-2024-x.pdf"
-    pdf.write_bytes(b"%PDF-1.4\n")
+    # Post-Step-11.10: dedupe is by `{database_dir}/{eid}.pdf` existence.
+    (db / "smith-2024-x.pdf").write_bytes(b"%PDF-1.4\n")
 
     tool = PaperPipeline()
     ctx = _ctx(database_dir=db)
-    seed_queue_entry(tool, title="X", authors="Smith, J", year=2024, pdf_path=pdf)
+    seed_queue_entry(tool, title="X", authors="Smith, J", year=2024, doi="10.1/x")
 
     result = _drain(tool.sync_pull(SyncPullInputs(), ctx))
-    # No targets had missing files, so already_has_file is empty here too
-    # (the bucket only fires when a specific id is requested, since auto-mode
-    # filters out present-file entries upfront). Smoke-test: nothing was tried.
+    # Auto mode filters out entries whose expected file already exists.
     assert result.downloaded == []
     assert result.no_oa == []
     assert result.network_error == []
@@ -102,12 +100,11 @@ def test_already_has_file(tmp_docent_home, tmp_path, seed_queue_entry):
 def test_already_has_file_when_id_targeted(tmp_docent_home, tmp_path, seed_queue_entry):
     db = tmp_path / "Papers"
     db.mkdir()
-    pdf = db / "smith-2024-x.pdf"
-    pdf.write_bytes(b"%PDF-1.4\n")
+    (db / "smith-2024-x.pdf").write_bytes(b"%PDF-1.4\n")
 
     tool = PaperPipeline()
     ctx = _ctx(database_dir=db)
-    seed_queue_entry(tool, title="X", authors="Smith, J", year=2024, pdf_path=pdf)
+    seed_queue_entry(tool, title="X", authors="Smith, J", year=2024, doi="10.1/x")
 
     result = _drain(tool.sync_pull(SyncPullInputs(id="smith-2024-x"), ctx))
     assert result.already_has_file == ["smith-2024-x"]
@@ -144,10 +141,9 @@ def test_happy_doi_path_downloads_and_updates_entry(tmp_docent_home, tmp_path, s
     assert result.downloaded[0]["id"].startswith("smith-2024")
     assert Path(result.downloaded[0]["path"]).exists()
 
-    # Persistence: queue entry now has pdf_path + file_status="found".
+    # Post-Step-11.10: no queue mutation — Mendeley auto-imports the file.
     queue = tool._store.load_queue()
-    assert queue[0]["pdf_path"] == result.downloaded[0]["path"]
-    assert queue[0]["file_status"] == "found"
+    assert "pdf_path" not in queue[0] or queue[0].get("pdf_path") is None
 
 
 def test_no_oa_surfaces_doi_url_for_institutional_access(tmp_docent_home, tmp_path, seed_queue_entry):
@@ -210,39 +206,34 @@ def test_network_error_buckets_correctly(tmp_docent_home, tmp_path, seed_queue_e
     assert result.downloaded == []
 
 
-def test_legacy_no_doi_entry_fails_fast(tmp_docent_home, tmp_path):
-    """Post-invariant: identifier-free entries can't be persisted via add().
-    A legacy queue file with such an entry must surface as insufficient-identifiers,
-    not trigger any network call. Persisting via _store directly bypasses the
-    pydantic validator the same way a hand-edited queue.json would."""
+def test_no_doi_entry_skips_with_message(tmp_docent_home, tmp_path):
+    """Mendeley-only entries (no DOI) can't be queried by Unpaywall. They must
+    surface as not_found without a network call."""
     db = tmp_path / "Papers"
     db.mkdir()
 
     def any_call(args):
-        raise AssertionError(f"network must not be hit for identifier-free entry: {args}")
+        raise AssertionError(f"network must not be hit for DOI-less entry: {args}")
 
     ctx = _ctx(database_dir=db, executor=FakeExecutor(handlers=[any_call]))
     tool = PaperPipeline()
     tool._store.save_queue([{
-        "id": "unknown-nd-01",
-        "title": "some_random_filename_stub",
+        "id": "mendeley-only-01",
+        "title": "Mendeley owns metadata",
         "authors": "Unknown",
         "year": None,
         "doi": None,
-        "added": "2026-04-30",
+        "added": "2026-05-02",
         "status": "queued",
         "priority": "medium",
         "tags": [],
         "notes": "",
-        "file_status": "missing",
-        "keep_in_mendeley": False,
-        "pdf_path": None,
-        "title_is_filename_stub": True,
+        "mendeley_id": "MEND-XYZ",
     }])
 
-    result = _drain(tool.sync_pull(SyncPullInputs(id="unknown-nd-01"), ctx))
+    result = _drain(tool.sync_pull(SyncPullInputs(id="mendeley-only-01"), ctx))
     assert len(result.not_found) == 1
-    assert "insufficient-identifiers" in result.not_found[0]["reason"]
+    assert "no DOI" in result.not_found[0]["reason"]
 
 
 def test_no_oa_summary_includes_institutional_hint(tmp_docent_home, tmp_path, seed_queue_entry):
@@ -360,5 +351,3 @@ def test_dry_run_resolves_oa_but_does_not_download(tmp_docent_home, tmp_path, se
     assert result.downloaded == []
     assert len(result.dry_run_oa) == 1
     assert result.dry_run_oa[0]["pdf_url"] == "https://example.org/x.pdf"
-    queue = tool._store.load_queue()
-    assert queue[0].get("pdf_path") in (None, "")

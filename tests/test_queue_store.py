@@ -8,7 +8,7 @@ from docent.tools.paper_store import BannerCounts, PaperQueueStore
 def _entry(eid: str, status: str = "queued", priority: str = "medium") -> dict:
     return {
         "id": eid, "title": f"t-{eid}", "authors": "a", "status": status,
-        "priority": priority, "file_status": "missing",
+        "priority": priority,
     }
 
 
@@ -54,7 +54,6 @@ def test_banner_counts_reflect_queue(tmp_path):
     assert counts.done == 1
     # Filesystem-derived fields stay 0 until Step 11 sync ops populate them.
     assert counts.db_files == 0
-    assert counts.watch_files == 0
     assert counts.mendeley_linked == 0
 
 
