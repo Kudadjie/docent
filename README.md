@@ -2,8 +2,6 @@
 
 A personal CLI control center for grad-school workflows — papers, research, writing tools, subprocess wrappers — all behind a single `docent <tool>` command. Built so a web dashboard can wrap the same tool registry later without rewriting anything.
 
-> **Status:** Steps 1–9 of a 13-step build are done. The `paper` tool is fully usable as a reading queue (port of the `paper-pipeline` skill, minus Mendeley sync — that's Step 11).
-
 > **Built with AI, Architected by a Human:** Much of the codebase for Docent was written by Claude Code (Opus 4.), but the architecture was strictly human-directed — designed, planned, tested, and iterated over many sessions.
 
 ## What works today
