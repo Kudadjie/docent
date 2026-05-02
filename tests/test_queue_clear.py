@@ -10,7 +10,6 @@ from docent.core.context import Context
 from docent.execution.executor import ProcessResult
 from docent.llm import LLMClient
 from docent.tools.paper import (
-    AddInputs,
     PaperPipeline,
     QueueClearInputs,
 )
@@ -26,11 +25,11 @@ def _ctx() -> Context:
     return Context(settings=settings, llm=LLMClient(settings), executor=_StubExecutor())
 
 
-def test_queue_clear_without_yes_is_a_dry_report(tmp_docent_home):
+def test_queue_clear_without_yes_is_a_dry_report(tmp_docent_home, seed_queue_entry):
     tool = PaperPipeline()
     ctx = _ctx()
-    tool.add(AddInputs(title="A", authors="X, Y", year=2024, doi="10.1234/a"), ctx)
-    tool.add(AddInputs(title="B", authors="X, Y", year=2025, doi="10.1234/b"), ctx)
+    seed_queue_entry(tool, title="A", authors="X, Y", year=2024, doi="10.1234/a")
+    seed_queue_entry(tool, title="B", authors="X, Y", year=2025, doi="10.1234/b")
 
     result = tool.queue_clear(QueueClearInputs(), ctx)
     assert result.cleared is False
@@ -41,11 +40,11 @@ def test_queue_clear_without_yes_is_a_dry_report(tmp_docent_home):
     assert len(tool._store.load_queue()) == 2
 
 
-def test_queue_clear_with_yes_empties_queue(tmp_docent_home):
+def test_queue_clear_with_yes_empties_queue(tmp_docent_home, seed_queue_entry):
     tool = PaperPipeline()
     ctx = _ctx()
-    tool.add(AddInputs(title="A", authors="X, Y", year=2024, doi="10.1234/a"), ctx)
-    tool.add(AddInputs(title="B", authors="X, Y", year=2025, doi="10.1234/b"), ctx)
+    seed_queue_entry(tool, title="A", authors="X, Y", year=2024, doi="10.1234/a")
+    seed_queue_entry(tool, title="B", authors="X, Y", year=2025, doi="10.1234/b")
 
     result = tool.queue_clear(QueueClearInputs(yes=True), ctx)
     assert result.cleared is True

@@ -18,7 +18,6 @@ from pydantic import BaseModel, Field, model_validator
 from docent.config import write_setting
 from docent.core import Context, ProgressEvent, Tool, action, register_tool
 from docent.learning import RunLog
-from docent.tools.paper_metadata import resolve_metadata
 from docent.tools.paper_store import BannerCounts, PaperQueueStore
 from docent.tools.mendeley_cache import MendeleyCache
 from docent.tools.mendeley_client import (
@@ -73,15 +72,11 @@ class QueueEntry(BaseModel):
 
 
 class AddInputs(BaseModel):
-    title: str | None = Field(None, description="Optional title override; only meaningful with --pdf or --doi (title alone no longer adds).")
-    authors: str | None = Field(None, description="Optional authors override (comma-separated).")
-    year: int | None = Field(None, description="Publication year.")
-    doi: str | None = Field(None, description="DOI (e.g. '10.1234/foo'); triggers CrossRef lookup if supplied.")
-    pdf: str | None = Field(None, description="Path to a PDF; metadata is extracted via DOI/CrossRef/PDF-info/filename fallback.")
+    mendeley_id: str | None = Field(None, description="Mendeley document id; if supplied, an entry is upserted directly (metadata pulled fresh on next read). Without this, `add` prints guidance.")
     course: str | None = Field(None, description="Course shortname (e.g. 'thesis', 'hydrodynamics').")
     priority: str = Field("medium", description="Priority: critical|high|medium|low.")
     notes: str = Field("", description="Freeform notes.")
-    force: bool = Field(False, description="Overwrite if an entry with the derived id already exists.")
+    force: bool = Field(False, description="Overwrite if an entry keyed on this mendeley_id already exists.")
 
 
 class AddResult(BaseModel):
@@ -91,7 +86,6 @@ class AddResult(BaseModel):
     queue_size: int
     banner: BannerCounts
     message: str
-    metadata_source: str = "explicit"  # explicit | doi-crossref | pdf-doi-crossref | pdf-title-crossref | pdf-metadata | filename | none
 
 
 class IdOnlyInputs(BaseModel):
@@ -125,13 +119,6 @@ class ExportInputs(BaseModel):
     format: str = Field("json", description="Output format: json | markdown.")
     course: str | None = Field(None, description="Filter by course.")
     status: str | None = Field(None, description="Filter by status (queued|reading|done).")
-
-
-class ScanInputs(BaseModel):
-    folder: str | None = Field(None, description="Folder to walk recursively for *.pdf files. Defaults to the configured paper.database_dir.")
-    course: str | None = Field(None, description="Course shortname applied to every added entry.")
-    priority: str = Field("medium", description="Priority applied to every added entry.")
-    force: bool = Field(False, description="Overwrite collisions (passed through to per-file add).")
 
 
 class ConfigShowInputs(BaseModel):
@@ -189,17 +176,6 @@ class ExportResult(BaseModel):
     format: str
     count: int
     content: str
-
-
-class ScanResult(BaseModel):
-    folder: str
-    total_pdfs: int
-    added: list[AddResult]
-    skipped: list[AddResult]  # collisions or extraction failures
-    failed: list[dict[str, str]]  # {path, error}
-    queue_size: int
-    banner: BannerCounts
-    message: str
 
 
 class QueueClearInputs(BaseModel):
@@ -363,100 +339,88 @@ class PaperPipeline(Tool):
     def __init__(self) -> None:
         self._store = PaperQueueStore(data_dir() / "paper")
 
-    @action(description="Add a paper to the reading queue (requires --pdf or --doi).", input_schema=AddInputs)
+    @action(
+        description="Add a paper by Mendeley id, or print guidance for the drag-and-drop flow.",
+        input_schema=AddInputs,
+    )
     def add(self, inputs: AddInputs, context: Context) -> AddResult:
-        if not inputs.pdf and not inputs.doi:
+        # Mendeley owns metadata extraction now. Without --mendeley-id, surface
+        # the drag-and-drop guidance: drop PDF in database_dir → Mendeley
+        # auto-imports → drag into Docent-Queue collection → sync-from-mendeley.
+        if not inputs.mendeley_id:
+            collection = context.settings.paper.queue_collection
             return AddResult(
                 added=False, id="", title="",
                 queue_size=len(self._store.load_index()),
                 banner=self._store.banner_counts(),
                 message=(
-                    "Must supply --pdf or --doi. Title-only adds were removed: "
-                    "without an identifier, the queue can't be reliably synced "
-                    "(CrossRef title search returned wrong papers). "
-                    "Use Scholar to search by title, then add by DOI."
+                    "Drop the PDF in your paper.database_dir (Mendeley auto-imports it), "
+                    f"drag it into the {collection!r} collection in Mendeley, then run "
+                    "`docent paper sync-from-mendeley`. "
+                    "Or pass --mendeley-id to upsert a sidecar entry now."
                 ),
-                metadata_source="none",
             )
 
-        if inputs.pdf and not Path(inputs.pdf).is_file():
-            return AddResult(
-                added=False, id="", title="",
-                queue_size=len(self._store.load_index()),
-                banner=self._store.banner_counts(),
-                message=f"PDF not found at {inputs.pdf!r}.",
-                metadata_source="none",
-            )
+        mid = inputs.mendeley_id.strip()
+        queue = self._store.load_queue()
+        existing = next((e for e in queue if e.get("mendeley_id") == mid), None)
 
-        meta, source = resolve_metadata(inputs, context.executor)
-        title = meta.get("title")
-        if not title:
-            return AddResult(
-                added=False, id="", title="",
-                queue_size=len(self._store.load_index()),
-                banner=self._store.banner_counts(),
-                message="Could not extract metadata; supply --title manually.",
-                metadata_source=source,
-            )
-        authors = meta.get("authors") or "Unknown"
-        year = meta.get("year")
-        doi = meta.get("doi")
-        pdf_abs = str(Path(inputs.pdf).resolve()) if inputs.pdf else None
-
-        entry_id = self._derive_id(authors, year, title)
-        index = self._store.load_index()
-        collision = index.get(entry_id)
-
-        if collision and not inputs.force:
+        if existing and not inputs.force:
             return AddResult(
                 added=False,
-                id=entry_id,
-                title=collision["title"],
-                queue_size=len(index),
+                id=existing.get("id", ""),
+                title=existing.get("title", ""),
+                queue_size=len(queue),
                 banner=self._store.banner_counts(),
                 message=(
-                    f"Already in queue as '{entry_id}': {collision['title']!r}. "
-                    f"Use --force to overwrite, or `docent paper edit` to change fields."
+                    f"Mendeley id {mid!r} already in queue as {existing.get('id')!r}. "
+                    f"Use --force to update, or `docent paper edit` to change fields."
                 ),
-                metadata_source=source,
             )
+
+        # Minimal stub entry — fields get overlaid fresh from Mendeley on next read.
+        existing_ids = {e.get("id") for e in queue if e.get("id")}
+        base_id = f"mendeley-{mid[:8]}"
+        entry_id = base_id
+        suffix = 1
+        while entry_id in existing_ids and (not existing or existing.get("id") != entry_id):
+            suffix += 1
+            entry_id = f"{base_id}-{suffix}"
+        if existing:
+            entry_id = existing.get("id") or entry_id
 
         new_entry = QueueEntry(
             id=entry_id,
-            title=title,
-            authors=authors,
-            year=year,
-            doi=doi,
-            added=datetime.now().date().isoformat(),
+            title=existing.get("title") if existing else "(pending Mendeley sync)",
+            authors=existing.get("authors") if existing else "Unknown",
+            year=existing.get("year") if existing else None,
+            doi=existing.get("doi") if existing else None,
+            added=existing.get("added") if existing else datetime.now().date().isoformat(),
             priority=inputs.priority,
             course=inputs.course,
             notes=inputs.notes,
-            pdf_path=pdf_abs,
-            file_status="found" if pdf_abs else "missing",
-            title_is_filename_stub=(source == "filename"),
+            mendeley_id=mid,
         )
 
-        queue = self._store.load_queue()
-        if collision:
+        if existing:
             queue = [e for e in queue if e.get("id") != entry_id]
         queue.append(new_entry.model_dump())
         self._store.save_queue(queue)
-        self._log_event("add", id=entry_id, replaced=bool(collision),
+        self._log_event("add", id=entry_id, replaced=bool(existing),
                         priority=inputs.priority, course=inputs.course,
-                        metadata_source=source, has_pdf=bool(pdf_abs))
+                        mendeley_id=mid)
 
-        verb = "Replaced" if collision else "Added"
-        msg = f"{verb} '{entry_id}': {title!r} (queue size: {len(queue)}, source: {source})."
-        if pdf_abs:
-            msg += f" Tracking PDF at {pdf_abs} - don't move/rename it."
+        verb = "Updated" if existing else "Added"
         return AddResult(
             added=True,
             id=entry_id,
-            title=title,
+            title=new_entry.title,
             queue_size=len(queue),
             banner=self._store.banner_counts(),
-            message=msg,
-            metadata_source=source,
+            message=(
+                f"{verb} {entry_id!r} (mendeley_id={mid}, queue size: {len(queue)}). "
+                f"Run `docent paper next` to see fresh metadata."
+            ),
         )
 
     @action(description="Show the next paper to read (highest-priority queued).", input_schema=NextInputs)
@@ -688,104 +652,6 @@ class PaperPipeline(Tool):
             ok=True, key=inputs.key, value=inputs.value,
             config_path=str(path),
             message=f"Set paper.{inputs.key} = {inputs.value!r} in {path}.",
-        )
-
-    @action(description="Scan a folder of PDFs and add each to the reading queue.", input_schema=ScanInputs)
-    def scan(self, inputs: ScanInputs, context: Context):
-        # Resolve folder (and any first-run prompt) outside the generator — Rich Live in `_drive_progress` eats prompts.
-        folder, early = self._resolve_scan_folder(inputs, context)
-        if early is not None:
-            return early
-        return self._scan_folder(folder, inputs, context)
-
-    def _resolve_scan_folder(
-        self, inputs: ScanInputs, context: Context
-    ) -> tuple[Path | None, ScanResult | None]:
-        """Returns (folder, None) on success, or (None, ScanResult(...)) on early exit."""
-        if inputs.folder:
-            folder = Path(inputs.folder).expanduser()
-        else:
-            try:
-                folder, err = self._require_database_dir(context)
-            except NoInteractiveError as e:
-                return None, ScanResult(
-                    folder="", total_pdfs=0,
-                    added=[], skipped=[], failed=[],
-                    queue_size=len(self._store.load_index()),
-                    banner=self._store.banner_counts(),
-                    message=(
-                        f"No --folder given and paper.database_dir not configured. "
-                        f"Run `docent paper config-set database_dir <path>` or set "
-                        f"DOCENT_PAPER__DATABASE_DIR. ({e})"
-                    ),
-                )
-            if folder is None:
-                return None, ScanResult(
-                    folder="", total_pdfs=0,
-                    added=[], skipped=[], failed=[],
-                    queue_size=len(self._store.load_index()),
-                    banner=self._store.banner_counts(),
-                    message=err or "Cancelled - no database folder configured.",
-                )
-        if not folder.is_dir():
-            return None, ScanResult(
-                folder=str(folder), total_pdfs=0,
-                added=[], skipped=[], failed=[],
-                queue_size=len(self._store.load_index()),
-                banner=self._store.banner_counts(),
-                message=f"Folder not found: {str(folder)!r}.",
-            )
-        return folder, None
-
-    def _scan_folder(self, folder: Path, inputs: ScanInputs, context: Context):
-        yield ProgressEvent(phase="discover", message=f"Scanning {folder}")
-        pdfs = sorted(folder.rglob("*.pdf"))
-        yield ProgressEvent(phase="discover", message=f"Found {len(pdfs)} PDF(s).")
-
-        added: list[AddResult] = []
-        skipped: list[AddResult] = []
-        failed: list[dict[str, str]] = []
-
-        for i, pdf in enumerate(pdfs, 1):
-            yield ProgressEvent(
-                phase="add", current=i, total=len(pdfs), item=pdf.name
-            )
-            sub_inputs = AddInputs(
-                pdf=str(pdf),
-                course=inputs.course,
-                priority=inputs.priority,
-                force=inputs.force,
-            )
-            try:
-                result = self.add(sub_inputs, context)
-            except Exception as e:
-                failed.append({"path": str(pdf), "error": str(e)})
-                yield ProgressEvent(
-                    phase="add", level="error",
-                    message=f"{pdf.name}: {e}",
-                )
-                continue
-            if result.added:
-                added.append(result)
-            else:
-                skipped.append(result)
-                yield ProgressEvent(
-                    phase="add", level="warn",
-                    message=f"skipped {pdf.name}: {result.message}",
-                )
-
-        return ScanResult(
-            folder=str(folder.resolve()),
-            total_pdfs=len(pdfs),
-            added=added,
-            skipped=skipped,
-            failed=failed,
-            queue_size=len(self._store.load_index()),
-            banner=self._store.banner_counts(),
-            message=(
-                f"Scanned {len(pdfs)} PDF(s) in {folder}: "
-                f"{len(added)} added, {len(skipped)} skipped, {len(failed)} failed."
-            ),
         )
 
     @action(

@@ -1,3 +1,10 @@
+"""Tests for `paper add` after Step 11.8.
+
+Post-11.8 add() has two modes:
+- No --mendeley-id → guidance shim (drop PDF in DB, drag into collection, run sync-from-mendeley).
+- --mendeley-id supplied → upsert a sidecar entry keyed on that id; metadata
+  pulled fresh on next read via the Mendeley overlay.
+"""
 from __future__ import annotations
 
 import json
@@ -11,9 +18,6 @@ from docent.utils.paths import data_dir
 
 
 class _StubExecutor:
-    """Fail every subprocess so DOI/CrossRef lookups return None and explicit
-    metadata wins. Keeps unit tests offline and deterministic."""
-
     def run(self, args, *, timeout=None, cwd=None, env=None, check=True):
         return ProcessResult(args=list(args), returncode=1, stdout="", stderr="stub", duration=0.0)
 
@@ -23,74 +27,64 @@ def _make_context() -> Context:
     return Context(settings=settings, llm=LLMClient(settings), executor=_StubExecutor())
 
 
-def test_add_with_explicit_metadata(tmp_docent_home):
-    tool = PaperPipeline()
-    ctx = _make_context()
-    inputs = AddInputs(
-        title="A Quiet Paper",
-        authors="Smith, Jane; Doe, John",
-        year=2024,
-        doi="10.1234/quiet",
-        priority="high",
-    )
-
-    result = tool.add(inputs, ctx)
-
-    assert result.added
-    assert result.id == "smith-2024-a"
-    assert result.queue_size == 1
-
-    paper_dir = data_dir() / "paper"
-    queue = json.loads((paper_dir / "queue.json").read_text(encoding="utf-8"))
-    assert len(queue) == 1
-    assert queue[0]["title"] == "A Quiet Paper"
-    assert queue[0]["priority"] == "high"
-    assert queue[0]["status"] == "queued"
-
-    index = json.loads((paper_dir / "queue-index.json").read_text(encoding="utf-8"))
-    assert "smith-2024-a" in index
-    assert index["smith-2024-a"]["status"] == "queued"
-
-    state = json.loads((paper_dir / "state.json").read_text(encoding="utf-8"))
-    assert state["queued"] == 1
-    assert state["reading"] == 0
-
-
-def test_add_collision_blocked_without_force(tmp_docent_home):
-    tool = PaperPipeline()
-    ctx = _make_context()
-    tool.add(AddInputs(title="A Quiet Paper", authors="Smith, Jane", year=2024, doi="10.1234/quiet"), ctx)
-
-    result = tool.add(
-        AddInputs(title="A Quiet Paper Repeated", authors="Smith, Jane", year=2024, doi="10.1234/repeat"),
-        ctx,
-    )
-    assert not result.added
-    assert "already in queue" in result.message.lower()
-    assert result.queue_size == 1
-
-
-def test_add_collision_overwritten_with_force(tmp_docent_home):
-    tool = PaperPipeline()
-    ctx = _make_context()
-    tool.add(AddInputs(title="A Quiet Paper", authors="Smith, Jane", year=2024, doi="10.1234/quiet"), ctx)
-
-    result = tool.add(
-        AddInputs(title="A Newer Title", authors="Smith, Jane", year=2024, doi="10.1234/newer", force=True),
-        ctx,
-    )
-    assert result.added
-    assert result.queue_size == 1
-
-    paper_dir = data_dir() / "paper"
-    queue = json.loads((paper_dir / "queue.json").read_text(encoding="utf-8"))
-    assert len(queue) == 1
-    assert queue[0]["title"] == "A Newer Title"
-
-
-def test_add_without_metadata_returns_message(tmp_docent_home):
+def test_add_without_mendeley_id_returns_guidance(tmp_docent_home):
     tool = PaperPipeline()
     ctx = _make_context()
     result = tool.add(AddInputs(), ctx)
-    assert not result.added
-    assert "--pdf" in result.message and "--doi" in result.message
+
+    assert result.added is False
+    assert "sync-from-mendeley" in result.message
+    assert "Docent-Queue" in result.message
+    assert tool._store.load_queue() == []
+
+
+def test_add_with_mendeley_id_upserts_entry(tmp_docent_home):
+    tool = PaperPipeline()
+    ctx = _make_context()
+    result = tool.add(AddInputs(mendeley_id="MEND-ABC123XYZ", priority="high", course="thesis"), ctx)
+
+    assert result.added is True
+    assert result.queue_size == 1
+
+    paper_dir = data_dir() / "paper"
+    queue = json.loads((paper_dir / "queue.json").read_text(encoding="utf-8"))
+    assert len(queue) == 1
+    entry = queue[0]
+    assert entry["mendeley_id"] == "MEND-ABC123XYZ"
+    assert entry["priority"] == "high"
+    assert entry["course"] == "thesis"
+    assert entry["status"] == "queued"
+    assert entry["title"] == "(pending Mendeley sync)"
+
+
+def test_add_same_mendeley_id_blocked_without_force(tmp_docent_home):
+    tool = PaperPipeline()
+    ctx = _make_context()
+    tool.add(AddInputs(mendeley_id="MEND-1"), ctx)
+
+    result = tool.add(AddInputs(mendeley_id="MEND-1", priority="critical"), ctx)
+    assert result.added is False
+    assert "already in queue" in result.message.lower()
+    # Original priority preserved.
+    assert tool._store.load_queue()[0]["priority"] == "medium"
+
+
+def test_add_force_updates_existing_entry(tmp_docent_home):
+    tool = PaperPipeline()
+    ctx = _make_context()
+    tool.add(AddInputs(mendeley_id="MEND-1", priority="medium"), ctx)
+
+    result = tool.add(AddInputs(mendeley_id="MEND-1", priority="critical", course="thesis", force=True), ctx)
+    assert result.added is True
+    queue = tool._store.load_queue()
+    assert len(queue) == 1
+    assert queue[0]["priority"] == "critical"
+    assert queue[0]["course"] == "thesis"
+
+
+def test_add_strips_whitespace_from_mendeley_id(tmp_docent_home):
+    tool = PaperPipeline()
+    ctx = _make_context()
+    result = tool.add(AddInputs(mendeley_id="  MEND-XYZ  "), ctx)
+    assert result.added
+    assert tool._store.load_queue()[0]["mendeley_id"] == "MEND-XYZ"

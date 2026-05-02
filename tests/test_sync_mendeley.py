@@ -19,7 +19,6 @@ from docent.core.context import Context
 from docent.execution import Executor
 from docent.llm import LLMClient
 from docent.tools.paper import (
-    AddInputs,
     PaperPipeline,
     SyncMendeleyInputs,
 )
@@ -40,17 +39,17 @@ def _drain(maybe_gen):
         return e.value
 
 
-def _add_promoted(tool: PaperPipeline, ctx: Context, *, doi: str | None, title: str = "Foo",
+def _add_promoted(tool: PaperPipeline, seed, *, doi: str | None, title: str = "Foo",
                   pdf_name: str = "smith-2024-foo.pdf", tmp_path: Path | None = None) -> str:
     """Add an entry, then mark it promoted (skipping the actual move)."""
     pdf = (tmp_path or Path.cwd()) / pdf_name
     pdf.parent.mkdir(parents=True, exist_ok=True)
     pdf.write_bytes(b"%PDF-1.4\n")
-    tool.add(AddInputs(pdf=str(pdf), title=title, authors="Smith, J", year=2024, doi=doi), ctx)
-    queue = tool._store.load_queue()
-    queue[0]["promoted_at"] = datetime.now().isoformat()
-    tool._store.save_queue(queue)
-    return queue[0]["id"]
+    entry = seed(
+        tool, title=title, authors="Smith, J", year=2024, doi=doi, pdf_path=pdf,
+        promoted_at=datetime.now().isoformat(),
+    )
+    return entry["id"]
 
 
 def _patch_mcp(monkeypatch, *, doi_resp=None, search_resp=None):
@@ -74,10 +73,10 @@ def _patch_mcp(monkeypatch, *, doi_resp=None, search_resp=None):
     return calls
 
 
-def test_doi_hit_links(tmp_docent_home, tmp_path, monkeypatch):
+def test_doi_hit_links(tmp_docent_home, tmp_path, monkeypatch, seed_queue_entry):
     tool = PaperPipeline()
     ctx = _ctx()
-    eid = _add_promoted(tool, ctx, doi="10.1234/foo", tmp_path=tmp_path)
+    eid = _add_promoted(tool, seed_queue_entry, doi="10.1234/foo", tmp_path=tmp_path)
 
     _patch_mcp(monkeypatch,
                doi_resp={"items": [{"id": "MENDELEY-ABC", "title": "Foo"}], "error": None})
@@ -87,10 +86,10 @@ def test_doi_hit_links(tmp_docent_home, tmp_path, monkeypatch):
     assert tool._store.load_queue()[0]["mendeley_id"] == "MENDELEY-ABC"
 
 
-def test_doi_miss_falls_back_to_title_search(tmp_docent_home, tmp_path, monkeypatch):
+def test_doi_miss_falls_back_to_title_search(tmp_docent_home, tmp_path, monkeypatch, seed_queue_entry):
     tool = PaperPipeline()
     ctx = _ctx()
-    eid = _add_promoted(tool, ctx, doi="10.9999/missing", tmp_path=tmp_path)
+    eid = _add_promoted(tool, seed_queue_entry, doi="10.9999/missing", tmp_path=tmp_path)
 
     calls = _patch_mcp(monkeypatch,
                        doi_resp={"items": [], "error": None},
@@ -101,10 +100,10 @@ def test_doi_miss_falls_back_to_title_search(tmp_docent_home, tmp_path, monkeypa
     assert calls["search"], "title fallback should have fired"
 
 
-def test_title_search_ambiguous_does_not_link(tmp_docent_home, tmp_path, monkeypatch):
+def test_title_search_ambiguous_does_not_link(tmp_docent_home, tmp_path, monkeypatch, seed_queue_entry):
     tool = PaperPipeline()
     ctx = _ctx()
-    eid = _add_promoted(tool, ctx, doi=None, tmp_path=tmp_path)
+    eid = _add_promoted(tool, seed_queue_entry, doi=None, tmp_path=tmp_path)
 
     _patch_mcp(monkeypatch, search_resp={
         "items": [
@@ -123,10 +122,10 @@ def test_title_search_ambiguous_does_not_link(tmp_docent_home, tmp_path, monkeyp
     assert tool._store.load_queue()[0].get("mendeley_id") in (None, "")
 
 
-def test_no_match_buckets_as_not_found(tmp_docent_home, tmp_path, monkeypatch):
+def test_no_match_buckets_as_not_found(tmp_docent_home, tmp_path, monkeypatch, seed_queue_entry):
     tool = PaperPipeline()
     ctx = _ctx()
-    eid = _add_promoted(tool, ctx, doi="10.1234/foo", tmp_path=tmp_path)
+    eid = _add_promoted(tool, seed_queue_entry, doi="10.1234/foo", tmp_path=tmp_path)
 
     _patch_mcp(monkeypatch, doi_resp={"items": [], "error": None},
                search_resp={"items": [], "error": None})
@@ -137,10 +136,10 @@ def test_no_match_buckets_as_not_found(tmp_docent_home, tmp_path, monkeypatch):
     assert result.not_found[0]["id"] == eid
 
 
-def test_already_linked_skipped(tmp_docent_home, tmp_path, monkeypatch):
+def test_already_linked_skipped(tmp_docent_home, tmp_path, monkeypatch, seed_queue_entry):
     tool = PaperPipeline()
     ctx = _ctx()
-    eid = _add_promoted(tool, ctx, doi="10.1234/foo", tmp_path=tmp_path)
+    eid = _add_promoted(tool, seed_queue_entry, doi="10.1234/foo", tmp_path=tmp_path)
     queue = tool._store.load_queue()
     queue[0]["mendeley_id"] = "PRE-LINKED"
     tool._store.save_queue(queue)
@@ -155,13 +154,13 @@ def test_already_linked_skipped(tmp_docent_home, tmp_path, monkeypatch):
     assert result.linked == []
 
 
-def test_not_promoted_skipped_in_auto_mode(tmp_docent_home, tmp_path, monkeypatch):
+def test_not_promoted_skipped_in_auto_mode(tmp_docent_home, tmp_path, monkeypatch, seed_queue_entry):
     tool = PaperPipeline()
     ctx = _ctx()
     # Add an entry but DO NOT mark promoted.
     pdf = tmp_path / "smith-2024-foo.pdf"
     pdf.write_bytes(b"%PDF-1.4\n")
-    tool.add(AddInputs(pdf=str(pdf), title="Foo", authors="Smith, J", year=2024, doi="10.1234/foo"), ctx)
+    seed_queue_entry(tool, title="Foo", authors="Smith, J", year=2024, doi="10.1234/foo", pdf_path=pdf)
 
     def boom(*a, **kw):
         raise AssertionError("MCP must not be called for non-promoted entries")
@@ -174,12 +173,12 @@ def test_not_promoted_skipped_in_auto_mode(tmp_docent_home, tmp_path, monkeypatc
     assert "not promoted" in result.not_eligible[0]["reason"]
 
 
-def test_id_override_bypasses_promoted_filter(tmp_docent_home, tmp_path, monkeypatch):
+def test_id_override_bypasses_promoted_filter(tmp_docent_home, tmp_path, monkeypatch, seed_queue_entry):
     tool = PaperPipeline()
     ctx = _ctx()
     pdf = tmp_path / "smith-2024-foo.pdf"
     pdf.write_bytes(b"%PDF-1.4\n")
-    tool.add(AddInputs(pdf=str(pdf), title="Foo", authors="Smith, J", year=2024, doi="10.1234/foo"), ctx)
+    seed_queue_entry(tool, title="Foo", authors="Smith, J", year=2024, doi="10.1234/foo", pdf_path=pdf)
     eid = tool._store.load_queue()[0]["id"]
 
     _patch_mcp(monkeypatch,
@@ -189,10 +188,10 @@ def test_id_override_bypasses_promoted_filter(tmp_docent_home, tmp_path, monkeyp
     assert result.linked == [{"id": eid, "mendeley_id": "M-FORCED"}]
 
 
-def test_dry_run_does_not_persist(tmp_docent_home, tmp_path, monkeypatch):
+def test_dry_run_does_not_persist(tmp_docent_home, tmp_path, monkeypatch, seed_queue_entry):
     tool = PaperPipeline()
     ctx = _ctx()
-    eid = _add_promoted(tool, ctx, doi="10.1234/foo", tmp_path=tmp_path)
+    eid = _add_promoted(tool, seed_queue_entry, doi="10.1234/foo", tmp_path=tmp_path)
 
     _patch_mcp(monkeypatch,
                doi_resp={"items": [{"id": "M-DRY"}], "error": None})
@@ -203,10 +202,10 @@ def test_dry_run_does_not_persist(tmp_docent_home, tmp_path, monkeypatch):
     assert tool._store.load_queue()[0].get("mendeley_id") in (None, "")
 
 
-def test_auth_failure_surfaces_login_hint(tmp_docent_home, tmp_path, monkeypatch):
+def test_auth_failure_surfaces_login_hint(tmp_docent_home, tmp_path, monkeypatch, seed_queue_entry):
     tool = PaperPipeline()
     ctx = _ctx()
-    eid = _add_promoted(tool, ctx, doi="10.1234/foo", tmp_path=tmp_path)
+    eid = _add_promoted(tool, seed_queue_entry, doi="10.1234/foo", tmp_path=tmp_path)
 
     _patch_mcp(monkeypatch,
                doi_resp={"items": [], "error": "auth: token expired"})
@@ -218,10 +217,10 @@ def test_auth_failure_surfaces_login_hint(tmp_docent_home, tmp_path, monkeypatch
     assert "mendeley-auth login" in result.summary
 
 
-def test_transport_failure_buckets_as_failed(tmp_docent_home, tmp_path, monkeypatch):
+def test_transport_failure_buckets_as_failed(tmp_docent_home, tmp_path, monkeypatch, seed_queue_entry):
     tool = PaperPipeline()
     ctx = _ctx()
-    _add_promoted(tool, ctx, doi="10.1234/foo", tmp_path=tmp_path)
+    _add_promoted(tool, seed_queue_entry, doi="10.1234/foo", tmp_path=tmp_path)
 
     _patch_mcp(monkeypatch,
                doi_resp={"items": [], "error": "transport: launch command not found ([Errno 2])"})
@@ -231,7 +230,7 @@ def test_transport_failure_buckets_as_failed(tmp_docent_home, tmp_path, monkeypa
     assert "uv tool install mendeley-mcp" in result.failed[0]["error"]
 
 
-def test_doi_prefix_stripped_before_lookup(tmp_docent_home, tmp_path, monkeypatch):
+def test_doi_prefix_stripped_before_lookup(tmp_docent_home, tmp_path, monkeypatch, seed_queue_entry):
     """Real-data regression: queue can hold DOIs in URL form
     (`https://doi.org/10.1515/geo-2019-0013`); Mendeley's catalog endpoint
     accepts only the bare `10.xxxx/...` form. The wrapper must normalize.
@@ -244,7 +243,7 @@ def test_doi_prefix_stripped_before_lookup(tmp_docent_home, tmp_path, monkeypatc
     assert _normalize_doi("  https://doi.org/10.1234/x  ") == "10.1234/x"
 
 
-def test_no_targets_without_id(tmp_docent_home, tmp_path, monkeypatch):
+def test_no_targets_without_id(tmp_docent_home, tmp_path, monkeypatch, seed_queue_entry):
     tool = PaperPipeline()
     ctx = _ctx()
     _patch_mcp(monkeypatch)

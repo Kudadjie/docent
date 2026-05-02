@@ -16,7 +16,6 @@ from docent.core.context import Context
 from docent.execution import Executor
 from docent.llm import LLMClient
 from docent.tools.paper import (
-    AddInputs,
     PaperPipeline,
     SyncPromoteInputs,
     SyncStatusInputs,
@@ -47,12 +46,9 @@ def _drain(maybe_gen):
         return e.value
 
 
-def _add_kept(tool: PaperPipeline, ctx: Context, pdf: Path, **add_kwargs) -> str:
-    res = tool.add(AddInputs(pdf=str(pdf), **add_kwargs), ctx)
-    queue = tool._store.load_queue()
-    queue[0]["keep_in_mendeley"] = True
-    tool._store.save_queue(queue)
-    return res.id
+def _add_kept(tool: PaperPipeline, seed, pdf: Path, **add_kwargs) -> str:
+    entry = seed(tool, pdf_path=pdf, keep_in_mendeley=True, **add_kwargs)
+    return entry["id"]
 
 
 def test_missing_watch_subdir_returns_message(tmp_docent_home, tmp_path):
@@ -64,14 +60,14 @@ def test_missing_watch_subdir_returns_message(tmp_docent_home, tmp_path):
     assert result.promoted == []
 
 
-def test_happy_path_moves_pdf_and_sets_promoted_at(tmp_docent_home, tmp_path):
+def test_happy_path_moves_pdf_and_sets_promoted_at(tmp_docent_home, tmp_path, seed_queue_entry):
     db = tmp_path / "Papers"
     db.mkdir()
     pdf = _make_pdf(db / "kept.pdf")
 
     tool = PaperPipeline()
     ctx = _ctx(database_dir=db, watch_subdir="Watch")
-    eid = _add_kept(tool, ctx, pdf, title="Kept", authors="Smith, J", year=2024)
+    eid = _add_kept(tool, seed_queue_entry, pdf, title="Kept", authors="Smith, J", year=2024)
 
     result = _drain(tool.sync_promote(SyncPromoteInputs(), ctx))
     assert len(result.promoted) == 1
@@ -85,14 +81,14 @@ def test_happy_path_moves_pdf_and_sets_promoted_at(tmp_docent_home, tmp_path):
     assert entry["pdf_path"].endswith(str(Path("Watch") / "kept.pdf"))
 
 
-def test_dry_run_does_not_move_or_mutate(tmp_docent_home, tmp_path):
+def test_dry_run_does_not_move_or_mutate(tmp_docent_home, tmp_path, seed_queue_entry):
     db = tmp_path / "Papers"
     db.mkdir()
     pdf = _make_pdf(db / "kept.pdf")
 
     tool = PaperPipeline()
     ctx = _ctx(database_dir=db, watch_subdir="Watch")
-    _add_kept(tool, ctx, pdf, title="Kept", authors="Smith, J", year=2024)
+    _add_kept(tool, seed_queue_entry, pdf, title="Kept", authors="Smith, J", year=2024)
 
     result = _drain(tool.sync_promote(SyncPromoteInputs(dry_run=True), ctx))
     assert len(result.dry_run_promote) == 1
@@ -102,7 +98,7 @@ def test_dry_run_does_not_move_or_mutate(tmp_docent_home, tmp_path):
     assert tool._store.load_queue()[0]["promoted_at"] is None
 
 
-def test_already_promoted_is_skipped(tmp_docent_home, tmp_path):
+def test_already_promoted_is_skipped(tmp_docent_home, tmp_path, seed_queue_entry):
     db = tmp_path / "Papers"
     watch = db / "Watch"
     watch.mkdir(parents=True)
@@ -110,7 +106,7 @@ def test_already_promoted_is_skipped(tmp_docent_home, tmp_path):
 
     tool = PaperPipeline()
     ctx = _ctx(database_dir=db, watch_subdir="Watch")
-    _add_kept(tool, ctx, pdf_in_watch, title="Kept", authors="Smith, J", year=2024)
+    _add_kept(tool, seed_queue_entry, pdf_in_watch, title="Kept", authors="Smith, J", year=2024)
     queue = tool._store.load_queue()
     queue[0]["promoted_at"] = "2026-04-30T12:00:00"
     tool._store.save_queue(queue)
@@ -121,7 +117,7 @@ def test_already_promoted_is_skipped(tmp_docent_home, tmp_path):
     assert result.healed == []
 
 
-def test_heal_when_pdf_already_in_watch(tmp_docent_home, tmp_path):
+def test_heal_when_pdf_already_in_watch(tmp_docent_home, tmp_path, seed_queue_entry):
     """User added the PDF when it was already inside Watch (no promoted_at).
     Promote should not move; it should set promoted_at."""
     db = tmp_path / "Papers"
@@ -131,7 +127,7 @@ def test_heal_when_pdf_already_in_watch(tmp_docent_home, tmp_path):
 
     tool = PaperPipeline()
     ctx = _ctx(database_dir=db, watch_subdir="Watch")
-    _add_kept(tool, ctx, pdf_in_watch, title="Kept", authors="Smith, J", year=2024)
+    _add_kept(tool, seed_queue_entry, pdf_in_watch, title="Kept", authors="Smith, J", year=2024)
 
     result = _drain(tool.sync_promote(SyncPromoteInputs(), ctx))
     assert len(result.healed) == 1
@@ -142,7 +138,7 @@ def test_heal_when_pdf_already_in_watch(tmp_docent_home, tmp_path):
     assert entry["promoted_at"] is not None
 
 
-def test_heal_when_external_move_orphans_pdf_path(tmp_docent_home, tmp_path):
+def test_heal_when_external_move_orphans_pdf_path(tmp_docent_home, tmp_path, seed_queue_entry):
     """User added a PDF in DB root, then manually moved it into Watch outside
     Docent. pdf_path no longer resolves; promote should detect the file by
     name in Watch, repoint pdf_path, and set promoted_at."""
@@ -152,7 +148,7 @@ def test_heal_when_external_move_orphans_pdf_path(tmp_docent_home, tmp_path):
 
     tool = PaperPipeline()
     ctx = _ctx(database_dir=db, watch_subdir="Watch")
-    _add_kept(tool, ctx, pdf, title="Kept", authors="Smith, J", year=2024)
+    _add_kept(tool, seed_queue_entry, pdf, title="Kept", authors="Smith, J", year=2024)
 
     # Simulate external move.
     watch = db / "Watch"
@@ -167,14 +163,14 @@ def test_heal_when_external_move_orphans_pdf_path(tmp_docent_home, tmp_path):
     assert entry["pdf_path"].endswith(str(Path("Watch") / "kept.pdf"))
 
 
-def test_missing_file_bucket(tmp_docent_home, tmp_path):
+def test_missing_file_bucket(tmp_docent_home, tmp_path, seed_queue_entry):
     db = tmp_path / "Papers"
     db.mkdir()
     pdf = _make_pdf(db / "ghost.pdf")
 
     tool = PaperPipeline()
     ctx = _ctx(database_dir=db, watch_subdir="Watch")
-    _add_kept(tool, ctx, pdf, title="Ghost", authors="Doe, J", year=2023)
+    _add_kept(tool, seed_queue_entry, pdf, title="Ghost", authors="Doe, J", year=2023)
     pdf.unlink()  # gone, and no file in Watch either — missing.
 
     result = _drain(tool.sync_promote(SyncPromoteInputs(), ctx))
@@ -182,14 +178,14 @@ def test_missing_file_bucket(tmp_docent_home, tmp_path):
     assert result.promoted == []
 
 
-def test_not_eligible_when_not_kept_in_auto_mode(tmp_docent_home, tmp_path):
+def test_not_eligible_when_not_kept_in_auto_mode(tmp_docent_home, tmp_path, seed_queue_entry):
     db = tmp_path / "Papers"
     db.mkdir()
     pdf = _make_pdf(db / "unkept.pdf")
 
     tool = PaperPipeline()
     ctx = _ctx(database_dir=db, watch_subdir="Watch")
-    tool.add(AddInputs(pdf=str(pdf), title="Unkept", authors="Smith, J", year=2024), ctx)
+    seed_queue_entry(tool, title="Unkept", authors="Smith, J", year=2024, pdf_path=pdf)
     # NOT marked keeping.
 
     result = _drain(tool.sync_promote(SyncPromoteInputs(), ctx))
@@ -198,22 +194,22 @@ def test_not_eligible_when_not_kept_in_auto_mode(tmp_docent_home, tmp_path):
     assert pdf.exists()
 
 
-def test_single_id_overrides_keep_flag(tmp_docent_home, tmp_path):
+def test_single_id_overrides_keep_flag(tmp_docent_home, tmp_path, seed_queue_entry):
     db = tmp_path / "Papers"
     db.mkdir()
     pdf = _make_pdf(db / "unkept.pdf")
 
     tool = PaperPipeline()
     ctx = _ctx(database_dir=db, watch_subdir="Watch")
-    res = tool.add(AddInputs(pdf=str(pdf), title="Unkept", authors="Smith, J", year=2024), ctx)
+    res = seed_queue_entry(tool, title="Unkept", authors="Smith, J", year=2024, pdf_path=pdf)
     # NOT marked keeping; single-id should still promote.
 
-    result = _drain(tool.sync_promote(SyncPromoteInputs(id=res.id), ctx))
+    result = _drain(tool.sync_promote(SyncPromoteInputs(id=res["id"]), ctx))
     assert len(result.promoted) == 1
     assert (db / "Watch" / "unkept.pdf").exists()
 
 
-def test_collision_in_watch_is_failed_bucket(tmp_docent_home, tmp_path):
+def test_collision_in_watch_is_failed_bucket(tmp_docent_home, tmp_path, seed_queue_entry):
     """A different file with the same filename already lives in Watch. Move
     must not overwrite; entry should land in `failed` and the original DB
     file should remain in place."""
@@ -225,7 +221,7 @@ def test_collision_in_watch_is_failed_bucket(tmp_docent_home, tmp_path):
 
     tool = PaperPipeline()
     ctx = _ctx(database_dir=db, watch_subdir="Watch")
-    _add_kept(tool, ctx, pdf, title="Kept", authors="Smith, J", year=2024)
+    _add_kept(tool, seed_queue_entry, pdf, title="Kept", authors="Smith, J", year=2024)
 
     result = _drain(tool.sync_promote(SyncPromoteInputs(), ctx))
     assert len(result.failed) == 1
@@ -235,7 +231,7 @@ def test_collision_in_watch_is_failed_bucket(tmp_docent_home, tmp_path):
     assert entry["promoted_at"] is None
 
 
-def test_sync_status_promoted_at_excludes_from_promotable(tmp_docent_home, tmp_path):
+def test_sync_status_promoted_at_excludes_from_promotable(tmp_docent_home, tmp_path, seed_queue_entry):
     """Even with the file still in DB root and not in Watch, a set
     `promoted_at` excludes the entry from `promotable`."""
     db = tmp_path / "Papers"
@@ -244,7 +240,7 @@ def test_sync_status_promoted_at_excludes_from_promotable(tmp_docent_home, tmp_p
 
     tool = PaperPipeline()
     ctx = _ctx(database_dir=db, watch_subdir="Watch")
-    _add_kept(tool, ctx, pdf, title="Kept", authors="Smith, J", year=2024)
+    _add_kept(tool, seed_queue_entry, pdf, title="Kept", authors="Smith, J", year=2024)
     queue = tool._store.load_queue()
     queue[0]["promoted_at"] = "2026-04-30T12:00:00"
     tool._store.save_queue(queue)

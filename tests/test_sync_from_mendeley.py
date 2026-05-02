@@ -16,7 +16,6 @@ from docent.core.context import Context
 from docent.execution import Executor
 from docent.llm import LLMClient
 from docent.tools.paper import (
-    AddInputs,
     ConfigSetInputs,
     ConfigShowInputs,
     PaperPipeline,
@@ -487,18 +486,3 @@ def test_sync_invalidates_reader_cache(tmp_docent_home, monkeypatch):
         data = _json.loads(cache_path.read_text(encoding="utf-8"))
         assert "FQ" not in data
 
-
-def test_add_with_pdf_still_works(tmp_docent_home, tmp_path, monkeypatch):
-    """Sanity: existing `paper add` flow (pdf-driven, no mendeley_id) is
-    unaffected by the validator relax."""
-    tool = PaperPipeline()
-    ctx = _ctx()
-    pdf = tmp_path / "smith-2024-foo.pdf"
-    pdf.write_bytes(b"%PDF-1.4\n")
-    result = tool.add(AddInputs(
-        pdf=str(pdf), title="Foo", authors="Smith, J", year=2024, doi="10.1234/foo"
-    ), ctx)
-    assert result.added
-    queue = tool._store.load_queue()
-    assert queue[0]["mendeley_id"] is None
-    assert queue[0]["doi"] == "10.1234/foo"

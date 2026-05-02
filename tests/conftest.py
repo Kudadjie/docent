@@ -7,6 +7,9 @@ tests that call @register_tool don't leak into one another.
 from __future__ import annotations
 
 import os
+from datetime import datetime
+from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -30,3 +33,60 @@ def isolated_registry():
     finally:
         _REGISTRY.clear()
         _REGISTRY.update(snapshot)
+
+
+def _seed_queue_entry(
+    tool: Any,
+    *,
+    title: str = "Test Paper",
+    authors: str = "Smith, J",
+    year: int | None = 2024,
+    doi: str | None = None,
+    pdf_path: str | Path | None = None,
+    mendeley_id: str | None = None,
+    id: str | None = None,
+    priority: str = "medium",
+    course: str | None = None,
+    notes: str = "",
+    keep_in_mendeley: bool = False,
+    promoted_at: str | None = None,
+    status: str = "queued",
+) -> dict:
+    """Build a QueueEntry directly and persist it via the tool's store.
+
+    Bypasses the `paper add` CLI surface (which post Step 11.8 only handles
+    guidance + mendeley-id upsert) so sync-* tests can seed arbitrary
+    fixtures. Mirrors PaperPipeline._derive_id when no explicit `id` is given.
+    """
+    from docent.tools.paper import PaperPipeline, QueueEntry
+
+    entry_id = id or PaperPipeline._derive_id(authors, year, title)
+    pdf_str = str(Path(pdf_path).resolve()) if pdf_path else None
+    entry = QueueEntry(
+        id=entry_id,
+        title=title,
+        authors=authors,
+        year=year,
+        doi=doi,
+        added=datetime.now().date().isoformat(),
+        status=status,
+        priority=priority,
+        course=course,
+        notes=notes,
+        file_status="found" if pdf_str else "missing",
+        keep_in_mendeley=keep_in_mendeley,
+        pdf_path=pdf_str,
+        promoted_at=promoted_at,
+        mendeley_id=mendeley_id,
+    )
+    queue = tool._store.load_queue()
+    queue = [e for e in queue if e.get("id") != entry_id]
+    queue.append(entry.model_dump())
+    tool._store.save_queue(queue)
+    return entry.model_dump()
+
+
+@pytest.fixture
+def seed_queue_entry():
+    """Pytest-fixture form: yield the helper for direct use in tests."""
+    return _seed_queue_entry

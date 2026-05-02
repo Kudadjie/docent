@@ -13,7 +13,7 @@ from docent.config import load_settings
 from docent.core.context import Context
 from docent.execution import Executor
 from docent.llm import LLMClient
-from docent.tools.paper import AddInputs, PaperPipeline, SyncStatusInputs
+from docent.tools.paper import PaperPipeline, SyncStatusInputs
 
 
 def _ctx(database_dir: Path | None = None, watch_subdir: str | None = "Watch") -> Context:
@@ -57,14 +57,14 @@ def test_empty_database_empty_queue(tmp_docent_home, tmp_path):
     assert "0 matched" in result.summary
 
 
-def test_matched_entry_with_file(tmp_docent_home, tmp_path):
+def test_matched_entry_with_file(tmp_docent_home, tmp_path, seed_queue_entry):
     db = tmp_path / "Papers"
     db.mkdir()
     pdf = _make_pdf(db / "smith2024.pdf")
 
     tool = PaperPipeline()
     ctx = _ctx(database_dir=db)
-    tool.add(AddInputs(title="Topic", authors="Smith, J", year=2024, pdf=str(pdf)), ctx)
+    seed_queue_entry(tool, title="Topic", authors="Smith, J", year=2024, pdf_path=pdf)
 
     result = tool.sync_status(SyncStatusInputs(), ctx)
     assert len(result.in_queue_with_file) == 1
@@ -84,7 +84,7 @@ def test_orphan_pdf_in_database(tmp_docent_home, tmp_path):
     assert result.in_queue_with_file == []
 
 
-def test_in_queue_missing_file(tmp_docent_home, tmp_path):
+def test_in_queue_missing_file(tmp_docent_home, tmp_path, seed_queue_entry):
     """Queue entry references a pdf_path that no longer exists on disk."""
     db = tmp_path / "Papers"
     db.mkdir()
@@ -92,7 +92,7 @@ def test_in_queue_missing_file(tmp_docent_home, tmp_path):
 
     tool = PaperPipeline()
     ctx = _ctx(database_dir=db)
-    tool.add(AddInputs(title="Moved Paper", authors="Doe, J", year=2023, pdf=str(pdf)), ctx)
+    seed_queue_entry(tool, title="Moved Paper", authors="Doe, J", year=2023, pdf_path=pdf)
     pdf.unlink()  # simulate a move/delete after add
 
     result = tool.sync_status(SyncStatusInputs(), ctx)
@@ -117,7 +117,7 @@ def test_watch_subdir_pdfs_excluded_from_orphans(tmp_docent_home, tmp_path):
     assert any(p.endswith("tracked.pdf") for p in result.orphan_pdfs)
 
 
-def test_promotable_kept_with_file_not_in_watch(tmp_docent_home, tmp_path):
+def test_promotable_kept_with_file_not_in_watch(tmp_docent_home, tmp_path, seed_queue_entry):
     """An entry with keep_in_mendeley=True + file present + no copy in Watch is promotable."""
     db = tmp_path / "Papers"
     db.mkdir()
@@ -125,18 +125,15 @@ def test_promotable_kept_with_file_not_in_watch(tmp_docent_home, tmp_path):
 
     tool = PaperPipeline()
     ctx = _ctx(database_dir=db, watch_subdir="Watch")
-    tool.add(AddInputs(title="Kept", authors="Roe, A", year=2022, pdf=str(pdf)), ctx)
-    # Mark keeping by directly mutating queue (mark_keeping action exists but we
-    # are testing sync-status, not the keeping action — keep dependencies tight).
-    queue = tool._store.load_queue()
-    queue[0]["keep_in_mendeley"] = True
-    tool._store.save_queue(queue)
+    seed_queue_entry(
+        tool, title="Kept", authors="Roe, A", year=2022, pdf_path=pdf, keep_in_mendeley=True,
+    )
 
     result = tool.sync_status(SyncStatusInputs(), ctx)
     assert len(result.promotable) == 1
 
 
-def test_promotable_excludes_already_in_watch(tmp_docent_home, tmp_path):
+def test_promotable_excludes_already_in_watch(tmp_docent_home, tmp_path, seed_queue_entry):
     """If a same-name PDF already exists in Watch, the entry is treated as
     already promoted and excluded from `promotable`."""
     db = tmp_path / "Papers"
@@ -147,10 +144,9 @@ def test_promotable_excludes_already_in_watch(tmp_docent_home, tmp_path):
 
     tool = PaperPipeline()
     ctx = _ctx(database_dir=db, watch_subdir="Watch")
-    tool.add(AddInputs(title="Already", authors="Lee, B", year=2021, pdf=str(pdf)), ctx)
-    queue = tool._store.load_queue()
-    queue[0]["keep_in_mendeley"] = True
-    tool._store.save_queue(queue)
+    seed_queue_entry(
+        tool, title="Already", authors="Lee, B", year=2021, pdf_path=pdf, keep_in_mendeley=True,
+    )
 
     result = tool.sync_status(SyncStatusInputs(), ctx)
     assert result.promotable == []

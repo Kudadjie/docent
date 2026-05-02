@@ -16,7 +16,6 @@ from docent.core.context import Context
 from docent.execution.executor import ProcessResult
 from docent.llm import LLMClient
 from docent.tools.paper import (
-    AddInputs,
     PaperPipeline,
     SyncPullInputs,
 )
@@ -81,7 +80,7 @@ def test_missing_email_returns_message(tmp_docent_home, tmp_path):
     assert result.downloaded == []
 
 
-def test_already_has_file(tmp_docent_home, tmp_path):
+def test_already_has_file(tmp_docent_home, tmp_path, seed_queue_entry):
     db = tmp_path / "Papers"
     db.mkdir()
     pdf = db / "smith-2024-x.pdf"
@@ -89,7 +88,7 @@ def test_already_has_file(tmp_docent_home, tmp_path):
 
     tool = PaperPipeline()
     ctx = _ctx(database_dir=db)
-    tool.add(AddInputs(title="X", authors="Smith, J", year=2024, pdf=str(pdf)), ctx)
+    seed_queue_entry(tool, title="X", authors="Smith, J", year=2024, pdf_path=pdf)
 
     result = _drain(tool.sync_pull(SyncPullInputs(), ctx))
     # No targets had missing files, so already_has_file is empty here too
@@ -100,7 +99,7 @@ def test_already_has_file(tmp_docent_home, tmp_path):
     assert result.network_error == []
 
 
-def test_already_has_file_when_id_targeted(tmp_docent_home, tmp_path):
+def test_already_has_file_when_id_targeted(tmp_docent_home, tmp_path, seed_queue_entry):
     db = tmp_path / "Papers"
     db.mkdir()
     pdf = db / "smith-2024-x.pdf"
@@ -108,13 +107,13 @@ def test_already_has_file_when_id_targeted(tmp_docent_home, tmp_path):
 
     tool = PaperPipeline()
     ctx = _ctx(database_dir=db)
-    tool.add(AddInputs(title="X", authors="Smith, J", year=2024, pdf=str(pdf)), ctx)
+    seed_queue_entry(tool, title="X", authors="Smith, J", year=2024, pdf_path=pdf)
 
     result = _drain(tool.sync_pull(SyncPullInputs(id="smith-2024-x"), ctx))
     assert result.already_has_file == ["smith-2024-x"]
 
 
-def test_happy_doi_path_downloads_and_updates_entry(tmp_docent_home, tmp_path):
+def test_happy_doi_path_downloads_and_updates_entry(tmp_docent_home, tmp_path, seed_queue_entry):
     db = tmp_path / "Papers"
     db.mkdir()
 
@@ -138,7 +137,7 @@ def test_happy_doi_path_downloads_and_updates_entry(tmp_docent_home, tmp_path):
     ctx = _ctx(database_dir=db, executor=FakeExecutor(handlers=[unpaywall, download]))
     tool = PaperPipeline()
     # Add a metadata-only entry (no pdf, has DOI).
-    tool.add(AddInputs(title="Foo", authors="Smith, J", year=2024, doi="10.1234/foo"), ctx)
+    seed_queue_entry(tool, title="Foo", authors="Smith, J", year=2024, doi="10.1234/foo")
 
     result = _drain(tool.sync_pull(SyncPullInputs(), ctx))
     assert len(result.downloaded) == 1
@@ -151,7 +150,7 @@ def test_happy_doi_path_downloads_and_updates_entry(tmp_docent_home, tmp_path):
     assert queue[0]["file_status"] == "found"
 
 
-def test_no_oa_surfaces_doi_url_for_institutional_access(tmp_docent_home, tmp_path):
+def test_no_oa_surfaces_doi_url_for_institutional_access(tmp_docent_home, tmp_path, seed_queue_entry):
     db = tmp_path / "Papers"
     db.mkdir()
 
@@ -167,7 +166,7 @@ def test_no_oa_surfaces_doi_url_for_institutional_access(tmp_docent_home, tmp_pa
 
     ctx = _ctx(database_dir=db, executor=FakeExecutor(handlers=[unpaywall]))
     tool = PaperPipeline()
-    tool.add(AddInputs(title="Closed", authors="Smith, J", year=2024, doi="10.1038/closed"), ctx)
+    seed_queue_entry(tool, title="Closed", authors="Smith, J", year=2024, doi="10.1038/closed")
 
     result = _drain(tool.sync_pull(SyncPullInputs(), ctx))
     assert result.downloaded == []
@@ -176,7 +175,7 @@ def test_no_oa_surfaces_doi_url_for_institutional_access(tmp_docent_home, tmp_pa
     assert result.no_oa[0]["journal"] == "Nature Closed"
 
 
-def test_doi_not_in_unpaywall_buckets_as_not_found(tmp_docent_home, tmp_path):
+def test_doi_not_in_unpaywall_buckets_as_not_found(tmp_docent_home, tmp_path, seed_queue_entry):
     db = tmp_path / "Papers"
     db.mkdir()
 
@@ -187,7 +186,7 @@ def test_doi_not_in_unpaywall_buckets_as_not_found(tmp_docent_home, tmp_path):
 
     ctx = _ctx(database_dir=db, executor=FakeExecutor(handlers=[unpaywall]))
     tool = PaperPipeline()
-    tool.add(AddInputs(title="Ghost", authors="Smith, J", year=2024, doi="10.9999/nope"), ctx)
+    seed_queue_entry(tool, title="Ghost", authors="Smith, J", year=2024, doi="10.9999/nope")
 
     result = _drain(tool.sync_pull(SyncPullInputs(), ctx))
     assert result.network_error == []
@@ -195,7 +194,7 @@ def test_doi_not_in_unpaywall_buckets_as_not_found(tmp_docent_home, tmp_path):
     assert "Unpaywall" in result.not_found[0]["reason"]
 
 
-def test_network_error_buckets_correctly(tmp_docent_home, tmp_path):
+def test_network_error_buckets_correctly(tmp_docent_home, tmp_path, seed_queue_entry):
     db = tmp_path / "Papers"
     db.mkdir()
 
@@ -204,7 +203,7 @@ def test_network_error_buckets_correctly(tmp_docent_home, tmp_path):
 
     ctx = _ctx(database_dir=db, executor=FakeExecutor(handlers=[fail]))
     tool = PaperPipeline()
-    tool.add(AddInputs(title="X", authors="Smith, J", year=2024, doi="10.1234/x"), ctx)
+    seed_queue_entry(tool, title="X", authors="Smith, J", year=2024, doi="10.1234/x")
 
     result = _drain(tool.sync_pull(SyncPullInputs(), ctx))
     assert len(result.network_error) == 1
@@ -246,20 +245,7 @@ def test_legacy_no_doi_entry_fails_fast(tmp_docent_home, tmp_path):
     assert "insufficient-identifiers" in result.not_found[0]["reason"]
 
 
-def test_add_rejects_title_only(tmp_docent_home, tmp_path):
-    """Identifier-free adds removed: title without --pdf or --doi is rejected."""
-    db = tmp_path / "Papers"
-    db.mkdir()
-    ctx = _ctx(database_dir=db)
-    tool = PaperPipeline()
-
-    result = tool.add(AddInputs(title="Just a title", authors="X, Y", year=2024), ctx)
-    assert result.added is False
-    assert "--pdf or --doi" in result.message
-    assert tool._store.load_queue() == []
-
-
-def test_no_oa_summary_includes_institutional_hint(tmp_docent_home, tmp_path):
+def test_no_oa_summary_includes_institutional_hint(tmp_docent_home, tmp_path, seed_queue_entry):
     """Bug 2: closed-access summary should suggest institutional access."""
     db = tmp_path / "Papers"
     db.mkdir()
@@ -276,13 +262,13 @@ def test_no_oa_summary_includes_institutional_hint(tmp_docent_home, tmp_path):
 
     ctx = _ctx(database_dir=db, executor=FakeExecutor(handlers=[unpaywall]))
     tool = PaperPipeline()
-    tool.add(AddInputs(title="Closed", authors="X, Y", year=2024, doi="10.1038/closed"), ctx)
+    seed_queue_entry(tool, title="Closed", authors="X, Y", year=2024, doi="10.1038/closed")
 
     result = _drain(tool.sync_pull(SyncPullInputs(), ctx))
     assert "institutional access" in result.summary.lower()
 
 
-def test_download_rejects_html_landing_page(tmp_docent_home, tmp_path):
+def test_download_rejects_html_landing_page(tmp_docent_home, tmp_path, seed_queue_entry):
     """Bug 3: Unpaywall pdf_url returning HTML must be discarded, not persisted as a 1KB '.pdf'."""
     db = tmp_path / "Papers"
     db.mkdir()
@@ -305,7 +291,7 @@ def test_download_rejects_html_landing_page(tmp_docent_home, tmp_path):
 
     ctx = _ctx(database_dir=db, executor=FakeExecutor(handlers=[unpaywall, download]))
     tool = PaperPipeline()
-    tool.add(AddInputs(title="Vehicles", authors="X, Y", year=2021, doi="10.3390/vehicles3040047"), ctx)
+    seed_queue_entry(tool, title="Vehicles", authors="X, Y", year=2021, doi="10.3390/vehicles3040047")
 
     result = _drain(tool.sync_pull(SyncPullInputs(), ctx))
     assert result.downloaded == []
@@ -315,7 +301,7 @@ def test_download_rejects_html_landing_page(tmp_docent_home, tmp_path):
     assert expected is None
 
 
-def test_download_rejects_pdf_magic_mismatch(tmp_docent_home, tmp_path):
+def test_download_rejects_pdf_magic_mismatch(tmp_docent_home, tmp_path, seed_queue_entry):
     """Bug 3: Content-Type can be missing/wrong — magic-byte check must still catch non-PDFs."""
     db = tmp_path / "Papers"
     db.mkdir()
@@ -339,14 +325,14 @@ def test_download_rejects_pdf_magic_mismatch(tmp_docent_home, tmp_path):
 
     ctx = _ctx(database_dir=db, executor=FakeExecutor(handlers=[unpaywall, download]))
     tool = PaperPipeline()
-    tool.add(AddInputs(title="X", authors="X, Y", year=2024, doi="10.1234/x"), ctx)
+    seed_queue_entry(tool, title="X", authors="X, Y", year=2024, doi="10.1234/x")
 
     result = _drain(tool.sync_pull(SyncPullInputs(), ctx))
     assert result.downloaded == []
     assert len(result.network_error) == 1
 
 
-def test_dry_run_resolves_oa_but_does_not_download(tmp_docent_home, tmp_path):
+def test_dry_run_resolves_oa_but_does_not_download(tmp_docent_home, tmp_path, seed_queue_entry):
     db = tmp_path / "Papers"
     db.mkdir()
 
@@ -368,7 +354,7 @@ def test_dry_run_resolves_oa_but_does_not_download(tmp_docent_home, tmp_path):
 
     ctx = _ctx(database_dir=db, executor=FakeExecutor(handlers=[unpaywall, download]))
     tool = PaperPipeline()
-    tool.add(AddInputs(title="X", authors="Smith, J", year=2024, doi="10.1234/foo"), ctx)
+    seed_queue_entry(tool, title="X", authors="Smith, J", year=2024, doi="10.1234/foo")
 
     result = _drain(tool.sync_pull(SyncPullInputs(dry_run=True), ctx))
     assert result.downloaded == []
