@@ -245,5 +245,5 @@ def test_second_reader_call_hits_cache_not_mcp(tmp_docent_home, monkeypatch):
     tool.next(NextInputs(), _ctx())
 
     assert doc_calls == 1, "second call should be a cache hit"
-    # folder resolution still happens on every reader call (cheap; cache is keyed by folder_id).
-    assert folder_calls == 2
+    # 11.7-followup: folder lookup is cached too — only the first call hits MCP.
+    assert folder_calls == 1, "second call should reuse cached folder_id"

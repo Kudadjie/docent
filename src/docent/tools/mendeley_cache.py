@@ -33,8 +33,16 @@ from pathlib import Path
 from typing import Any, Callable
 
 from docent.tools.mendeley_client import list_documents as default_list_documents
+from docent.tools.mendeley_client import list_folders as default_list_folders
 
 DEFAULT_TTL_SECONDS = 300
+# Folder IDs are effectively immutable in Mendeley — the only realistic
+# invalidator is the user renaming/recreating the collection, which already
+# surfaces a verbose actionable hint via sync-from-mendeley.
+FOLDER_TTL_SECONDS = 86400
+# Reserved key for the collection_name -> folder_id map. Mendeley folder
+# IDs are UUID-shaped, so this can't collide with a real top-level entry.
+_FOLDERS_KEY = "__folders__"
 
 
 class MendeleyCache:
@@ -43,10 +51,14 @@ class MendeleyCache:
         cache_path: Path,
         ttl_seconds: int = DEFAULT_TTL_SECONDS,
         list_documents: Callable[..., dict[str, Any]] | None = None,
+        list_folders: Callable[..., dict[str, Any]] | None = None,
+        folder_ttl_seconds: int = FOLDER_TTL_SECONDS,
     ) -> None:
         self._path = cache_path
         self._ttl = ttl_seconds
         self._list_documents = list_documents or default_list_documents
+        self._list_folders = list_folders or default_list_folders
+        self._folder_ttl = folder_ttl_seconds
 
     @property
     def path(self) -> Path:
@@ -77,6 +89,53 @@ class MendeleyCache:
         store[folder_id] = {"fetched_at": now, "docs": docs}
         self._save(store)
         return docs
+
+    def get_folder_id(
+        self,
+        collection_name: str,
+        launch_command: list[str] | None = None,
+    ) -> str | None:
+        """Return the Mendeley folder ID for `collection_name`, or None on
+        transport error / missing / ambiguous. Cached in the same file under
+        a reserved `__folders__` key with a long TTL — folder IDs are
+        effectively static, and this saves the ~5s `list_folders` MCP
+        round-trip on every reader call.
+        """
+        store = self._load()
+        entry = store.get(_FOLDERS_KEY)
+        now = time.time()
+        if entry and (now - entry.get("fetched_at", 0.0)) < self._folder_ttl:
+            by_name = entry.get("by_name")
+            if isinstance(by_name, dict) and collection_name in by_name:
+                fid = by_name[collection_name]
+                return fid if isinstance(fid, str) and fid else None
+
+        resp = self._list_folders(launch_command=launch_command)
+        if resp.get("error"):
+            return None
+        folders = resp.get("items") or []
+        # Count names first so duplicates get dropped entirely (not toggled).
+        counts: dict[str, int] = {}
+        for f in folders:
+            if isinstance(f, dict):
+                n = f.get("name")
+                if isinstance(n, str) and n:
+                    counts[n] = counts.get(n, 0) + 1
+        by_name: dict[str, str] = {}
+        for f in folders:
+            if not isinstance(f, dict):
+                continue
+            name = f.get("name")
+            fid = f.get("id")
+            if (
+                isinstance(name, str) and name
+                and isinstance(fid, str) and fid
+                and counts.get(name, 0) == 1
+            ):
+                by_name[name] = fid
+        store[_FOLDERS_KEY] = {"fetched_at": now, "by_name": by_name}
+        self._save(store)
+        return by_name.get(collection_name)
 
     def invalidate(self, folder_id: str | None = None) -> None:
         """Drop one folder's entry, or the whole file if `folder_id` is None.

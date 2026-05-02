@@ -1683,24 +1683,18 @@ class PaperPipeline(Tool):
         return MendeleyCache(
             cache_dir() / "paper" / "mendeley_collection.json",
             list_documents=mendeley_list_documents,
+            list_folders=mendeley_list_folders,
         )
 
     def _resolve_collection_folder_id_quiet(
         self, collection_name: str, launch_command: list[str] | None
     ) -> str | None:
-        """Reader-side folder lookup. Returns None on any failure (no
-        collection / ambiguous / transport error) — callers fall back to
-        the snapshot fields persisted in queue.json. The verbose,
+        """Reader-side folder lookup. Delegates to the cache so the ~5s
+        `list_folders` MCP round-trip only happens once per folder TTL.
+        Returns None on transport / missing / ambiguous — callers fall back
+        to the snapshot fields persisted in queue.json. The verbose,
         actionable-error version lives in `_sync_from_mendeley_run`."""
-        resp = mendeley_list_folders(launch_command)
-        if resp.get("error"):
-            return None
-        folders = resp.get("items") or []
-        matches = [f for f in folders if isinstance(f, dict) and f.get("name") == collection_name]
-        if len(matches) != 1:
-            return None
-        fid = matches[0].get("id")
-        return fid if isinstance(fid, str) and fid else None
+        return self._mendeley_cache().get_folder_id(collection_name, launch_command)
 
     def _load_mendeley_overlay(self, context: Context) -> dict[str, dict[str, Any]] | None:
         """Pull the cached Mendeley collection (or fetch + cache fresh).

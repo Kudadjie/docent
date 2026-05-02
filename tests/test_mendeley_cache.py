@@ -167,3 +167,101 @@ def test_launch_command_passes_through(tmp_path):
     cache = MendeleyCache(tmp_path / "c.json", list_documents=fake_list)
     cache.get_collection("F1", launch_command=["custom", "cmd"])
     assert seen["lc"] == ["custom", "cmd"]
+
+
+# ----------------------------------------------------------------------
+# get_folder_id (11.7-followup)
+# ----------------------------------------------------------------------
+
+
+def _ok_folders(folders: list[dict]) -> dict:
+    return {"items": folders, "error": None}
+
+
+def test_get_folder_id_first_call_fetches_and_caches(tmp_path):
+    calls = []
+
+    def fake_folders(launch_command=None):
+        calls.append(launch_command)
+        return _ok_folders([{"id": "F1", "name": "Docent-Queue"}, {"id": "F2", "name": "Other"}])
+
+    cache = MendeleyCache(tmp_path / "c.json", list_folders=fake_folders)
+    assert cache.get_folder_id("Docent-Queue") == "F1"
+    # Second call within TTL must not re-fetch.
+    assert cache.get_folder_id("Docent-Queue") == "F1"
+    assert cache.get_folder_id("Other") == "F2"
+    assert len(calls) == 1
+
+
+def test_get_folder_id_missing_collection_returns_none(tmp_path):
+    def fake_folders(launch_command=None):
+        return _ok_folders([{"id": "F1", "name": "Other"}])
+
+    cache = MendeleyCache(tmp_path / "c.json", list_folders=fake_folders)
+    assert cache.get_folder_id("Docent-Queue") is None
+
+
+def test_get_folder_id_ambiguous_collection_returns_none(tmp_path):
+    def fake_folders(launch_command=None):
+        return _ok_folders([
+            {"id": "F1", "name": "Dup"},
+            {"id": "F2", "name": "Dup"},
+            {"id": "F3", "name": "Unique"},
+        ])
+
+    cache = MendeleyCache(tmp_path / "c.json", list_folders=fake_folders)
+    assert cache.get_folder_id("Dup") is None
+    # Non-duplicate sibling still resolves from the same cached fetch.
+    assert cache.get_folder_id("Unique") == "F3"
+
+
+def test_get_folder_id_transport_error_returns_none_no_cache(tmp_path):
+    def fake_folders(launch_command=None):
+        return {"items": [], "error": "transport: nope"}
+
+    cache = MendeleyCache(tmp_path / "c.json", list_folders=fake_folders)
+    assert cache.get_folder_id("Docent-Queue") is None
+    assert not (tmp_path / "c.json").exists()
+
+
+def test_get_folder_id_ttl_expiry_refetches(tmp_path):
+    calls = []
+
+    def fake_folders(launch_command=None):
+        calls.append(1)
+        return _ok_folders([{"id": "F1", "name": "Docent-Queue"}])
+
+    cache = MendeleyCache(
+        tmp_path / "c.json",
+        list_folders=fake_folders,
+        folder_ttl_seconds=0,
+    )
+    cache.get_folder_id("Docent-Queue")
+    cache.get_folder_id("Docent-Queue")
+    assert len(calls) == 2
+
+
+def test_get_folder_id_shares_file_with_get_collection(tmp_path):
+    """Both `__folders__` and per-folder doc entries live in one JSON file."""
+
+    def fake_folders(launch_command=None):
+        return _ok_folders([{"id": "F1", "name": "Docent-Queue"}])
+
+    def fake_docs(folder_id, launch_command=None):
+        return _ok([_doc("m1")])
+
+    cache = MendeleyCache(
+        tmp_path / "c.json",
+        list_documents=fake_docs,
+        list_folders=fake_folders,
+    )
+    cache.get_folder_id("Docent-Queue")
+    cache.get_collection("F1")
+    on_disk = json.loads((tmp_path / "c.json").read_text(encoding="utf-8"))
+    assert "__folders__" in on_disk
+    assert "F1" in on_disk
+    # invalidate(F1) must not nuke the folder map.
+    cache.invalidate("F1")
+    on_disk_after = json.loads((tmp_path / "c.json").read_text(encoding="utf-8"))
+    assert "__folders__" in on_disk_after
+    assert "F1" not in on_disk_after
