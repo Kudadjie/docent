@@ -126,3 +126,29 @@ def search_library(query: str, launch_command: list[str] | None = None, limit: i
     """Call Mendeley's `mendeley_search_library` with a free-text query."""
     cmd = launch_command or DEFAULT_LAUNCH_COMMAND
     return _run(_call_tool(cmd, "mendeley_search_library", {"query": query, "limit": limit}))
+
+
+def list_folders(launch_command: list[str] | None = None) -> dict[str, Any]:
+    """Call Mendeley's `mendeley_list_folders`. Returns flat list of
+    `{id, name, parent_id}`; nesting is encoded via `parent_id`. Used by
+    `sync-from-mendeley` to resolve a configured collection name to its id."""
+    cmd = launch_command or DEFAULT_LAUNCH_COMMAND
+    return _run(_call_tool(cmd, "mendeley_list_folders", {}))
+
+
+def list_documents(
+    folder_id: str | None = None,
+    launch_command: list[str] | None = None,
+    limit: int = 200,
+    sort_by: str = "last_modified",
+) -> dict[str, Any]:
+    """Call Mendeley's `mendeley_list_documents`. With `folder_id`, scopes
+    to that collection; without, returns the whole library. Default limit
+    bumped from 50 (MCP default) to 200 — a reading queue can plausibly hold
+    that many. Documents above the limit are silently truncated; revisit if
+    real-data queues grow past it."""
+    cmd = launch_command or DEFAULT_LAUNCH_COMMAND
+    args: dict[str, Any] = {"limit": limit, "sort_by": sort_by}
+    if folder_id is not None:
+        args["folder_id"] = folder_id
+    return _run(_call_tool(cmd, "mendeley_list_documents", args))

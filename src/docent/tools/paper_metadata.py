@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import re
+import urllib.parse
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -17,6 +19,13 @@ if TYPE_CHECKING:
 
 def resolve_metadata(inputs: "AddInputs", executor: Any) -> tuple[dict[str, Any], str]:
     """Run fallback chain. Returns (metadata-dict, source-tag).
+
+    Chain (Step 11.5):
+        explicit-doi → CrossRef           (`doi-crossref`)
+        PDF DOI (scans up to 20 pages)    → CrossRef (`pdf-doi-crossref`)
+        PDF title → CrossRef title-search → fuzzy-guarded (`pdf-title-crossref`)
+        PDF title (raw, no CrossRef hit)  (`pdf-metadata`)
+        filename heuristic                (`filename`)
 
     Explicit fields on `inputs` (title/authors/year/doi) are folded in last and
     always win over extracted values.
@@ -37,6 +46,11 @@ def resolve_metadata(inputs: "AddInputs", executor: Any) -> tuple[dict[str, Any]
             if cr:
                 extracted = cr
                 source = "pdf-doi-crossref"
+        if not extracted and pdf_meta and pdf_meta.get("title"):
+            cr2 = crossref_title_search(pdf_meta["title"], executor)
+            if cr2:
+                extracted = cr2
+                source = "pdf-title-crossref"
         if not extracted and pdf_meta and pdf_meta.get("title"):
             extracted = {k: v for k, v in pdf_meta.items() if k != "doi"}
             if pdf_meta.get("doi"):
@@ -107,8 +121,16 @@ def crossref_lookup(doi: str, executor: Any) -> dict[str, Any] | None:
     return {"title": title, "authors": authors_str, "year": year, "doi": clean}
 
 
+PDF_DOI_PAGE_CAP = 20
+
+
 def extract_pdf_metadata(pdf_path: str) -> dict[str, Any] | None:
-    """Read PDF info dict + scan first 5 pages for a DOI. Returns dict or None."""
+    """Read PDF info dict + scan up to 20 pages for a DOI. Returns dict or None.
+
+    Step 11.5: page cap bumped 5 → 20 (many journals only print the DOI in the
+    last-page footer). When the info dict lacks `/Title`, fall back to a
+    largest-font-size heuristic on page 1.
+    """
     p = Path(pdf_path)
     if not p.is_file():
         return None
@@ -129,9 +151,13 @@ def extract_pdf_metadata(pdf_path: str) -> dict[str, Any] | None:
             out["title"] = str(title).strip()
         if author:
             out["authors"] = str(author).strip()
+    if not out.get("title"):
+        font_title = _extract_title_by_font_size(reader)
+        if font_title:
+            out["title"] = font_title
     doi_re = re.compile(r"\b10\.\d{4,9}/[-._;()/:A-Za-z0-9]+", re.IGNORECASE)
     try:
-        pages = reader.pages[:5]
+        pages = reader.pages[:PDF_DOI_PAGE_CAP]
     except Exception:
         pages = []
     for page in pages:
@@ -144,6 +170,116 @@ def extract_pdf_metadata(pdf_path: str) -> dict[str, Any] | None:
             out["doi"] = m.group(0).rstrip(".,;)")
             break
     return out or None
+
+
+def _extract_title_by_font_size(reader: Any) -> str | None:
+    """Largest-font-size text run on page 1, joined and whitespace-collapsed.
+
+    Used only when the PDF info dict has no `/Title`. pypdf's `visitor_text`
+    callback exposes font_size per text run; we group runs by size and pick
+    the largest size with at least 10 chars of text.
+    """
+    try:
+        page = reader.pages[0]
+    except Exception:
+        return None
+    runs: list[tuple[float, str]] = []
+
+    def visitor(text, cm, tm, font_dict, font_size):  # noqa: ARG001
+        try:
+            size = float(font_size) if font_size is not None else 0.0
+        except (TypeError, ValueError):
+            size = 0.0
+        if text and text.strip():
+            runs.append((size, text))
+
+    try:
+        page.extract_text(visitor_text=visitor)
+    except Exception:
+        return None
+    if not runs:
+        return None
+    by_size: dict[float, list[str]] = {}
+    for size, text in runs:
+        by_size.setdefault(size, []).append(text)
+    for size in sorted(by_size.keys(), reverse=True):
+        if size <= 0:
+            continue
+        joined = re.sub(r"\s+", " ", "".join(by_size[size])).strip()
+        low = joined.lower()
+        if len(joined) >= 10 and not low.startswith(("doi", "http", "www", "©")):
+            return joined
+    return None
+
+
+def crossref_title_search(
+    title: str, executor: Any, threshold: float = 0.92
+) -> dict[str, Any] | None:
+    """CrossRef bibliographic title search with strict fuzzy guard.
+
+    Returns a metadata dict only when the best of the top-5 candidates' titles
+    fuzzy-matches `title` at SequenceMatcher ratio >= `threshold`. The 11.2
+    sync-pull batch removed an unguarded version of this helper after CrossRef
+    returned wrong papers on real data; the threshold here is deliberately
+    strict (near-exact match required, tolerates only subtitle/punctuation
+    drift).
+    """
+    if not title or not title.strip():
+        return None
+    q = urllib.parse.quote_plus(title.strip())
+    url = f"https://api.crossref.org/works?query.bibliographic={q}&rows=5"
+    try:
+        result = executor.run(
+            ["curl", "-sS", "--max-time", "10",
+             "-H", "User-Agent: docent/0.1.0",
+             url],
+            check=False,
+        )
+    except Exception:
+        return None
+    if result.returncode != 0 or not result.stdout:
+        return None
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+    items = (data.get("message") or {}).get("items") or []
+    norm_target = _normalize_for_match(title)
+    best: tuple[float, dict[str, Any]] | None = None
+    for it in items:
+        cand_titles = it.get("title") or []
+        if not cand_titles:
+            continue
+        ratio = SequenceMatcher(None, norm_target, _normalize_for_match(cand_titles[0])).ratio()
+        if best is None or ratio > best[0]:
+            best = (ratio, it)
+    if best is None or best[0] < threshold:
+        return None
+    msg = best[1]
+    cand_title = (msg.get("title") or [None])[0]
+    if not cand_title:
+        return None
+    authors_list = msg.get("author") or []
+    authors_str = ", ".join(
+        " ".join(filter(None, [a.get("family"), a.get("given")])) for a in authors_list
+    ) or "Unknown"
+    year = None
+    issued = (msg.get("issued") or {}).get("date-parts") or []
+    if issued and isinstance(issued[0], list) and issued[0]:
+        try:
+            year = int(issued[0][0])
+        except (TypeError, ValueError):
+            pass
+    return {
+        "title": cand_title.strip(),
+        "authors": authors_str,
+        "year": year,
+        "doi": msg.get("DOI"),
+    }
+
+
+def _normalize_for_match(s: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9 ]+", " ", s.lower())).strip()
 
 
 def filename_heuristic(pdf_path: str) -> dict[str, Any]:

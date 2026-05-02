@@ -20,17 +20,22 @@ from docent.core import Context, ProgressEvent, Tool, action, register_tool
 from docent.learning import RunLog
 from docent.tools.paper_metadata import resolve_metadata
 from docent.tools.paper_store import BannerCounts, PaperQueueStore
-from docent.tools.mendeley_client import lookup_doi as mendeley_lookup_doi
-from docent.tools.mendeley_client import search_library as mendeley_search_library
+from docent.tools.mendeley_cache import MendeleyCache
+from docent.tools.mendeley_client import (
+    list_documents as mendeley_list_documents,
+    list_folders as mendeley_list_folders,
+    lookup_doi as mendeley_lookup_doi,
+    search_library as mendeley_search_library,
+)
 from docent.tools.paper_sync import download_pdf, move_to_watch, unpaywall_lookup
-from docent.utils.paths import data_dir
+from docent.utils.paths import cache_dir, data_dir
 from docent.utils.prompt import NoInteractiveError, prompt_for_path
 
 
 PRIORITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 
 _DEFAULT_DATABASE_DIR = "~/Documents/Papers"
-_KNOWN_PAPER_KEYS = {"database_dir", "mendeley_watch_subdir", "unpaywall_email"}
+_KNOWN_PAPER_KEYS = {"database_dir", "mendeley_watch_subdir", "unpaywall_email", "queue_collection"}
 # `mendeley_mcp_command` is a list field; config-set only handles strings today.
 # Power users can edit config.toml directly; defaulted to ["uvx", "mendeley-mcp"] in mendeley_client.
 
@@ -55,12 +60,14 @@ class QueueEntry(BaseModel):
     title_is_filename_stub: bool = False  # legacy: marked when title came from filename heuristic. Kept for backward-compat on existing queues; no longer drives logic.
 
     @model_validator(mode="after")
-    def _require_pdf_or_doi(self) -> "QueueEntry":
-        # Identifier-free entries (no PDF AND no DOI) caused real-data sync-pull
-        # to fetch random papers. Hard-block them at construction.
-        if not self.pdf_path and not self.doi:
+    def _require_identifier(self) -> "QueueEntry":
+        # Identifier-free entries (no PDF AND no DOI AND no Mendeley id) caused
+        # real-data sync-pull to fetch random papers. Mendeley-keyed entries
+        # (Step 11.6 sync-from-mendeley) are persistable without DOI/PDF
+        # because mendeley_id is itself a stable, definitive identifier.
+        if not self.pdf_path and not self.doi and not self.mendeley_id:
             raise ValueError(
-                "QueueEntry requires pdf_path or doi — identifier-free entries are not allowed."
+                "QueueEntry requires pdf_path, doi, or mendeley_id — identifier-free entries are not allowed."
             )
         return self
 
@@ -84,7 +91,7 @@ class AddResult(BaseModel):
     queue_size: int
     banner: BannerCounts
     message: str
-    metadata_source: str = "explicit"  # explicit | doi-crossref | pdf-doi-crossref | pdf-metadata | filename | none
+    metadata_source: str = "explicit"  # explicit | doi-crossref | pdf-doi-crossref | pdf-title-crossref | pdf-metadata | filename | none
 
 
 class IdOnlyInputs(BaseModel):
@@ -142,6 +149,7 @@ class ConfigShowResult(BaseModel):
     mendeley_watch_subdir: str | None
     mendeley_watch_resolved: str | None  # absolute path = database_dir / subdir, when both set
     unpaywall_email: str | None
+    queue_collection: str  # Mendeley collection name defining queue membership (Step 11.6).
 
 
 class ConfigSetResult(BaseModel):
@@ -297,6 +305,37 @@ class SyncMendeleyResult(BaseModel):
     message: str = ""
 
 
+class SyncFromMendeleyInputs(BaseModel):
+    dry_run: bool = Field(False, description="Resolve the collection and report what would change without writing the queue.")
+
+
+class SyncFromMendeleyResult(BaseModel):
+    """Per-doc buckets after running sync-from-mendeley.
+
+    `queue_collection`: the configured collection name (echoed for the
+    renderer); `folder_id`: resolved Mendeley folder id (None on early exit);
+    `added`: {id, mendeley_id, title} - new sidecar entries created from the
+    collection; `unchanged`: ids whose mendeley_id already matched a
+    sidecar entry (idempotent re-run); `removed`: ids of sidecar entries
+    whose mendeley_id is no longer in the collection (status flipped to
+    'removed'); `failed`: {mendeley_id, error} - per-doc construction or
+    persistence failures; `dry_run_added` / `dry_run_removed` populate only
+    when dry_run=True. `message` carries early-exit reasons (collection
+    missing, MCP transport error, etc.).
+    """
+
+    queue_collection: str
+    folder_id: str | None
+    added: list[dict[str, str]]
+    unchanged: list[str]
+    removed: list[str]
+    failed: list[dict[str, str]]
+    dry_run_added: list[dict[str, str]]
+    dry_run_removed: list[str]
+    summary: str
+    message: str = ""
+
+
 class SyncStatusResult(BaseModel):
     database_dir: str | None
     watch_dir: str | None
@@ -423,6 +462,7 @@ class PaperPipeline(Tool):
     @action(description="Show the next paper to read (highest-priority queued).", input_schema=NextInputs)
     def next(self, inputs: NextInputs, context: Context) -> MutationResult:
         queue = self._store.load_queue()
+        queue = self._apply_overlay(queue, self._load_mendeley_overlay(context))
         candidates = [e for e in queue if e.get("status") == "queued"]
         if inputs.course:
             candidates = [e for e in candidates if e.get("course") == inputs.course]
@@ -446,6 +486,7 @@ class PaperPipeline(Tool):
     @action(description="Show one entry's details.", input_schema=IdOnlyInputs)
     def show(self, inputs: IdOnlyInputs, context: Context) -> MutationResult:
         queue = self._store.load_queue()
+        queue = self._apply_overlay(queue, self._load_mendeley_overlay(context))
         entry = self._find_entry(queue, inputs.id)
         if not entry:
             return self._not_found(inputs.id, queue)
@@ -458,6 +499,7 @@ class PaperPipeline(Tool):
     @action(description="Search the queue for matching entries.", input_schema=SearchInputs)
     def search(self, inputs: SearchInputs, context: Context) -> SearchResult:
         queue = self._store.load_queue()
+        queue = self._apply_overlay(queue, self._load_mendeley_overlay(context))
         q = inputs.query.lower()
         matches: list[QueueEntry] = []
         for e in queue:
@@ -623,9 +665,10 @@ class PaperPipeline(Tool):
             mendeley_watch_subdir=sub,
             mendeley_watch_resolved=resolved,
             unpaywall_email=ps.unpaywall_email,
+            queue_collection=ps.queue_collection,
         )
 
-    @action(description="Set a paper setting (database_dir, mendeley_watch_subdir, unpaywall_email).", input_schema=ConfigSetInputs, name="config-set")
+    @action(description="Set a paper setting (database_dir, mendeley_watch_subdir, unpaywall_email, queue_collection).", input_schema=ConfigSetInputs, name="config-set")
     def config_set(self, inputs: ConfigSetInputs, context: Context) -> ConfigSetResult:
         from docent.utils.paths import config_file
         if inputs.key not in _KNOWN_PAPER_KEYS:
@@ -1342,6 +1385,248 @@ class PaperPipeline(Tool):
             summary=summary,
         )
 
+    @action(
+        description="Reconcile the local reading queue with a Mendeley collection (default 'Docent-Queue').",
+        input_schema=SyncFromMendeleyInputs,
+        name="sync-from-mendeley",
+    )
+    def sync_from_mendeley(self, inputs: SyncFromMendeleyInputs, context: Context):
+        collection_name = context.settings.paper.queue_collection
+        launch_command = context.settings.paper.mendeley_mcp_command  # None -> wrapper default
+        return self._sync_from_mendeley_run(collection_name, launch_command, inputs.dry_run)
+
+    def _sync_from_mendeley_run(
+        self, collection_name: str, launch_command: list[str] | None, dry_run: bool
+    ):
+        empty = SyncFromMendeleyResult(
+            queue_collection=collection_name, folder_id=None,
+            added=[], unchanged=[], removed=[], failed=[],
+            dry_run_added=[], dry_run_removed=[], summary="",
+        )
+
+        # ---- discover: resolve folder name -> folder_id ----
+        yield ProgressEvent(phase="discover", message=f"Listing Mendeley folders to resolve {collection_name!r}.")
+        folders_resp = mendeley_list_folders(launch_command)
+        if folders_resp.get("error"):
+            err = folders_resp["error"]
+            return empty.model_copy(update={"message": (
+                f"Could not list Mendeley folders: {self._mendeley_failure_hint(err)}"
+            )})
+        folders = folders_resp.get("items") or []
+        matches = [f for f in folders if isinstance(f, dict) and f.get("name") == collection_name]
+        if not matches:
+            return empty.model_copy(update={"message": (
+                f"Mendeley collection {collection_name!r} not found. "
+                f"Create a collection named {collection_name!r} in the Mendeley desktop app, "
+                f"drag the papers you want to read into it, then re-run. "
+                f"(Or change the configured name with "
+                f"`docent paper config-set queue_collection <name>`.)"
+            )})
+        if len(matches) > 1:
+            return empty.model_copy(update={"message": (
+                f"Found {len(matches)} Mendeley collections named {collection_name!r} "
+                f"(nested in different parents). Rename one in Mendeley, or change "
+                f"`paper.queue_collection` to a unique name."
+            )})
+        folder_id = matches[0].get("id")
+        if not isinstance(folder_id, str) or not folder_id:
+            return empty.model_copy(update={"message": (
+                f"Mendeley collection {collection_name!r} has no usable id; "
+                f"this is unexpected — try toggling its name in Mendeley to refresh."
+            )})
+
+        # ---- discover: list documents in that folder ----
+        yield ProgressEvent(phase="discover", message=f"Reading collection {collection_name!r} ({folder_id[:8]}…).")
+        docs_resp = mendeley_list_documents(folder_id=folder_id, launch_command=launch_command)
+        if docs_resp.get("error"):
+            err = docs_resp["error"]
+            return empty.model_copy(update={
+                "folder_id": folder_id,
+                "message": f"Could not list documents in {collection_name!r}: {self._mendeley_failure_hint(err)}",
+            })
+        docs = [d for d in (docs_resp.get("items") or []) if isinstance(d, dict)]
+        yield ProgressEvent(phase="discover", message=f"Found {len(docs)} doc(s) in {collection_name!r}.")
+
+        # ---- reconcile ----
+        added: list[dict[str, str]] = []
+        unchanged: list[str] = []
+        removed: list[str] = []
+        failed: list[dict[str, str]] = []
+        dry_run_added: list[dict[str, str]] = []
+        dry_run_removed: list[str] = []
+
+        queue = self._store.load_queue()
+        by_mendeley_id: dict[str, dict[str, Any]] = {
+            e["mendeley_id"]: e for e in queue
+            if e.get("mendeley_id")
+        }
+        existing_ids: set[str] = {e.get("id") for e in queue if e.get("id")}
+        # Per-pass id reservations so two new docs that derive the same slug
+        # both land cleanly (second one gets the mendeley_id suffix).
+        reserved_ids: set[str] = set()
+        in_collection: set[str] = set()
+        new_entries: list[dict[str, Any]] = []
+
+        for i, doc in enumerate(docs, 1):
+            mid = self._extract_mendeley_id(doc)
+            if not mid:
+                failed.append({"mendeley_id": "", "error": "doc has no usable id"})
+                continue
+            in_collection.add(mid)
+            yield ProgressEvent(phase="reconcile", current=i, total=len(docs), item=doc.get("title", mid)[:60])
+
+            if mid in by_mendeley_id:
+                unchanged.append(by_mendeley_id[mid].get("id") or mid)
+                continue
+
+            try:
+                entry = self._build_entry_from_mendeley(
+                    doc, mid, existing_ids | reserved_ids,
+                )
+            except Exception as e:  # noqa: BLE001 — pydantic ValidationError + our ValueErrors both bucket here.
+                failed.append({"mendeley_id": mid, "error": str(e)})
+                yield ProgressEvent(phase="reconcile", level="error", message=f"{mid[:8]}: {e}")
+                continue
+
+            reserved_ids.add(entry.id)
+            if dry_run:
+                dry_run_added.append({"id": entry.id, "mendeley_id": mid, "title": entry.title})
+            else:
+                new_entries.append(entry.model_dump())
+                added.append({"id": entry.id, "mendeley_id": mid, "title": entry.title})
+
+        # ---- removed branch: mendeley_id-bearing entries not in collection ----
+        for e in queue:
+            mid = e.get("mendeley_id")
+            if not mid or mid in in_collection:
+                continue
+            if e.get("status") == "removed":
+                continue  # already flagged on a prior run
+            if dry_run:
+                dry_run_removed.append(e.get("id", mid))
+            else:
+                removed.append(e.get("id", mid))
+
+        # ---- persist (single save) ----
+        if not dry_run and (new_entries or removed):
+            queue = self._store.load_queue()  # re-read in case anything changed under us
+            by_id = {e.get("id"): e for e in queue}
+            for ne in new_entries:
+                # If two passes raced (very unlikely) and id already exists, skip silently;
+                # the next sync will re-converge.
+                if ne["id"] not in by_id:
+                    queue.append(ne)
+            removed_set = set(removed)
+            for e in queue:
+                if e.get("id") in removed_set:
+                    e["status"] = "removed"
+            self._store.save_queue(queue)
+
+        # Force readers to repopulate from fresh MCP data. We just paid for
+        # a list_documents call; rather than seed the cache here, drop it so
+        # the next reader re-fetches (fresher snapshot wins).
+        if not dry_run:
+            self._mendeley_cache().invalidate(folder_id)
+
+        self._log_event(
+            "sync_from_mendeley",
+            collection=collection_name,
+            folder_id=folder_id,
+            in_collection=len(in_collection),
+            added=len(added),
+            unchanged=len(unchanged),
+            removed=len(removed),
+            failed=len(failed),
+            dry_run=dry_run,
+        )
+
+        summary = (
+            f"{len(added)} added, {len(unchanged)} unchanged, "
+            f"{len(removed)} removed, {len(failed)} failed"
+            + (
+                f", {len(dry_run_added)} would-add, {len(dry_run_removed)} would-remove (dry-run)"
+                if dry_run else ""
+            )
+            + "."
+        )
+        if any("auth:" in f.get("error", "") for f in failed):
+            summary += " Auth failure detected — run `mendeley-auth login` and retry."
+
+        return SyncFromMendeleyResult(
+            queue_collection=collection_name,
+            folder_id=folder_id,
+            added=added,
+            unchanged=unchanged,
+            removed=removed,
+            failed=failed,
+            dry_run_added=dry_run_added,
+            dry_run_removed=dry_run_removed,
+            summary=summary,
+        )
+
+    def _build_entry_from_mendeley(
+        self, doc: dict[str, Any], mendeley_id: str, taken_ids: set[str]
+    ) -> "QueueEntry":
+        """Snapshot title/authors/year/doi from a Mendeley list_documents
+        payload into a new QueueEntry. The snapshot lets existing
+        next/show/stats/search keep working on these entries today; Step 11.7
+        will replace it with a read-through cache.
+
+        `taken_ids` lets the caller avoid id collisions across the whole
+        batch (existing queue + new entries created earlier in this pass)."""
+        title = (doc.get("title") or "").strip() or "(untitled)"
+        authors = self._normalize_mendeley_authors(doc.get("authors"))
+        year = doc.get("year")
+        if not isinstance(year, int):
+            year = None
+        # Mendeley returns DOIs under `identifiers: {"doi": "..."}` (see live
+        # probe output); list_documents may also omit identifiers entirely.
+        doi: str | None = None
+        idents = doc.get("identifiers")
+        if isinstance(idents, dict):
+            d = idents.get("doi")
+            if isinstance(d, str) and d.strip():
+                doi = d.strip()
+
+        base = self._derive_id(authors, year, title)
+        if base in taken_ids:
+            entry_id = f"{base}-{mendeley_id[:8]}"
+        else:
+            entry_id = base
+
+        return QueueEntry(
+            id=entry_id,
+            title=title,
+            authors=authors,
+            year=year,
+            doi=doi,
+            added=datetime.now().date().isoformat(),
+            mendeley_id=mendeley_id,
+            file_status="missing",  # Mendeley owns the file; docent's pdf_path is unused for these.
+        )
+
+    @staticmethod
+    def _normalize_mendeley_authors(authors: Any) -> str:
+        """Mendeley returns `authors` as a list of strings ('Smith, J.') in
+        `list_documents`; sometimes a list of dicts in other endpoints. Join
+        with '; ' so each author stays atomic — `_derive_id` only looks at
+        text before the first comma, so the first author's 'Last, First' form
+        is preserved."""
+        if isinstance(authors, list):
+            parts: list[str] = []
+            for a in authors:
+                if isinstance(a, str) and a.strip():
+                    parts.append(a.strip())
+                elif isinstance(a, dict):
+                    name = " ".join(filter(None, [a.get("first_name", ""), a.get("last_name", "")])).strip()
+                    if name:
+                        parts.append(name)
+            if parts:
+                return "; ".join(parts)
+        if isinstance(authors, str) and authors.strip():
+            return authors.strip()
+        return "Unknown"
+
     @staticmethod
     def _extract_mendeley_id(item: dict[str, Any]) -> str | None:
         """Library documents expose `id` (UUID); catalog items returned by
@@ -1391,6 +1676,84 @@ class PaperPipeline(Tool):
     # Shared helpers - every paper action reuses these.
     # Persistence + state-recompute helpers moved to PaperQueueStore at Step 10.7.
     # ------------------------------------------------------------------
+
+    def _mendeley_cache(self) -> MendeleyCache:
+        # Pass the import-site alias so tests that monkeypatch
+        # `docent.tools.paper.mendeley_list_documents` route through the fake.
+        return MendeleyCache(
+            cache_dir() / "paper" / "mendeley_collection.json",
+            list_documents=mendeley_list_documents,
+        )
+
+    def _resolve_collection_folder_id_quiet(
+        self, collection_name: str, launch_command: list[str] | None
+    ) -> str | None:
+        """Reader-side folder lookup. Returns None on any failure (no
+        collection / ambiguous / transport error) — callers fall back to
+        the snapshot fields persisted in queue.json. The verbose,
+        actionable-error version lives in `_sync_from_mendeley_run`."""
+        resp = mendeley_list_folders(launch_command)
+        if resp.get("error"):
+            return None
+        folders = resp.get("items") or []
+        matches = [f for f in folders if isinstance(f, dict) and f.get("name") == collection_name]
+        if len(matches) != 1:
+            return None
+        fid = matches[0].get("id")
+        return fid if isinstance(fid, str) and fid else None
+
+    def _load_mendeley_overlay(self, context: Context) -> dict[str, dict[str, Any]] | None:
+        """Pull the cached Mendeley collection (or fetch + cache fresh).
+        Returns `{mendeley_id: doc}` or None on any failure — None means
+        readers use the queue.json snapshot unchanged.
+        """
+        ps = context.settings.paper
+        collection_name = ps.queue_collection
+        launch_command = ps.mendeley_mcp_command
+        folder_id = self._resolve_collection_folder_id_quiet(collection_name, launch_command)
+        if folder_id is None:
+            return None
+        return self._mendeley_cache().get_collection(folder_id, launch_command)
+
+    @staticmethod
+    def _overlay_entry(entry: dict[str, Any], doc: dict[str, Any]) -> dict[str, Any]:
+        """Replace title/authors/year/doi in a queue entry with fresh
+        Mendeley values. Caller passes the entry dict (mutates a shallow
+        copy)."""
+        out = dict(entry)
+        title = (doc.get("title") or "").strip()
+        if title:
+            out["title"] = title
+        authors = PaperPipeline._normalize_mendeley_authors(doc.get("authors"))
+        if authors and authors != "Unknown":
+            out["authors"] = authors
+        year = doc.get("year")
+        if isinstance(year, int):
+            out["year"] = year
+        idents = doc.get("identifiers")
+        if isinstance(idents, dict):
+            d = idents.get("doi")
+            if isinstance(d, str) and d.strip():
+                out["doi"] = d.strip()
+        return out
+
+    def _apply_overlay(
+        self, queue: list[dict[str, Any]], overlay: dict[str, dict[str, Any]] | None
+    ) -> list[dict[str, Any]]:
+        """Return a new queue list with Mendeley fields overlaid on entries
+        whose `mendeley_id` is in the overlay map. Entries without a
+        `mendeley_id` (legacy) or without a matching cache hit pass
+        through. `overlay=None` is a no-op (offline / unconfigured)."""
+        if not overlay:
+            return queue
+        out: list[dict[str, Any]] = []
+        for e in queue:
+            mid = e.get("mendeley_id")
+            if mid and mid in overlay:
+                out.append(self._overlay_entry(e, overlay[mid]))
+            else:
+                out.append(e)
+        return out
 
     def _require_database_dir(self, context: Context) -> tuple[Path | None, str | None]:
         """Return (path, None) on success; (None, None) on user cancel; (None, error_message) on invalid input.

@@ -22,6 +22,7 @@ class PaperSettings(BaseModel):
     mendeley_watch_subdir: str | None = None
     unpaywall_email: str | None = None
     mendeley_mcp_command: list[str] | None = None  # e.g. ["uvx", "mendeley-mcp"]; None -> default in mendeley_client.
+    queue_collection: str = "Docent-Queue"  # Mendeley collection name that defines reading-queue membership (Step 11.6).
 
 
 class Settings(BaseSettings):
