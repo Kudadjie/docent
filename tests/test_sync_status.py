@@ -1,12 +1,12 @@
-"""Tests for `paper sync-status` (Step 11.1).
+"""Tests for `paper sync-status` (Step 11.1, simplified at Step 11.9).
 
-Local-only cross-tab: queue.json × database_dir × Watch subdir. No network,
-no Semantic Scholar. Each test sets up a tmp database_dir, points the
+Local-only cross-tab: queue.json × database_dir. Step 11.9 dropped the Watch
+subdir model — database_dir IS the Mendeley watch folder, so promotable /
+in_watch buckets are gone. Each test sets up a tmp database_dir, points the
 PaperSettings at it, and asserts bucket membership on the result.
 """
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 from docent.config import load_settings
@@ -16,11 +16,10 @@ from docent.llm import LLMClient
 from docent.tools.paper import PaperPipeline, SyncStatusInputs
 
 
-def _ctx(database_dir: Path | None = None, watch_subdir: str | None = "Watch") -> Context:
+def _ctx(database_dir: Path | None = None) -> Context:
     settings = load_settings()
     if database_dir is not None:
         settings.paper.database_dir = database_dir
-    settings.paper.mendeley_watch_subdir = watch_subdir
     return Context(settings=settings, llm=LLMClient(settings), executor=Executor())
 
 
@@ -98,56 +97,3 @@ def test_in_queue_missing_file(tmp_docent_home, tmp_path, seed_queue_entry):
     result = tool.sync_status(SyncStatusInputs(), ctx)
     assert len(result.in_queue_missing_file) == 1
     assert result.in_queue_with_file == []
-
-
-def test_watch_subdir_pdfs_excluded_from_orphans(tmp_docent_home, tmp_path):
-    """PDFs under <database_dir>/<watch_subdir> are reported in `in_watch`,
-    not as orphans in the main DB."""
-    db = tmp_path / "Papers"
-    watch = db / "Watch"
-    watch.mkdir(parents=True)
-    _make_pdf(db / "tracked.pdf")
-    _make_pdf(watch / "in-watch.pdf")
-
-    ctx = _ctx(database_dir=db, watch_subdir="Watch")
-    result = PaperPipeline().sync_status(SyncStatusInputs(), ctx)
-
-    assert "in-watch.pdf" in result.in_watch
-    assert all(not p.endswith("in-watch.pdf") for p in result.orphan_pdfs)
-    assert any(p.endswith("tracked.pdf") for p in result.orphan_pdfs)
-
-
-def test_promotable_kept_with_file_not_in_watch(tmp_docent_home, tmp_path, seed_queue_entry):
-    """An entry with keep_in_mendeley=True + file present + no copy in Watch is promotable."""
-    db = tmp_path / "Papers"
-    db.mkdir()
-    pdf = _make_pdf(db / "kept.pdf")
-
-    tool = PaperPipeline()
-    ctx = _ctx(database_dir=db, watch_subdir="Watch")
-    seed_queue_entry(
-        tool, title="Kept", authors="Roe, A", year=2022, pdf_path=pdf, keep_in_mendeley=True,
-    )
-
-    result = tool.sync_status(SyncStatusInputs(), ctx)
-    assert len(result.promotable) == 1
-
-
-def test_promotable_excludes_already_in_watch(tmp_docent_home, tmp_path, seed_queue_entry):
-    """If a same-name PDF already exists in Watch, the entry is treated as
-    already promoted and excluded from `promotable`."""
-    db = tmp_path / "Papers"
-    watch = db / "Watch"
-    watch.mkdir(parents=True)
-    pdf = _make_pdf(db / "already.pdf")
-    shutil.copy2(pdf, watch / "already.pdf")
-
-    tool = PaperPipeline()
-    ctx = _ctx(database_dir=db, watch_subdir="Watch")
-    seed_queue_entry(
-        tool, title="Already", authors="Lee, B", year=2021, pdf_path=pdf, keep_in_mendeley=True,
-    )
-
-    result = tool.sync_status(SyncStatusInputs(), ctx)
-    assert result.promotable == []
-    assert "already.pdf" in result.in_watch

@@ -23,10 +23,8 @@ from docent.tools.mendeley_cache import MendeleyCache
 from docent.tools.mendeley_client import (
     list_documents as mendeley_list_documents,
     list_folders as mendeley_list_folders,
-    lookup_doi as mendeley_lookup_doi,
-    search_library as mendeley_search_library,
 )
-from docent.tools.paper_sync import download_pdf, move_to_watch, unpaywall_lookup
+from docent.tools.paper_sync import download_pdf, unpaywall_lookup
 from docent.utils.paths import cache_dir, data_dir
 from docent.utils.prompt import NoInteractiveError, prompt_for_path
 
@@ -34,7 +32,7 @@ from docent.utils.prompt import NoInteractiveError, prompt_for_path
 PRIORITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 
 _DEFAULT_DATABASE_DIR = "~/Documents/Papers"
-_KNOWN_PAPER_KEYS = {"database_dir", "mendeley_watch_subdir", "unpaywall_email", "queue_collection"}
+_KNOWN_PAPER_KEYS = {"database_dir", "unpaywall_email", "queue_collection"}
 # `mendeley_mcp_command` is a list field; config-set only handles strings today.
 # Power users can edit config.toml directly; defaulted to ["uvx", "mendeley-mcp"] in mendeley_client.
 
@@ -126,15 +124,13 @@ class ConfigShowInputs(BaseModel):
 
 
 class ConfigSetInputs(BaseModel):
-    key: str = Field(..., description="Setting key under the (paper) section, e.g. 'database_dir' or 'mendeley_watch_subdir'.")
+    key: str = Field(..., description="Setting key under the (paper) section, e.g. 'database_dir' or 'queue_collection'.")
     value: str = Field(..., description="New value. Use '' to clear. Paths may use '~'.")
 
 
 class ConfigShowResult(BaseModel):
     config_path: str
     database_dir: str | None
-    mendeley_watch_subdir: str | None
-    mendeley_watch_resolved: str | None  # absolute path = database_dir / subdir, when both set
     unpaywall_email: str | None
     queue_collection: str  # Mendeley collection name defining queue membership (Step 11.6).
 
@@ -221,66 +217,6 @@ class SyncPullResult(BaseModel):
     message: str = ""
 
 
-class SyncPromoteInputs(BaseModel):
-    id: str | None = Field(None, description="Single entry id; if omitted, all eligible entries (kept + has-file + not promoted) are tried.")
-    dry_run: bool = Field(False, description="Report what would be moved without touching disk or queue.")
-
-
-class SyncPromoteResult(BaseModel):
-    """Per-entry buckets after running sync-promote.
-
-    `promoted`: {id, watch_path} — file moved this run; `already_promoted`:
-    [id] — promoted_at already set or filename already in Watch (no work);
-    `healed`: {id, reason} — metadata updated to reflect a pre-existing
-    Watch placement (manual-move or external-move); `missing_file`:
-    {id, reason}; `not_eligible`: {id, reason} — auto mode skipping
-    non-kept entries; `failed`: {id, error} — collisions or I/O errors.
-    `dry_run_promote`: {id, watch_path} — only populated when dry_run=True.
-    """
-
-    database_dir: str | None
-    watch_dir: str | None
-    promoted: list[dict[str, str]]
-    already_promoted: list[str]
-    healed: list[dict[str, str]]
-    missing_file: list[dict[str, str]]
-    not_eligible: list[dict[str, str]]
-    failed: list[dict[str, str]]
-    dry_run_promote: list[dict[str, str]]
-    summary: str
-    message: str = ""
-
-
-class SyncMendeleyInputs(BaseModel):
-    id: str | None = Field(None, description="Single entry id; if omitted, all promoted entries lacking mendeley_id are tried.")
-    dry_run: bool = Field(False, description="Resolve Mendeley matches but do not persist mendeley_id.")
-    limit: int = Field(20, description="Max search results per query when DOI is unavailable.")
-
-
-class SyncMendeleyResult(BaseModel):
-    """Per-entry buckets after running sync-mendeley.
-
-    `linked`: {id, mendeley_id} - newly linked this run; `already_linked`:
-    [id] - mendeley_id already set; `not_found`: {id, reason} - Mendeley
-    returned no match; `ambiguous`: {id, candidates} - >1 search hit, user
-    must use `--id` and edit; `not_eligible`: {id, reason} - auto mode
-    skipping non-promoted entries; `failed`: {id, error} - transport / auth
-    failures (run `mendeley-auth login` if auth-shaped); `dry_run_link`:
-    {id, mendeley_id} - only populated when dry_run=True. `message` carries
-    early-exit reasons (no targets, etc.).
-    """
-
-    linked: list[dict[str, str]]
-    already_linked: list[str]
-    not_found: list[dict[str, str]]
-    ambiguous: list[dict[str, Any]]
-    not_eligible: list[dict[str, str]]
-    failed: list[dict[str, str]]
-    dry_run_link: list[dict[str, str]]
-    summary: str
-    message: str = ""
-
-
 class SyncFromMendeleyInputs(BaseModel):
     dry_run: bool = Field(False, description="Resolve the collection and report what would change without writing the queue.")
 
@@ -314,12 +250,9 @@ class SyncFromMendeleyResult(BaseModel):
 
 class SyncStatusResult(BaseModel):
     database_dir: str | None
-    watch_dir: str | None
     in_queue_with_file: list[str]  # ids
     in_queue_missing_file: list[str]  # ids — queue says we have it, disk says no
     orphan_pdfs: list[str]  # paths under database_dir not referenced by any queue entry
-    promotable: list[str]  # ids: keep_in_mendeley=True + file present + not yet in Watch
-    in_watch: list[str]  # filenames in Watch folder (sanity surface)
     summary: str
     message: str = ""  # populated only on early-exit (no database configured)
 
@@ -612,27 +545,19 @@ class PaperPipeline(Tool):
             raise ValueError(f"Unsupported format: {inputs.format!r}. Use 'json' or 'markdown'.")
         return ExportResult(format=inputs.format, count=len(filtered), content=content)
 
-    @action(description="Show the configured paper settings (database, Mendeley watch).", input_schema=ConfigShowInputs, name="config-show")
+    @action(description="Show the configured paper settings (database, queue collection).", input_schema=ConfigShowInputs, name="config-show")
     def config_show(self, inputs: ConfigShowInputs, context: Context) -> ConfigShowResult:
         from docent.utils.paths import config_file
         ps = context.settings.paper
         db = str(ps.database_dir) if ps.database_dir else None
-        sub = ps.mendeley_watch_subdir
-        resolved = (
-            str((ps.database_dir.expanduser() / sub).resolve())
-            if ps.database_dir and sub
-            else None
-        )
         return ConfigShowResult(
             config_path=str(config_file()),
             database_dir=db,
-            mendeley_watch_subdir=sub,
-            mendeley_watch_resolved=resolved,
             unpaywall_email=ps.unpaywall_email,
             queue_collection=ps.queue_collection,
         )
 
-    @action(description="Set a paper setting (database_dir, mendeley_watch_subdir, unpaywall_email, queue_collection).", input_schema=ConfigSetInputs, name="config-set")
+    @action(description="Set a paper setting (database_dir, unpaywall_email, queue_collection).", input_schema=ConfigSetInputs, name="config-set")
     def config_set(self, inputs: ConfigSetInputs, context: Context) -> ConfigSetResult:
         from docent.utils.paths import config_file
         if inputs.key not in _KNOWN_PAPER_KEYS:
@@ -640,12 +565,6 @@ class PaperPipeline(Tool):
                 ok=False, key=inputs.key, value=inputs.value,
                 config_path=str(config_file()),
                 message=f"Unknown key {inputs.key!r}. Known: {sorted(_KNOWN_PAPER_KEYS)}.",
-            )
-        if inputs.key == "mendeley_watch_subdir" and Path(inputs.value).is_absolute():
-            return ConfigSetResult(
-                ok=False, key=inputs.key, value=inputs.value,
-                config_path=str(config_file()),
-                message="mendeley_watch_subdir must be relative to database_dir (e.g. 'Watch'), not an absolute path.",
             )
         path = write_setting(f"paper.{inputs.key}", inputs.value)
         return ConfigSetResult(
@@ -655,15 +574,15 @@ class PaperPipeline(Tool):
         )
 
     @action(
-        description="Cross-tab queue against database_dir + Watch folder; report orphans, missing files, and promotable entries.",
+        description="Cross-tab queue against database_dir; report matched entries, missing files, and orphan PDFs.",
         input_schema=SyncStatusInputs,
         name="sync-status",
     )
     def sync_status(self, inputs: SyncStatusInputs, context: Context) -> SyncStatusResult:
         empty = SyncStatusResult(
-            database_dir=None, watch_dir=None,
+            database_dir=None,
             in_queue_with_file=[], in_queue_missing_file=[],
-            orphan_pdfs=[], promotable=[], in_watch=[],
+            orphan_pdfs=[],
             summary="",
         )
         try:
@@ -684,9 +603,7 @@ class PaperPipeline(Tool):
                 "message": f"database_dir does not exist: {database_dir}.",
             })
 
-        watch_subdir = context.settings.paper.mendeley_watch_subdir
-        watch_dir = (database_dir / watch_subdir) if watch_subdir else None
-        db_pdfs, watch_pdfs = PaperQueueStore.list_database_pdfs(database_dir, watch_subdir)
+        db_pdfs, _ = PaperQueueStore.list_database_pdfs(database_dir, None)
 
         queue = self._store.load_queue()
         tracked: dict[str, dict[str, Any]] = {}
@@ -706,31 +623,17 @@ class PaperPipeline(Tool):
         orphan_pdfs = [
             str(p) for p in db_pdfs if str(p.resolve()) not in tracked
         ]
-        watch_filenames = {p.name for p in watch_pdfs}
-        promotable = [
-            e["id"] for e in queue
-            if e.get("keep_in_mendeley")
-            and e.get("pdf_path")
-            and Path(e["pdf_path"]).exists()
-            and not e.get("promoted_at")
-            and Path(e["pdf_path"]).name not in watch_filenames
-        ]
 
         summary = (
             f"{len(in_queue_with_file)} matched, "
             f"{len(in_queue_missing_file)} missing, "
-            f"{len(orphan_pdfs)} orphan PDF(s), "
-            f"{len(promotable)} promotable, "
-            f"{len(watch_pdfs)} in Watch."
+            f"{len(orphan_pdfs)} orphan PDF(s)."
         )
         return SyncStatusResult(
             database_dir=str(database_dir),
-            watch_dir=str(watch_dir) if watch_dir else None,
             in_queue_with_file=sorted(in_queue_with_file),
             in_queue_missing_file=sorted(in_queue_missing_file),
             orphan_pdfs=sorted(orphan_pdfs),
-            promotable=sorted(promotable),
-            in_watch=sorted(watch_filenames),
             summary=summary,
         )
 
@@ -905,349 +808,6 @@ class PaperPipeline(Tool):
             network_error=network_error,
             already_has_file=sorted(already_has_file),
             dry_run_oa=dry_run_oa,
-            summary=summary,
-        )
-
-    @action(
-        description="Move kept PDFs from database_dir into the Mendeley Watch folder; sets promoted_at.",
-        input_schema=SyncPromoteInputs,
-        name="sync-promote",
-    )
-    def sync_promote(self, inputs: SyncPromoteInputs, context: Context):
-        empty = SyncPromoteResult(
-            database_dir=None, watch_dir=None,
-            promoted=[], already_promoted=[], healed=[],
-            missing_file=[], not_eligible=[], failed=[], dry_run_promote=[],
-            summary="",
-        )
-        try:
-            database_dir, err = self._require_database_dir(context)
-        except NoInteractiveError as e:
-            return empty.model_copy(update={"message": (
-                f"paper.database_dir not configured. Run "
-                f"`docent paper config-set database_dir <path>` or set "
-                f"DOCENT_PAPER__DATABASE_DIR. ({e})"
-            )})
-        if database_dir is None:
-            return empty.model_copy(update={"message": err or "Cancelled - no database folder configured."})
-        if not database_dir.is_dir():
-            return empty.model_copy(update={
-                "database_dir": str(database_dir),
-                "message": f"database_dir does not exist: {database_dir}.",
-            })
-
-        watch_subdir = context.settings.paper.mendeley_watch_subdir
-        if not watch_subdir:
-            return empty.model_copy(update={
-                "database_dir": str(database_dir),
-                "message": (
-                    "paper.mendeley_watch_subdir not configured. Run "
-                    "`docent paper config-set mendeley_watch_subdir <relpath>` "
-                    "(e.g. 'Mendeley Watch')."
-                ),
-            })
-        watch_dir = (database_dir / watch_subdir).expanduser()
-
-        queue = self._store.load_queue()
-        if inputs.id is not None:
-            targets = [e for e in queue if e.get("id") == inputs.id]
-            if not targets:
-                return empty.model_copy(update={
-                    "database_dir": str(database_dir),
-                    "watch_dir": str(watch_dir),
-                    "message": f"No entry with id {inputs.id!r}.",
-                })
-            single_id_mode = True
-        else:
-            targets = list(queue)
-            single_id_mode = False
-
-        return self._sync_promote_run(
-            targets, database_dir, watch_dir, single_id_mode, inputs.dry_run, context
-        )
-
-    def _sync_promote_run(
-        self,
-        targets: list[dict[str, Any]],
-        database_dir: Path,
-        watch_dir: Path,
-        single_id_mode: bool,
-        dry_run: bool,
-        context: Context,
-    ):
-        promoted: list[dict[str, str]] = []
-        already_promoted: list[str] = []
-        healed: list[dict[str, str]] = []
-        missing_file: list[dict[str, str]] = []
-        not_eligible: list[dict[str, str]] = []
-        failed: list[dict[str, str]] = []
-        dry_run_promote: list[dict[str, str]] = []
-        mutated: dict[str, dict[str, Any]] = {}
-
-        yield ProgressEvent(phase="discover", message=f"{len(targets)} entry/entries to consider.")
-
-        for i, entry in enumerate(targets, 1):
-            eid = entry.get("id", "?")
-            yield ProgressEvent(phase="promote", current=i, total=len(targets), item=eid)
-
-            if not single_id_mode and not entry.get("keep_in_mendeley"):
-                not_eligible.append({"id": eid, "reason": "keep_in_mendeley=False (use --id to override)"})
-                continue
-
-            if entry.get("promoted_at"):
-                already_promoted.append(eid)
-                continue
-
-            pdf_path = entry.get("pdf_path")
-            if not pdf_path:
-                missing_file.append({"id": eid, "reason": "no pdf_path tracked"})
-                yield ProgressEvent(phase="promote", level="warn", message=f"{eid}: no pdf_path")
-                continue
-
-            src = Path(pdf_path)
-            src_exists = src.exists()
-
-            # Heal-on-already-in-watch: pdf_path resolves and is already inside watch_dir.
-            if src_exists and self._path_in_watch(src, watch_dir):
-                if dry_run:
-                    already_promoted.append(eid)
-                    continue
-                ts = datetime.now().isoformat()
-                mutated[eid] = {"promoted_at": ts}
-                healed.append({"id": eid, "reason": "pdf_path already inside Watch — set promoted_at"})
-                yield ProgressEvent(phase="promote", message=f"{eid}: already in Watch, healed metadata")
-                continue
-
-            # Heal-on-external-move: pdf_path doesn't resolve, but a file with that filename exists in Watch.
-            if not src_exists:
-                candidate = watch_dir / src.name
-                if candidate.exists():
-                    if dry_run:
-                        already_promoted.append(eid)
-                        continue
-                    ts = datetime.now().isoformat()
-                    new_pdf_path = str(candidate.resolve())
-                    mutated[eid] = {"promoted_at": ts, "pdf_path": new_pdf_path, "file_status": "found"}
-                    healed.append({"id": eid, "reason": f"file found in Watch as {src.name} — pdf_path repointed"})
-                    yield ProgressEvent(phase="promote", message=f"{eid}: external move detected, healed pdf_path")
-                    continue
-                missing_file.append({"id": eid, "reason": f"pdf_path does not exist on disk: {src}"})
-                yield ProgressEvent(phase="promote", level="warn", message=f"{eid}: file missing")
-                continue
-
-            dest = watch_dir / src.name
-            if dry_run:
-                dry_run_promote.append({"id": eid, "watch_path": str(dest)})
-                yield ProgressEvent(phase="promote", message=f"{eid}: would move to {dest}")
-                continue
-
-            try:
-                actual_dest = move_to_watch(src, watch_dir)
-            except FileExistsError as e:
-                failed.append({"id": eid, "error": str(e)})
-                yield ProgressEvent(phase="promote", level="error", message=f"{eid}: {e}")
-                continue
-            except OSError as e:
-                failed.append({"id": eid, "error": f"move failed: {e}"})
-                yield ProgressEvent(phase="promote", level="error", message=f"{eid}: move failed: {e}")
-                continue
-
-            ts = datetime.now().isoformat()
-            mutated[eid] = {
-                "promoted_at": ts,
-                "pdf_path": str(actual_dest.resolve()),
-                "file_status": "found",
-            }
-            promoted.append({"id": eid, "watch_path": str(actual_dest.resolve())})
-
-        if mutated:
-            queue = self._store.load_queue()
-            by_id = {e.get("id"): e for e in queue}
-            for mid, fields in mutated.items():
-                if mid in by_id:
-                    by_id[mid].update(fields)
-            self._store.save_queue(queue)
-
-        self._log_event(
-            "sync_promote",
-            considered=len(targets),
-            promoted=len(promoted),
-            already_promoted=len(already_promoted),
-            healed=len(healed),
-            missing_file=len(missing_file),
-            failed=len(failed),
-            dry_run=dry_run,
-        )
-
-        summary = (
-            f"{len(promoted)} promoted, {len(already_promoted)} already promoted, "
-            f"{len(healed)} healed, {len(missing_file)} missing file, "
-            f"{len(not_eligible)} not eligible, {len(failed)} failed"
-            + (f", {len(dry_run_promote)} would-move (dry-run)" if dry_run else "")
-            + "."
-        )
-        return SyncPromoteResult(
-            database_dir=str(database_dir),
-            watch_dir=str(watch_dir),
-            promoted=promoted,
-            already_promoted=sorted(already_promoted),
-            healed=healed,
-            missing_file=missing_file,
-            not_eligible=not_eligible,
-            failed=failed,
-            dry_run_promote=dry_run_promote,
-            summary=summary,
-        )
-
-    @action(
-        description="Cross-check promoted entries against Mendeley library; populate mendeley_id on matches.",
-        input_schema=SyncMendeleyInputs,
-        name="sync-mendeley",
-    )
-    def sync_mendeley(self, inputs: SyncMendeleyInputs, context: Context):
-        empty = SyncMendeleyResult(
-            linked=[], already_linked=[], not_found=[], ambiguous=[],
-            not_eligible=[], failed=[], dry_run_link=[], summary="",
-        )
-
-        queue = self._store.load_queue()
-        if inputs.id is not None:
-            targets = [e for e in queue if e.get("id") == inputs.id]
-            if not targets:
-                return empty.model_copy(update={"message": f"No entry with id {inputs.id!r}."})
-            single_id_mode = True
-        else:
-            targets = list(queue)
-            single_id_mode = False
-
-        launch_command = context.settings.paper.mendeley_mcp_command  # None -> wrapper default
-        return self._sync_mendeley_run(targets, single_id_mode, inputs.dry_run, inputs.limit, launch_command, context)
-
-    def _sync_mendeley_run(
-        self,
-        targets: list[dict[str, Any]],
-        single_id_mode: bool,
-        dry_run: bool,
-        limit: int,
-        launch_command: list[str] | None,
-        context: Context,
-    ):
-        linked: list[dict[str, str]] = []
-        already_linked: list[str] = []
-        not_found: list[dict[str, str]] = []
-        ambiguous: list[dict[str, Any]] = []
-        not_eligible: list[dict[str, str]] = []
-        failed: list[dict[str, str]] = []
-        dry_run_link: list[dict[str, str]] = []
-        mutated: dict[str, str] = {}  # id -> mendeley_id
-
-        yield ProgressEvent(phase="discover", message=f"{len(targets)} entry/entries to consider.")
-
-        for i, entry in enumerate(targets, 1):
-            eid = entry.get("id", "?")
-            yield ProgressEvent(phase="link", current=i, total=len(targets), item=eid)
-
-            if not single_id_mode and not entry.get("promoted_at"):
-                not_eligible.append({"id": eid, "reason": "not promoted (use --id to override)"})
-                continue
-            if entry.get("mendeley_id"):
-                already_linked.append(eid)
-                continue
-
-            doi = entry.get("doi")
-            mid: str | None = None
-            search_candidates: list[dict[str, Any]] = []
-
-            if doi:
-                resp = mendeley_lookup_doi(doi, launch_command)
-                err = resp.get("error")
-                if err:
-                    failed.append({"id": eid, "error": self._mendeley_failure_hint(err)})
-                    yield ProgressEvent(phase="link", level="error", message=f"{eid}: {err}")
-                    continue
-                items = resp.get("items") or []
-                if items:
-                    mid = self._extract_mendeley_id(items[0])
-
-            if mid is None:
-                # Title fallback: build a single-string query (search tool only takes `query`).
-                title = entry.get("title") or ""
-                authors = entry.get("authors") or ""
-                first_author = authors.split(",")[0].strip() if authors else ""
-                query = f"{title} {first_author}".strip()
-                if not query:
-                    not_found.append({"id": eid, "reason": "no DOI or title to query"})
-                    continue
-                resp = mendeley_search_library(query, launch_command, limit=limit)
-                err = resp.get("error")
-                if err:
-                    failed.append({"id": eid, "error": self._mendeley_failure_hint(err)})
-                    yield ProgressEvent(phase="link", level="error", message=f"{eid}: {err}")
-                    continue
-                items = resp.get("items") or []
-                if not items:
-                    not_found.append({"id": eid, "reason": "Mendeley returned no match for DOI or title"})
-                    continue
-                if len(items) == 1:
-                    mid = self._extract_mendeley_id(items[0])
-                else:
-                    search_candidates = items[:5]
-                    ambiguous.append({
-                        "id": eid,
-                        "candidates": [self._candidate_summary(c) for c in search_candidates],
-                    })
-                    yield ProgressEvent(phase="link", level="warn", message=f"{eid}: {len(items)} candidates")
-                    continue
-
-            if mid is None:
-                not_found.append({"id": eid, "reason": "match returned but no Mendeley id field"})
-                continue
-
-            if dry_run:
-                dry_run_link.append({"id": eid, "mendeley_id": mid})
-                yield ProgressEvent(phase="link", message=f"{eid}: would link to {mid}")
-                continue
-
-            mutated[eid] = mid
-            linked.append({"id": eid, "mendeley_id": mid})
-
-        if mutated:
-            queue = self._store.load_queue()
-            by_id = {e.get("id"): e for e in queue}
-            for mid_eid, mendeley_id in mutated.items():
-                if mid_eid in by_id:
-                    by_id[mid_eid]["mendeley_id"] = mendeley_id
-            self._store.save_queue(queue)
-
-        self._log_event(
-            "sync_mendeley",
-            considered=len(targets),
-            linked=len(linked),
-            already_linked=len(already_linked),
-            not_found=len(not_found),
-            ambiguous=len(ambiguous),
-            failed=len(failed),
-            dry_run=dry_run,
-        )
-
-        summary = (
-            f"{len(linked)} linked, {len(already_linked)} already linked, "
-            f"{len(not_found)} not found, {len(ambiguous)} ambiguous, "
-            f"{len(not_eligible)} not eligible, {len(failed)} failed"
-            + (f", {len(dry_run_link)} would-link (dry-run)" if dry_run else "")
-            + "."
-        )
-        if any("auth:" in f.get("error", "") for f in failed):
-            summary += " Auth failure detected — run `mendeley-auth login` and retry."
-
-        return SyncMendeleyResult(
-            linked=linked,
-            already_linked=sorted(already_linked),
-            not_found=not_found,
-            ambiguous=ambiguous,
-            not_eligible=not_eligible,
-            failed=failed,
-            dry_run_link=dry_run_link,
             summary=summary,
         )
 
@@ -1530,13 +1090,6 @@ class PaperPipeline(Tool):
         if "launch command not found" in error:
             return f"{error} (install with `uv tool install mendeley-mcp` or set paper.mendeley_mcp_command)"
         return error
-
-    @staticmethod
-    def _path_in_watch(pdf_path: Path, watch_dir: Path) -> bool:
-        try:
-            return watch_dir.resolve() in pdf_path.resolve().parents
-        except OSError:
-            return False
 
     # ------------------------------------------------------------------
     # Shared helpers - every paper action reuses these.

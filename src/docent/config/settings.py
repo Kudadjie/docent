@@ -12,14 +12,11 @@ class PaperSettings(BaseModel):
 
     Env-overridable as `DOCENT_PAPER__<FIELD>` (note the double underscore for
     nesting). `database_dir` accepts a path with `~`; expansion is the caller's
-    job (`Path(...).expanduser()`).
-    `mendeley_watch_subdir` is a path *relative* to `database_dir` (e.g.
-    "Watch") - encodes the structural truth that the watch folder lives inside
-    the database. Validated at use-time.
+    job (`Path(...).expanduser()`). Step 11.9: `database_dir` IS the Mendeley
+    watch folder — Mendeley auto-imports anything dropped here.
     """
 
     database_dir: Path | None = None
-    mendeley_watch_subdir: str | None = None
     unpaywall_email: str | None = None
     mendeley_mcp_command: list[str] | None = None  # e.g. ["uvx", "mendeley-mcp"]; None -> default in mendeley_client.
     queue_collection: str = "Docent-Queue"  # Mendeley collection name that defines reading-queue membership (Step 11.6).

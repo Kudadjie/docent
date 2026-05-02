@@ -17,13 +17,13 @@ def test_round_trip_simple_value(tmp_docent_home):
 
 def test_preserves_unrelated_keys(tmp_docent_home):
     write_setting("paper.database_dir", "/path-a")
-    write_setting("paper.mendeley_watch_subdir", "Watch")
+    write_setting("paper.queue_collection", "Docent-Queue")
     write_setting("default_model", "openai/gpt-5")
 
     with config_file().open("rb") as f:
         data = tomllib.load(f)
     assert data["paper"]["database_dir"] == "/path-a"
-    assert data["paper"]["mendeley_watch_subdir"] == "Watch"
+    assert data["paper"]["queue_collection"] == "Docent-Queue"
     assert data["default_model"] == "openai/gpt-5"
 
 

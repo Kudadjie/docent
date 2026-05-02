@@ -1,11 +1,12 @@
-"""Sync helpers for paper pipeline — Unpaywall lookup + PDF download + Watch move.
+"""Sync helpers for paper pipeline — Unpaywall lookup + PDF download.
 
-Extracted from `paper.py` at the Step 11.3 carve-out.
+Extracted from `paper.py` at the Step 11.3 carve-out. Step 11.9 dropped the
+`move_to_watch` helper when sync-promote was retired (database_dir IS the
+Mendeley watch folder).
 """
 from __future__ import annotations
 
 import json
-import shutil
 from pathlib import Path
 from typing import Any
 
@@ -107,24 +108,3 @@ def download_pdf(url: str, dest: Path, executor: Any) -> bool:
     if head != b"%PDF-":
         return _discard()
     return True
-
-
-def move_to_watch(src: Path, watch_dir: Path) -> Path:
-    """Move `src` into `watch_dir`, returning the new path.
-
-    Creates `watch_dir` if missing. Raises FileExistsError if a *different*
-    file already occupies the destination — caller buckets it. If `src` and
-    `dest` resolve to the same path (already moved), this is a no-op and
-    returns `dest`.
-    """
-    watch_dir.mkdir(parents=True, exist_ok=True)
-    dest = watch_dir / src.name
-    if src.resolve() == dest.resolve():
-        return dest
-    if dest.exists():
-        raise FileExistsError(
-            f"Watch destination already occupied: {dest}. "
-            f"Resolve the collision manually before re-running."
-        )
-    shutil.move(str(src), str(dest))
-    return dest

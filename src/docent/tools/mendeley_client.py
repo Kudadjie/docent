@@ -1,9 +1,10 @@
 """Mendeley MCP client wrapper - sync facade over the async `mcp` SDK.
 
-Step 11.4. Spawn-per-call: each `lookup_doi` / `search_library` invocation
-launches the Mendeley MCP server as a subprocess via stdio, runs one
-`call_tool`, and tears down. Cheap enough at our volumes (a sync-mendeley
-run is at most a few dozen calls).
+Step 11.4. Spawn-per-call: each call launches the Mendeley MCP server as a
+subprocess via stdio, runs one `call_tool`, and tears down. Step 11.9 retired
+`lookup_doi` / `search_library` (sync-mendeley subsumed by sync-from-mendeley);
+only `list_folders` and `list_documents` remain — both feeding the Mendeley
+read-through cache used by paper readers.
 
 Return shape is `{"items": list, "error": str | None}`:
 
@@ -103,29 +104,6 @@ async def _call_tool(launch_command: list[str], tool_name: str, arguments: dict[
 
 def _run(coro: Any) -> dict[str, Any]:
     return asyncio.run(coro)
-
-
-def _normalize_doi(doi: str) -> str:
-    """Strip URL prefixes — Mendeley's catalog endpoint takes bare DOIs only.
-    Mirrors the same normalization in `crossref_lookup` and `unpaywall_lookup`.
-    """
-    clean = doi.strip()
-    for prefix in ("https://doi.org/", "http://doi.org/", "doi:"):
-        if clean.lower().startswith(prefix):
-            return clean[len(prefix):]
-    return clean
-
-
-def lookup_doi(doi: str, launch_command: list[str] | None = None) -> dict[str, Any]:
-    """Call Mendeley's `mendeley_get_by_doi` with the given DOI."""
-    cmd = launch_command or DEFAULT_LAUNCH_COMMAND
-    return _run(_call_tool(cmd, "mendeley_get_by_doi", {"doi": _normalize_doi(doi)}))
-
-
-def search_library(query: str, launch_command: list[str] | None = None, limit: int = 20) -> dict[str, Any]:
-    """Call Mendeley's `mendeley_search_library` with a free-text query."""
-    cmd = launch_command or DEFAULT_LAUNCH_COMMAND
-    return _run(_call_tool(cmd, "mendeley_search_library", {"query": query, "limit": limit}))
 
 
 def list_folders(launch_command: list[str] | None = None) -> dict[str, Any]:
