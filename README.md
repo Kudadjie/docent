@@ -2,7 +2,7 @@
 
 A personal CLI control center for grad-school workflows — papers, research, writing tools, subprocess wrappers — all behind a single `docent <tool>` command. Built so a web dashboard can wrap the same tool registry later without rewriting anything.
 
-> **Built with AI, Architected by a Human:** Much of the codebase for Docent was written by Claude Code (Opus 4.), but the architecture was strictly human-directed — designed, planned, tested, and iterated over many sessions.
+> **Built with AI, Architected by a Human:** Much of the codebase for Docent was written by Claude Code (Opus 4.) and OpenCode Go subscription models (Kimi K2.6, DeepSeek V4 Pro, Qwen 3.5 Plus, MiniMax M2.7), but the architecture was strictly human-directed — designed, planned, tested, and iterated over many sessions.
 
 ## What works today
 
