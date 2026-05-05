@@ -14,7 +14,9 @@ A personal CLI control center for grad-school workflows — papers, research, wr
 - **Auto-discovery**: drop a file in `src/docent/tools/`, decorate with `@register_tool`, and Typer commands generate at startup from the Pydantic input schema. No CLI edits.
 - **Context plumbing**: `context.settings` (Pydantic + `~/.docent/config.toml` + env overrides), `context.llm` (lazy litellm wrapper), `context.executor` (list-args subprocess, no shell-injection surface).
 - **`docent.learning.RunLog`**: per-namespace JSONL run-log with cap-and-roll, for tools that want a "what did I do recently" history (used by `paper`'s mutators).
-- **`paper` tool** (the first ported skill, 12 actions): `add` (with `--pdf` for PDF-driven metadata extraction via DOI → CrossRef → PDF info → filename fallback), `scan --folder <path>` (batch ingest a folder of PDFs), plus `next / show / search / stats / remove / edit / done / ready-to-read / mark-keeping / export`.
+- **`paper` tool** (the first ported skill — being rewritten as `reading` next): queue CRUD (`next / show / search / stats / remove / edit / done / ready-to-read / export`); `add` (bare guidance mode or `--mendeley-id` upsert); `sync-from-mendeley` (reconciles the `Docent-Queue` Mendeley collection into the sidecar, overlays fresh metadata on display); `sync-pull` (Unpaywall OA download); `sync-status`; `config-show / config-set`; `queue-clear`. Mendeley is the source of truth for title/authors/year/doi — `paper` is a thin workflow layer on top.
+- **`PaperQueueStore`**: persistence seam in `paper_store.py`. Actions mutate queue state through the store, never by reaching into JSON directly.
+- **`MendeleyCache`**: read-through file-backed cache (5-min TTL) used by `next / show / search` to overlay live Mendeley metadata. Degrades gracefully to queue snapshot on auth/transport failure.
 - Themed Rich console singleton; tools never touch it directly (they return typed data; CLI renders).
 
 ## Install
@@ -53,12 +55,13 @@ See [`Docent_Architecture.md`](Docent_Architecture.md) for the full design. The 
 - [x] 7a. Multi-action contract extension (`@action` decorator)
 - [x] 7b. First real tool: `paper add` stub (validates the contract end-to-end)
 - [x] 7c. `docent.learning.RunLog` (per-namespace JSONL run-log; cap-and-roll)
-- [x] 8. Simple paper CRUD actions (next/show/search/stats/remove/edit/done/ready-to-read/mark-keeping/export); `add` integrated with `RunLog`
-- [x] 9. PDF-driven `paper add` (DOI→CrossRef→PDF-DOI→CrossRef→PDF-info→filename fallback) + new `paper scan --folder` action
-- [ ] 10. Progress streaming extension (motivated by long-running ops)
-- [ ] 11. Paper sync ops (sync-status/pull/promote/mendeley) + minimal MCP adapter
-- [ ] 12. External `~/.docent/plugins/` discovery
-- [ ] 13. Full MCP adapter
+- [x] 8. Simple paper CRUD actions (next/show/search/stats/remove/edit/done/ready-to-read/export)
+- [x] 9. PDF-driven `paper add` + `paper scan --folder` (both retired in Step 11.8 after Mendeley-truth pivot)
+- [x] 10. Progress streaming (`ProgressEvent` + generator actions + `_drive_progress`); per-tool config; pytest harness; `PaperQueueStore` persistence seam; UI-leak cleanup
+- [x] 11. Paper sync ops — pivoted mid-stream to Mendeley-as-truth. Ships: `sync-from-mendeley`, `sync-pull` (Unpaywall), `MendeleyCache` read-through overlay, `sync-status`, trim schema migration. Retired: `sync-promote`, `sync-mendeley`, homegrown PDF extraction.
+- [ ] 12. `reading` tool rewrite — graduate `paper` → `reading`; schema fixes (category/deadline/order/summary fields); notification system; books support
+- [ ] 13. External `~/.docent/plugins/` discovery
+- [ ] 14. Full MCP adapter
 
 ## Adding a tool
 

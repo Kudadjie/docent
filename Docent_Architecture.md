@@ -194,8 +194,10 @@ Current status in `memory/build_progress.md`.
    - 11.8 ✅ Rip out homegrown extraction. `paper_metadata.py` deleted; `pypdf` dropped. `paper add` collapsed to two modes: bare `add` returns guidance ("drop PDF in `database_dir` → drag into `Docent-Queue` → run `sync-from-mendeley`"); `add --mendeley-id <id>` upserts a stub. `scan` action ripped.
    - 11.9 ✅ Collapse `paper.mendeley_watch_subdir` (single-watch-folder model: `database_dir` IS the watch folder). Retire `sync-promote` and `sync-mendeley` actions. `mendeley_client.lookup_doi` / `search_library` removed. `sync-status` simplified.
    - 11.10 ✅ One-shot `paper migrate-to-mendeley-truth [--yes]` — backs up `queue.json` → `.bak`, wipes to the trim shape. `QueueEntry` lost `pdf_path` / `file_status` / `keep_in_mendeley` / `promoted_at` / `title_is_filename_stub`; gained `started` / `finished` ISO timestamps stamped on first transition. `mark-keeping` action retired. `_require_identifier`: `mendeley_id` or `doi`.
-12. External `~/.docent/plugins/` discovery.
-13. Full MCP adapter (Docent exposes *itself* via MCP — last, after the native registry is battle-tested).
+12. **`reading` tool rewrite** — graduate `paper` → `reading`; schema fixes: add `category` (enum: `course|thesis|personal`), `course_name`, `deadline` (ISO date), `order` (int, replaces priority string), `summary` (LLM-owned, not user-editable), remove retired `migrate-to-mendeley-truth`/`sync-pull` actions, fix `edit` to expose only user-owned fields. Notification inbox: at-startup deadline warnings, no-repeat-same-day guard. Books support (no-DOI graceful fallback). Sub-collection → category auto-mapping on sync. `summary` field populated by `reading enrich` action (Phase 2, after rewrite ships).
+   - 12.5 **`reading enrich`** — agentic LLM action: reads PDF text (via `pdf-reader-mcp`) + Mendeley metadata, calls OpenCode Go subscription models (via `scripts/oc_delegate.py` or direct session API) to generate a paragraph summary, writes to `summary` field. Zero Anthropic API cost. See `memory/feedback_opencode_for_agentic_tools.md` for the delegation pattern.
+13. External `~/.docent/plugins/` discovery.
+14. Full MCP adapter (Docent exposes *itself* via MCP — last, after the native registry is battle-tested).
 
 ---
 
