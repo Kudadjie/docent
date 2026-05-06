@@ -27,9 +27,6 @@ _KNOWN_READING_KEYS = {"database_dir", "queue_collection"}
 # `mendeley_mcp_command` is a list field; config-set only handles strings today.
 # Power users can edit config.toml directly; defaulted to ["uvx", "mendeley-mcp"] in mendeley_client.
 
-VALID_CATEGORIES = {"course", "thesis", "personal"}
-
-
 class QueueEntry(BaseModel):
     id: str
     title: str = ""        # Mendeley-owned snapshot; overlay refreshes on read.
@@ -39,9 +36,8 @@ class QueueEntry(BaseModel):
     added: str             # ISO date
     status: str = "queued"
     order: int = 0         # 1-based position in the reading queue; 0 = unordered.
-    category: str = "personal"    # course | thesis | personal
-    course_name: str | None = None  # e.g. "CES701"; meaningful when category=course.
-    deadline: str | None = None    # ISO date (YYYY-MM-DD), user-settable.
+    category: str | None = None   # Mendeley sub-collection path, e.g. "CES701" or "CES701/Topic"; None = root.
+    deadline: str | None = None   # ISO date (YYYY-MM-DD), user-settable.
     tags: list[str] = Field(default_factory=list)
     notes: str = ""
     mendeley_id: str | None = None
@@ -59,8 +55,7 @@ class QueueEntry(BaseModel):
 
 class AddInputs(BaseModel):
     mendeley_id: str | None = Field(None, description="Mendeley document id; if supplied, an entry is upserted (metadata pulled fresh on next read). Without this, `add` prints guidance.")
-    category: str = Field("personal", description="Category: course|thesis|personal.")
-    course_name: str | None = Field(None, description="Course name (e.g. 'CES701'); meaningful when category=course.")
+    category: str | None = Field(None, description="Override category (e.g. 'CES701'). Normally auto-detected from the Mendeley sub-collection on sync.")
     deadline: str | None = Field(None, description="ISO date deadline (YYYY-MM-DD), optional.")
     notes: str = Field("", description="Freeform notes.")
     force: bool = Field(False, description="Overwrite if an entry keyed on this mendeley_id already exists.")
@@ -80,11 +75,11 @@ class IdOnlyInputs(BaseModel):
 
 
 class NextInputs(BaseModel):
-    course_name: str | None = Field(None, description="Restrict to a specific course (e.g. 'CES701').")
+    category: str | None = Field(None, description="Restrict to a category prefix (e.g. 'CES701' matches 'CES701' and 'CES701/Topic').")
 
 
 class SearchInputs(BaseModel):
-    query: str = Field(..., description="Case-insensitive substring matched against title, authors, notes, course_name, id, and tags.")
+    query: str = Field(..., description="Case-insensitive substring matched against title, authors, notes, category, id, and tags.")
 
 
 class StatsInputs(BaseModel):
@@ -95,8 +90,7 @@ class EditInputs(BaseModel):
     id: str = Field(..., description="Entry id to edit.")
     status: str | None = Field(None, description="New status (queued|reading|done).")
     order: int | None = Field(None, description="New reading order position (1 = read first).")
-    category: str | None = Field(None, description="New category (course|thesis|personal).")
-    course_name: str | None = Field(None, description="New course name.")
+    category: str | None = Field(None, description="Override category (e.g. 'CES701'). Normally auto-detected from the Mendeley sub-collection on sync.")
     deadline: str | None = Field(None, description="New deadline (YYYY-MM-DD) or '' to clear.")
     notes: str | None = Field(None, description="New notes.")
     tags: list[str] | None = Field(None, description="Replace tag list.")
@@ -104,8 +98,7 @@ class EditInputs(BaseModel):
 
 class ExportInputs(BaseModel):
     format: str = Field("json", description="Output format: json | markdown.")
-    category: str | None = Field(None, description="Filter by category (course|thesis|personal).")
-    course_name: str | None = Field(None, description="Filter by course name.")
+    category: str | None = Field(None, description="Filter by exact category path (e.g. 'CES701' or 'CES701/Topic').")
     status: str | None = Field(None, description="Filter by status (queued|reading|done).")
 
 
@@ -152,7 +145,6 @@ class StatsResult(BaseModel):
     total: int
     by_status: dict[str, int]
     by_category: dict[str, int]
-    by_course_name: dict[str, int]
     banner: BannerCounts
 
 
@@ -239,18 +231,12 @@ class ReadingQueue(Tool):
                 banner=self._store.banner_counts(),
                 message=(
                     "Drop the PDF in your reading.database_dir (Mendeley auto-imports it), "
-                    f"drag it into the {collection!r} collection in Mendeley, then run "
+                    f"drag it into the '{collection}' collection in Mendeley, then run "
                     "`docent reading sync-from-mendeley`. "
-                    "Or pass --mendeley-id to upsert a sidecar entry now."
+                    f"Category is auto-detected from sub-collections: "
+                    f"'{collection}/CES701' -> category='CES701', "
+                    f"'{collection}/CES701/Topic' -> category='CES701/Topic'."
                 ),
-            )
-
-        if inputs.category not in VALID_CATEGORIES:
-            return AddResult(
-                added=False, id="", title="",
-                queue_size=len(self._store.load_index()),
-                banner=self._store.banner_counts(),
-                message=f"Invalid category {inputs.category!r}. Use: {sorted(VALID_CATEGORIES)}.",
             )
 
         mid = inputs.mendeley_id.strip()
@@ -292,7 +278,6 @@ class ReadingQueue(Tool):
             added=existing.get("added") if existing else datetime.now().date().isoformat(),
             order=existing.get("order", new_order) if existing else new_order,
             category=inputs.category,
-            course_name=inputs.course_name,
             deadline=inputs.deadline,
             notes=inputs.notes,
             mendeley_id=mid,
@@ -323,10 +308,14 @@ class ReadingQueue(Tool):
         queue = self._store.load_queue()
         queue = self._apply_overlay(queue, self._load_mendeley_overlay(context))
         candidates = [e for e in queue if e.get("status") == "queued"]
-        if inputs.course_name:
-            candidates = [e for e in candidates if e.get("course_name") == inputs.course_name]
+        if inputs.category:
+            cat = inputs.category
+            candidates = [
+                e for e in candidates
+                if e.get("category") == cat or (e.get("category") or "").startswith(cat + "/")
+            ]
         if not candidates:
-            scope = f" for course {inputs.course_name!r}" if inputs.course_name else ""
+            scope = f" for category {inputs.category!r}" if inputs.category else ""
             return MutationResult(
                 ok=False, id="", entry=None, queue_size=len(queue),
                 banner=self._store.banner_counts(),
@@ -366,7 +355,7 @@ class ReadingQueue(Tool):
                 e.get("title", "") or "",
                 e.get("authors", "") or "",
                 e.get("notes", "") or "",
-                e.get("course_name") or "",
+                e.get("category") or "",
                 e.get("id", "") or "",
                 " ".join(e.get("tags") or []),
             ]).lower()
@@ -379,17 +368,14 @@ class ReadingQueue(Tool):
         queue = self._store.load_queue()
         by_status: dict[str, int] = {}
         by_category: dict[str, int] = {}
-        by_course_name: dict[str, int] = {}
         for e in queue:
             s = e.get("status", "unknown")
             by_status[s] = by_status.get(s, 0) + 1
-            cat = e.get("category", "personal")
+            cat = e.get("category") or "(root)"
             by_category[cat] = by_category.get(cat, 0) + 1
-            cn = e.get("course_name") or "(none)"
-            by_course_name[cn] = by_course_name.get(cn, 0) + 1
         return StatsResult(
             total=len(queue), by_status=by_status,
-            by_category=by_category, by_course_name=by_course_name,
+            by_category=by_category,
             banner=self._store.banner_counts(),
         )
 
@@ -420,15 +406,7 @@ class ReadingQueue(Tool):
         if inputs.order is not None:
             updates["order"] = inputs.order
         if inputs.category is not None:
-            if inputs.category not in VALID_CATEGORIES:
-                return MutationResult(
-                    ok=False, id=inputs.id, entry=QueueEntry(**entry),
-                    queue_size=len(queue), banner=self._store.banner_counts(),
-                    message=f"Invalid category {inputs.category!r}. Use: {sorted(VALID_CATEGORIES)}.",
-                )
-            updates["category"] = inputs.category
-        if inputs.course_name is not None:
-            updates["course_name"] = inputs.course_name or None
+            updates["category"] = inputs.category or None
         if inputs.deadline is not None:
             updates["deadline"] = inputs.deadline or None
         if inputs.notes is not None:
@@ -491,8 +469,6 @@ class ReadingQueue(Tool):
         filtered = queue
         if inputs.category:
             filtered = [e for e in filtered if e.get("category") == inputs.category]
-        if inputs.course_name:
-            filtered = [e for e in filtered if e.get("course_name") == inputs.course_name]
         if inputs.status:
             filtered = [e for e in filtered if e.get("status") == inputs.status]
         filtered = sorted(filtered, key=lambda e: (e.get("order", 0) or 999999, e.get("added", "")))
@@ -648,6 +624,20 @@ class ReadingQueue(Tool):
         launch_command = context.settings.reading.mendeley_mcp_command
         return self._sync_from_mendeley_run(collection_name, launch_command, inputs.dry_run)
 
+    @staticmethod
+    def _compute_category_path(folder_id: str, root_id: str, folder_map: dict[str, dict]) -> str | None:
+        """Return 'ParentName/ChildName' path from root to folder_id (root excluded).
+        Returns None when folder_id == root_id (doc is directly in the root collection)."""
+        parts: list[str] = []
+        cur = folder_id
+        while cur and cur != root_id:
+            f = folder_map.get(cur)
+            if not f:
+                break
+            parts.insert(0, f.get("name", ""))
+            cur = f.get("parent_id")
+        return "/".join(parts) if parts else None
+
     def _sync_from_mendeley_run(
         self, collection_name: str, launch_command: list[str] | None, dry_run: bool
     ):
@@ -686,6 +676,24 @@ class ReadingQueue(Tool):
                 f"try toggling its name in Mendeley to refresh."
             )})
 
+        # Build folder map + discover sub-collection hierarchy.
+        folder_map: dict[str, dict] = {f["id"]: f for f in folders if isinstance(f, dict) and f.get("id")}
+        children: dict[str, list[str]] = {}
+        for f in folders:
+            if isinstance(f, dict):
+                pid = f.get("parent_id")
+                if pid:
+                    children.setdefault(pid, []).append(f["id"])
+
+        # BFS from root to collect all descendant sub-folder ids.
+        sub_folder_ids: list[str] = []
+        bfs: list[str] = list(children.get(folder_id, []))
+        while bfs:
+            fid = bfs.pop(0)
+            sub_folder_ids.append(fid)
+            bfs.extend(children.get(fid, []))
+
+        # Fetch docs from root (fatal if fails), then each sub-folder (non-fatal).
         yield ProgressEvent(phase="discover", message=f"Reading collection {collection_name!r} ({folder_id[:8]}…).")
         docs_resp = mendeley_list_documents(folder_id=folder_id, launch_command=launch_command)
         if docs_resp.get("error"):
@@ -694,15 +702,51 @@ class ReadingQueue(Tool):
                 "folder_id": folder_id,
                 "message": f"Could not list documents in {collection_name!r}: {self._mendeley_failure_hint(err)}",
             })
-        docs = [d for d in (docs_resp.get("items") or []) if isinstance(d, dict)]
-        yield ProgressEvent(phase="discover", message=f"Found {len(docs)} doc(s) in {collection_name!r}.")
+
+        # doc_with_category: {mendeley_id: (doc, category_path)} — deepest path wins.
+        doc_with_category: dict[str, tuple[dict, str | None]] = {}
+        _no_id_failed: list[dict[str, str]] = []
+
+        for doc in [d for d in (docs_resp.get("items") or []) if isinstance(d, dict)]:
+            mid = self._extract_mendeley_id(doc)
+            if mid:
+                doc_with_category[mid] = (doc, None)  # None = directly in root
+            else:
+                _no_id_failed.append({"mendeley_id": "", "error": "doc has no usable id"})
+
+        for sfid in sub_folder_ids:
+            sf_name = folder_map.get(sfid, {}).get("name", sfid)
+            cat_path = self._compute_category_path(sfid, folder_id, folder_map)
+            yield ProgressEvent(phase="discover", message=f"Reading sub-collection {sf_name!r}…")
+            sf_resp = mendeley_list_documents(folder_id=sfid, launch_command=launch_command)
+            if sf_resp.get("error"):
+                yield ProgressEvent(phase="discover", level="warn",
+                                    message=f"Could not read '{sf_name}': {sf_resp['error']}")
+                continue
+            for doc in [d for d in (sf_resp.get("items") or []) if isinstance(d, dict)]:
+                mid = self._extract_mendeley_id(doc)
+                if not mid:
+                    continue  # already captured from root fetch if it appeared there
+                existing = doc_with_category.get(mid)
+                if existing is None:
+                    doc_with_category[mid] = (doc, cat_path)
+                else:
+                    _, existing_path = existing
+                    existing_depth = len(existing_path.split("/")) if existing_path else 0
+                    new_depth = len(cat_path.split("/")) if cat_path else 0
+                    if new_depth > existing_depth:
+                        doc_with_category[mid] = (doc, cat_path)
+
+        docs_to_process = list(doc_with_category.items())
+        yield ProgressEvent(phase="discover", message=f"Found {len(docs_to_process)} doc(s) total.")
 
         added: list[dict[str, str]] = []
         unchanged: list[str] = []
         removed: list[str] = []
-        failed: list[dict[str, str]] = []
+        failed: list[dict[str, str]] = list(_no_id_failed)
         dry_run_added: list[dict[str, str]] = []
         dry_run_removed: list[str] = []
+        category_updates: dict[str, str | None] = {}  # entry_id -> new category
 
         queue = self._store.load_queue()
         by_mendeley_id: dict[str, dict[str, Any]] = {
@@ -714,21 +758,21 @@ class ReadingQueue(Tool):
         new_entries: list[dict[str, Any]] = []
         max_order = max((e.get("order", 0) for e in queue), default=0)
 
-        for i, doc in enumerate(docs, 1):
-            mid = self._extract_mendeley_id(doc)
-            if not mid:
-                failed.append({"mendeley_id": "", "error": "doc has no usable id"})
-                continue
+        for i, (mid, (doc, category)) in enumerate(docs_to_process, 1):
             in_collection.add(mid)
-            yield ProgressEvent(phase="reconcile", current=i, total=len(docs), item=doc.get("title", mid)[:60])
+            yield ProgressEvent(phase="reconcile", current=i, total=len(docs_to_process), item=doc.get("title", mid)[:60])
 
             if mid in by_mendeley_id:
-                unchanged.append(by_mendeley_id[mid].get("id") or mid)
+                existing_entry = by_mendeley_id[mid]
+                eid = existing_entry.get("id") or mid
+                if existing_entry.get("category") != category:
+                    category_updates[eid] = category
+                unchanged.append(eid)
                 continue
 
             try:
                 max_order += 1
-                entry = self._build_entry_from_mendeley(doc, mid, existing_ids | reserved_ids, max_order)
+                entry = self._build_entry_from_mendeley(doc, mid, existing_ids | reserved_ids, max_order, category=category)
             except Exception as e:  # noqa: BLE001
                 failed.append({"mendeley_id": mid, "error": str(e)})
                 yield ProgressEvent(phase="reconcile", level="error", message=f"{mid[:8]}: {e}")
@@ -752,7 +796,7 @@ class ReadingQueue(Tool):
             else:
                 removed.append(e.get("id", mid))
 
-        if not dry_run and (new_entries or removed):
+        if not dry_run and (new_entries or removed or category_updates):
             queue = self._store.load_queue()
             by_id = {e.get("id"): e for e in queue}
             for ne in new_entries:
@@ -760,8 +804,11 @@ class ReadingQueue(Tool):
                     queue.append(ne)
             removed_set = set(removed)
             for e in queue:
-                if e.get("id") in removed_set:
+                eid = e.get("id")
+                if eid in removed_set:
                     e["status"] = "removed"
+                if eid in category_updates:
+                    e["category"] = category_updates[eid]
             self._store.save_queue(queue)
 
         if not dry_run:
@@ -804,7 +851,8 @@ class ReadingQueue(Tool):
         )
 
     def _build_entry_from_mendeley(
-        self, doc: dict[str, Any], mendeley_id: str, taken_ids: set[str], order: int
+        self, doc: dict[str, Any], mendeley_id: str, taken_ids: set[str], order: int,
+        category: str | None = None,
     ) -> "QueueEntry":
         title = (doc.get("title") or "").strip() or "(untitled)"
         authors = self._normalize_mendeley_authors(doc.get("authors"))
@@ -829,6 +877,7 @@ class ReadingQueue(Tool):
             doi=doi,
             added=datetime.now().date().isoformat(),
             order=order,
+            category=category,
             mendeley_id=mendeley_id,
         )
 

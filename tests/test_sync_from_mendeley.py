@@ -400,7 +400,117 @@ def test_normalize_authors_none_or_empty_yields_unknown():
     assert ReadingQueue._normalize_mendeley_authors([{}, ""]) == "Unknown"
 
 
-def test_doc_with_non_int_year_normalizes_to_none(tmp_docent_home, monkeypatch):
+# ----------------------------------------------------------------------
+# Sub-collection category detection
+# ----------------------------------------------------------------------
+
+
+def test_sub_collection_category_assigned(tmp_docent_home, monkeypatch):
+    """Documents in sub-collections get their category from the folder path."""
+    tool = ReadingQueue()
+    ctx = _ctx()
+
+    folders = [
+        {"id": "FQ", "name": "Docent-Queue", "parent_id": None},
+        {"id": "FC1", "name": "TestCourse701", "parent_id": "FQ"},
+        {"id": "FC2", "name": "ParticularTopic", "parent_id": "FC1"},
+    ]
+
+    def fake_docs(folder_id=None):
+        mapping = {
+            "FQ":  [{"id": "M-ROOT", "title": "Root doc", "authors": ["A"], "year": 2024}],
+            "FC1": [{"id": "M-C1",   "title": "Course doc", "authors": ["B"], "year": 2024}],
+            "FC2": [{"id": "M-C2",   "title": "Topic doc",  "authors": ["C"], "year": 2024}],
+        }
+        return {"items": mapping.get(folder_id, []), "error": None}
+
+    _patch_mendeley(monkeypatch, folders={"items": folders, "error": None}, documents=fake_docs)
+
+    result = _drain(tool.sync_from_mendeley(SyncFromMendeleyInputs(), ctx))
+    assert len(result.added) == 3
+
+    by_mid = {e["mendeley_id"]: e for e in tool._store.load_queue()}
+    assert by_mid["M-ROOT"]["category"] is None
+    assert by_mid["M-C1"]["category"] == "TestCourse701"
+    assert by_mid["M-C2"]["category"] == "TestCourse701/ParticularTopic"
+
+
+def test_deepest_subcollection_category_wins(tmp_docent_home, monkeypatch):
+    """A document appearing in both parent and child sub-folder gets the deeper path."""
+    tool = ReadingQueue()
+    ctx = _ctx()
+
+    doc = {"id": "M-BOTH", "title": "Multi-folder doc", "authors": ["X"], "year": 2024}
+    folders = [
+        {"id": "FQ",  "name": "Docent-Queue",    "parent_id": None},
+        {"id": "FC1", "name": "TestCourse701",    "parent_id": "FQ"},
+        {"id": "FC2", "name": "ParticularTopic",  "parent_id": "FC1"},
+    ]
+
+    def fake_docs(folder_id=None):
+        return {"items": [doc] if folder_id in ("FQ", "FC1", "FC2") else [], "error": None}
+
+    _patch_mendeley(monkeypatch, folders={"items": folders, "error": None}, documents=fake_docs)
+
+    result = _drain(tool.sync_from_mendeley(SyncFromMendeleyInputs(), ctx))
+    assert len(result.added) == 1
+    assert tool._store.load_queue()[0]["category"] == "TestCourse701/ParticularTopic"
+
+
+def test_category_updated_when_doc_moves_to_subcollection(tmp_docent_home, monkeypatch):
+    """An existing entry's category is updated when the doc moves to a sub-folder."""
+    tool = ReadingQueue()
+    ctx = _ctx()
+
+    folders = [
+        {"id": "FQ",  "name": "Docent-Queue",  "parent_id": None},
+        {"id": "FC1", "name": "TestCourse701", "parent_id": "FQ"},
+    ]
+    doc = {"id": "M-1", "title": "T", "authors": ["A"], "year": 2024}
+
+    # First sync: doc in root.
+    _patch_mendeley(
+        monkeypatch,
+        folders={"items": folders, "error": None},
+        documents=lambda fid: {"items": [doc] if fid == "FQ" else [], "error": None},
+    )
+    _drain(tool.sync_from_mendeley(SyncFromMendeleyInputs(), ctx))
+    assert tool._store.load_queue()[0]["category"] is None
+
+    # Second sync: doc now in sub-collection.
+    _patch_mendeley(
+        monkeypatch,
+        folders={"items": folders, "error": None},
+        documents=lambda fid: {"items": [doc] if fid == "FC1" else [], "error": None},
+    )
+    _drain(tool.sync_from_mendeley(SyncFromMendeleyInputs(), ctx))
+    assert tool._store.load_queue()[0]["category"] == "TestCourse701"
+
+
+def test_subfolder_error_is_non_fatal(tmp_docent_home, monkeypatch):
+    """A transport error reading a sub-folder is warned but does not abort the sync."""
+    tool = ReadingQueue()
+    ctx = _ctx()
+
+    folders = [
+        {"id": "FQ",  "name": "Docent-Queue",  "parent_id": None},
+        {"id": "FC1", "name": "TestCourse701", "parent_id": "FQ"},
+    ]
+
+    def fake_docs(folder_id=None):
+        if folder_id == "FQ":
+            return {"items": [{"id": "M-ROOT", "title": "R", "authors": ["A"], "year": 2024}], "error": None}
+        return {"items": [], "error": "transport: timeout"}
+
+    _patch_mendeley(monkeypatch, folders={"items": folders, "error": None}, documents=fake_docs)
+
+    result = _drain(tool.sync_from_mendeley(SyncFromMendeleyInputs(), ctx))
+    # Root doc still added; sub-folder error didn't abort.
+    assert len(result.added) == 1
+    assert result.added[0]["mendeley_id"] == "M-ROOT"
+
+
+def test_doc_without_doi_or_pdf_persists_via_mendeley_id(tmp_docent_home, monkeypatch):
     """Mendeley sometimes returns year=null; some PDFs surface stringified
     years. Anything non-int snaps to None on the snapshot."""
     tool = ReadingQueue()

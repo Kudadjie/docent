@@ -62,8 +62,8 @@ def test_add_same_mendeley_id_blocked_without_force(tmp_docent_home):
     result = tool.add(AddInputs(mendeley_id="MEND-1", category="course"), ctx)
     assert result.added is False
     assert "already in queue" in result.message.lower()
-    # Original category preserved.
-    assert tool._store.load_queue()[0]["category"] == "personal"
+    # Original category preserved (default is None).
+    assert tool._store.load_queue()[0]["category"] is None
 
 
 def test_add_force_updates_existing_entry(tmp_docent_home):
