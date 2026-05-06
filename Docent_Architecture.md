@@ -192,38 +192,3 @@ uv run docent --version
 
 That's the whole setup.
 
-Notes to Fold Into Architecture
-1. Tool discovery — start simple, migrate later
-The tools/__init__.py directory-walk-and-import approach works for v1 but has a hidden cost: every CLI invocation pays the import time of every tool, even commands like docent --version that don't need any of them. Fine at 3 tools; painful at 30.
-v1 approach (ship this): directory walk in tools/__init__.py, trigger @register_tool decorators at import time. Simple, obvious, no extra config.
-v2 migration path (when startup latency becomes noticeable): switch to entry points declared in pyproject.toml under [project.entry-points."docent.tools"]. Python discovers tool names without importing the modules; actual import happens only when the tool is invoked. This is the standard pattern for plugin-heavy Python CLIs (pytest, flake8, pipx all use it).
-Trigger to migrate: when docent --version takes >200ms, or when porting a tool with heavy imports (torch, large model clients) that slow down unrelated commands.
-Don't do this now. Premature. Just be aware the exit ramp exists so the tool contract in Layer 1 doesn't accidentally depend on eager registration.
-
-2. Enforce the UI/logic boundary mechanically, not by discipline
-"Tools return structured data; the UI layer renders it" is correct but fragile. Under deadline pressure the first violation will be a console.print(...) inside a tool because it's faster than plumbing a result object back. Once that happens, every subsequent tool copies the pattern, and the web frontend refactor becomes a rewrite.
-Make the contract mechanical:
-
-Tool run() methods return a typed result object (Pydantic model), never None and never printed output.
-Tools do not import from docent.ui. Consider a lint rule or import-time check to enforce this — a simple ast walk in a pre-commit hook is enough.
-The context object passed to tools exposes a logger (for diagnostic output that goes to file) but not a console. If a tool needs to show progress, it yields progress events via a structured channel; the CLI layer decides how to render them.
-Only cli.py and the ui/ package touch the Rich console.
-
-Why this matters for the web frontend later: if tools return structured results and never touch a TTY, the web layer just serializes those results to JSON. If tools print directly, the web layer has to capture stdout, parse it, and hope nothing escapes. The second path never actually gets built — the project just stays a CLI forever.
-
-3. MCP is across a process boundary — design the registry to know that
-The outline frames MCP as "just another adapter behind the same registry." Directionally right, but understated. Native tools and MCP tools differ in ways the registry needs to model:
-
-Process boundary — MCP tools run out-of-process, possibly over network. Every call can fail in ways a native call cannot (timeout, broken pipe, server restart).
-Lifecycle — native tools exist as long as the Python process. MCP servers start, stop, crash, need reconnection, need auth refresh.
-Discovery — native tools are known at import time. MCP tool lists come from a running server and can change mid-session.
-Trust — native tools are your code. MCP tools are someone else's code speaking a protocol.
-
-**Decision (karpathy simplicity-first): `origin` and `health()` are deferred** until step 11 when the MCP adapter actually lands. The save-a-refactor argument doesn't survive scrutiny — the "refactor" is adding `origin = "native"` once per tool, which is minutes of mechanical work when there are 10 tools. Building fields for a feature that's months away is the exact speculation karpathy #2 warns against. Revisit when MCP is real work, not before.
-
-Summary of what changes in the outline
-
-Layer 1 (Tool Contract): two paths (single-action, multi-action); require `run`/actions to return typed result objects; forbid UI imports from tools.
-Layer 2 (Registry): store the class (not an instance); directory walk for v1; document entry-points as the v2 migration.
-Layer 4 (UI): the context object exposes a logger (not a console). Enforce with a lint check.
-Build Order: step 7 split into 7a (multi-action) and 7b (first real tool); step 10 added for progress streaming (`ProgressEvent` + generator actions, motivated by `paper scan`); step 10.7 added the per-tool Store pattern (`PaperQueueStore`) as a persistence seam.

@@ -77,14 +77,18 @@ Manages your academic reading queue and syncs with Mendeley.
 | Command | Description |
 |---|---|
 | `docent reading edit <id> --order 1` | Set reading priority (1 = read first) |
-| `docent reading edit <id> --deadline 2026-06-15` | Set a reading deadline |
+| `docent reading set-deadline <id> --deadline 2026-06-15` | Set a reading deadline |
+| `docent reading set-deadline <id> --deadline ''` | Clear a deadline |
 | `docent reading edit <id> --notes "Key paper for lit review"` | Add notes |
 | `docent reading edit <id> --tags tag1 tag2` | Set tags |
+| `docent reading edit <id> --type book_chapter` | Set entry type (paper / book / book_chapter) |
 | `docent reading move-up <id>` | Move one position earlier |
 | `docent reading move-down <id>` | Move one position later |
 | `docent reading move-to <id> --position 3` | Move to a specific position |
 
-**Deadlines:** Set via `edit --deadline YYYY-MM-DD`. Docent prints a startup warning for entries due within 3 days or overdue — once per calendar day.
+**Deadlines:** Set via `set-deadline --deadline YYYY-MM-DD`. Docent prints a startup warning for entries due within 3 days or overdue — once per calendar day.
+
+**Entry types:** Automatically detected from Mendeley document type on sync (`journal_article` → paper, `book` → book, `book_section` → book chapter). Override with `edit --type book_chapter`.
 
 **Mendeley sync**
 
@@ -93,7 +97,6 @@ Manages your academic reading queue and syncs with Mendeley.
 | `docent reading sync-from-mendeley` | Pull from your Mendeley Docent-Queue collection |
 | `docent reading sync-from-mendeley --dry-run` | Preview changes without writing |
 | `docent reading sync-status` | Report queue size and PDFs in database_dir |
-| `docent reading sync-pull --id <id>` | Download OA PDF via Unpaywall (requires DOI) |
 
 **Configuration**
 
