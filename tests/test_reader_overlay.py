@@ -17,7 +17,7 @@ from docent.config import load_settings
 from docent.core.context import Context
 from docent.execution import Executor
 from docent.llm import LLMClient
-from docent.tools.reading import (
+from reading import (
     IdOnlyInputs,
     NextInputs,
     ReadingQueue,
@@ -40,8 +40,8 @@ def _patch(monkeypatch, *, folders=None, documents=None):
     def fake_documents(folder_id=None, launch_command=None, limit=200, sort_by="last_modified"):
         return documents if documents is not None else {"items": [], "error": None}
 
-    monkeypatch.setattr("docent.tools.reading.mendeley_list_folders", fake_folders)
-    monkeypatch.setattr("docent.tools.reading.mendeley_list_documents", fake_documents)
+    monkeypatch.setattr("reading.mendeley_list_folders", fake_folders)
+    monkeypatch.setattr("reading.mendeley_list_documents", fake_documents)
 
 
 def _seed_queue(tool: ReadingQueue, entries: list[dict]) -> None:
@@ -234,8 +234,8 @@ def test_second_reader_call_hits_cache_not_mcp(tmp_docent_home, monkeypatch):
         doc_calls += 1
         return {"items": [{"id": "MID-1", "title": "Fresh", "authors": ["A"], "year": 2024}], "error": None}
 
-    monkeypatch.setattr("docent.tools.reading.mendeley_list_folders", fake_folders)
-    monkeypatch.setattr("docent.tools.reading.mendeley_list_documents", fake_documents)
+    monkeypatch.setattr("reading.mendeley_list_folders", fake_folders)
+    monkeypatch.setattr("reading.mendeley_list_documents", fake_documents)
 
     tool.next(NextInputs(), _ctx())
     tool.next(NextInputs(), _ctx())

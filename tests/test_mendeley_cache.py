@@ -10,7 +10,7 @@ import json
 
 import pytest
 
-from docent.tools.mendeley_cache import MendeleyCache
+from reading.mendeley_cache import MendeleyCache
 
 
 def _doc(mid: str, title: str = "T") -> dict:

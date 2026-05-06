@@ -15,9 +15,9 @@ from rich.text import Text
 from docent.config import write_setting
 from docent.core import Context, ProgressEvent, Tool, action, register_tool
 from docent.learning import RunLog
-from docent.tools.reading_store import BannerCounts, ReadingQueueStore
-from docent.tools.mendeley_cache import MendeleyCache
-from docent.tools.mendeley_client import (
+from .reading_store import BannerCounts, ReadingQueueStore
+from .mendeley_cache import MendeleyCache
+from .mendeley_client import (
     list_documents as mendeley_list_documents,
     list_folders as mendeley_list_folders,
 )
@@ -1195,3 +1195,11 @@ class ReadingQueue(Tool):
         first_title_word = title.split()[0] if title else "untitled"
         title_word = re.sub(r"[^a-zA-Z0-9]", "", first_title_word).lower() or "untitled"
         return f"{last_name}-{year_part}-{title_word}"
+
+
+def on_startup(context) -> None:  # noqa: ARG001
+    from docent.utils.paths import data_dir
+    from docent.ui import get_console
+    from .reading_notify import check_deadlines
+    for alert in check_deadlines(data_dir() / "reading"):
+        get_console().print(f"[yellow]READING DEADLINE:[/] {alert}")

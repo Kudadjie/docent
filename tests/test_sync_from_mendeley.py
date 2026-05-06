@@ -15,7 +15,7 @@ from docent.config import load_settings
 from docent.core.context import Context
 from docent.execution import Executor
 from docent.llm import LLMClient
-from docent.tools.reading import (
+from reading import (
     ConfigSetInputs,
     ConfigShowInputs,
     ReadingQueue,
@@ -65,8 +65,8 @@ def _patch_mendeley(
             return {"items": [], "error": None}
         return documents(folder_id) if callable(documents) else documents
 
-    monkeypatch.setattr("docent.tools.reading.mendeley_list_folders", fake_folders)
-    monkeypatch.setattr("docent.tools.reading.mendeley_list_documents", fake_documents)
+    monkeypatch.setattr("reading.mendeley_list_folders", fake_folders)
+    monkeypatch.setattr("reading.mendeley_list_documents", fake_documents)
     return calls
 
 
@@ -560,7 +560,7 @@ def test_legacy_validator_still_blocks_identifier_free_entries(tmp_docent_home):
     """Step 11.2 invariant survives, narrowed by Step 11.10: doi / mendeley_id
     both None is still rejected (pdf_path field gone)."""
     from pydantic import ValidationError
-    from docent.tools.reading import QueueEntry
+    from reading import QueueEntry
     import pytest as _pytest
     with _pytest.raises(ValidationError):
         QueueEntry(

@@ -9,7 +9,7 @@ from docent.config import load_settings
 from docent.core.context import Context
 from docent.execution import Executor
 from docent.llm import LLMClient
-from docent.tools.reading import IdOnlyInputs, ReadingQueue
+from reading import IdOnlyInputs, ReadingQueue
 
 
 def _ctx() -> Context:

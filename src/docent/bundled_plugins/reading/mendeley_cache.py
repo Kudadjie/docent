@@ -32,8 +32,8 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from docent.tools.mendeley_client import list_documents as default_list_documents
-from docent.tools.mendeley_client import list_folders as default_list_folders
+from .mendeley_client import list_documents as default_list_documents
+from .mendeley_client import list_folders as default_list_folders
 
 DEFAULT_TTL_SECONDS = 300
 # Folder IDs are effectively immutable in Mendeley — the only realistic

@@ -7,13 +7,19 @@ tests that call @register_tool don't leak into one another.
 from __future__ import annotations
 
 import os
+import sys as _sys
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path as _Path
 from typing import Any
 
 import pytest
 
 from docent.core.registry import _REGISTRY
+
+# Make bundled plugins importable (mirrors what plugin_loader does at runtime)
+_BUNDLED = _Path(__file__).parent.parent / "src" / "docent" / "bundled_plugins"
+if _BUNDLED.exists() and str(_BUNDLED) not in _sys.path:
+    _sys.path.insert(0, str(_BUNDLED))
 
 
 @pytest.fixture
@@ -59,7 +65,7 @@ def _seed_queue_entry(
     Defaults to mendeley_id="m-<id>" so the entry passes _require_identifier
     when the test doesn't supply a doi.
     """
-    from docent.tools.reading import ReadingQueue, QueueEntry
+    from reading import ReadingQueue, QueueEntry
 
     entry_id = id or ReadingQueue._derive_id(authors, year, title)
     if not doi and not mendeley_id:

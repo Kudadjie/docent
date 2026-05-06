@@ -9,7 +9,7 @@ from docent.config import load_settings
 from docent.core.context import Context
 from docent.execution import Executor
 from docent.llm import LLMClient
-from docent.tools.reading import ReadingQueue
+from reading import ReadingQueue
 from docent.utils.paths import config_file
 
 
@@ -37,7 +37,7 @@ def test_invalid_typed_path_returns_error_and_does_not_persist(
     and leave config.toml untouched."""
     bogus = tmp_path / "nope"  # never created
     monkeypatch.setattr(
-        "docent.tools.reading.prompt_for_path",
+        "reading.prompt_for_path",
         lambda *_a, **_kw: bogus,
     )
 

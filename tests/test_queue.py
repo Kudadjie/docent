@@ -5,7 +5,7 @@ from docent.config import load_settings
 from docent.core.context import Context
 from docent.execution.executor import ProcessResult
 from docent.llm import LLMClient
-from docent.tools.reading import AddInputs, ReadingQueue
+from reading import AddInputs, ReadingQueue
 
 
 class _StubExecutor:

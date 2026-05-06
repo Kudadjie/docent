@@ -61,13 +61,13 @@ def pick_model(task: str | None, brief: str) -> str:
     return TASK_MODELS["implement"]
 
 
-def api(method: str, path: str, body: dict | None = None) -> dict:
+def api(method: str, path: str, body: dict | None = None, timeout: int = 10) -> dict:
     url = f"{BASE_URL}{path}"
     data = json.dumps(body).encode() if body is not None else None
     headers = {"Content-Type": "application/json"} if data else {}
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read())
     except urllib.error.HTTPError as e:
         body_text = e.read().decode()
@@ -108,6 +108,7 @@ def send_brief(session_id: str, text: str, model: str, provider: str) -> dict:
             "role": "user",
             "model": {"modelID": model, "providerID": provider},
         },
+        timeout=600,  # model generation can take several minutes for complex briefs
     )
 
 

@@ -13,7 +13,7 @@ from docent.config import load_settings
 from docent.core.context import Context
 from docent.execution import Executor
 from docent.llm import LLMClient
-from docent.tools.reading import ReadingQueue, SyncStatusInputs
+from reading import ReadingQueue, SyncStatusInputs
 
 
 def _ctx(database_dir: Path | None = None) -> Context:

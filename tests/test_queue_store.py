@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from docent.tools.reading_store import BannerCounts, ReadingQueueStore
+from reading.reading_store import BannerCounts, ReadingQueueStore
 
 
 def _entry(eid: str, status: str = "queued", order: int = 1) -> dict:

@@ -19,13 +19,19 @@ from rich.table import Table
 
 from docent import __version__
 from docent.config import load_settings
-from docent.core import Context, ProgressEvent, Tool, all_tools, collect_actions
+from docent.core import (
+    Context,
+    ProgressEvent,
+    Tool,
+    all_tools,
+    collect_actions,
+    load_plugins,
+    run_startup_hooks,
+)
 from docent.execution import Executor
 from docent.llm import LLMClient
 from docent.tools import discover_tools
-from docent.tools.reading_notify import check_deadlines
 from docent.ui import configure_console, get_console
-from docent.utils.paths import data_dir
 
 app = typer.Typer(
     name="docent",
@@ -70,10 +76,8 @@ def main(
 
     configure_console(no_color=settings.no_color)
 
-    for alert in check_deadlines(data_dir() / "reading"):
-        get_console().print(f"[yellow]READING DEADLINE:[/] {alert}")
-
     ctx.obj = Context(settings=settings, llm=LLMClient(settings), executor=Executor())
+    run_startup_hooks(ctx.obj)
 
 
 @app.command("list", help="List all registered tools.")
@@ -276,6 +280,7 @@ def _register_tool_in_app(tool_cls: type[Tool]) -> None:
 
 
 discover_tools()
+load_plugins()
 for _tool_cls in all_tools().values():
     _register_tool_in_app(_tool_cls)
 
