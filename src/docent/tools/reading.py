@@ -36,6 +36,7 @@ class QueueEntry(BaseModel):
     authors: str = ""      # Mendeley-owned snapshot; overlay refreshes on read.
     year: int | None = None
     doi: str | None = None
+    type: str = "paper"   # paper | book | book_chapter; mapped from Mendeley document type on sync.
     added: str             # ISO date
     status: str = "queued"
     order: int = 0         # 1-based position in the reading queue; 0 = unordered.
@@ -91,6 +92,7 @@ class EditInputs(BaseModel):
     id: str = Field(..., description="Entry id to edit.")
     status: str | None = Field(None, description="New status (queued|reading|done).")
     order: int | None = Field(None, description="New reading order position (1 = read first).")
+    type: str | None = Field(None, description="Entry type: paper | book | book_chapter.")
     category: str | None = Field(None, description="Override category (e.g. 'CES701'). Normally auto-detected from the Mendeley sub-collection on sync.")
     deadline: str | None = Field(None, description="New deadline (YYYY-MM-DD) or '' to clear.")
     notes: str | None = Field(None, description="New notes.")
@@ -161,6 +163,8 @@ class MutationResult(BaseModel):
         if meta_parts:
             lines.append("[dim]" + "  ·  ".join(meta_parts) + "[/dim]")
         detail_parts = [f"[dim]Order:[/dim] {e.order}", f"[dim]Status:[/dim] {e.status}"]
+        if e.type and e.type != "paper":
+            detail_parts.append(f"[dim]Type:[/dim] {e.type.replace('_', ' ')}")
         if e.category:
             detail_parts.append(f"[dim]Category:[/dim] {e.category}")
         if e.deadline:
@@ -191,14 +195,17 @@ class SearchResult(BaseModel):
         table.add_column("Title")
         table.add_column("Authors", style="dim")
         table.add_column("Year", style="dim", width=6)
+        table.add_column("Type", style="dim")
         table.add_column("Category", style="dim")
         table.add_column("Status", style="dim")
         for e in self.matches:
+            etype = (e.type or "paper").replace("_", " ") if (e.type or "paper") != "paper" else ""
             table.add_row(
                 str(e.order),
                 e.title,
                 e.authors if e.authors != "Unknown" else "",
                 str(e.year) if e.year else "",
+                etype,
                 e.category or "",
                 e.status,
             )
@@ -465,6 +472,8 @@ class ReadingQueue(Tool):
             updates["status"] = inputs.status
         if inputs.order is not None:
             updates["order"] = inputs.order
+        if inputs.type is not None:
+            updates["type"] = inputs.type
         if inputs.category is not None:
             updates["category"] = inputs.category or None
         if inputs.deadline is not None:
@@ -551,15 +560,17 @@ class ReadingQueue(Tool):
             content = json.dumps(filtered, indent=2, ensure_ascii=False)
         elif inputs.format == "markdown":
             lines = [
-                "| id | title | authors | year | order | category | status |",
-                "|---|---|---|---|---|---|---|",
+                "| # | title | authors | year | type | category | status | deadline |",
+                "|---|---|---|---|---|---|---|---|",
             ]
             for e in filtered:
                 year = e.get("year")
+                etype = e.get("type", "paper").replace("_", " ")
                 lines.append(
-                    f"| {e.get('id','')} | {e.get('title','')} | {e.get('authors','')} | "
-                    f"{year if year is not None else ''} | {e.get('order',0)} | "
-                    f"{e.get('category','personal')} | {e.get('status','')} |"
+                    f"| {e.get('order', 0)} | {e.get('title', '')} | {e.get('authors', '')} | "
+                    f"{year if year is not None else ''} | {etype} | "
+                    f"{e.get('category') or ''} | {e.get('status', '')} | "
+                    f"{e.get('deadline') or ''} |"
                 )
             content = "\n".join(lines)
         else:
@@ -941,6 +952,13 @@ class ReadingQueue(Tool):
             if isinstance(d, str) and d.strip():
                 doi = d.strip()
 
+        mendeley_type = (doc.get("type") or "").lower()
+        entry_type = {
+            "book": "book",
+            "book_section": "book_chapter",
+            "edited_book": "book",
+        }.get(mendeley_type, "paper")
+
         base = self._derive_id(authors, year, title)
         entry_id = f"{base}-{mendeley_id[:8]}" if base in taken_ids else base
 
@@ -950,6 +968,7 @@ class ReadingQueue(Tool):
             authors=authors,
             year=year,
             doi=doi,
+            type=entry_type,
             added=datetime.now().date().isoformat(),
             order=order,
             category=category,
