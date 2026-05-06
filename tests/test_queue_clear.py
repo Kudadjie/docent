@@ -9,8 +9,8 @@ from docent.config import load_settings
 from docent.core.context import Context
 from docent.execution.executor import ProcessResult
 from docent.llm import LLMClient
-from docent.tools.paper import (
-    PaperPipeline,
+from docent.tools.reading import (
+    ReadingQueue,
     QueueClearInputs,
 )
 
@@ -26,7 +26,7 @@ def _ctx() -> Context:
 
 
 def test_queue_clear_without_yes_is_a_dry_report(tmp_docent_home, seed_queue_entry):
-    tool = PaperPipeline()
+    tool = ReadingQueue()
     ctx = _ctx()
     seed_queue_entry(tool, title="A", authors="X, Y", year=2024, doi="10.1234/a")
     seed_queue_entry(tool, title="B", authors="X, Y", year=2025, doi="10.1234/b")
@@ -41,7 +41,7 @@ def test_queue_clear_without_yes_is_a_dry_report(tmp_docent_home, seed_queue_ent
 
 
 def test_queue_clear_with_yes_empties_queue(tmp_docent_home, seed_queue_entry):
-    tool = PaperPipeline()
+    tool = ReadingQueue()
     ctx = _ctx()
     seed_queue_entry(tool, title="A", authors="X, Y", year=2024, doi="10.1234/a")
     seed_queue_entry(tool, title="B", authors="X, Y", year=2025, doi="10.1234/b")
@@ -54,7 +54,7 @@ def test_queue_clear_with_yes_empties_queue(tmp_docent_home, seed_queue_entry):
 
 
 def test_queue_clear_on_empty_queue_is_noop(tmp_docent_home):
-    tool = PaperPipeline()
+    tool = ReadingQueue()
     ctx = _ctx()
     result = tool.queue_clear(QueueClearInputs(yes=True), ctx)
     assert result.cleared is True

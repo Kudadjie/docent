@@ -44,8 +44,10 @@ def _seed_queue_entry(
     doi: str | None = None,
     mendeley_id: str | None = None,
     id: str | None = None,
-    priority: str = "medium",
-    course: str | None = None,
+    order: int = 1,
+    category: str = "personal",
+    course_name: str | None = None,
+    deadline: str | None = None,
     notes: str = "",
     status: str = "queued",
     started: str | None = None,
@@ -53,15 +55,14 @@ def _seed_queue_entry(
 ) -> dict:
     """Build a QueueEntry directly and persist it via the tool's store.
 
-    Bypasses the `paper add` CLI surface (post Step 11.8 only handles
-    guidance + mendeley-id upsert) so sync-* tests can seed arbitrary
-    fixtures. Mirrors PaperPipeline._derive_id when no explicit `id` is given.
+    Bypasses the `reading add` CLI surface so sync-* tests can seed arbitrary
+    fixtures. Mirrors ReadingQueue._derive_id when no explicit `id` is given.
     Defaults to mendeley_id="m-<id>" so the entry passes _require_identifier
     when the test doesn't supply a doi.
     """
-    from docent.tools.paper import PaperPipeline, QueueEntry
+    from docent.tools.reading import ReadingQueue, QueueEntry
 
-    entry_id = id or PaperPipeline._derive_id(authors, year, title)
+    entry_id = id or ReadingQueue._derive_id(authors, year, title)
     if not doi and not mendeley_id:
         mendeley_id = f"m-{entry_id}"
     entry = QueueEntry(
@@ -72,8 +73,10 @@ def _seed_queue_entry(
         doi=doi,
         added=datetime.now().date().isoformat(),
         status=status,
-        priority=priority,
-        course=course,
+        order=order,
+        category=category,
+        course_name=course_name,
+        deadline=deadline,
         notes=notes,
         mendeley_id=mendeley_id,
         started=started,

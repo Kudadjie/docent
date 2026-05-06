@@ -41,13 +41,6 @@ type: project
 - Same pattern for `Thesis` parent → `category=thesis`.
 - Anything else → `category=personal`.
 
-### Summary field (agentic, Phase 2)
-- Add `summary` field: string, optional. Machine-generated; separate from user-written `notes`.
-- Populated by a future `reading enrich` action that calls OpenCode (not Anthropic API).
-- `edit` must NOT expose `summary` — it's LLM-owned, same as Mendeley owns title/authors.
-- Display in `list --verbose` and `show` if non-empty.
-- Schema: add now. `enrich` action: deferred to after rewrite ships.
-
 ### Books support
 - No schema change needed — books are just entries with no DOI.
 - `notes` field is the progress field for books (e.g. "Chapters 1-3 done, reading Ch 4").

@@ -23,7 +23,9 @@ from docent.core import Context, ProgressEvent, Tool, all_tools, collect_actions
 from docent.execution import Executor
 from docent.llm import LLMClient
 from docent.tools import discover_tools
+from docent.tools.reading_notify import check_deadlines
 from docent.ui import configure_console, get_console
+from docent.utils.paths import data_dir
 
 app = typer.Typer(
     name="docent",
@@ -67,6 +69,9 @@ def main(
     settings.no_color = no_color or settings.no_color
 
     configure_console(no_color=settings.no_color)
+
+    for alert in check_deadlines(data_dir() / "reading"):
+        get_console().print(f"[yellow]READING DEADLINE:[/] {alert}")
 
     ctx.obj = Context(settings=settings, llm=LLMClient(settings), executor=Executor())
 

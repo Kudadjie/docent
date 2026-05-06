@@ -1,15 +1,9 @@
-"""Paper-pipeline tool: reading queue + (eventually) Mendeley sync.
-
-Step 7b: first action `add`. Step 8: simple CRUD batch.
-Each new action reuses the helpers below; mutations append a run-log entry
-via `docent.learning.RunLog` so future heuristics (auto-priority etc.) can
-read recent history.
-"""
+"""Reading queue tool: manage what you're reading + Mendeley sync."""
 from __future__ import annotations
 
 import json
 import re
-from datetime import datetime
+from datetime import datetime, date
 from pathlib import Path
 from typing import Any
 
@@ -18,45 +12,44 @@ from pydantic import BaseModel, Field, model_validator
 from docent.config import write_setting
 from docent.core import Context, ProgressEvent, Tool, action, register_tool
 from docent.learning import RunLog
-from docent.tools.paper_store import BannerCounts, PaperQueueStore
+from docent.tools.reading_store import BannerCounts, ReadingQueueStore
 from docent.tools.mendeley_cache import MendeleyCache
 from docent.tools.mendeley_client import (
     list_documents as mendeley_list_documents,
     list_folders as mendeley_list_folders,
 )
-from docent.tools.paper_sync import download_pdf, unpaywall_lookup
 from docent.utils.paths import cache_dir, data_dir
 from docent.utils.prompt import NoInteractiveError, prompt_for_path
 
 
-PRIORITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
-
 _DEFAULT_DATABASE_DIR = "~/Documents/Papers"
-_KNOWN_PAPER_KEYS = {"database_dir", "unpaywall_email", "queue_collection"}
+_KNOWN_READING_KEYS = {"database_dir", "queue_collection"}
 # `mendeley_mcp_command` is a list field; config-set only handles strings today.
 # Power users can edit config.toml directly; defaulted to ["uvx", "mendeley-mcp"] in mendeley_client.
+
+VALID_CATEGORIES = {"course", "thesis", "personal"}
 
 
 class QueueEntry(BaseModel):
     id: str
-    title: str = ""  # snapshot from Mendeley; overlay refreshes on read.
-    authors: str = ""  # snapshot from Mendeley; overlay refreshes on read.
+    title: str = ""        # Mendeley-owned snapshot; overlay refreshes on read.
+    authors: str = ""      # Mendeley-owned snapshot; overlay refreshes on read.
     year: int | None = None
     doi: str | None = None
-    added: str  # ISO date
+    added: str             # ISO date
     status: str = "queued"
-    priority: str = "medium"
-    course: str | None = None
+    order: int = 0         # 1-based position in the reading queue; 0 = unordered.
+    category: str = "personal"    # course | thesis | personal
+    course_name: str | None = None  # e.g. "CES701"; meaningful when category=course.
+    deadline: str | None = None    # ISO date (YYYY-MM-DD), user-settable.
     tags: list[str] = Field(default_factory=list)
     notes: str = ""
-    mendeley_id: str | None = None  # Mendeley document id; the canonical identifier post-Step 11.10.
-    started: str | None = None  # ISO timestamp when status -> reading.
-    finished: str | None = None  # ISO timestamp when status -> done.
+    mendeley_id: str | None = None
+    started: str | None = None    # ISO timestamp when status -> reading.
+    finished: str | None = None   # ISO timestamp when status -> done.
 
     @model_validator(mode="after")
     def _require_identifier(self) -> "QueueEntry":
-        # Mendeley-keyed entries are the norm; DOI-only entries persist for
-        # sync-pull workflows (queue from a DOI before the PDF lands in Mendeley).
         if not self.doi and not self.mendeley_id:
             raise ValueError(
                 "QueueEntry requires doi or mendeley_id — identifier-free entries are not allowed."
@@ -65,9 +58,10 @@ class QueueEntry(BaseModel):
 
 
 class AddInputs(BaseModel):
-    mendeley_id: str | None = Field(None, description="Mendeley document id; if supplied, an entry is upserted directly (metadata pulled fresh on next read). Without this, `add` prints guidance.")
-    course: str | None = Field(None, description="Course shortname (e.g. 'thesis', 'hydrodynamics').")
-    priority: str = Field("medium", description="Priority: critical|high|medium|low.")
+    mendeley_id: str | None = Field(None, description="Mendeley document id; if supplied, an entry is upserted (metadata pulled fresh on next read). Without this, `add` prints guidance.")
+    category: str = Field("personal", description="Category: course|thesis|personal.")
+    course_name: str | None = Field(None, description="Course name (e.g. 'CES701'); meaningful when category=course.")
+    deadline: str | None = Field(None, description="ISO date deadline (YYYY-MM-DD), optional.")
     notes: str = Field("", description="Freeform notes.")
     force: bool = Field(False, description="Overwrite if an entry keyed on this mendeley_id already exists.")
 
@@ -86,11 +80,11 @@ class IdOnlyInputs(BaseModel):
 
 
 class NextInputs(BaseModel):
-    course: str | None = Field(None, description="Restrict to a course.")
+    course_name: str | None = Field(None, description="Restrict to a specific course (e.g. 'CES701').")
 
 
 class SearchInputs(BaseModel):
-    query: str = Field(..., description="Case-insensitive substring matched against title, authors, notes, course, id, and tags.")
+    query: str = Field(..., description="Case-insensitive substring matched against title, authors, notes, course_name, id, and tags.")
 
 
 class StatsInputs(BaseModel):
@@ -99,18 +93,19 @@ class StatsInputs(BaseModel):
 
 class EditInputs(BaseModel):
     id: str = Field(..., description="Entry id to edit.")
-    title: str | None = Field(None, description="New title.")
-    authors: str | None = Field(None, description="New authors string.")
-    year: int | None = Field(None, description="New year.")
-    doi: str | None = Field(None, description="New DOI.")
-    course: str | None = Field(None, description="New course shortname.")
-    priority: str | None = Field(None, description="New priority (critical|high|medium|low).")
+    status: str | None = Field(None, description="New status (queued|reading|done).")
+    order: int | None = Field(None, description="New reading order position (1 = read first).")
+    category: str | None = Field(None, description="New category (course|thesis|personal).")
+    course_name: str | None = Field(None, description="New course name.")
+    deadline: str | None = Field(None, description="New deadline (YYYY-MM-DD) or '' to clear.")
     notes: str | None = Field(None, description="New notes.")
+    tags: list[str] | None = Field(None, description="Replace tag list.")
 
 
 class ExportInputs(BaseModel):
     format: str = Field("json", description="Output format: json | markdown.")
-    course: str | None = Field(None, description="Filter by course.")
+    category: str | None = Field(None, description="Filter by category (course|thesis|personal).")
+    course_name: str | None = Field(None, description="Filter by course name.")
     status: str | None = Field(None, description="Filter by status (queued|reading|done).")
 
 
@@ -119,15 +114,14 @@ class ConfigShowInputs(BaseModel):
 
 
 class ConfigSetInputs(BaseModel):
-    key: str = Field(..., description="Setting key under the (paper) section, e.g. 'database_dir' or 'queue_collection'.")
+    key: str = Field(..., description="Setting key under the [reading] section, e.g. 'database_dir' or 'queue_collection'.")
     value: str = Field(..., description="New value. Use '' to clear. Paths may use '~'.")
 
 
 class ConfigShowResult(BaseModel):
     config_path: str
     database_dir: str | None
-    unpaywall_email: str | None
-    queue_collection: str  # Mendeley collection name defining queue membership (Step 11.6).
+    queue_collection: str
 
 
 class ConfigSetResult(BaseModel):
@@ -157,8 +151,8 @@ class SearchResult(BaseModel):
 class StatsResult(BaseModel):
     total: int
     by_status: dict[str, int]
-    by_priority: dict[str, int]
-    by_course: dict[str, int]
+    by_category: dict[str, int]
+    by_course_name: dict[str, int]
     banner: BannerCounts
 
 
@@ -166,17 +160,6 @@ class ExportResult(BaseModel):
     format: str
     count: int
     content: str
-
-
-class MigrateInputs(BaseModel):
-    yes: bool = Field(False, description="Confirm: actually wipe queue.json to the new shape. Without this, the action reports what would happen.")
-
-
-class MigrateResult(BaseModel):
-    migrated: bool
-    backup_path: str | None
-    queue_size_before: int
-    message: str
 
 
 class QueueClearInputs(BaseModel):
@@ -195,33 +178,6 @@ class SyncStatusInputs(BaseModel):
     pass
 
 
-class SyncPullInputs(BaseModel):
-    id: str | None = Field(None, description="Single entry id; if omitted, all queued entries with no PDF are tried.")
-    dry_run: bool = Field(False, description="Resolve OA URLs but skip download; nothing is written.")
-
-
-class SyncPullResult(BaseModel):
-    """Per-entry buckets after running sync-pull.
-
-    `downloaded`: {id, path}; `no_oa`: {id, doi_url, journal} (closed-access — user
-    may have institutional access via the link); `not_found`: {id, reason}
-    (no DOI resolvable, or DOI not in Unpaywall); `network_error`:
-    {id, reason}; `already_has_file`: [id]; `dry_run_oa`: {id, pdf_url, doi_url}
-    (only populated when dry_run=True). `message` is set on early-exit
-    (missing config, etc.) and otherwise empty.
-    """
-
-    database_dir: str | None
-    downloaded: list[dict[str, str]]
-    no_oa: list[dict[str, str]]
-    not_found: list[dict[str, str]]
-    network_error: list[dict[str, str]]
-    already_has_file: list[str]
-    dry_run_oa: list[dict[str, str]]
-    summary: str
-    message: str = ""
-
-
 class SyncFromMendeleyInputs(BaseModel):
     dry_run: bool = Field(False, description="Resolve the collection and report what would change without writing the queue.")
 
@@ -229,18 +185,11 @@ class SyncFromMendeleyInputs(BaseModel):
 class SyncFromMendeleyResult(BaseModel):
     """Per-doc buckets after running sync-from-mendeley.
 
-    `queue_collection`: the configured collection name (echoed for the
-    renderer); `folder_id`: resolved Mendeley folder id (None on early exit);
-    `added`: {id, mendeley_id, title} - new sidecar entries created from the
-    collection; `unchanged`: ids whose mendeley_id already matched a
-    sidecar entry (idempotent re-run); `removed`: ids of sidecar entries
-    whose mendeley_id is no longer in the collection (status flipped to
-    'removed'); `failed`: {mendeley_id, error} - per-doc construction or
-    persistence failures; `dry_run_added` / `dry_run_removed` populate only
-    when dry_run=True. `message` carries early-exit reasons (collection
-    missing, MCP transport error, etc.).
+    `added`: {id, mendeley_id, title}; `unchanged`: entry ids; `removed`:
+    entry ids (status flipped to 'removed'); `failed`: {mendeley_id, error};
+    dry-run variants populate only when dry_run=True.
+    `message` carries early-exit reasons (collection missing, MCP transport error).
     """
-
     queue_collection: str
     folder_id: str | None
     added: list[dict[str, str]]
@@ -256,42 +205,52 @@ class SyncFromMendeleyResult(BaseModel):
 class SyncStatusResult(BaseModel):
     database_dir: str | None
     queue_size: int
-    database_pdfs: list[str]  # filenames in database_dir; Mendeley owns whether they're indexed.
+    database_pdfs: list[str]
     summary: str
-    message: str = ""  # populated only on early-exit (no database configured)
+    message: str = ""
+
+
+class MoveToInputs(BaseModel):
+    id: str = Field(..., description="Entry id to move.")
+    position: int = Field(..., ge=1, description="New position (1 = read first).")
 
 
 @register_tool
-class PaperPipeline(Tool):
-    """Reading queue + Mendeley sync (port of the paper-pipeline skill)."""
+class ReadingQueue(Tool):
+    """Reading queue + Mendeley sync."""
 
-    name = "paper"
-    description = "Reading queue + Mendeley sync."
-    category = "research"
+    name = "reading"
+    description = "Reading queue management and Mendeley sync."
+    category = "reading"
 
     def __init__(self) -> None:
-        self._store = PaperQueueStore(data_dir() / "paper")
+        self._store = ReadingQueueStore(data_dir() / "reading")
 
     @action(
-        description="Add a paper by Mendeley id, or print guidance for the drag-and-drop flow.",
+        description="Add an entry by Mendeley id, or print guidance for the drag-and-drop flow.",
         input_schema=AddInputs,
     )
     def add(self, inputs: AddInputs, context: Context) -> AddResult:
-        # Mendeley owns metadata extraction now. Without --mendeley-id, surface
-        # the drag-and-drop guidance: drop PDF in database_dir → Mendeley
-        # auto-imports → drag into Docent-Queue collection → sync-from-mendeley.
         if not inputs.mendeley_id:
-            collection = context.settings.paper.queue_collection
+            collection = context.settings.reading.queue_collection
             return AddResult(
                 added=False, id="", title="",
                 queue_size=len(self._store.load_index()),
                 banner=self._store.banner_counts(),
                 message=(
-                    "Drop the PDF in your paper.database_dir (Mendeley auto-imports it), "
+                    "Drop the PDF in your reading.database_dir (Mendeley auto-imports it), "
                     f"drag it into the {collection!r} collection in Mendeley, then run "
-                    "`docent paper sync-from-mendeley`. "
+                    "`docent reading sync-from-mendeley`. "
                     "Or pass --mendeley-id to upsert a sidecar entry now."
                 ),
+            )
+
+        if inputs.category not in VALID_CATEGORIES:
+            return AddResult(
+                added=False, id="", title="",
+                queue_size=len(self._store.load_index()),
+                banner=self._store.banner_counts(),
+                message=f"Invalid category {inputs.category!r}. Use: {sorted(VALID_CATEGORIES)}.",
             )
 
         mid = inputs.mendeley_id.strip()
@@ -307,11 +266,10 @@ class PaperPipeline(Tool):
                 banner=self._store.banner_counts(),
                 message=(
                     f"Mendeley id {mid!r} already in queue as {existing.get('id')!r}. "
-                    f"Use --force to update, or `docent paper edit` to change fields."
+                    f"Use --force to update, or `docent reading edit` to change fields."
                 ),
             )
 
-        # Minimal stub entry — fields get overlaid fresh from Mendeley on next read.
         existing_ids = {e.get("id") for e in queue if e.get("id")}
         base_id = f"mendeley-{mid[:8]}"
         entry_id = base_id
@@ -322,6 +280,9 @@ class PaperPipeline(Tool):
         if existing:
             entry_id = existing.get("id") or entry_id
 
+        # Assign order: append after the last ordered entry.
+        new_order = max((e.get("order", 0) for e in queue), default=0) + 1
+
         new_entry = QueueEntry(
             id=entry_id,
             title=existing.get("title") if existing else "(pending Mendeley sync)",
@@ -329,8 +290,10 @@ class PaperPipeline(Tool):
             year=existing.get("year") if existing else None,
             doi=existing.get("doi") if existing else None,
             added=existing.get("added") if existing else datetime.now().date().isoformat(),
-            priority=inputs.priority,
-            course=inputs.course,
+            order=existing.get("order", new_order) if existing else new_order,
+            category=inputs.category,
+            course_name=inputs.course_name,
+            deadline=inputs.deadline,
             notes=inputs.notes,
             mendeley_id=mid,
         )
@@ -340,8 +303,7 @@ class PaperPipeline(Tool):
         queue.append(new_entry.model_dump())
         self._store.save_queue(queue)
         self._log_event("add", id=entry_id, replaced=bool(existing),
-                        priority=inputs.priority, course=inputs.course,
-                        mendeley_id=mid)
+                        category=inputs.category, mendeley_id=mid)
 
         verb = "Updated" if existing else "Added"
         return AddResult(
@@ -351,33 +313,33 @@ class PaperPipeline(Tool):
             queue_size=len(queue),
             banner=self._store.banner_counts(),
             message=(
-                f"{verb} {entry_id!r} (mendeley_id={mid}, queue size: {len(queue)}). "
-                f"Run `docent paper next` to see fresh metadata."
+                f"{verb} {entry_id!r} (mendeley_id={mid}, order={new_entry.order}). "
+                f"Run `docent reading next` to see fresh metadata."
             ),
         )
 
-    @action(description="Show the next paper to read (highest-priority queued).", input_schema=NextInputs)
+    @action(description="Show the next entry to read (lowest order number among queued).", input_schema=NextInputs)
     def next(self, inputs: NextInputs, context: Context) -> MutationResult:
         queue = self._store.load_queue()
         queue = self._apply_overlay(queue, self._load_mendeley_overlay(context))
         candidates = [e for e in queue if e.get("status") == "queued"]
-        if inputs.course:
-            candidates = [e for e in candidates if e.get("course") == inputs.course]
+        if inputs.course_name:
+            candidates = [e for e in candidates if e.get("course_name") == inputs.course_name]
         if not candidates:
-            scope = f" for course {inputs.course!r}" if inputs.course else ""
+            scope = f" for course {inputs.course_name!r}" if inputs.course_name else ""
             return MutationResult(
                 ok=False, id="", entry=None, queue_size=len(queue),
                 banner=self._store.banner_counts(),
-                message=f"No queued papers{scope}.",
+                message=f"No queued entries{scope}.",
             )
         best = sorted(
             candidates,
-            key=lambda e: (PRIORITY_ORDER.get(e.get("priority", "medium"), 4), e.get("added", "")),
+            key=lambda e: (e.get("order", 0) or 999999, e.get("added", "")),
         )[0]
         return MutationResult(
             ok=True, id=best["id"], entry=QueueEntry(**best),
             queue_size=len(queue), banner=self._store.banner_counts(),
-            message=f"Read next: {best['title']!r} ({best.get('priority','medium')}, added {best.get('added','')}).",
+            message=f"Read next: {best['title']!r} (order={best.get('order', 0)}, added {best.get('added', '')}).",
         )
 
     @action(description="Show one entry's details.", input_schema=IdOnlyInputs)
@@ -404,7 +366,7 @@ class PaperPipeline(Tool):
                 e.get("title", "") or "",
                 e.get("authors", "") or "",
                 e.get("notes", "") or "",
-                e.get("course") or "",
+                e.get("course_name") or "",
                 e.get("id", "") or "",
                 " ".join(e.get("tags") or []),
             ]).lower()
@@ -416,18 +378,19 @@ class PaperPipeline(Tool):
     def stats(self, inputs: StatsInputs, context: Context) -> StatsResult:
         queue = self._store.load_queue()
         by_status: dict[str, int] = {}
-        by_priority: dict[str, int] = {}
-        by_course: dict[str, int] = {}
+        by_category: dict[str, int] = {}
+        by_course_name: dict[str, int] = {}
         for e in queue:
             s = e.get("status", "unknown")
             by_status[s] = by_status.get(s, 0) + 1
-            p = e.get("priority", "unknown")
-            by_priority[p] = by_priority.get(p, 0) + 1
-            c = e.get("course") or "(none)"
-            by_course[c] = by_course.get(c, 0) + 1
+            cat = e.get("category", "personal")
+            by_category[cat] = by_category.get(cat, 0) + 1
+            cn = e.get("course_name") or "(none)"
+            by_course_name[cn] = by_course_name.get(cn, 0) + 1
         return StatsResult(
-            total=len(queue), by_status=by_status, by_priority=by_priority,
-            by_course=by_course, banner=self._store.banner_counts(),
+            total=len(queue), by_status=by_status,
+            by_category=by_category, by_course_name=by_course_name,
+            banner=self._store.banner_counts(),
         )
 
     @action(description="Remove an entry from the queue.", input_schema=IdOnlyInputs)
@@ -445,13 +408,33 @@ class PaperPipeline(Tool):
             message=f"Removed {inputs.id!r}.",
         )
 
-    @action(description="Edit fields on an existing entry.", input_schema=EditInputs)
+    @action(description="Edit user-settable fields on an existing entry (Mendeley-owned fields: title/authors/year/doi are not editable here).", input_schema=EditInputs)
     def edit(self, inputs: EditInputs, context: Context) -> MutationResult:
         queue = self._store.load_queue()
         entry = self._find_entry(queue, inputs.id)
         if not entry:
             return self._not_found(inputs.id, queue)
-        updates = inputs.model_dump(exclude={"id"}, exclude_none=True)
+        updates: dict[str, Any] = {}
+        if inputs.status is not None:
+            updates["status"] = inputs.status
+        if inputs.order is not None:
+            updates["order"] = inputs.order
+        if inputs.category is not None:
+            if inputs.category not in VALID_CATEGORIES:
+                return MutationResult(
+                    ok=False, id=inputs.id, entry=QueueEntry(**entry),
+                    queue_size=len(queue), banner=self._store.banner_counts(),
+                    message=f"Invalid category {inputs.category!r}. Use: {sorted(VALID_CATEGORIES)}.",
+                )
+            updates["category"] = inputs.category
+        if inputs.course_name is not None:
+            updates["course_name"] = inputs.course_name or None
+        if inputs.deadline is not None:
+            updates["deadline"] = inputs.deadline or None
+        if inputs.notes is not None:
+            updates["notes"] = inputs.notes
+        if inputs.tags is not None:
+            updates["tags"] = inputs.tags
         if not updates:
             return MutationResult(
                 ok=False, id=inputs.id, entry=QueueEntry(**entry),
@@ -493,137 +476,156 @@ class PaperPipeline(Tool):
             message=f"Cleared {n} entries from the queue.",
         )
 
-    @action(
-        description="One-shot: back up legacy queue.json to .bak and wipe to the new (Step 11.10) sidecar shape.",
-        input_schema=MigrateInputs,
-        name="migrate-to-mendeley-truth",
-    )
-    def migrate_to_mendeley_truth(self, inputs: MigrateInputs, context: Context) -> MigrateResult:
-        queue_path = self._store.queue_path
-        n = len(self._store.load_queue()) if queue_path.exists() else 0
-        if not inputs.yes:
-            return MigrateResult(
-                migrated=False,
-                backup_path=None,
-                queue_size_before=n,
-                message=(
-                    f"{n} entries in queue.json. Re-run with --yes to back up to "
-                    f"{queue_path.name}.bak and wipe to the new shape "
-                    f"(mendeley_id-keyed; title/authors/year/doi will be re-pulled from Mendeley)."
-                ),
-            )
-        backup_path: str | None = None
-        if queue_path.exists():
-            bak = queue_path.with_suffix(queue_path.suffix + ".bak")
-            bak.write_bytes(queue_path.read_bytes())
-            backup_path = str(bak)
-        self._store.save_queue([])
-        self._log_event("migrate_to_mendeley_truth", queue_size_before=n, backup_path=backup_path)
-        return MigrateResult(
-            migrated=True,
-            backup_path=backup_path,
-            queue_size_before=n,
-            message=(
-                f"Migrated. {n} entries backed up to {backup_path or '(no prior queue)'} "
-                f"and queue.json wiped. Run `docent paper sync-from-mendeley` to repopulate."
-            ),
-        )
-
     @action(description="Mark an entry as done.", input_schema=IdOnlyInputs)
     def done(self, inputs: IdOnlyInputs, context: Context) -> MutationResult:
         return self._set_status(inputs.id, "done")
 
     @action(description="Mark an entry as in-progress (currently reading).", input_schema=IdOnlyInputs)
-    def ready_to_read(self, inputs: IdOnlyInputs, context: Context) -> MutationResult:
+    def start(self, inputs: IdOnlyInputs, context: Context) -> MutationResult:
         return self._set_status(inputs.id, "reading")
 
-    @action(description="Export the queue (or a filtered subset).", input_schema=ExportInputs)
+    @action(description="Export the queue (or a filtered subset), applying fresh Mendeley metadata.", input_schema=ExportInputs)
     def export(self, inputs: ExportInputs, context: Context) -> ExportResult:
         queue = self._store.load_queue()
+        queue = self._apply_overlay(queue, self._load_mendeley_overlay(context))
         filtered = queue
-        if inputs.course:
-            filtered = [e for e in filtered if e.get("course") == inputs.course]
+        if inputs.category:
+            filtered = [e for e in filtered if e.get("category") == inputs.category]
+        if inputs.course_name:
+            filtered = [e for e in filtered if e.get("course_name") == inputs.course_name]
         if inputs.status:
             filtered = [e for e in filtered if e.get("status") == inputs.status]
         if inputs.format == "json":
             content = json.dumps(filtered, indent=2, ensure_ascii=False)
         elif inputs.format == "markdown":
             lines = [
-                "| id | title | authors | year | priority | status |",
-                "|---|---|---|---|---|---|",
+                "| id | title | authors | year | order | category | status |",
+                "|---|---|---|---|---|---|---|",
             ]
             for e in filtered:
                 year = e.get("year")
                 lines.append(
                     f"| {e.get('id','')} | {e.get('title','')} | {e.get('authors','')} | "
-                    f"{year if year is not None else ''} | {e.get('priority','')} | {e.get('status','')} |"
+                    f"{year if year is not None else ''} | {e.get('order',0)} | "
+                    f"{e.get('category','personal')} | {e.get('status','')} |"
                 )
             content = "\n".join(lines)
         else:
             raise ValueError(f"Unsupported format: {inputs.format!r}. Use 'json' or 'markdown'.")
         return ExportResult(format=inputs.format, count=len(filtered), content=content)
 
-    @action(description="Show the configured paper settings (database, queue collection).", input_schema=ConfigShowInputs, name="config-show")
+    @action(description="Move an entry one position earlier in the reading order.", input_schema=IdOnlyInputs, name="move-up")
+    def move_up(self, inputs: IdOnlyInputs, context: Context) -> MutationResult:
+        queue = self._store.load_queue()
+        entry = self._find_entry(queue, inputs.id)
+        if not entry:
+            return self._not_found(inputs.id, queue)
+        current_order = entry.get("order", 0) or 0
+        if current_order <= 1:
+            return MutationResult(
+                ok=False, id=inputs.id, entry=QueueEntry(**entry),
+                queue_size=len(queue), banner=self._store.banner_counts(),
+                message=f"{inputs.id!r} is already at position 1; can't move up.",
+            )
+        self._reorder_move_to(queue, inputs.id, current_order - 1)
+        self._store.save_queue(queue)
+        updated = self._find_entry(queue, inputs.id)
+        return MutationResult(
+            ok=True, id=inputs.id, entry=QueueEntry(**updated),
+            queue_size=len(queue), banner=self._store.banner_counts(),
+            message=f"Moved {inputs.id!r} to position {updated.get('order')}.",
+        )
+
+    @action(description="Move an entry one position later in the reading order.", input_schema=IdOnlyInputs, name="move-down")
+    def move_down(self, inputs: IdOnlyInputs, context: Context) -> MutationResult:
+        queue = self._store.load_queue()
+        entry = self._find_entry(queue, inputs.id)
+        if not entry:
+            return self._not_found(inputs.id, queue)
+        ordered = sorted([e for e in queue if e.get("order", 0) > 0], key=lambda e: e.get("order", 0))
+        max_order = ordered[-1].get("order", 1) if ordered else 1
+        current_order = entry.get("order", 0) or 0
+        if current_order >= max_order:
+            return MutationResult(
+                ok=False, id=inputs.id, entry=QueueEntry(**entry),
+                queue_size=len(queue), banner=self._store.banner_counts(),
+                message=f"{inputs.id!r} is already at the last position; can't move down.",
+            )
+        self._reorder_move_to(queue, inputs.id, current_order + 1)
+        self._store.save_queue(queue)
+        updated = self._find_entry(queue, inputs.id)
+        return MutationResult(
+            ok=True, id=inputs.id, entry=QueueEntry(**updated),
+            queue_size=len(queue), banner=self._store.banner_counts(),
+            message=f"Moved {inputs.id!r} to position {updated.get('order')}.",
+        )
+
+    @action(description="Move an entry to a specific position in the reading order.", input_schema=MoveToInputs, name="move-to")
+    def move_to(self, inputs: MoveToInputs, context: Context) -> MutationResult:
+        queue = self._store.load_queue()
+        entry = self._find_entry(queue, inputs.id)
+        if not entry:
+            return self._not_found(inputs.id, queue)
+        self._reorder_move_to(queue, inputs.id, inputs.position)
+        self._store.save_queue(queue)
+        updated = self._find_entry(queue, inputs.id)
+        return MutationResult(
+            ok=True, id=inputs.id, entry=QueueEntry(**updated),
+            queue_size=len(queue), banner=self._store.banner_counts(),
+            message=f"Moved {inputs.id!r} to position {updated.get('order')}.",
+        )
+
+    @action(description="Show the configured reading settings.", input_schema=ConfigShowInputs, name="config-show")
     def config_show(self, inputs: ConfigShowInputs, context: Context) -> ConfigShowResult:
         from docent.utils.paths import config_file
-        ps = context.settings.paper
-        db = str(ps.database_dir) if ps.database_dir else None
+        rs = context.settings.reading
+        db = str(rs.database_dir) if rs.database_dir else None
         return ConfigShowResult(
             config_path=str(config_file()),
             database_dir=db,
-            unpaywall_email=ps.unpaywall_email,
-            queue_collection=ps.queue_collection,
+            queue_collection=rs.queue_collection,
         )
 
-    @action(description="Set a paper setting (database_dir, unpaywall_email, queue_collection).", input_schema=ConfigSetInputs, name="config-set")
+    @action(description="Set a reading setting (database_dir, queue_collection).", input_schema=ConfigSetInputs, name="config-set")
     def config_set(self, inputs: ConfigSetInputs, context: Context) -> ConfigSetResult:
         from docent.utils.paths import config_file
-        if inputs.key not in _KNOWN_PAPER_KEYS:
+        if inputs.key not in _KNOWN_READING_KEYS:
             return ConfigSetResult(
                 ok=False, key=inputs.key, value=inputs.value,
                 config_path=str(config_file()),
-                message=f"Unknown key {inputs.key!r}. Known: {sorted(_KNOWN_PAPER_KEYS)}.",
+                message=f"Unknown key {inputs.key!r}. Known: {sorted(_KNOWN_READING_KEYS)}.",
             )
-        path = write_setting(f"paper.{inputs.key}", inputs.value)
+        path = write_setting(f"reading.{inputs.key}", inputs.value)
         return ConfigSetResult(
             ok=True, key=inputs.key, value=inputs.value,
             config_path=str(path),
-            message=f"Set paper.{inputs.key} = {inputs.value!r} in {path}.",
+            message=f"Set reading.{inputs.key} = {inputs.value!r} in {path}.",
         )
 
     @action(
-        description="Report queue size and PDFs sitting in database_dir (Mendeley owns linkage).",
+        description="Report queue size and PDFs sitting in database_dir.",
         input_schema=SyncStatusInputs,
         name="sync-status",
     )
     def sync_status(self, inputs: SyncStatusInputs, context: Context) -> SyncStatusResult:
-        empty = SyncStatusResult(
-            database_dir=None,
-            queue_size=0,
-            database_pdfs=[],
-            summary="",
-        )
+        empty = SyncStatusResult(database_dir=None, queue_size=0, database_pdfs=[], summary="")
         try:
             database_dir, err = self._require_database_dir(context)
         except NoInteractiveError as e:
             return empty.model_copy(update={"message": (
-                f"paper.database_dir not configured. Run "
-                f"`docent paper config-set database_dir <path>` or set "
-                f"DOCENT_PAPER__DATABASE_DIR. ({e})"
+                f"reading.database_dir not configured. Run "
+                f"`docent reading config-set database_dir <path>` or set "
+                f"DOCENT_READING__DATABASE_DIR. ({e})"
             )})
         if database_dir is None:
-            return empty.model_copy(update={
-                "message": err or "Cancelled - no database folder configured.",
-            })
+            return empty.model_copy(update={"message": err or "Cancelled — no database folder configured."})
         if not database_dir.is_dir():
             return empty.model_copy(update={
                 "database_dir": str(database_dir),
                 "message": f"database_dir does not exist: {database_dir}.",
             })
-
-        db_pdfs, _ = PaperQueueStore.list_database_pdfs(database_dir, None)
+        db_pdfs = ReadingQueueStore.list_database_pdfs(database_dir)
         queue = self._store.load_queue()
-
         summary = (
             f"{len(queue)} queue entry/entries, "
             f"{len(db_pdfs)} PDF(s) in database_dir."
@@ -636,175 +638,13 @@ class PaperPipeline(Tool):
         )
 
     @action(
-        description="Try to fetch open-access PDFs for queued entries missing a file (Unpaywall by DOI).",
-        input_schema=SyncPullInputs,
-        name="sync-pull",
-    )
-    def sync_pull(self, inputs: SyncPullInputs, context: Context):
-        empty = SyncPullResult(
-            database_dir=None, downloaded=[], no_oa=[], not_found=[],
-            network_error=[], already_has_file=[], dry_run_oa=[], summary="",
-        )
-        try:
-            database_dir, err = self._require_database_dir(context)
-        except NoInteractiveError as e:
-            return empty.model_copy(update={"message": (
-                f"paper.database_dir not configured. Run "
-                f"`docent paper config-set database_dir <path>` or set "
-                f"DOCENT_PAPER__DATABASE_DIR. ({e})"
-            )})
-        if database_dir is None:
-            return empty.model_copy(update={"message": err or "Cancelled - no database folder configured."})
-        if not database_dir.is_dir():
-            return empty.model_copy(update={
-                "database_dir": str(database_dir),
-                "message": f"database_dir does not exist: {database_dir}.",
-            })
-
-        email = context.settings.paper.unpaywall_email
-        if not email:
-            return empty.model_copy(update={
-                "database_dir": str(database_dir),
-                "message": (
-                    "Unpaywall requires an email to identify clients. Set one with "
-                    "`docent paper config-set unpaywall_email <you@example.com>` "
-                    "(used in the API request header only)."
-                ),
-            })
-
-        queue = self._store.load_queue()
-        if inputs.id is not None:
-            targets = [e for e in queue if e.get("id") == inputs.id]
-            if not targets:
-                return empty.model_copy(update={
-                    "database_dir": str(database_dir),
-                    "message": f"No entry with id {inputs.id!r}.",
-                })
-        else:
-            # Skip entries whose expected `{id}.pdf` already sits in database_dir;
-            # Mendeley auto-imports it without further action.
-            targets = [
-                e for e in queue
-                if not (database_dir / f"{e.get('id', '')}.pdf").exists()
-            ]
-
-        return self._sync_pull_run(targets, database_dir, email, inputs.dry_run, context)
-
-    def _sync_pull_run(
-        self,
-        targets: list[dict[str, Any]],
-        database_dir: Path,
-        email: str,
-        dry_run: bool,
-        context: Context,
-    ):
-        downloaded: list[dict[str, str]] = []
-        no_oa: list[dict[str, str]] = []
-        not_found: list[dict[str, str]] = []
-        network_error: list[dict[str, str]] = []
-        already_has_file: list[str] = []
-        dry_run_oa: list[dict[str, str]] = []
-
-        yield ProgressEvent(phase="discover", message=f"{len(targets)} entry/entries to try.")
-
-        for i, entry in enumerate(targets, 1):
-            eid = entry.get("id", "?")
-            yield ProgressEvent(phase="pull", current=i, total=len(targets), item=eid)
-
-            if (database_dir / f"{eid}.pdf").exists():
-                already_has_file.append(eid)
-                continue
-
-            doi = entry.get("doi")
-            if not doi:
-                # Without a DOI sync-pull has nothing to query. Mendeley-only
-                # entries still need a manual drop into database_dir.
-                not_found.append({"id": eid, "reason": "no DOI on entry; sync-pull requires a DOI"})
-                yield ProgressEvent(phase="pull", level="warn", message=f"{eid}: no DOI")
-                continue
-
-            up = unpaywall_lookup(doi, email, context.executor)
-            if up is None:
-                network_error.append({"id": eid, "reason": "Unpaywall lookup failed (network or rate limit)"})
-                yield ProgressEvent(phase="pull", level="error", message=f"{eid}: Unpaywall lookup failed")
-                continue
-            if up.get("status") == "not_found":
-                not_found.append({"id": eid, "reason": "DOI not in Unpaywall index"})
-                yield ProgressEvent(phase="pull", level="warn", message=f"{eid}: DOI not in Unpaywall")
-                continue
-            if not up.get("is_oa"):
-                no_oa.append({
-                    "id": eid,
-                    "doi_url": up.get("doi_url") or f"https://doi.org/{doi}",
-                    "journal": up.get("journal") or "",
-                })
-                continue
-            pdf_url = up.get("pdf_url")
-            doi_url = up.get("doi_url") or f"https://doi.org/{doi}"
-            if not pdf_url:
-                no_oa.append({"id": eid, "doi_url": doi_url, "journal": up.get("journal") or ""})
-                continue
-
-            if dry_run:
-                dry_run_oa.append({"id": eid, "pdf_url": pdf_url, "doi_url": doi_url})
-                yield ProgressEvent(phase="pull", message=f"{eid}: OA found at {pdf_url}")
-                continue
-
-            dest = database_dir / f"{eid}.pdf"
-            yield ProgressEvent(phase="pull", message=f"{eid}: downloading", item=eid)
-            ok = download_pdf(pdf_url, dest, context.executor)
-            if not ok:
-                network_error.append({"id": eid, "reason": f"download failed: {pdf_url}"})
-                yield ProgressEvent(phase="pull", level="error", message=f"{eid}: download failed")
-                continue
-
-            downloaded.append({"id": eid, "path": str(dest.resolve())})
-
-        # No queue mutation: post-Step 11.10, file linkage is Mendeley's job.
-        # The PDF lands in database_dir, Mendeley auto-imports + extracts metadata,
-        # and the next `sync-from-mendeley` reflects it in the sidecar.
-
-        self._log_event(
-            "sync_pull",
-            tried=len(targets),
-            downloaded=len(downloaded),
-            no_oa=len(no_oa),
-            not_found=len(not_found),
-            network_error=len(network_error),
-            dry_run=dry_run,
-        )
-
-        summary = (
-            f"{len(downloaded)} downloaded, {len(no_oa)} closed-access, "
-            f"{len(not_found)} not found, {len(network_error)} network error, "
-            f"{len(already_has_file)} already had file"
-            + (f", {len(dry_run_oa)} OA (dry-run)" if dry_run else "")
-            + "."
-        )
-        if no_oa:
-            summary += (
-                f" Closed-access papers expose `doi_url` — try institutional access "
-                f"(VPN / library proxy / OpenAthens) or interlibrary loan via the link."
-            )
-        return SyncPullResult(
-            database_dir=str(database_dir),
-            downloaded=downloaded,
-            no_oa=no_oa,
-            not_found=not_found,
-            network_error=network_error,
-            already_has_file=sorted(already_has_file),
-            dry_run_oa=dry_run_oa,
-            summary=summary,
-        )
-
-    @action(
         description="Reconcile the local reading queue with a Mendeley collection (default 'Docent-Queue').",
         input_schema=SyncFromMendeleyInputs,
         name="sync-from-mendeley",
     )
     def sync_from_mendeley(self, inputs: SyncFromMendeleyInputs, context: Context):
-        collection_name = context.settings.paper.queue_collection
-        launch_command = context.settings.paper.mendeley_mcp_command  # None -> wrapper default
+        collection_name = context.settings.reading.queue_collection
+        launch_command = context.settings.reading.mendeley_mcp_command
         return self._sync_from_mendeley_run(collection_name, launch_command, inputs.dry_run)
 
     def _sync_from_mendeley_run(
@@ -816,7 +656,6 @@ class PaperPipeline(Tool):
             dry_run_added=[], dry_run_removed=[], summary="",
         )
 
-        # ---- discover: resolve folder name -> folder_id ----
         yield ProgressEvent(phase="discover", message=f"Listing Mendeley folders to resolve {collection_name!r}.")
         folders_resp = mendeley_list_folders(launch_command)
         if folders_resp.get("error"):
@@ -832,22 +671,20 @@ class PaperPipeline(Tool):
                 f"Create a collection named {collection_name!r} in the Mendeley desktop app, "
                 f"drag the papers you want to read into it, then re-run. "
                 f"(Or change the configured name with "
-                f"`docent paper config-set queue_collection <name>`.)"
+                f"`docent reading config-set queue_collection <name>`.)"
             )})
         if len(matches) > 1:
             return empty.model_copy(update={"message": (
-                f"Found {len(matches)} Mendeley collections named {collection_name!r} "
-                f"(nested in different parents). Rename one in Mendeley, or change "
-                f"`paper.queue_collection` to a unique name."
+                f"Found {len(matches)} Mendeley collections named {collection_name!r}. "
+                f"Rename one in Mendeley, or change `reading.queue_collection` to a unique name."
             )})
         folder_id = matches[0].get("id")
         if not isinstance(folder_id, str) or not folder_id:
             return empty.model_copy(update={"message": (
                 f"Mendeley collection {collection_name!r} has no usable id; "
-                f"this is unexpected — try toggling its name in Mendeley to refresh."
+                f"try toggling its name in Mendeley to refresh."
             )})
 
-        # ---- discover: list documents in that folder ----
         yield ProgressEvent(phase="discover", message=f"Reading collection {collection_name!r} ({folder_id[:8]}…).")
         docs_resp = mendeley_list_documents(folder_id=folder_id, launch_command=launch_command)
         if docs_resp.get("error"):
@@ -859,7 +696,6 @@ class PaperPipeline(Tool):
         docs = [d for d in (docs_resp.get("items") or []) if isinstance(d, dict)]
         yield ProgressEvent(phase="discover", message=f"Found {len(docs)} doc(s) in {collection_name!r}.")
 
-        # ---- reconcile ----
         added: list[dict[str, str]] = []
         unchanged: list[str] = []
         removed: list[str] = []
@@ -869,15 +705,13 @@ class PaperPipeline(Tool):
 
         queue = self._store.load_queue()
         by_mendeley_id: dict[str, dict[str, Any]] = {
-            e["mendeley_id"]: e for e in queue
-            if e.get("mendeley_id")
+            e["mendeley_id"]: e for e in queue if e.get("mendeley_id")
         }
         existing_ids: set[str] = {e.get("id") for e in queue if e.get("id")}
-        # Per-pass id reservations so two new docs that derive the same slug
-        # both land cleanly (second one gets the mendeley_id suffix).
         reserved_ids: set[str] = set()
         in_collection: set[str] = set()
         new_entries: list[dict[str, Any]] = []
+        max_order = max((e.get("order", 0) for e in queue), default=0)
 
         for i, doc in enumerate(docs, 1):
             mid = self._extract_mendeley_id(doc)
@@ -892,10 +726,9 @@ class PaperPipeline(Tool):
                 continue
 
             try:
-                entry = self._build_entry_from_mendeley(
-                    doc, mid, existing_ids | reserved_ids,
-                )
-            except Exception as e:  # noqa: BLE001 — pydantic ValidationError + our ValueErrors both bucket here.
+                max_order += 1
+                entry = self._build_entry_from_mendeley(doc, mid, existing_ids | reserved_ids, max_order)
+            except Exception as e:  # noqa: BLE001
                 failed.append({"mendeley_id": mid, "error": str(e)})
                 yield ProgressEvent(phase="reconcile", level="error", message=f"{mid[:8]}: {e}")
                 continue
@@ -907,25 +740,21 @@ class PaperPipeline(Tool):
                 new_entries.append(entry.model_dump())
                 added.append({"id": entry.id, "mendeley_id": mid, "title": entry.title})
 
-        # ---- removed branch: mendeley_id-bearing entries not in collection ----
         for e in queue:
             mid = e.get("mendeley_id")
             if not mid or mid in in_collection:
                 continue
             if e.get("status") == "removed":
-                continue  # already flagged on a prior run
+                continue
             if dry_run:
                 dry_run_removed.append(e.get("id", mid))
             else:
                 removed.append(e.get("id", mid))
 
-        # ---- persist (single save) ----
         if not dry_run and (new_entries or removed):
-            queue = self._store.load_queue()  # re-read in case anything changed under us
+            queue = self._store.load_queue()
             by_id = {e.get("id"): e for e in queue}
             for ne in new_entries:
-                # If two passes raced (very unlikely) and id already exists, skip silently;
-                # the next sync will re-converge.
                 if ne["id"] not in by_id:
                     queue.append(ne)
             removed_set = set(removed)
@@ -934,9 +763,6 @@ class PaperPipeline(Tool):
                     e["status"] = "removed"
             self._store.save_queue(queue)
 
-        # Force readers to repopulate from fresh MCP data. We just paid for
-        # a list_documents call; rather than seed the cache here, drop it so
-        # the next reader re-fetches (fresher snapshot wins).
         if not dry_run:
             self._mendeley_cache().invalidate(folder_id)
 
@@ -977,22 +803,13 @@ class PaperPipeline(Tool):
         )
 
     def _build_entry_from_mendeley(
-        self, doc: dict[str, Any], mendeley_id: str, taken_ids: set[str]
+        self, doc: dict[str, Any], mendeley_id: str, taken_ids: set[str], order: int
     ) -> "QueueEntry":
-        """Snapshot title/authors/year/doi from a Mendeley list_documents
-        payload into a new QueueEntry. The snapshot lets existing
-        next/show/stats/search keep working on these entries today; Step 11.7
-        will replace it with a read-through cache.
-
-        `taken_ids` lets the caller avoid id collisions across the whole
-        batch (existing queue + new entries created earlier in this pass)."""
         title = (doc.get("title") or "").strip() or "(untitled)"
         authors = self._normalize_mendeley_authors(doc.get("authors"))
         year = doc.get("year")
         if not isinstance(year, int):
             year = None
-        # Mendeley returns DOIs under `identifiers: {"doi": "..."}` (see live
-        # probe output); list_documents may also omit identifiers entirely.
         doi: str | None = None
         idents = doc.get("identifiers")
         if isinstance(idents, dict):
@@ -1001,10 +818,7 @@ class PaperPipeline(Tool):
                 doi = d.strip()
 
         base = self._derive_id(authors, year, title)
-        if base in taken_ids:
-            entry_id = f"{base}-{mendeley_id[:8]}"
-        else:
-            entry_id = base
+        entry_id = f"{base}-{mendeley_id[:8]}" if base in taken_ids else base
 
         return QueueEntry(
             id=entry_id,
@@ -1013,16 +827,12 @@ class PaperPipeline(Tool):
             year=year,
             doi=doi,
             added=datetime.now().date().isoformat(),
+            order=order,
             mendeley_id=mendeley_id,
         )
 
     @staticmethod
     def _normalize_mendeley_authors(authors: Any) -> str:
-        """Mendeley returns `authors` as a list of strings ('Smith, J.') in
-        `list_documents`; sometimes a list of dicts in other endpoints. Join
-        with '; ' so each author stays atomic — `_derive_id` only looks at
-        text before the first comma, so the first author's 'Last, First' form
-        is preserved."""
         if isinstance(authors, list):
             parts: list[str] = []
             for a in authors:
@@ -1040,10 +850,6 @@ class PaperPipeline(Tool):
 
     @staticmethod
     def _extract_mendeley_id(item: dict[str, Any]) -> str | None:
-        """Library documents expose `id` (UUID); catalog items returned by
-        `mendeley_get_by_doi` expose `catalog_id` instead. Both are stable
-        Mendeley identifiers — store whichever the response carries.
-        """
         for key in ("id", "catalog_id", "document_id", "mendeley_id"):
             v = item.get(key)
             if isinstance(v, str) and v:
@@ -1062,7 +868,7 @@ class PaperPipeline(Tool):
                 for a in authors[:3]
             )
         return {
-            "mendeley_id": PaperPipeline._extract_mendeley_id(item) or "",
+            "mendeley_id": ReadingQueue._extract_mendeley_id(item) or "",
             "title": str(title),
             "year": str(year) if year is not None else "",
             "authors": str(authors),
@@ -1073,19 +879,58 @@ class PaperPipeline(Tool):
         if error.startswith("auth:"):
             return f"{error} (run `mendeley-auth login` to refresh tokens)"
         if "launch command not found" in error:
-            return f"{error} (install with `uv tool install mendeley-mcp` or set paper.mendeley_mcp_command)"
+            return f"{error} (install with `uv tool install mendeley-mcp` or set reading.mendeley_mcp_command)"
         return error
 
     # ------------------------------------------------------------------
-    # Shared helpers - every paper action reuses these.
-    # Persistence + state-recompute helpers moved to PaperQueueStore at Step 10.7.
+    # Ordering helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _reorder_move_to(queue: list[dict[str, Any]], target_id: str, new_position: int) -> None:
+        """Mutate queue in-place: move `target_id` to `new_position`, shifting
+        other ordered entries to maintain contiguous 1-based ordering."""
+        ordered = sorted(
+            [e for e in queue if e.get("order", 0) > 0],
+            key=lambda e: e.get("order", 0),
+        )
+        target = next((e for e in ordered if e.get("id") == target_id), None)
+        if target is None:
+            # Entry has order=0; assign it to new_position and shift others up.
+            new_position = max(1, min(new_position, len(ordered) + 1))
+            for e in ordered:
+                if e.get("order", 0) >= new_position:
+                    e["order"] = e["order"] + 1
+            for e in queue:
+                if e.get("id") == target_id:
+                    e["order"] = new_position
+            return
+
+        old_position = target["order"]
+        new_position = max(1, min(new_position, len(ordered)))
+        if old_position == new_position:
+            return
+
+        if new_position < old_position:
+            for e in ordered:
+                pos = e.get("order", 0)
+                if new_position <= pos < old_position and e.get("id") != target_id:
+                    e["order"] = pos + 1
+        else:
+            for e in ordered:
+                pos = e.get("order", 0)
+                if old_position < pos <= new_position and e.get("id") != target_id:
+                    e["order"] = pos - 1
+
+        target["order"] = new_position
+
+    # ------------------------------------------------------------------
+    # Mendeley overlay + cache helpers
     # ------------------------------------------------------------------
 
     def _mendeley_cache(self) -> MendeleyCache:
-        # Pass the import-site alias so tests that monkeypatch
-        # `docent.tools.paper.mendeley_list_documents` route through the fake.
         return MendeleyCache(
-            cache_dir() / "paper" / "mendeley_collection.json",
+            cache_dir() / "reading" / "mendeley_collection.json",
             list_documents=mendeley_list_documents,
             list_folders=mendeley_list_folders,
         )
@@ -1093,21 +938,12 @@ class PaperPipeline(Tool):
     def _resolve_collection_folder_id_quiet(
         self, collection_name: str, launch_command: list[str] | None
     ) -> str | None:
-        """Reader-side folder lookup. Delegates to the cache so the ~5s
-        `list_folders` MCP round-trip only happens once per folder TTL.
-        Returns None on transport / missing / ambiguous — callers fall back
-        to the snapshot fields persisted in queue.json. The verbose,
-        actionable-error version lives in `_sync_from_mendeley_run`."""
         return self._mendeley_cache().get_folder_id(collection_name, launch_command)
 
     def _load_mendeley_overlay(self, context: Context) -> dict[str, dict[str, Any]] | None:
-        """Pull the cached Mendeley collection (or fetch + cache fresh).
-        Returns `{mendeley_id: doc}` or None on any failure — None means
-        readers use the queue.json snapshot unchanged.
-        """
-        ps = context.settings.paper
-        collection_name = ps.queue_collection
-        launch_command = ps.mendeley_mcp_command
+        rs = context.settings.reading
+        collection_name = rs.queue_collection
+        launch_command = rs.mendeley_mcp_command
         folder_id = self._resolve_collection_folder_id_quiet(collection_name, launch_command)
         if folder_id is None:
             return None
@@ -1115,14 +951,11 @@ class PaperPipeline(Tool):
 
     @staticmethod
     def _overlay_entry(entry: dict[str, Any], doc: dict[str, Any]) -> dict[str, Any]:
-        """Replace title/authors/year/doi in a queue entry with fresh
-        Mendeley values. Caller passes the entry dict (mutates a shallow
-        copy)."""
         out = dict(entry)
         title = (doc.get("title") or "").strip()
         if title:
             out["title"] = title
-        authors = PaperPipeline._normalize_mendeley_authors(doc.get("authors"))
+        authors = ReadingQueue._normalize_mendeley_authors(doc.get("authors"))
         if authors and authors != "Unknown":
             out["authors"] = authors
         year = doc.get("year")
@@ -1138,10 +971,6 @@ class PaperPipeline(Tool):
     def _apply_overlay(
         self, queue: list[dict[str, Any]], overlay: dict[str, dict[str, Any]] | None
     ) -> list[dict[str, Any]]:
-        """Return a new queue list with Mendeley fields overlaid on entries
-        whose `mendeley_id` is in the overlay map. Entries without a
-        `mendeley_id` (legacy) or without a matching cache hit pass
-        through. `overlay=None` is a no-op (offline / unconfigured)."""
         if not overlay:
             return queue
         out: list[dict[str, Any]] = []
@@ -1153,16 +982,14 @@ class PaperPipeline(Tool):
                 out.append(e)
         return out
 
-    def _require_database_dir(self, context: Context) -> tuple[Path | None, str | None]:
-        """Return (path, None) on success; (None, None) on user cancel; (None, error_message) on invalid input.
+    # ------------------------------------------------------------------
+    # Shared helpers
+    # ------------------------------------------------------------------
 
-        Raises NoInteractiveError under DOCENT_NO_INTERACTIVE. The CLI/caller
-        owns rendering — this method never prints. Don't persist a path that
-        doesn't exist (silent corruption of config.toml on typos).
-        """
-        ps = context.settings.paper
-        if ps.database_dir is not None:
-            return ps.database_dir.expanduser(), None
+    def _require_database_dir(self, context: Context) -> tuple[Path | None, str | None]:
+        rs = context.settings.reading
+        if rs.database_dir is not None:
+            return rs.database_dir.expanduser(), None
         path = prompt_for_path(
             "Where's your paper database? (path, 'create' for default, or 'cancel')",
             default=_DEFAULT_DATABASE_DIR,
@@ -1173,10 +1000,10 @@ class PaperPipeline(Tool):
             return None, (
                 f"Path doesn't exist: {path}. Pre-create the folder, type 'create' "
                 f"next time to scaffold the default, or run "
-                f"`docent paper config-set database_dir <path>` once it exists. Not persisted."
+                f"`docent reading config-set database_dir <path>` once it exists. Not persisted."
             )
-        write_setting("paper.database_dir", str(path))
-        context.settings.paper.database_dir = path
+        write_setting("reading.database_dir", str(path))
+        context.settings.reading.database_dir = path
         return path, None
 
     def _find_entry(self, queue: list[dict[str, Any]], entry_id: str) -> dict[str, Any] | None:
@@ -1199,8 +1026,6 @@ class PaperPipeline(Tool):
             return self._not_found(entry_id, queue)
         previous = entry.get("status")
         entry["status"] = status
-        # Stamp lifecycle timestamps. Set-on-first-transition only — re-setting
-        # the same status doesn't refresh the timestamp.
         ts = datetime.now().isoformat()
         if status == "reading" and not entry.get("started"):
             entry["started"] = ts
@@ -1226,4 +1051,3 @@ class PaperPipeline(Tool):
         first_title_word = title.split()[0] if title else "untitled"
         title_word = re.sub(r"[^a-zA-Z0-9]", "", first_title_word).lower() or "untitled"
         return f"{last_name}-{year_part}-{title_word}"
-

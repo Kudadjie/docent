@@ -7,19 +7,18 @@ from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
 
-class PaperSettings(BaseModel):
-    """First-party `paper` tool settings. Stored under `[paper]` in config.toml.
+class ReadingSettings(BaseModel):
+    """First-party `reading` tool settings. Stored under `[reading]` in config.toml.
 
-    Env-overridable as `DOCENT_PAPER__<FIELD>` (note the double underscore for
-    nesting). `database_dir` accepts a path with `~`; expansion is the caller's
-    job (`Path(...).expanduser()`). Step 11.9: `database_dir` IS the Mendeley
-    watch folder — Mendeley auto-imports anything dropped here.
+    Env-overridable as `DOCENT_READING__<FIELD>` (double underscore for nesting).
+    `database_dir` accepts a path with `~`; expansion is the caller's job.
+    `database_dir` IS the Mendeley watch folder — Mendeley auto-imports anything
+    dropped here.
     """
 
     database_dir: Path | None = None
-    unpaywall_email: str | None = None
     mendeley_mcp_command: list[str] | None = None  # e.g. ["uvx", "mendeley-mcp"]; None -> default in mendeley_client.
-    queue_collection: str = "Docent-Queue"  # Mendeley collection name that defines reading-queue membership (Step 11.6).
+    queue_collection: str = "Docent-Queue"  # Mendeley collection name that defines reading-queue membership.
 
 
 class Settings(BaseSettings):
@@ -36,7 +35,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None
 
-    paper: PaperSettings = Field(default_factory=PaperSettings)
+    reading: ReadingSettings = Field(default_factory=ReadingSettings)
 
     tools: dict[str, dict[str, Any]] = Field(default_factory=dict)
 

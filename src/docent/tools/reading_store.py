@@ -1,14 +1,13 @@
-"""Persistence + state recompute for the paper reading queue.
+"""Persistence + state recompute for the reading queue.
 
 Owns three files inside `<root>/`:
-- queue.json - the source-of-truth list of QueueEntry dicts
-- queue-index.json - id -> {title, status, priority} for fast lookups
-- state.json - banner counts + last_updated timestamp
+- queue.json        — source-of-truth list of QueueEntry dicts
+- queue-index.json  — id -> {title, status, order} for fast lookups
+- state.json        — banner counts + last_updated timestamp
 
 Reads return safe defaults if a file is missing. Writes self-initialize the
 directory and use atomic rename so a crash mid-write can't leave a partial
-JSON file in place. Lifted out of paper.py at Step 10.7 so Step 11's sync ops
-have a clean persistence seam to mutate from new directions.
+JSON file in place.
 """
 from __future__ import annotations
 
@@ -25,11 +24,9 @@ class BannerCounts(BaseModel):
     queued: int = 0
     reading: int = 0
     done: int = 0
-    db_files: int = 0
-    mendeley_linked: int = 0
 
 
-class PaperQueueStore:
+class ReadingQueueStore:
     def __init__(self, root: Path) -> None:
         self.root = root
 
@@ -69,33 +66,16 @@ class PaperQueueStore:
             queued=data.get("queued", 0),
             reading=data.get("reading", 0),
             done=data.get("done", 0),
-            db_files=data.get("db_files", 0),
-            mendeley_linked=data.get("mendeley_linked", 0),
         )
 
     @staticmethod
-    def list_database_pdfs(
-        database_dir: Path, watch_subdir: str | None
-    ) -> tuple[list[Path], list[Path]]:
-        """Walk `database_dir`, splitting PDFs into (db, watch) lists.
-
-        `watch_subdir` is the relative path to the Mendeley watch folder
-        inside `database_dir`; PDFs under it are returned in the watch list
-        and excluded from the db list. Both lists are sorted. Missing
-        directories yield empty lists, not errors.
+    def list_database_pdfs(database_dir: Path) -> list[Path]:
+        """Return all PDFs found recursively in `database_dir`.
+        Missing directory yields an empty list, not an error.
         """
         if not database_dir.is_dir():
-            return [], []
-        watch_dir = (database_dir / watch_subdir).resolve() if watch_subdir else None
-        db_pdfs: list[Path] = []
-        watch_pdfs: list[Path] = []
-        for pdf in database_dir.rglob("*.pdf"):
-            resolved = pdf.resolve()
-            if watch_dir is not None and watch_dir in resolved.parents:
-                watch_pdfs.append(pdf)
-            else:
-                db_pdfs.append(pdf)
-        return sorted(db_pdfs), sorted(watch_pdfs)
+            return []
+        return sorted(database_dir.rglob("*.pdf"))
 
     @staticmethod
     def _recompute_index(queue: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -103,7 +83,7 @@ class PaperQueueStore:
             e["id"]: {
                 "title": e.get("title", ""),
                 "status": e["status"],
-                "priority": e["priority"],
+                "order": e.get("order", 0),
             }
             for e in queue
         }
@@ -113,8 +93,6 @@ class PaperQueueStore:
             "queued": sum(1 for e in queue if e["status"] == "queued"),
             "reading": sum(1 for e in queue if e["status"] == "reading"),
             "done": sum(1 for e in queue if e["status"] == "done"),
-            "db_files": 0,
-            "mendeley_linked": 0,
             "last_updated": datetime.now().isoformat(),
         }
         self._atomic_write_json(self.state_path, state)

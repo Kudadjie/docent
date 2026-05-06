@@ -15,17 +15,17 @@ from docent.config import load_settings
 from docent.core.context import Context
 from docent.execution import Executor
 from docent.llm import LLMClient
-from docent.tools.paper import (
+from docent.tools.reading import (
     ConfigSetInputs,
     ConfigShowInputs,
-    PaperPipeline,
+    ReadingQueue,
     SyncFromMendeleyInputs,
 )
 
 
 def _ctx(queue_collection: str = "Docent-Queue") -> Context:
     settings = load_settings()
-    settings.paper.queue_collection = queue_collection
+    settings.reading.queue_collection = queue_collection
     return Context(settings=settings, llm=LLMClient(settings), executor=Executor())
 
 
@@ -65,8 +65,8 @@ def _patch_mendeley(
             return {"items": [], "error": None}
         return documents(folder_id) if callable(documents) else documents
 
-    monkeypatch.setattr("docent.tools.paper.mendeley_list_folders", fake_folders)
-    monkeypatch.setattr("docent.tools.paper.mendeley_list_documents", fake_documents)
+    monkeypatch.setattr("docent.tools.reading.mendeley_list_folders", fake_folders)
+    monkeypatch.setattr("docent.tools.reading.mendeley_list_documents", fake_documents)
     return calls
 
 
@@ -76,7 +76,7 @@ def _patch_mendeley(
 
 
 def test_collection_missing_returns_actionable_error(tmp_docent_home, monkeypatch):
-    tool = PaperPipeline()
+    tool = ReadingQueue()
     ctx = _ctx()
     _patch_mendeley(monkeypatch, folders={"items": [
         {"id": "F1", "name": "Test", "parent_id": None},
@@ -90,7 +90,7 @@ def test_collection_missing_returns_actionable_error(tmp_docent_home, monkeypatc
 
 
 def test_duplicate_collection_name_asks_user_to_rename(tmp_docent_home, monkeypatch):
-    tool = PaperPipeline()
+    tool = ReadingQueue()
     ctx = _ctx()
     _patch_mendeley(monkeypatch, folders={"items": [
         {"id": "F1", "name": "Docent-Queue", "parent_id": None},
@@ -104,7 +104,7 @@ def test_duplicate_collection_name_asks_user_to_rename(tmp_docent_home, monkeypa
 
 
 def test_list_folders_transport_error_propagates_with_hint(tmp_docent_home, monkeypatch):
-    tool = PaperPipeline()
+    tool = ReadingQueue()
     ctx = _ctx()
     _patch_mendeley(monkeypatch, folders={
         "items": [], "error": "transport: launch command not found ([Errno 2])",
@@ -116,7 +116,7 @@ def test_list_folders_transport_error_propagates_with_hint(tmp_docent_home, monk
 
 
 def test_list_documents_error_after_folder_resolved(tmp_docent_home, monkeypatch):
-    tool = PaperPipeline()
+    tool = ReadingQueue()
     ctx = _ctx()
     _patch_mendeley(
         monkeypatch,
@@ -132,7 +132,7 @@ def test_list_documents_error_after_folder_resolved(tmp_docent_home, monkeypatch
 
 
 def test_custom_queue_collection_setting(tmp_docent_home, monkeypatch):
-    tool = PaperPipeline()
+    tool = ReadingQueue()
     ctx = _ctx(queue_collection="My-Reading-List")
     calls = _patch_mendeley(monkeypatch, folders={"items": [
         {"id": "F1", "name": "My-Reading-List", "parent_id": None},
@@ -150,7 +150,7 @@ def test_custom_queue_collection_setting(tmp_docent_home, monkeypatch):
 
 
 def test_empty_collection_yields_zero_added(tmp_docent_home, monkeypatch):
-    tool = PaperPipeline()
+    tool = ReadingQueue()
     ctx = _ctx()
     _patch_mendeley(
         monkeypatch,
@@ -164,7 +164,7 @@ def test_empty_collection_yields_zero_added(tmp_docent_home, monkeypatch):
 
 
 def test_new_doc_creates_snapshot_entry(tmp_docent_home, monkeypatch):
-    tool = PaperPipeline()
+    tool = ReadingQueue()
     ctx = _ctx()
     _patch_mendeley(
         monkeypatch,
@@ -197,7 +197,7 @@ def test_new_doc_creates_snapshot_entry(tmp_docent_home, monkeypatch):
 
 def test_doc_without_doi_or_pdf_persists_via_mendeley_id(tmp_docent_home, monkeypatch):
     """Validator relax: mendeley_id alone is enough to persist."""
-    tool = PaperPipeline()
+    tool = ReadingQueue()
     ctx = _ctx()
     _patch_mendeley(
         monkeypatch,
@@ -220,7 +220,7 @@ def test_doc_without_doi_or_pdf_persists_via_mendeley_id(tmp_docent_home, monkey
 
 
 def test_idempotent_rerun_unchanged(tmp_docent_home, monkeypatch):
-    tool = PaperPipeline()
+    tool = ReadingQueue()
     ctx = _ctx()
     _patch_mendeley(
         monkeypatch,
@@ -240,7 +240,7 @@ def test_idempotent_rerun_unchanged(tmp_docent_home, monkeypatch):
 
 
 def test_removed_branch_flags_status(tmp_docent_home, monkeypatch):
-    tool = PaperPipeline()
+    tool = ReadingQueue()
     ctx = _ctx()
 
     # First run: add MEND-1.
@@ -273,7 +273,7 @@ def test_removed_branch_flags_status(tmp_docent_home, monkeypatch):
 def test_non_mendeley_entries_untouched_by_removed_branch(tmp_docent_home, monkeypatch):
     """Legacy entries with no mendeley_id (e.g. from `paper add --pdf`) must
     not be flagged as removed even when the collection is empty."""
-    tool = PaperPipeline()
+    tool = ReadingQueue()
     ctx = _ctx()
 
     # Seed a legacy-shaped entry directly (no mendeley_id, has DOI to satisfy validator).
@@ -298,7 +298,7 @@ def test_non_mendeley_entries_untouched_by_removed_branch(tmp_docent_home, monke
 def test_id_collision_uses_mendeley_suffix(tmp_docent_home, monkeypatch):
     """Two Mendeley docs whose authors/year/title slug collides must coexist;
     second gets a -{mendeley_id[:8]} suffix."""
-    tool = PaperPipeline()
+    tool = ReadingQueue()
     ctx = _ctx()
     _patch_mendeley(
         monkeypatch,
@@ -317,7 +317,7 @@ def test_id_collision_uses_mendeley_suffix(tmp_docent_home, monkeypatch):
 
 
 def test_doc_missing_id_is_bucketed_as_failed(tmp_docent_home, monkeypatch):
-    tool = PaperPipeline()
+    tool = ReadingQueue()
     ctx = _ctx()
     _patch_mendeley(
         monkeypatch,
@@ -334,7 +334,7 @@ def test_doc_missing_id_is_bucketed_as_failed(tmp_docent_home, monkeypatch):
 
 
 def test_dry_run_does_not_persist(tmp_docent_home, monkeypatch):
-    tool = PaperPipeline()
+    tool = ReadingQueue()
     ctx = _ctx()
     _patch_mendeley(
         monkeypatch,
@@ -351,7 +351,7 @@ def test_dry_run_does_not_persist(tmp_docent_home, monkeypatch):
 
 
 def test_dry_run_reports_would_remove(tmp_docent_home, monkeypatch):
-    tool = PaperPipeline()
+    tool = ReadingQueue()
     ctx = _ctx()
 
     # Seed a mendeley-keyed entry directly (skip first sync to keep it tight).
@@ -383,7 +383,7 @@ def test_dry_run_reports_would_remove(tmp_docent_home, monkeypatch):
 def test_normalize_authors_dict_form():
     """Mendeley sometimes returns authors as dicts (other endpoints).
     `_normalize_mendeley_authors` joins first_name + last_name with '; '."""
-    out = PaperPipeline._normalize_mendeley_authors([
+    out = ReadingQueue._normalize_mendeley_authors([
         {"first_name": "John", "last_name": "Smith"},
         {"first_name": "Kate", "last_name": "Jones"},
     ])
@@ -391,19 +391,19 @@ def test_normalize_authors_dict_form():
 
 
 def test_normalize_authors_string_passthrough():
-    assert PaperPipeline._normalize_mendeley_authors("Smith, J") == "Smith, J"
+    assert ReadingQueue._normalize_mendeley_authors("Smith, J") == "Smith, J"
 
 
 def test_normalize_authors_none_or_empty_yields_unknown():
-    assert PaperPipeline._normalize_mendeley_authors(None) == "Unknown"
-    assert PaperPipeline._normalize_mendeley_authors([]) == "Unknown"
-    assert PaperPipeline._normalize_mendeley_authors([{}, ""]) == "Unknown"
+    assert ReadingQueue._normalize_mendeley_authors(None) == "Unknown"
+    assert ReadingQueue._normalize_mendeley_authors([]) == "Unknown"
+    assert ReadingQueue._normalize_mendeley_authors([{}, ""]) == "Unknown"
 
 
 def test_doc_with_non_int_year_normalizes_to_none(tmp_docent_home, monkeypatch):
     """Mendeley sometimes returns year=null; some PDFs surface stringified
     years. Anything non-int snaps to None on the snapshot."""
-    tool = PaperPipeline()
+    tool = ReadingQueue()
     ctx = _ctx()
     _patch_mendeley(
         monkeypatch,
@@ -423,14 +423,14 @@ def test_doc_with_non_int_year_normalizes_to_none(tmp_docent_home, monkeypatch):
 
 
 def test_config_show_surfaces_queue_collection(tmp_docent_home):
-    tool = PaperPipeline()
+    tool = ReadingQueue()
     ctx = _ctx()
     result = tool.config_show(ConfigShowInputs(), ctx)
     assert result.queue_collection == "Docent-Queue"
 
 
 def test_config_set_queue_collection_round_trips(tmp_docent_home):
-    tool = PaperPipeline()
+    tool = ReadingQueue()
     ctx = _ctx()
     res = tool.config_set(
         ConfigSetInputs(key="queue_collection", value="My-Queue"), ctx
@@ -438,7 +438,7 @@ def test_config_set_queue_collection_round_trips(tmp_docent_home):
     assert res.ok
     # Reload settings from disk to verify persistence.
     settings = load_settings()
-    assert settings.paper.queue_collection == "My-Queue"
+    assert settings.reading.queue_collection == "My-Queue"
 
 
 # ----------------------------------------------------------------------
@@ -450,7 +450,7 @@ def test_legacy_validator_still_blocks_identifier_free_entries(tmp_docent_home):
     """Step 11.2 invariant survives, narrowed by Step 11.10: doi / mendeley_id
     both None is still rejected (pdf_path field gone)."""
     from pydantic import ValidationError
-    from docent.tools.paper import QueueEntry
+    from docent.tools.reading import QueueEntry
     import pytest as _pytest
     with _pytest.raises(ValidationError):
         QueueEntry(
@@ -465,7 +465,7 @@ def test_sync_invalidates_reader_cache(tmp_docent_home, monkeypatch):
     stale snapshot the sync just made obsolete."""
     from docent.utils.paths import cache_dir
 
-    tool = PaperPipeline()
+    tool = ReadingQueue()
     ctx = _ctx()
     _patch_mendeley(
         monkeypatch,
@@ -475,7 +475,7 @@ def test_sync_invalidates_reader_cache(tmp_docent_home, monkeypatch):
         }], "error": None},
     )
 
-    cache_path = cache_dir() / "paper" / "mendeley_collection.json"
+    cache_path = cache_dir() / "reading" / "mendeley_collection.json"
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     cache_path.write_text('{"FQ": {"fetched_at": 9999999999, "docs": {"OLD": {}}}}', encoding="utf-8")
 

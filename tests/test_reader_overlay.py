@@ -17,17 +17,17 @@ from docent.config import load_settings
 from docent.core.context import Context
 from docent.execution import Executor
 from docent.llm import LLMClient
-from docent.tools.paper import (
+from docent.tools.reading import (
     IdOnlyInputs,
     NextInputs,
-    PaperPipeline,
+    ReadingQueue,
     SearchInputs,
 )
 
 
 def _ctx(queue_collection: str = "Docent-Queue") -> Context:
     settings = load_settings()
-    settings.paper.queue_collection = queue_collection
+    settings.reading.queue_collection = queue_collection
     return Context(settings=settings, llm=LLMClient(settings), executor=Executor())
 
 
@@ -40,11 +40,11 @@ def _patch(monkeypatch, *, folders=None, documents=None):
     def fake_documents(folder_id=None, launch_command=None, limit=200, sort_by="last_modified"):
         return documents if documents is not None else {"items": [], "error": None}
 
-    monkeypatch.setattr("docent.tools.paper.mendeley_list_folders", fake_folders)
-    monkeypatch.setattr("docent.tools.paper.mendeley_list_documents", fake_documents)
+    monkeypatch.setattr("docent.tools.reading.mendeley_list_folders", fake_folders)
+    monkeypatch.setattr("docent.tools.reading.mendeley_list_documents", fake_documents)
 
 
-def _seed_queue(tool: PaperPipeline, entries: list[dict]) -> None:
+def _seed_queue(tool: ReadingQueue, entries: list[dict]) -> None:
     tool._store.save_queue(entries)
 
 
@@ -59,16 +59,13 @@ def _stale_entry(**overrides) -> dict:
         "doi": None,
         "added": "2026-05-01",
         "status": "queued",
-        "priority": "medium",
-        "course": None,
+        "order": 1,
+        "category": "personal",
+        "course_name": None,
+        "deadline": None,
         "tags": [],
         "notes": "",
-        "file_status": "missing",
-        "keep_in_mendeley": False,
-        "pdf_path": None,
-        "promoted_at": None,
         "mendeley_id": "MID-1",
-        "title_is_filename_stub": False,
     }
     base.update(overrides)
     return base
@@ -80,7 +77,7 @@ def _stale_entry(**overrides) -> dict:
 
 
 def test_next_overlays_fresh_mendeley_metadata(tmp_docent_home, monkeypatch):
-    tool = PaperPipeline()
+    tool = ReadingQueue()
     _seed_queue(tool, [_stale_entry()])
 
     _patch(
@@ -110,7 +107,7 @@ def test_next_overlays_fresh_mendeley_metadata(tmp_docent_home, monkeypatch):
 
 
 def test_next_falls_back_to_snapshot_on_mcp_error(tmp_docent_home, monkeypatch):
-    tool = PaperPipeline()
+    tool = ReadingQueue()
     _seed_queue(tool, [_stale_entry()])
 
     _patch(monkeypatch, folders={"items": [], "error": "transport: nope"})
@@ -123,7 +120,7 @@ def test_next_falls_back_to_snapshot_on_mcp_error(tmp_docent_home, monkeypatch):
 
 
 def test_next_falls_back_when_collection_missing(tmp_docent_home, monkeypatch):
-    tool = PaperPipeline()
+    tool = ReadingQueue()
     _seed_queue(tool, [_stale_entry()])
 
     _patch(
@@ -140,10 +137,10 @@ def test_next_falls_back_when_collection_missing(tmp_docent_home, monkeypatch):
 def test_next_passes_through_entries_without_mendeley_id(tmp_docent_home, monkeypatch):
     """A legacy entry (no mendeley_id) plus a Mendeley-keyed entry: only
     the latter is overlaid; the former is untouched."""
-    tool = PaperPipeline()
+    tool = ReadingQueue()
     _seed_queue(tool, [
-        _stale_entry(id="legacy-1", mendeley_id=None, doi="10.9999/legacy", priority="critical"),
-        _stale_entry(id="mid-1", mendeley_id="MID-1", priority="high"),
+        _stale_entry(id="legacy-1", mendeley_id=None, doi="10.9999/legacy", order=1),
+        _stale_entry(id="mid-1", mendeley_id="MID-1", order=2),
     ])
 
     _patch(
@@ -152,7 +149,7 @@ def test_next_passes_through_entries_without_mendeley_id(tmp_docent_home, monkey
         documents={"items": [{"id": "MID-1", "title": "Fresh", "authors": ["A"], "year": 2024}], "error": None},
     )
 
-    # critical legacy entry wins on priority sort.
+    # legacy-1 has lower order so it comes next; its title is untouched (no mendeley_id).
     result = tool.next(NextInputs(), _ctx())
     assert result.entry.id == "legacy-1"
     assert result.entry.title == "STALE TITLE"  # untouched
@@ -164,7 +161,7 @@ def test_next_passes_through_entries_without_mendeley_id(tmp_docent_home, monkey
 
 
 def test_show_overlays_fresh_metadata(tmp_docent_home, monkeypatch):
-    tool = PaperPipeline()
+    tool = ReadingQueue()
     _seed_queue(tool, [_stale_entry()])
 
     _patch(
@@ -185,7 +182,7 @@ def test_show_overlays_fresh_metadata(tmp_docent_home, monkeypatch):
 
 
 def test_search_matches_against_overlaid_title(tmp_docent_home, monkeypatch):
-    tool = PaperPipeline()
+    tool = ReadingQueue()
     _seed_queue(tool, [_stale_entry()])
 
     _patch(
@@ -205,7 +202,7 @@ def test_search_matches_against_overlaid_title(tmp_docent_home, monkeypatch):
 
 
 def test_search_uses_snapshot_on_mcp_error(tmp_docent_home, monkeypatch):
-    tool = PaperPipeline()
+    tool = ReadingQueue()
     _seed_queue(tool, [_stale_entry(title="Stormy seas paper")])
 
     _patch(monkeypatch, folders={"items": [], "error": "transport: nope"})
@@ -222,7 +219,7 @@ def test_search_uses_snapshot_on_mcp_error(tmp_docent_home, monkeypatch):
 def test_second_reader_call_hits_cache_not_mcp(tmp_docent_home, monkeypatch):
     """First `next` populates the cache; second `next` in the same TTL
     window must not re-call list_documents."""
-    tool = PaperPipeline()
+    tool = ReadingQueue()
     _seed_queue(tool, [_stale_entry()])
 
     folder_calls = 0
@@ -238,8 +235,8 @@ def test_second_reader_call_hits_cache_not_mcp(tmp_docent_home, monkeypatch):
         doc_calls += 1
         return {"items": [{"id": "MID-1", "title": "Fresh", "authors": ["A"], "year": 2024}], "error": None}
 
-    monkeypatch.setattr("docent.tools.paper.mendeley_list_folders", fake_folders)
-    monkeypatch.setattr("docent.tools.paper.mendeley_list_documents", fake_documents)
+    monkeypatch.setattr("docent.tools.reading.mendeley_list_folders", fake_folders)
+    monkeypatch.setattr("docent.tools.reading.mendeley_list_documents", fake_documents)
 
     tool.next(NextInputs(), _ctx())
     tool.next(NextInputs(), _ctx())
