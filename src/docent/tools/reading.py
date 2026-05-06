@@ -8,6 +8,9 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
 
 from docent.config import write_setting
 from docent.core import Context, ProgressEvent, Tool, action, register_tool
@@ -54,20 +57,18 @@ class QueueEntry(BaseModel):
 
 
 class AddInputs(BaseModel):
-    mendeley_id: str | None = Field(None, description="Mendeley document id; if supplied, an entry is upserted (metadata pulled fresh on next read). Without this, `add` prints guidance.")
-    category: str | None = Field(None, description="Override category (e.g. 'CES701'). Normally auto-detected from the Mendeley sub-collection on sync.")
-    deadline: str | None = Field(None, description="ISO date deadline (YYYY-MM-DD), optional.")
-    notes: str = Field("", description="Freeform notes.")
-    force: bool = Field(False, description="Overwrite if an entry keyed on this mendeley_id already exists.")
+    pass
 
 
 class AddResult(BaseModel):
     added: bool
-    id: str
-    title: str
     queue_size: int
     banner: BannerCounts
     message: str
+
+    def __rich_console__(self, console, options):
+        yield Panel(self.message, title="How to add papers", border_style="cyan", padding=(0, 1))
+        yield Text(f"Queue: {self.queue_size} entries", style="dim")
 
 
 class IdOnlyInputs(BaseModel):
@@ -96,6 +97,11 @@ class EditInputs(BaseModel):
     tags: list[str] | None = Field(None, description="Replace tag list.")
 
 
+class SetDeadlineInputs(BaseModel):
+    id: str = Field(..., description="Entry id to update.")
+    deadline: str = Field(..., description="ISO date deadline (YYYY-MM-DD). Pass '' to clear the deadline.")
+
+
 class ExportInputs(BaseModel):
     format: str = Field("json", description="Output format: json | markdown.")
     category: str | None = Field(None, description="Filter by exact category path (e.g. 'CES701' or 'CES701/Topic').")
@@ -116,6 +122,14 @@ class ConfigShowResult(BaseModel):
     database_dir: str | None
     queue_collection: str
 
+    def __rich_console__(self, console, options):
+        lines = [
+            f"[dim]Config:[/dim] {self.config_path}",
+            f"[bold]database_dir:[/bold] {self.database_dir or '[dim](not set)[/dim]'}",
+            f"[bold]queue_collection:[/bold] {self.queue_collection}",
+        ]
+        yield Panel("\n".join(lines), title="Reading Config", border_style="cyan", padding=(0, 1))
+
 
 class ConfigSetResult(BaseModel):
     ok: bool
@@ -123,6 +137,10 @@ class ConfigSetResult(BaseModel):
     value: str
     config_path: str
     message: str
+
+    def __rich_console__(self, console, options):
+        style = "green" if self.ok else "red"
+        yield Text(self.message, style=style)
 
 
 class MutationResult(BaseModel):
@@ -133,12 +151,58 @@ class MutationResult(BaseModel):
     banner: BannerCounts
     message: str
 
+    def __rich_console__(self, console, options):
+        if not self.ok or self.entry is None:
+            yield Text(f"[FAIL] {self.message}", style="red")
+            return
+        e = self.entry
+        lines: list[str] = [f"[bold]{e.title}[/bold]"]
+        meta_parts = [p for p in [e.authors, str(e.year) if e.year else ""] if p and p != "Unknown"]
+        if meta_parts:
+            lines.append("[dim]" + "  ·  ".join(meta_parts) + "[/dim]")
+        detail_parts = [f"[dim]Order:[/dim] {e.order}", f"[dim]Status:[/dim] {e.status}"]
+        if e.category:
+            detail_parts.append(f"[dim]Category:[/dim] {e.category}")
+        if e.deadline:
+            detail_parts.append(f"[dim]Deadline:[/dim] [yellow]{e.deadline}[/yellow]")
+        lines.append("  ".join(detail_parts))
+        if e.doi:
+            lines.append(f"[dim]DOI:[/dim] {e.doi}")
+        if e.notes:
+            lines.append(f"[dim]Notes:[/dim] {e.notes}")
+        yield Panel("\n".join(lines), border_style="cyan", padding=(0, 1))
+        if self.message:
+            yield Text(self.message, style="dim")
+
 
 class SearchResult(BaseModel):
     query: str
     matches: list[QueueEntry]
     total: int
     queue_size: int
+
+    def __rich_console__(self, console, options):
+        label = "match" if self.total == 1 else "matches"
+        yield Text(f"{self.total} {label} for {self.query!r}", style="bold")
+        if not self.matches:
+            return
+        table = Table(show_header=True, header_style="bold dim", box=None, padding=(0, 1))
+        table.add_column("#", style="dim", width=3)
+        table.add_column("Title")
+        table.add_column("Authors", style="dim")
+        table.add_column("Year", style="dim", width=6)
+        table.add_column("Category", style="dim")
+        table.add_column("Status", style="dim")
+        for e in self.matches:
+            table.add_row(
+                str(e.order),
+                e.title,
+                e.authors if e.authors != "Unknown" else "",
+                str(e.year) if e.year else "",
+                e.category or "",
+                e.status,
+            )
+        yield table
 
 
 class StatsResult(BaseModel):
@@ -147,11 +211,27 @@ class StatsResult(BaseModel):
     by_category: dict[str, int]
     banner: BannerCounts
 
+    def __rich_console__(self, console, options):
+        lines = [f"[bold]Total:[/bold] {self.total} entries", ""]
+        lines.append("[bold]By status[/bold]")
+        for k, v in sorted(self.by_status.items()):
+            lines.append(f"  {k}: {v}")
+        if self.by_category:
+            lines.append("")
+            lines.append("[bold]By category[/bold]")
+            for k, v in sorted(self.by_category.items()):
+                lines.append(f"  {k or '(none)'}: {v}")
+        yield Panel("\n".join(lines), title="Reading Queue", border_style="cyan", padding=(0, 1))
+
 
 class ExportResult(BaseModel):
     format: str
     count: int
     content: str
+
+    def __rich_console__(self, console, options):
+        yield Text(f"Exported {self.count} entries ({self.format})", style="dim")
+        yield Text(self.content)
 
 
 class QueueClearInputs(BaseModel):
@@ -164,6 +244,10 @@ class QueueClearResult(BaseModel):
     queue_size: int
     banner: BannerCounts
     message: str
+
+    def __rich_console__(self, console, options):
+        style = "green" if self.cleared else "yellow"
+        yield Text(self.message, style=style)
 
 
 class SyncStatusInputs(BaseModel):
@@ -193,6 +277,35 @@ class SyncFromMendeleyResult(BaseModel):
     summary: str
     message: str = ""
 
+    def __rich_console__(self, console, options):
+        if self.message:
+            yield Text(self.message, style="yellow")
+            return
+        is_dry = bool(self.dry_run_added or self.dry_run_removed)
+        actual_added = self.dry_run_added if is_dry else self.added
+        actual_removed = self.dry_run_removed if is_dry else self.removed
+        prefix = "[dim](dry run)[/dim] " if is_dry else ""
+        lines = [
+            f"{prefix}[bold]Collection:[/bold] {self.queue_collection}",
+            f"  Added: [green]{len(actual_added)}[/green]  "
+            f"Unchanged: {len(self.unchanged)}  "
+            f"Removed: [yellow]{len(actual_removed)}[/yellow]  "
+            f"Failed: [red]{len(self.failed)}[/red]",
+        ]
+        if actual_added:
+            lines.append("")
+            lines.append("[bold]Added[/bold]")
+            for item in actual_added[:10]:
+                lines.append(f"  • {item.get('id', '')} — {item.get('title', '')[:60]}")
+            if len(actual_added) > 10:
+                lines.append(f"  … and {len(actual_added) - 10} more")
+        if self.failed:
+            lines.append("")
+            lines.append("[bold red]Failed[/bold red]")
+            for item in self.failed:
+                lines.append(f"  • {item.get('mendeley_id', '')[:12]}: {item.get('error', '')}")
+        yield Panel("\n".join(lines), title="Sync from Mendeley", border_style="cyan", padding=(0, 1))
+
 
 class SyncStatusResult(BaseModel):
     database_dir: str | None
@@ -200,6 +313,16 @@ class SyncStatusResult(BaseModel):
     database_pdfs: list[str]
     summary: str
     message: str = ""
+
+    def __rich_console__(self, console, options):
+        lines = [
+            f"[bold]Database:[/bold] {self.database_dir or '[dim](not configured)[/dim]'}",
+            f"[bold]Queue:[/bold] {self.queue_size} entries",
+            f"[bold]PDFs in database:[/bold] {len(self.database_pdfs)}",
+        ]
+        if self.message:
+            lines.append(f"[yellow]{self.message}[/yellow]")
+        yield Panel("\n".join(lines), title="Sync Status", border_style="cyan", padding=(0, 1))
 
 
 class MoveToInputs(BaseModel):
@@ -219,87 +342,23 @@ class ReadingQueue(Tool):
         self._store = ReadingQueueStore(data_dir() / "reading")
 
     @action(
-        description="Add an entry by Mendeley id, or print guidance for the drag-and-drop flow.",
+        description="Show how to add papers to your reading queue via Mendeley.",
         input_schema=AddInputs,
     )
     def add(self, inputs: AddInputs, context: Context) -> AddResult:
-        if not inputs.mendeley_id:
-            collection = context.settings.reading.queue_collection
-            return AddResult(
-                added=False, id="", title="",
-                queue_size=len(self._store.load_index()),
-                banner=self._store.banner_counts(),
-                message=(
-                    "Drop the PDF in your reading.database_dir (Mendeley auto-imports it), "
-                    f"drag it into the '{collection}' collection in Mendeley, then run "
-                    "`docent reading sync-from-mendeley`. "
-                    f"Category is auto-detected from sub-collections: "
-                    f"'{collection}/CES701' -> category='CES701', "
-                    f"'{collection}/CES701/Topic' -> category='CES701/Topic'."
-                ),
-            )
-
-        mid = inputs.mendeley_id.strip()
-        queue = self._store.load_queue()
-        existing = next((e for e in queue if e.get("mendeley_id") == mid), None)
-
-        if existing and not inputs.force:
-            return AddResult(
-                added=False,
-                id=existing.get("id", ""),
-                title=existing.get("title", ""),
-                queue_size=len(queue),
-                banner=self._store.banner_counts(),
-                message=(
-                    f"Mendeley id {mid!r} already in queue as {existing.get('id')!r}. "
-                    f"Use --force to update, or `docent reading edit` to change fields."
-                ),
-            )
-
-        existing_ids = {e.get("id") for e in queue if e.get("id")}
-        base_id = f"mendeley-{mid[:8]}"
-        entry_id = base_id
-        suffix = 1
-        while entry_id in existing_ids and (not existing or existing.get("id") != entry_id):
-            suffix += 1
-            entry_id = f"{base_id}-{suffix}"
-        if existing:
-            entry_id = existing.get("id") or entry_id
-
-        # Assign order: append after the last ordered entry.
-        new_order = max((e.get("order", 0) for e in queue), default=0) + 1
-
-        new_entry = QueueEntry(
-            id=entry_id,
-            title=existing.get("title") if existing else "(pending Mendeley sync)",
-            authors=existing.get("authors") if existing else "Unknown",
-            year=existing.get("year") if existing else None,
-            doi=existing.get("doi") if existing else None,
-            added=existing.get("added") if existing else datetime.now().date().isoformat(),
-            order=existing.get("order", new_order) if existing else new_order,
-            category=inputs.category,
-            deadline=inputs.deadline,
-            notes=inputs.notes,
-            mendeley_id=mid,
-        )
-
-        if existing:
-            queue = [e for e in queue if e.get("id") != entry_id]
-        queue.append(new_entry.model_dump())
-        self._store.save_queue(queue)
-        self._log_event("add", id=entry_id, replaced=bool(existing),
-                        category=inputs.category, mendeley_id=mid)
-
-        verb = "Updated" if existing else "Added"
+        collection = context.settings.reading.queue_collection
         return AddResult(
-            added=True,
-            id=entry_id,
-            title=new_entry.title,
-            queue_size=len(queue),
+            added=False,
+            queue_size=len(self._store.load_index()),
             banner=self._store.banner_counts(),
             message=(
-                f"{verb} {entry_id!r} (mendeley_id={mid}, order={new_entry.order}). "
-                f"Run `docent reading next` to see fresh metadata."
+                "Drop the PDF in your reading.database_dir (Mendeley auto-imports it), "
+                f"drag it into the '{collection}' collection (or a sub-collection) in Mendeley, "
+                "then run `docent reading sync-from-mendeley`. "
+                "Category is auto-detected from sub-collections: "
+                f"'{collection}/CES701' -> category='CES701', "
+                f"'{collection}/CES701/Topic' -> category='CES701/Topic'. "
+                "Papers in the root collection get no category."
             ),
         )
 
@@ -361,6 +420,7 @@ class ReadingQueue(Tool):
             ]).lower()
             if q in haystack:
                 matches.append(QueueEntry(**e))
+        matches.sort(key=lambda e: (e.order or 999999, e.added or ""))
         return SearchResult(query=inputs.query, matches=matches, total=len(matches), queue_size=len(queue))
 
     @action(description="Show queue statistics.", input_schema=StatsInputs)
@@ -452,6 +512,21 @@ class ReadingQueue(Tool):
             queue_size=0,
             banner=self._store.banner_counts(),
             message=f"Cleared {n} entries from the queue.",
+        )
+
+    @action(description="Set or clear a reading deadline on an entry.", input_schema=SetDeadlineInputs, name="set-deadline")
+    def set_deadline(self, inputs: SetDeadlineInputs, context: Context) -> MutationResult:
+        queue = self._store.load_queue()
+        entry = self._find_entry(queue, inputs.id)
+        if entry is None:
+            return self._not_found(inputs.id, queue)
+        entry["deadline"] = inputs.deadline.strip() or None
+        self._store.save_queue(queue)
+        self._log_event("set_deadline", id=inputs.id, deadline=entry["deadline"])
+        return MutationResult(
+            ok=True, id=inputs.id, entry=QueueEntry(**entry),
+            queue_size=len(queue), banner=self._store.banner_counts(),
+            message=f"Deadline {'set to ' + entry['deadline'] if entry['deadline'] else 'cleared'} for {inputs.id!r}.",
         )
 
     @action(description="Mark an entry as done.", input_schema=IdOnlyInputs)
