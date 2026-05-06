@@ -1,0 +1,90 @@
+@import "tailwindcss";
+
+/* ── Design tokens ─────────────────────────────────────────────── */
+:root {
+  --brand:        #18E299;
+  --brand-light:  #d4fae8;
+  --brand-deep:   #0fa76e;
+
+  --bg:           #ffffff;
+  --bg-subtle:    #fafafa;
+  --bg-card:      #ffffff;
+  --fg1:          #0d0d0d;
+  --fg2:          #333333;
+  --fg3:          #666666;
+  --fg4:          #888888;
+  --gray100:      #f5f5f5;
+  --gray200:      #e5e5e5;
+  --border:       rgba(0,0,0,0.05);
+  --border-md:    rgba(0,0,0,0.08);
+  --logo-border:  #0d0d0d;
+  --row-hover:    #fafafa;
+
+  --error:        #D45656;
+  --warning:      #C37D0D;
+
+  --sans: var(--font-inter, 'Inter', system-ui, sans-serif);
+  --mono: var(--font-geist-mono, 'Geist Mono', ui-monospace, monospace);
+}
+
+[data-theme="dark"] {
+  --bg:           #0d0d0d;
+  --bg-subtle:    #111111;
+  --bg-card:      #141414;
+  --fg1:          #ededed;
+  --fg2:          #c0c0c0;
+  --fg3:          #a0a0a0;
+  --fg4:          #606060;
+  --gray100:      #1e1e1e;
+  --gray200:      #2a2a2a;
+  --border:       rgba(255,255,255,0.06);
+  --border-md:    rgba(255,255,255,0.10);
+  --logo-border:  rgba(255,255,255,0.22);
+  --row-hover:    #1a1a1a;
+}
+
+/* ── Animations ────────────────────────────────────────────────── */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes logo-dot-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+@keyframes logo-dot-done {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(24,226,153,0); }
+  50%       { box-shadow: 0 0 0 5px rgba(24,226,153,0.3); }
+}
+@keyframes pulse-high {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(212,86,86,0.4); }
+  50%       { box-shadow: 0 0 0 4px rgba(212,86,86,0); }
+}
+
+/* ── Base ──────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body, #__next { height: 100%; }
+
+body {
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--fg1);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Scrollbar ─────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.2); border-radius: 4px; }
+
+/* ── Paper row interaction ─────────────────────────────────────── */
+.paper-row { transition: background 0.1s; }
+.paper-row .row-actions { opacity: 0; transition: opacity 0.12s; }
+.paper-row:hover .row-actions { opacity: 1; }
+.row-fade { animation: fadeInUp 0.18s ease forwards; }
+
+@media (prefers-reduced-motion: reduce) {
+  .row-fade { animation: none; }
+  .pulse-high { animation: none !important; }
+  .logo-working { animation: none !important; }
+}

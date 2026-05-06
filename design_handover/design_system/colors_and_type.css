@@ -1,0 +1,293 @@
+/* ============================================================
+   Docent Design System — Colors & Typography
+   Based on Mintlify-inspired specification
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&display=swap');
+
+/* ============================================================
+   COLOR TOKENS
+   ============================================================ */
+
+:root {
+  /* --- Brand --- */
+  --color-brand:           #18E299;
+  --color-brand-light:     #d4fae8;
+  --color-brand-deep:      #0fa76e;
+
+  /* --- Neutrals --- */
+  --color-gray-900:        #0d0d0d;
+  --color-gray-700:        #333333;
+  --color-gray-500:        #666666;
+  --color-gray-400:        #888888;
+  --color-gray-200:        #e5e5e5;
+  --color-gray-100:        #f5f5f5;
+  --color-gray-50:         #fafafa;
+  --color-white:           #ffffff;
+
+  /* --- Semantic Foregrounds --- */
+  --color-fg-primary:      var(--color-gray-900);
+  --color-fg-secondary:    var(--color-gray-700);
+  --color-fg-tertiary:     var(--color-gray-500);
+  --color-fg-muted:        var(--color-gray-400);
+  --color-fg-inverse:      var(--color-white);
+
+  /* --- Semantic Backgrounds --- */
+  --color-bg-page:         var(--color-white);
+  --color-bg-subtle:       var(--color-gray-50);
+  --color-bg-muted:        var(--color-gray-100);
+  --color-bg-card:         var(--color-white);
+  --color-bg-brand-tint:   var(--color-brand-light);
+
+  /* --- Semantic Borders --- */
+  --color-border-subtle:   rgba(0, 0, 0, 0.05);
+  --color-border-medium:   rgba(0, 0, 0, 0.08);
+  --color-border-strong:   var(--color-gray-200);
+
+  /* --- Interactive States --- */
+  --color-link-default:    var(--color-gray-900);
+  --color-link-hover:      var(--color-brand);
+  --color-focus-ring:      var(--color-brand);
+
+  /* --- Status Colors --- */
+  --color-error:           #d45656;
+  --color-warning:         #c37d0d;
+  --color-info:            #3772cf;
+
+  /* --- Shadows --- */
+  --shadow-card:           rgba(0, 0, 0, 0.03) 0px 2px 4px;
+  --shadow-button:         rgba(0, 0, 0, 0.06) 0px 1px 2px;
+  --shadow-elevated:       rgba(0, 0, 0, 0.08) 0px 4px 12px;
+}
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-fg-primary:    #ededed;
+    --color-fg-secondary:  #c0c0c0;
+    --color-fg-tertiary:   #a0a0a0;
+    --color-fg-muted:      #707070;
+    --color-fg-inverse:    var(--color-gray-900);
+    --color-bg-page:       #0d0d0d;
+    --color-bg-subtle:     #111111;
+    --color-bg-muted:      #1a1a1a;
+    --color-bg-card:       #141414;
+    --color-border-subtle: rgba(255, 255, 255, 0.06);
+    --color-border-medium: rgba(255, 255, 255, 0.10);
+    --shadow-card:         rgba(0, 0, 0, 0.40) 0px 2px 4px;
+    --shadow-elevated:     rgba(0, 0, 0, 0.60) 0px 4px 12px;
+  }
+}
+
+/* ============================================================
+   TYPOGRAPHY TOKENS
+   ============================================================ */
+
+:root {
+  /* --- Font Families --- */
+  --font-sans:  'Inter', 'Inter Fallback', system-ui, -apple-system, sans-serif;
+  --font-mono:  'Geist Mono', 'Geist Mono Fallback', ui-monospace, SFMono-Regular, monospace;
+
+  /* --- Font Weights --- */
+  --weight-regular:   400;
+  --weight-medium:    500;
+  --weight-semibold:  600;
+
+  /* --- Type Scale --- */
+  --text-display-hero:    4.00rem;   /* 64px */
+  --text-section-heading: 2.50rem;   /* 40px */
+  --text-subheading:      1.50rem;   /* 24px */
+  --text-card-title:      1.25rem;   /* 20px */
+  --text-body-large:      1.125rem;  /* 18px */
+  --text-body:            1.00rem;   /* 16px */
+  --text-button:          0.9375rem; /* 15px */
+  --text-link:            0.875rem;  /* 14px */
+  --text-caption:         0.875rem;  /* 14px */
+  --text-label:           0.8125rem; /* 13px */
+  --text-small:           0.8125rem; /* 13px */
+  --text-mono:            0.75rem;   /* 12px */
+  --text-mono-micro:      0.625rem;  /* 10px */
+
+  /* --- Letter Spacing --- */
+  --tracking-display-hero:    -1.28px;
+  --tracking-section-heading: -0.80px;
+  --tracking-subheading:      -0.24px;
+  --tracking-card-title:      -0.20px;
+  --tracking-label-upper:      0.65px;
+  --tracking-mono:             0.60px;
+  --tracking-normal:           normal;
+
+  /* --- Line Heights --- */
+  --leading-tight:   1.10;
+  --leading-snug:    1.15;
+  --leading-heading: 1.30;
+  --leading-body:    1.50;
+  --leading-caption: 1.71;
+
+  /* --- Spacing Scale (8px base) --- */
+  --space-1:   4px;
+  --space-2:   8px;
+  --space-3:   12px;
+  --space-4:   16px;
+  --space-5:   20px;
+  --space-6:   24px;
+  --space-8:   32px;
+  --space-10:  40px;
+  --space-12:  48px;
+  --space-16:  64px;
+  --space-20:  80px;
+  --space-24:  96px;
+
+  /* --- Border Radius Scale --- */
+  --radius-xs:   4px;
+  --radius-sm:   8px;
+  --radius-md:   16px;
+  --radius-lg:   24px;
+  --radius-pill: 9999px;
+}
+
+/* ============================================================
+   SEMANTIC TYPOGRAPHIC CLASSES
+   ============================================================ */
+
+.t-display-hero {
+  font-family: var(--font-sans);
+  font-size: var(--text-display-hero);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-snug);
+  letter-spacing: var(--tracking-display-hero);
+  color: var(--color-fg-primary);
+}
+
+.t-section-heading {
+  font-family: var(--font-sans);
+  font-size: var(--text-section-heading);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-section-heading);
+  color: var(--color-fg-primary);
+}
+
+.t-subheading {
+  font-family: var(--font-sans);
+  font-size: var(--text-subheading);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-heading);
+  letter-spacing: var(--tracking-subheading);
+  color: var(--color-fg-primary);
+}
+
+.t-card-title {
+  font-family: var(--font-sans);
+  font-size: var(--text-card-title);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-heading);
+  letter-spacing: var(--tracking-card-title);
+  color: var(--color-fg-primary);
+}
+
+.t-body-large {
+  font-family: var(--font-sans);
+  font-size: var(--text-body-large);
+  font-weight: var(--weight-regular);
+  line-height: var(--leading-body);
+  letter-spacing: var(--tracking-normal);
+  color: var(--color-fg-secondary);
+}
+
+.t-body {
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  font-weight: var(--weight-regular);
+  line-height: var(--leading-body);
+  letter-spacing: var(--tracking-normal);
+  color: var(--color-fg-secondary);
+}
+
+.t-body-medium {
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-body);
+  color: var(--color-fg-primary);
+}
+
+.t-button {
+  font-family: var(--font-sans);
+  font-size: var(--text-button);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-body);
+  letter-spacing: var(--tracking-normal);
+}
+
+.t-link {
+  font-family: var(--font-sans);
+  font-size: var(--text-link);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-body);
+  color: var(--color-link-default);
+  text-decoration: none;
+}
+.t-link:hover { color: var(--color-link-hover); }
+
+.t-caption {
+  font-family: var(--font-sans);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-regular);
+  line-height: var(--leading-caption);
+  color: var(--color-fg-tertiary);
+}
+
+.t-label-upper {
+  font-family: var(--font-sans);
+  font-size: var(--text-label);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-body);
+  letter-spacing: var(--tracking-label-upper);
+  text-transform: uppercase;
+  color: var(--color-fg-tertiary);
+}
+
+.t-mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-body);
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+  color: var(--color-fg-tertiary);
+}
+
+.t-mono-badge {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-body);
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+}
+
+/* ============================================================
+   BASE ELEMENT DEFAULTS
+   ============================================================ */
+
+body {
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  font-weight: var(--weight-regular);
+  line-height: var(--leading-body);
+  color: var(--color-fg-primary);
+  background-color: var(--color-bg-page);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1 { composes: t-display-hero; font-family: var(--font-sans); font-size: var(--text-display-hero); font-weight: var(--weight-semibold); line-height: var(--leading-snug); letter-spacing: var(--tracking-display-hero); }
+h2 { font-family: var(--font-sans); font-size: var(--text-section-heading); font-weight: var(--weight-semibold); line-height: var(--leading-tight); letter-spacing: var(--tracking-section-heading); }
+h3 { font-family: var(--font-sans); font-size: var(--text-subheading); font-weight: var(--weight-medium); line-height: var(--leading-heading); letter-spacing: var(--tracking-subheading); }
+h4 { font-family: var(--font-sans); font-size: var(--text-card-title); font-weight: var(--weight-semibold); line-height: var(--leading-heading); letter-spacing: var(--tracking-card-title); }
+p  { font-family: var(--font-sans); font-size: var(--text-body); font-weight: var(--weight-regular); line-height: var(--leading-body); color: var(--color-fg-secondary); }
+code, pre { font-family: var(--font-mono); font-size: var(--text-mono); letter-spacing: var(--tracking-mono); text-transform: uppercase; }
+a { color: var(--color-link-default); text-decoration: none; transition: color 0.15s ease; }
+a:hover { color: var(--color-link-hover); }

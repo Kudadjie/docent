@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Docent — App UI Kit</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body, #root { height: 100%; width: 100%; }
+  body { font-family: 'Inter', system-ui, sans-serif; background: #f0f0f0; -webkit-font-smoothing: antialiased; }
+  @keyframes docentBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+  @keyframes docentDone  { 0%, 100% { box-shadow: 0 0 0 0 rgba(24,226,153,0); } 50% { box-shadow: 0 0 0 5px rgba(24,226,153,0.3); } }
+  @keyframes bounce {
+    0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+    40% { transform: translateY(-4px); opacity: 1; }
+  }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); border-radius: 4px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" src="Sidebar.jsx"></script>
+<script type="text/babel" src="ChatThread.jsx"></script>
+<script type="text/babel" src="DocumentPanel.jsx"></script>
+
+<script type="text/babel">
+// ─── Sample data ───────────────────────────────────────────────────────────
+
+const PAPERS = [
+  {
+    id: 'p1',
+    title: 'Embodied Cognition and the Extended Mind Hypothesis',
+    author: 'Clark & Chalmers',
+    year: '1998',
+    journal: 'Analysis',
+    tags: ['Cognitive Science', 'Philosophy of Mind'],
+    citationCount: '4,821',
+    pages: '18',
+    readTime: '25 min',
+    summary: 'Clark and Chalmers argue that cognitive processes extend beyond the boundaries of the brain and body into the environment. The paper introduces the "parity principle" — if an external process performs the same function as an internal one, it qualifies as genuinely cognitive. Their thought experiment featuring Otto and his notebook challenges traditional views of memory and mental states.',
+    keyPoints: [
+      'The parity principle: external tools functioning like internal processes count as cognitive.',
+      'Otto\'s notebook acts as a functional memory store, constituting genuine belief.',
+      'Active externalism distinguishes coupled systems from mere causal reliance.',
+      'Challenges the Cartesian boundary between mind and world.',
+    ],
+    references: [
+      { title: 'Phenomenology and the Cognitive Sciences', author: 'Metzinger', year: '2003' },
+      { title: 'Being There: Putting Brain, Body, World Together Again', author: 'A. Clark', year: '1997' },
+      { title: 'The Embodied Mind', author: 'Varela et al.', year: '1991' },
+    ],
+  },
+  {
+    id: 'p2',
+    title: 'The Frame Problem in Artificial Intelligence',
+    author: 'McCarthy & Hayes',
+    year: '1969',
+    journal: 'Machine Intelligence',
+    tags: ['AI', 'Logic', 'Knowledge Representation'],
+    citationCount: '2,340',
+    pages: '26',
+    readTime: '35 min',
+    summary: 'This foundational paper introduces the frame problem: how a reasoning system can efficiently represent the effects of actions without explicitly listing everything that does not change. The paper formalizes situation calculus and remains central to discussions of common-sense reasoning in AI.',
+    keyPoints: [
+      'Situation calculus provides a formal language for reasoning about action and change.',
+      'Frame axioms are needed to specify what remains unchanged after actions.',
+      'The problem scales exponentially, motivating later work on nonmonotonic reasoning.',
+      'Implicit in modern planning systems and knowledge bases.',
+    ],
+    references: [
+      { title: 'Nonmonotonic Reasoning', author: 'Reiter', year: '1987' },
+      { title: 'Knowledge Representation', author: 'Brachman & Levesque', year: '2004' },
+    ],
+  },
+  {
+    id: 'p3',
+    title: 'Attention Is All You Need',
+    author: 'Vaswani et al.',
+    year: '2017',
+    journal: 'NeurIPS',
+    tags: ['Deep Learning', 'NLP', 'Transformers'],
+    citationCount: '92,000+',
+    pages: '15',
+    readTime: '20 min',
+    summary: 'Introduces the Transformer architecture, which relies entirely on attention mechanisms and dispenses with recurrence and convolution. Achieves state-of-the-art translation quality while being significantly more parallelizable. This paper launched a decade of transformer-based breakthroughs across NLP, vision, and beyond.',
+    keyPoints: [
+      'Self-attention allows each token to attend to every other token simultaneously.',
+      'Multi-head attention captures relationships at different representation subspaces.',
+      'Positional encoding substitutes for recurrence in sequence ordering.',
+      'Achieves 28.4 BLEU on WMT 2014 English-to-German translation.',
+    ],
+    references: [
+      { title: 'BERT: Pre-training of Deep Bidirectional Transformers', author: 'Devlin et al.', year: '2019' },
+      { title: 'Neural Machine Translation by Jointly Learning to Align', author: 'Bahdanau et al.', year: '2015' },
+    ],
+  },
+];
+
+const INITIAL_MESSAGES = [
+  {
+    role: 'assistant',
+    content: 'I\'ve read your three uploaded papers. Clark & Chalmers, McCarthy & Hayes, and Vaswani et al. — an interesting combination of cognitive science, classical AI, and modern deep learning. What would you like to explore?',
+    sources: [],
+  },
+  {
+    role: 'user',
+    content: 'How does the extended mind hypothesis relate to the frame problem? Is there a useful connection for my thesis?',
+  },
+  {
+    role: 'assistant',
+    content: 'There\'s a compelling connection worth developing. Both papers grapple with the boundary problem in cognition and computation — what counts as "inside" vs "outside" the system.\n\nClark & Chalmers argue the boundary of mind is functional, not anatomical. McCarthy & Hayes face a structurally similar challenge: how do you formalize what\'s inside a reasoning system\'s model vs what can be assumed stable by default?\n\nFor your thesis, you could frame the frame problem as the computational analog of the coupling condition — both ask when external structure can be trusted as part of the system\'s epistemic substrate.',
+    sources: ['Clark & Chalmers, 1998', 'McCarthy & Hayes, 1969'],
+  },
+];
+
+// ─── Screen: Upload ─────────────────────────────────────────────────────────
+
+const UploadScreen = ({ onBack }) => {
+  const [dragging, setDragging] = React.useState(false);
+  return (
+    <div style={appStyles.uploadScreen}>
+      <button onClick={onBack} style={appStyles.backBtn}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+        Back
+      </button>
+      <div style={appStyles.uploadCard}>
+        <div style={appStyles.uploadIcon}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#18E299" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        </div>
+        <div style={appStyles.uploadTitle}>Add a paper</div>
+        <div style={appStyles.uploadDesc}>Upload a PDF or paste a DOI, arXiv link, or URL. Docent will read and index it automatically.</div>
+        <div
+          style={{ ...appStyles.dropzone, ...(dragging ? appStyles.dropzoneActive : {}) }}
+          onDragOver={e => { e.preventDefault(); setDragging(true); }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={e => { e.preventDefault(); setDragging(false); }}
+        >
+          <span style={{ fontSize: 13, color: '#888' }}>Drop PDF here, or </span>
+          <span style={{ fontSize: 13, color: '#18E299', fontWeight: 500, cursor: 'pointer' }}>browse files</span>
+        </div>
+        <div style={{ display: 'flex', gap: 8, width: '100%' }}>
+          <input
+            style={appStyles.doiInput}
+            placeholder="Paste DOI, arXiv URL, or paper link…"
+          />
+          <button style={appStyles.doiBtn}>Import</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Main App Shell ─────────────────────────────────────────────────────────
+
+const App = () => {
+  const [section, setSection] = React.useState('chat');
+  const [activePaperId, setActivePaperId] = React.useState('p1');
+  const [messages, setMessages] = React.useState(INITIAL_MESSAGES);
+  const [isTyping, setIsTyping] = React.useState(false);
+  const [dotStatus, setDotStatus] = React.useState('idle');
+
+  const activePaper = PAPERS.find(p => p.id === activePaperId) || null;
+
+  const handleSend = (text) => {
+    setMessages(prev => [...prev, { role: 'user', content: text }]);
+    setIsTyping(true);
+    setDotStatus('working');
+    setTimeout(() => {
+      setIsTyping(false);
+      setDotStatus('done');
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: 'That\'s a thoughtful question. Based on the papers in your library, I found several relevant arguments. Let me synthesize the key tension here and suggest how you might frame it in your thesis.',
+        sources: PAPERS.slice(0, 2).map(p => `${p.author.split(' ')[0]}, ${p.year}`),
+      }]);
+      setTimeout(() => setDotStatus('idle'), 1800);
+    }, 1800);
+  };
+
+  if (section === 'upload') {
+    return (
+      <div style={appStyles.shell}>
+        <Sidebar
+          activeSection={section}
+          onNavigate={setSection}
+          papers={PAPERS}
+          onSelectPaper={setActivePaperId}
+          activePaperId={activePaperId}
+          dotStatus={dotStatus}
+        />
+        <UploadScreen onBack={() => setSection('chat')} />
+      </div>
+    );
+  }
+
+  const showDocPanel = section === 'chat' || section === 'library';
+
+  return (
+    <div style={appStyles.shell}>
+      <Sidebar
+        activeSection={section}
+        onNavigate={setSection}
+        papers={PAPERS}
+        onSelectPaper={setActivePaperId}
+        activePaperId={activePaperId}
+        dotStatus={dotStatus}
+      />
+
+      <div style={appStyles.main}>
+        {/* Top bar */}
+        <div style={appStyles.topbar}>
+          <div style={appStyles.topbarTitle}>
+            {section === 'chat' && 'Ask Docent'}
+            {section === 'library' && 'My library'}
+            {section === 'review' && 'Lit review'}
+            {section === 'citations' && 'Citations'}
+          </div>
+          <div style={appStyles.topbarRight}>
+            <button style={appStyles.topbarBtn}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            </button>
+            <button style={appStyles.topbarBtn}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Content */}
+        {section === 'chat' && (
+          <ChatThread messages={messages} onSend={handleSend} isTyping={isTyping} />
+        )}
+        {section === 'library' && <LibraryView papers={PAPERS} activePaperId={activePaperId} onSelect={setActivePaperId} />}
+        {section === 'review' && <ReviewView />}
+        {section === 'citations' && <CitationsView papers={PAPERS} />}
+      </div>
+
+      {showDocPanel && (
+        <DocumentPanel
+          paper={activePaper}
+          onClose={() => setActivePaperId(null)}
+        />
+      )}
+    </div>
+  );
+};
+
+// ─── Secondary screens ────────────────────────────────────────────────────
+
+const LibraryView = ({ papers, activePaperId, onSelect }) => (
+  <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {papers.map(p => (
+        <div
+          key={p.id}
+          onClick={() => onSelect(p.id)}
+          style={{
+            padding: '16px 18px',
+            border: `1px solid ${activePaperId === p.id ? '#18E299' : 'rgba(0,0,0,0.06)'}`,
+            borderRadius: 12,
+            cursor: 'pointer',
+            background: activePaperId === p.id ? '#f6fff9' : '#fff',
+            transition: 'border-color 0.15s',
+          }}
+        >
+          <div style={{ fontSize: 14, fontWeight: 600, letterSpacing: '-0.15px', color: '#0d0d0d', marginBottom: 4 }}>{p.title}</div>
+          <div style={{ fontSize: 12, color: '#888' }}>{p.author} · {p.year} · {p.journal}</div>
+          <div style={{ display: 'flex', gap: 5, marginTop: 8, flexWrap: 'wrap' }}>
+            {p.tags.map(t => <span key={t} style={{ fontSize: 11, color: '#555', background: '#f5f5f5', padding: '2px 8px', borderRadius: 9999 }}>{t}</span>)}
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+const ReviewView = () => (
+  <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12, padding: 32 }}>
+    <div style={{ width: 44, height: 44, background: '#0d0d0d', borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ width: 22, height: 22, background: '#18E299', borderRadius: 5 }} />
+    </div>
+    <div style={{ fontSize: 17, fontWeight: 600, color: '#0d0d0d', letterSpacing: '-0.2px' }}>Start a literature review</div>
+    <div style={{ fontSize: 14, color: '#666', maxWidth: 320, textAlign: 'center', lineHeight: 1.6 }}>Docent will synthesize your uploaded papers into a structured narrative. Add at least 3 papers to begin.</div>
+    <button style={{ marginTop: 8, background: '#0d0d0d', color: '#fff', border: 'none', borderRadius: 9999, padding: '9px 24px', fontSize: 14, fontWeight: 500, fontFamily: 'Inter, sans-serif', cursor: 'pointer' }}>Generate review</button>
+  </div>
+);
+
+const CitationsView = ({ papers }) => (
+  <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ fontSize: 13, color: '#888', marginBottom: 10 }}>All references across your library</div>
+      {papers.flatMap(p => (p.references || []).map((r, i) => ({ ...r, fromPaper: p.title, key: `${p.id}-${i}` }))).map(ref => (
+        <div key={ref.key} style={{ padding: '12px 0', borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
+          <div style={{ fontSize: 13, fontWeight: 500, color: '#0d0d0d' }}>{ref.title}</div>
+          <div style={{ fontSize: 11.5, color: '#888', marginTop: 2 }}>{ref.author} · {ref.year}</div>
+          <div style={{ fontSize: 11, color: '#bbb', marginTop: 2 }}>via {ref.fromPaper}</div>
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+// ─── App styles ───────────────────────────────────────────────────────────
+
+const appStyles = {
+  shell: {
+    display: 'flex',
+    height: '100vh',
+    background: '#fff',
+    overflow: 'hidden',
+  },
+  main: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+    background: '#fff',
+  },
+  topbar: {
+    height: 50,
+    borderBottom: '1px solid rgba(0,0,0,0.05)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '0 20px 0 24px',
+    flexShrink: 0,
+  },
+  topbarTitle: {
+    fontSize: 14,
+    fontWeight: 600,
+    color: '#0d0d0d',
+    letterSpacing: '-0.15px',
+  },
+  topbarRight: { display: 'flex', gap: 4 },
+  topbarBtn: {
+    background: 'transparent',
+    border: 'none',
+    color: '#888',
+    cursor: 'pointer',
+    padding: 6,
+    borderRadius: 7,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  uploadScreen: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 40,
+    background: '#fff',
+  },
+  backBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 4,
+    background: 'transparent',
+    border: 'none',
+    color: '#888',
+    fontSize: 13,
+    fontWeight: 500,
+    fontFamily: 'Inter, sans-serif',
+    cursor: 'pointer',
+    marginBottom: 24,
+    alignSelf: 'flex-start',
+  },
+  uploadCard: {
+    width: '100%',
+    maxWidth: 440,
+    background: '#fff',
+    border: '1px solid rgba(0,0,0,0.06)',
+    borderRadius: 20,
+    padding: 32,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 12,
+    boxShadow: 'rgba(0,0,0,0.04) 0px 4px 16px',
+  },
+  uploadIcon: {
+    width: 56,
+    height: 56,
+    background: '#f6fff9',
+    border: '1px solid rgba(24,226,153,0.2)',
+    borderRadius: 14,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  uploadTitle: { fontSize: 18, fontWeight: 600, letterSpacing: '-0.2px', color: '#0d0d0d' },
+  uploadDesc: { fontSize: 13.5, color: '#666', lineHeight: 1.6, textAlign: 'center', marginBottom: 4 },
+  dropzone: {
+    width: '100%',
+    border: '1.5px dashed rgba(0,0,0,0.12)',
+    borderRadius: 12,
+    padding: '20px 16px',
+    textAlign: 'center',
+    cursor: 'pointer',
+    transition: 'border-color 0.15s',
+  },
+  dropzoneActive: { borderColor: '#18E299', background: '#f6fff9' },
+  doiInput: {
+    flex: 1,
+    fontFamily: 'Inter, sans-serif',
+    fontSize: 13.5,
+    color: '#0d0d0d',
+    background: '#fff',
+    border: '1px solid rgba(0,0,0,0.08)',
+    borderRadius: 9999,
+    padding: '8px 14px',
+    outline: 'none',
+  },
+  doiBtn: {
+    background: '#0d0d0d',
+    color: '#fff',
+    border: 'none',
+    borderRadius: 9999,
+    padding: '8px 18px',
+    fontSize: 13.5,
+    fontWeight: 500,
+    fontFamily: 'Inter, sans-serif',
+    cursor: 'pointer',
+  },
+};
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
