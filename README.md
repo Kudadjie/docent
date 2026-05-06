@@ -14,8 +14,8 @@ A personal CLI control center for grad-school workflows — papers, research, wr
 - **Auto-discovery**: drop a file in `src/docent/tools/`, decorate with `@register_tool`, and Typer commands generate at startup from the Pydantic input schema. No CLI edits.
 - **Context plumbing**: `context.settings` (Pydantic + `~/.docent/config.toml` + env overrides), `context.llm` (lazy litellm wrapper), `context.executor` (list-args subprocess, no shell-injection surface).
 - **`docent.learning.RunLog`**: per-namespace JSONL run-log with cap-and-roll, for tools that want a "what did I do recently" history (used by `paper`'s mutators).
-- **`paper` tool** (the first ported skill — being rewritten as `reading` next): queue CRUD (`next / show / search / stats / remove / edit / done / ready-to-read / export`); `add` (bare guidance mode or `--mendeley-id` upsert); `sync-from-mendeley` (reconciles the `Docent-Queue` Mendeley collection into the sidecar, overlays fresh metadata on display); `sync-pull` (Unpaywall OA download); `sync-status`; `config-show / config-set`; `queue-clear`. Mendeley is the source of truth for title/authors/year/doi — `paper` is a thin workflow layer on top.
-- **`PaperQueueStore`**: persistence seam in `paper_store.py`. Actions mutate queue state through the store, never by reaching into JSON directly.
+- **`reading` tool**: reading queue CRUD (`next / show / search / stats / remove / edit / done / start / export`); `add` (guidance mode — ingestion goes through Mendeley); `sync-from-mendeley` (reconciles the configured Mendeley collection into the local queue, overlays fresh metadata on display); `sync-pull` (Unpaywall OA download); `sync-status`; `move-up / move-down / move-to`; deadline notifications at startup; `config-show / config-set`; `queue-clear`. Mendeley is the source of truth for title/authors/year/doi — the reading tool is a thin workflow layer on top.
+- **`ReadingQueueStore`**: persistence seam in `reading_store.py`. Actions mutate queue state through the store, never by reaching into JSON directly.
 - **`MendeleyCache`**: read-through file-backed cache (5-min TTL) used by `next / show / search` to overlay live Mendeley metadata. Degrades gracefully to queue snapshot on auth/transport failure.
 - Themed Rich console singleton; tools never touch it directly (they return typed data; CLI renders).
 
@@ -40,28 +40,74 @@ docent --version
 See [`Docent_Architecture.md`](Docent_Architecture.md) for the full design. The short version:
 
 - **Tool registry** — tools self-register via `@register_tool` at import time. Registry stores the class, not an instance, so nothing runs until the tool is actually invoked.
-- **Context object** — frozen dataclass passed to every tool. Grows one field per build step (settings → logger → llm → executor).
-- **UI / logic boundary** — tools return typed data. They never import `docent.ui` and never touch Rich. The CLI renders; the future dashboard will render the same data differently.
-- **Strict build order** — the registry hardens first, then LLM, then executor, then real tools, then plugins, then MCP. MCP is the last thing, not the first.
+- **Context object** — frozen dataclass passed to every tool. Provides `settings`, `llm` (lazy litellm), and `executor` (subprocess wrapper).
+- **UI / logic boundary** — tools return typed Pydantic data. They never import `docent.ui` and never touch Rich. The CLI renders; the future dashboard will serialize the same data to JSON.
+- **Plugin system** — drop a file in `src/docent/tools/`, decorate with `@register_tool`, and Typer commands generate at startup. No CLI edits needed.
 
-## Build order
+## Tools
 
-- [x] 1. Project skeleton + `docent --version`
-- [x] 2. Config loader + Rich console singleton
-- [x] 3. Tool base class + registry + `@register_tool` + `Context`
-- [x] 4. Dynamic Typer commands + `docent list` / `docent info`
-- [x] 5. litellm wrapper (`LLMClient`, lazy-imported, on `Context.llm`)
-- [x] 6. Subprocess executor (`Executor`, on `Context.executor`)
-- [x] 7a. Multi-action contract extension (`@action` decorator)
-- [x] 7b. First real tool: `paper add` stub (validates the contract end-to-end)
-- [x] 7c. `docent.learning.RunLog` (per-namespace JSONL run-log; cap-and-roll)
-- [x] 8. Simple paper CRUD actions (next/show/search/stats/remove/edit/done/ready-to-read/export)
-- [x] 9. PDF-driven `paper add` + `paper scan --folder` (both retired in Step 11.8 after Mendeley-truth pivot)
-- [x] 10. Progress streaming (`ProgressEvent` + generator actions + `_drive_progress`); per-tool config; pytest harness; `PaperQueueStore` persistence seam; UI-leak cleanup
-- [x] 11. Paper sync ops — pivoted mid-stream to Mendeley-as-truth. Ships: `sync-from-mendeley`, `sync-pull` (Unpaywall), `MendeleyCache` read-through overlay, `sync-status`, trim schema migration. Retired: `sync-promote`, `sync-mendeley`, homegrown PDF extraction.
-- [ ] 12. `reading` tool rewrite — graduate `paper` → `reading`; schema fixes (category/deadline/order/summary fields); notification system; books support
-- [ ] 13. External `~/.docent/plugins/` discovery
-- [ ] 14. Full MCP adapter
+### `reading` — Reading Queue
+
+Manages your academic reading queue and syncs with Mendeley.
+
+**Workflow:** Drop a PDF in your `database_dir` → Mendeley auto-imports it → drag it into your `Docent-Queue` collection in Mendeley → run `docent reading sync-from-mendeley`. The category of each entry is automatically detected from Mendeley sub-collections (e.g. a paper in `Docent-Queue/TestCourse701/ParticularTopic` gets `category="TestCourse701/ParticularTopic"`).
+
+**Queue management**
+
+| Command | Description |
+|---|---|
+| `docent reading next` | Show the next paper to read (lowest order number) |
+| `docent reading next --course-name CES701` | Next paper for a specific course |
+| `docent reading show <id>` | Show full details for one entry |
+| `docent reading search <query>` | Search by title, authors, notes, tags, or id |
+| `docent reading stats` | Counts by status, category, and course |
+| `docent reading export` | Export queue as JSON (default) or Markdown table |
+| `docent reading export --format markdown --status queued` | Filtered export, sorted by reading order |
+
+**Status transitions**
+
+| Command | Description |
+|---|---|
+| `docent reading start <id>` | Mark as currently reading (stamps `started` timestamp) |
+| `docent reading done <id>` | Mark as finished (stamps `finished` timestamp) |
+| `docent reading remove <id>` | Remove entry from queue |
+
+**Editing**
+
+| Command | Description |
+|---|---|
+| `docent reading edit <id> --order 1` | Set reading priority (1 = read first) |
+| `docent reading edit <id> --deadline 2026-06-15` | Set a reading deadline |
+| `docent reading edit <id> --notes "Key paper for lit review"` | Add notes |
+| `docent reading edit <id> --tags tag1 tag2` | Set tags |
+| `docent reading move-up <id>` | Move one position earlier |
+| `docent reading move-down <id>` | Move one position later |
+| `docent reading move-to <id> --position 3` | Move to a specific position |
+
+**Deadlines:** Set via `edit --deadline YYYY-MM-DD`. Docent prints a startup warning for entries due within 3 days or overdue — once per calendar day.
+
+**Mendeley sync**
+
+| Command | Description |
+|---|---|
+| `docent reading sync-from-mendeley` | Pull from your Mendeley Docent-Queue collection |
+| `docent reading sync-from-mendeley --dry-run` | Preview changes without writing |
+| `docent reading sync-status` | Report queue size and PDFs in database_dir |
+| `docent reading sync-pull --id <id>` | Download OA PDF via Unpaywall (requires DOI) |
+
+**Configuration**
+
+| Command | Description |
+|---|---|
+| `docent reading config-show` | Show current reading settings |
+| `docent reading config-set database_dir ~/path/to/Papers` | Set the PDF database folder |
+| `docent reading config-set queue_collection "Docent-Queue"` | Set the Mendeley collection name |
+
+**Other**
+
+| Command | Description |
+|---|---|
+| `docent reading queue-clear --yes` | Wipe the entire queue (irreversible) |
 
 ## Adding a tool
 
@@ -91,7 +137,7 @@ class Echo(Tool):
 
 Then `docent echo --msg hi --count 3` just works. No CLI edits, no registration code — the decorator is enough.
 
-For tools with several related operations on shared state (a reading queue, a research notebook, a browser session), use the multi-action shape — decorate methods with `@action(...)` instead of overriding `run()`. Each action gets its own Pydantic input schema and becomes `docent <tool> <action> --flag ...`. See `src/docent/tools/paper.py` for the reference implementation.
+For tools with several related operations on shared state (a reading queue, a research notebook, a browser session), use the multi-action shape — decorate methods with `@action(...)` instead of overriding `run()`. Each action gets its own Pydantic input schema and becomes `docent <tool> <action> --flag ...`. See `src/docent/tools/reading.py` for the reference implementation.
 
 ## Why
 

@@ -164,49 +164,6 @@ Logging atomically is a generic problem solvable once. What to log, what rules t
 
 ---
 
-## Build Order (strict)
-
-Current status in `memory/build_progress.md`.
-
-1. ✅ Project skeleton + `pyproject.toml` + `docent --version` working
-2. ✅ Config loader + Rich console singleton
-3. ✅ Tool base class + registry + `@register_tool` decorator + `Context` dataclass
-4. ✅ Dynamic Typer command generation + `docent list` / `docent info`
-5. ✅ litellm wrapper (single-entry `LLMClient.complete()`, lazy-imported litellm, `Context.llm`)
-6. ✅ Subprocess executor (`Executor.run()`, `ProcessResult`, `ProcessExecutionError`, `Context.executor`)
-7a. ✅ **Multi-action contract extension** — `@action` decorator, multi-action CLI generation, registry validation. Motivated by paper-pipeline (16 ops on shared state) and research-to-notebook (6 modes on shared pipeline). Evidence-based, not speculation.
-7b. ✅ **First real tool: `paper add`** (stubbed inputs; no CrossRef yet) — validates the full stack end-to-end on a real workflow. Scaffolds the shared-helper pattern (`_load_queue`, `_atomic_write_json`, `_recompute_state`, `_derive_id`, `_banner_counts`) every subsequent paper action reuses.
-8. ✅ **Simple paper CRUD actions** (batch): `next`, `show`, `search`, `stats`, `remove`, `edit`, `done`, `ready-to-read`, `export`. (`mark-keeping` shipped here too but was retired in Step 11.10 when `keep_in_mendeley` was dropped from the schema.) Pure queue operations, no external APIs. Ships `docent.learning.RunLog` alongside (see Layer 8).
-9. ✅ **PDF-driven `paper add` + `paper scan`** — metadata fallback chain DOI → CrossRef → PDF DOI → CrossRef → PDF info → filename. New `scan --folder` action for batch ingestion (replaces the originally-planned `process_inbox`; same shape, better name). `pypdf` lazy-imported.
-10. ✅ **Progress streaming extension** — `ProgressEvent` type; generator-actions (action `yield`s events, `return`s result); CLI dispatcher (`_drive_progress`) drives generators in a Rich progress context. Designed when a concrete consumer (`paper scan`) existed.
-   - 10.5 ✅ Per-tool config — `paper.database_dir` (later joined by `paper.unpaywall_email` in 11.2 and `paper.queue_collection` in 11.6); `config-show` / `config-set` actions; `write_setting` TOML round-trip; first-run prompt with `NO_INTERACTIVE` escape. `mendeley_watch_subdir` shipped here, retired in 11.9.
-   - 10.6 ✅ pytest harness — `[dependency-groups] dev`, `tests/` (~0.6s runtime). Covers registry contract, `RunLog`, `write_setting`, `prompt_for_path`, queue add + collision, metadata fallback chain.
-   - 10.7 ✅ **`PaperQueueStore` extracted** — persistence seam in `tools/paper_store.py`. Owns `load_queue` / `load_index` / `save_queue` / `banner_counts` / `list_database_pdfs`. `paper.py` now mutates state through `self._store`, not by reaching into JSON. Establishes the per-tool Store pattern.
-   - 10.8 ✅ UI-leak cleanup — `paper.py` no longer imports `docent.ui`. Tool/UI boundary stays mechanical.
-11. **Paper sync ops** — pivoted mid-stream (2026-05-01) from "docent extracts metadata from PDFs" to "Mendeley owns metadata; docent is a thin workflow layer" after Step 11.5 real-data validation showed PDF heuristics losing decisively to Mendeley's own indexer. Steps 11.1–11.4 shipped under the original plan; 11.6–11.10 implement the pivot. See `memory/decisions.md` 2026-05-01 for rationale.
-   - 11.1 ✅ `sync-status` — originally a local cross-tab of queue × database × Watch with `in_queue_with_file` / `in_queue_missing_file` / `orphan_pdfs` / `promotable` / `in_watch` buckets. Step 11.10 collapsed this to `{database_dir, queue_size, database_pdfs}` once Mendeley owned linkage.
-   - 11.2 ✅ `sync-pull` — Unpaywall via `Context.executor` + curl; generator action; DOI direct path + CrossRef bibliographic title-search fallback (persists resolved DOI). New required `paper.unpaywall_email` config. Closed-access surfaces `doi_url` + `journal` so user can route to institutional access. Post-11.10: drops queue mutation; downloads to `database_dir/{eid}.pdf` and trusts Mendeley to ingest.
-   - 11.3 🪦 `sync-promote` — DB → Watch **move** (not copy; user preference). Added `promoted_at` field + two heal branches. **Retired in 11.9** — single watch folder model made promotion implicit (Mendeley auto-watches `database_dir`).
-   - 11.4 🪦 `sync-mendeley` + MCP-client adapter — **in-process `mcp` SDK chosen** (executor-subprocess was wrong for stateful protocol; see `memory/decisions.md` 2026-05-01). Catalog DOI lookup + library search to populate `mendeley_id`. **Action retired in 11.9** (subsumed by `sync-from-mendeley` since every queue entry is keyed on `mendeley_id`). MCP harness in `mendeley_client.py` survives — `list_folders` and `list_documents` feed the read-through cache.
-   - 11.5 ⊘ PDF metadata extraction improvements — page-cap bump, font-size title heuristic, fuzzy-guarded CrossRef title-search. **Reverted-in-spirit 2026-05-02** — real-data validation failed (author lists used as titles); triggered the Mendeley-truth pivot. Code retired in Step 11.8.
-   - 11.6 ✅ `sync-from-mendeley` — generator (`discover` → `reconcile`). Reads the configured Mendeley collection (default `Docent-Queue` via new `paper.queue_collection` setting), reconciles into the sidecar, snapshots `title`/`authors`/`year`/`doi` for offline display. Adds `mendeley_id` as third valid identifier in the `_require_identifier` validator.
-   - 11.7 ✅ Read-through Mendeley cache (`MendeleyCache` in `tools/mendeley_cache.py`, file-backed, 5-min TTL). `next` / `show` / `search` overlay fresh title/authors/year/doi over the queue.json snapshot before responding; on transport / auth / collection-missing, the snapshot stands unchanged. 11.7-followup added a 24h folder-id cache so warm reads are sub-second.
-   - 11.8 ✅ Rip out homegrown extraction. `paper_metadata.py` deleted; `pypdf` dropped. `paper add` collapsed to two modes: bare `add` returns guidance ("drop PDF in `database_dir` → drag into `Docent-Queue` → run `sync-from-mendeley`"); `add --mendeley-id <id>` upserts a stub. `scan` action ripped.
-   - 11.9 ✅ Collapse `paper.mendeley_watch_subdir` (single-watch-folder model: `database_dir` IS the watch folder). Retire `sync-promote` and `sync-mendeley` actions. `mendeley_client.lookup_doi` / `search_library` removed. `sync-status` simplified.
-   - 11.10 ✅ One-shot `paper migrate-to-mendeley-truth [--yes]` — backs up `queue.json` → `.bak`, wipes to the trim shape. `QueueEntry` lost `pdf_path` / `file_status` / `keep_in_mendeley` / `promoted_at` / `title_is_filename_stub`; gained `started` / `finished` ISO timestamps stamped on first transition. `mark-keeping` action retired. `_require_identifier`: `mendeley_id` or `doi`.
-12. **`reading` tool rewrite** — graduate `paper` → `reading`; schema fixes: add `category` (enum: `course|thesis|personal`), `course_name`, `deadline` (ISO date), `order` (int, replaces priority string), `summary` (LLM-owned, not user-editable), remove retired `migrate-to-mendeley-truth`/`sync-pull` actions, fix `edit` to expose only user-owned fields. Notification inbox: at-startup deadline warnings, no-repeat-same-day guard. Books support (no-DOI graceful fallback). Sub-collection → category auto-mapping on sync. `summary` field populated by `reading enrich` action (Phase 2, after rewrite ships).
-   - 12.5 **`reading enrich`** — agentic LLM action: reads PDF text (via `pdf-reader-mcp`) + Mendeley metadata, calls OpenCode Go subscription models (via `scripts/oc_delegate.py` or direct session API) to generate a paragraph summary, writes to `summary` field. Zero Anthropic API cost. See `memory/feedback_opencode_for_agentic_tools.md` for the delegation pattern.
-13. External `~/.docent/plugins/` discovery.
-14. Full MCP adapter (Docent exposes *itself* via MCP — last, after the native registry is battle-tested).
-
----
-
-## The One Thing to Resist
-
-Don't build the MCP layer early. It's tempting because it's the "impressive" part, but the native registry must be battle-tested first. MCP is just another adapter behind the same registry — if the registry is clean, MCP is a weekend. If the registry is dirty, MCP will expose every flaw.
-
----
-
 ## Dependency Management: Use `uv`
 
 **Recommendation: `uv`** (from Astral, the Ruff folks).

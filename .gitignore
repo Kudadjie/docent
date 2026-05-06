@@ -20,3 +20,9 @@ skills/*
 keystone_project.txt
 readingtool-tweaks.txt
 concerns.txt
+
+# Development context — internal to the developer, not for public consumption
+memory/
+CLAUDE.md
+CLAUDE.performance.md
+CONTEXT.md

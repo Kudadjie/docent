@@ -495,6 +495,7 @@ class ReadingQueue(Tool):
             filtered = [e for e in filtered if e.get("course_name") == inputs.course_name]
         if inputs.status:
             filtered = [e for e in filtered if e.get("status") == inputs.status]
+        filtered = sorted(filtered, key=lambda e: (e.get("order", 0) or 999999, e.get("added", "")))
         if inputs.format == "json":
             content = json.dumps(filtered, indent=2, ensure_ascii=False)
         elif inputs.format == "markdown":
