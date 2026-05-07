@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import inspect
+import json
+import sys
+from pathlib import Path
 from typing import Any, Callable
 
 import typer
@@ -32,6 +35,64 @@ from docent.execution import Executor
 from docent.llm import LLMClient
 from docent.tools import discover_tools
 from docent.ui import configure_console, get_console
+
+_DOCENT_DIR = Path.home() / ".docent"
+_USER_FILE = _DOCENT_DIR / "user.json"
+_LEVEL_CHOICES = ["Undergraduate", "Masters", "PhD", "Postdoc", "Faculty", "Other"]
+
+
+def _run_onboarding() -> None:
+    """Prompt for user profile on first run; skip silently in non-TTY contexts."""
+    if not sys.stdin.isatty():
+        return
+
+    # Check whether onboarding is needed
+    if _USER_FILE.exists():
+        try:
+            data = json.loads(_USER_FILE.read_text(encoding="utf-8"))
+            name = (data.get("name") or "").strip()
+            if name and name != "You":
+                return  # Already set up
+        except (json.JSONDecodeError, OSError):
+            pass  # Corrupt file — re-run onboarding
+
+    console = get_console()
+    console.print(
+        "\n[bold cyan]Welcome to Docent![/] Let's get you set up quickly.\n"
+    )
+
+    name = typer.prompt("Your name").strip()
+    program = typer.prompt("Your program / field of study").strip()
+
+    # Show numbered choices for academic level
+    console.print("Academic level:")
+    for i, choice in enumerate(_LEVEL_CHOICES, 1):
+        console.print(f"  [dim]{i}.[/] {choice}")
+
+    level: str = ""
+    while not level:
+        raw = typer.prompt("Enter number or name").strip()
+        if raw.isdigit():
+            idx = int(raw) - 1
+            if 0 <= idx < len(_LEVEL_CHOICES):
+                level = _LEVEL_CHOICES[idx]
+            else:
+                console.print(f"[yellow]Please enter a number between 1 and {len(_LEVEL_CHOICES)}.[/]")
+        elif raw.title() in _LEVEL_CHOICES:
+            level = raw.title()
+        elif raw in _LEVEL_CHOICES:
+            level = raw
+        else:
+            console.print(f"[yellow]Not recognised. Choose a number 1–{len(_LEVEL_CHOICES)} or type the level.[/]")
+
+    _DOCENT_DIR.mkdir(parents=True, exist_ok=True)
+    profile = {"name": name, "program": program, "level": level}
+    _USER_FILE.write_text(json.dumps(profile, indent=2), encoding="utf-8")
+
+    console.print(
+        f"\n[bold green]All set, {name}![/] Your profile has been saved. "
+        "Run [cyan]docent --help[/] to see what's available.\n"
+    )
 
 app = typer.Typer(
     name="docent",
@@ -75,6 +136,7 @@ def main(
     settings.no_color = no_color or settings.no_color
 
     configure_console(no_color=settings.no_color)
+    _run_onboarding()
 
     ctx.obj = Context(settings=settings, llm=LLMClient(settings), executor=Executor())
     run_startup_hooks(ctx.obj)
