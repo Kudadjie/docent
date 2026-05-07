@@ -26,3 +26,8 @@ memory/
 CLAUDE.md
 CLAUDE.performance.md
 CONTEXT.md
+
+# Dev-only tooling
+oc_briefs/
+scripts/
+.mcp.json
