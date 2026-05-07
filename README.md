@@ -13,7 +13,7 @@
   <p>A personal CLI control center for grad-school workflows — papers, research, writing tools, and subprocess wrappers, all behind a single <code>docent &lt;tool&gt;</code> command.</p>
 </div>
 
-> **Built with AI, Architected by a Human:** Much of the codebase was written by Claude Code (Opus 4.7) and OpenCode Go subscription models (Kimi K2.6, DeepSeek V4 Pro, Qwen 3.5 Plus, MiniMax M2.7), but the architecture was strictly human-directed — designed, planned, tested, and iterated over many sessions.
+> **Built with AI, Architected by a Human:** Much of the codebase was written by Claude Code (Opus 4.7) *(Main Driver)* and OpenCode Go subscription models (Kimi K2.6, DeepSeek V4 Pro, Qwen 3.5 Plus, MiniMax M2.7) *(Secondary Driver)*, but the architecture was strictly human-directed — designed, planned, tested, and iterated over many sessions.
 
 ## ✨ What works today
 
@@ -173,4 +173,4 @@ For tools with several related operations on shared state, use the multi-action 
 
 ## 💡 Why
 
-I have a pile of Claude Code skills I actually use (research-to-notebook, paper-pipeline, feynman wrappers, literature-review, etc.) but they only work inside a Claude session. Docent is the terminal-first home for the same workflows — scriptable, pipeable, cron-able, and eventually a dashboard. MCP is a first-class adapter, not an afterthought: `docent serve` already exposes every action as an MCP tool so Claude Code can call your reading queue directly.
+I have a pile of Claude Code skills I actually use (research-to-notebook, paper-pipeline, feynman wrappers, literature-review, etc.) but they only work inside a Claude session. Docent is the terminal-first home for the same workflows — scriptable, pipeable, cron-able, and eventually a dashboard. Because Docent exposes itself over MCP, every tool and plugin is also available to any MCP-capable AI agent — not just the terminal.
