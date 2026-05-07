@@ -1,13 +1,13 @@
 # CONTEXT — resume hint for next session
 
-**Current Task:** README corrected (removed premature "reading page is live" claim); UI shipping strategy decided and saved to memory.
+**Current Task:** UI todos complete — all must-dos, should-dos, and nice-to-haves shipped.
 
 **Key Decisions:**
-- UI ships via PyPI (bundled into `docent-cli`), launched with `docent ui` — no separate installer
-- Frontend stack: Next.js 16 + React 19 + TypeScript + Tailwind v4 + Lucide React (`frontend/package.json`)
-- Commit build artifacts to repo for now; move build step to CI later
+- Onboarding modal (WelcomeModal) on first load; saves to `~/.docent/user.json`; shared with CLI
+- CLI first-run onboarding added to `app.callback()` in `cli.py`; skips silently in non-TTY contexts
+- Table sorted by `order` asc; move-up/down now visually reorders rows immediately
 
 **Next Steps:**
-1. UI must-dos for `ui-v1.0.0` — export button, edit modal, error toasts, scan/sync feedback (`memory/ui_todos.md`)
-2. Cut `ui-v1.0.0` GitHub release — merge `dev` → `main`, tag `ui-v1.0.0`
-3. Phase 1.5 — Output Shapes + `docent research` tool (Feynman primary, Claude fallback)
+1. Cut `ui-v1.0.0` GitHub release — merge `dev` → `main`, tag `ui-v1.0.0`
+2. Phase 1.5 — Output Shapes + `docent research` tool (Feynman primary, Claude fallback)
+3. Consider `docent ui` command to launch the Next.js frontend from the CLI
