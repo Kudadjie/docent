@@ -163,6 +163,68 @@ Then `docent echo --msg hi --count 3` just works. No CLI edits, no registration 
 
 For tools with several related operations on shared state, use the multi-action shape — decorate methods with `@action(...)`. See `src/docent/tools/reading.py` for the reference implementation.
 
+## 🧑‍💻 Development
+
+### Prerequisites
+
+- Python ≥ 3.11
+- [uv](https://docs.astral.sh/uv/) — `pip install uv`
+- Node.js ≥ 20 (only needed for the frontend UI)
+
+### Setup
+
+```bash
+git clone https://github.com/Kudadjie/docent.git
+cd docent
+
+# Install in editable mode (all dev deps)
+uv sync --all-extras
+
+# Make the `docent` command available globally
+uv tool install --editable .
+```
+
+### Running tests
+
+```bash
+uv run pytest          # full suite (~160 tests, ~4s)
+uv run pytest -x -q    # stop on first failure, quiet output
+```
+
+### Running the frontend
+
+```bash
+cd frontend
+npm install
+npm run dev            # starts at http://localhost:3000
+```
+
+The frontend talks to a running `docent` install for API calls. Make sure the editable install is active before starting the dev server.
+
+### Project layout
+
+```
+src/docent/
+  cli.py                 # Typer app + command wiring
+  core.py                # Tool base class, registry, @action decorator
+  config.py              # Settings (Pydantic + TOML + env)
+  mcp_server.py          # MCP stdio adapter
+  bundled_plugins/
+    reading/             # Reading queue tool (the reference implementation)
+  tools/                 # Auto-discovered on startup
+tests/                   # pytest suite
+frontend/                # Next.js UI (dev only — bundled release TBD)
+```
+
+### Updating the version
+
+Version is declared in **two places** that must stay in sync:
+
+- `pyproject.toml` → `version = "x.y.z"` (the published package version)
+- `src/docent/__init__.py` → `__version__ = "x.y.z"` (what `docent --version` prints)
+
+Update both before tagging a release.
+
 ## 🚀 Coming Soon
 
 - **`docent research`** — AI-powered research tool: paper search (alphaXiv, Google Scholar), literature review, and multi-source synthesis pipelines. Routes through [Feynman](https://www.feynman.is/) as the primary research agent, with a direct Claude fallback if Feynman isn't available.
