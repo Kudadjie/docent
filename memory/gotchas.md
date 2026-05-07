@@ -75,9 +75,9 @@ Fix for smoke tests that span shell + Python:
 
 `_drive_progress` (cli.py) wraps generator iteration in `with Progress(...) as progress:`, which starts a Rich `Live` display redrawing ~12×/sec. Any `Prompt.ask` (and therefore `prompt_for_path`) called from inside the generator body renders for one frame, then gets overwritten by the next Live redraw. The user sees the prompt flash and disappear; pressing Enter submits the empty default with no chance to type a real value.
 
-Caught in Step 10.5 real-data testing: the first-run database-dir prompt fired during `paper scan` (a generator action), flashed and vanished, and `~/Documents/Papers` got picked silently.
+Caught in Step 10.5 real-data testing: the first-run database-dir prompt fired during a generator action, flashed and vanished, and `~/Documents/Papers` got picked silently.
 
-Fix pattern: resolve interactive prompts in a non-generator setup phase, then return a generator for the streaming work. The CLI's dispatcher (`inspect.isgenerator(maybe)` at cli.py:207) supports actions returning either a plain value or a generator from the same method.
+Fix pattern: resolve interactive prompts in a non-generator setup phase, then return a generator for the streaming work. The CLI's dispatcher (`inspect.isgenerator(maybe)` at cli.py) supports actions returning either a plain value or a generator from the same method.
 
 ```python
 def my_action(self, inputs, context):

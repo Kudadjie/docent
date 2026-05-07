@@ -34,7 +34,7 @@ Tool-spec MD per completed tool is good *if tools are actually finished*. Don't 
 
 ### 6. Versioning + branch strategy
 - `pyproject.toml` 0.1.0 → real version when shipping: yes. **Stay at 0.1.0 — Docent is a personal tool that will keep changing; honesty over false stability.**
-- `main` stable + `dev` branch: **overkill for solo dev with no users.** Stay on `main` with feature branches until real users exist. Then split.
+- `main` stable + `dev` branch: ~~overkill for solo dev with no users~~ **Superseded 2026-05-07** — `dev` → `main` workflow adopted ahead of v1.0 release cut.
 
 ### 7. Memory / token usage
 Confirmed: memory is **manual semantic, on-demand** (correct architecture). What's missing is **discipline** — prune after big steps. `/memory-cleanup` slash command is the enforcement mechanism.

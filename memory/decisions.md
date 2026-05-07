@@ -50,7 +50,7 @@ Live entries below cover the most recent work; older active decisions are still 
 
 
 ## 2026-04-29 — Step 10.6: pytest harness (pre-Step 11 insurance)
-**Context:** Codex review (`memory/codex_review_2026_04_29.md`) flagged the absence of a test harness as the biggest practical risk before Step 11, which adds four new sync actions that mutate the queue + filesystem from new angles. Step 10.5 caught two real bugs only by manual real-data testing. Need cheap, fast unit tests that pin current behavior without pre-committing to abstractions.
+**Context:** Codex review (`memory/archive/codex-review-2026-04-29.md`) flagged the absence of a test harness as the biggest practical risk before Step 11, which adds four new sync actions that mutate the queue + filesystem from new angles. Step 10.5 caught two real bugs only by manual real-data testing. Need cheap, fast unit tests that pin current behavior without pre-committing to abstractions.
 **Decision:**
 1. **pytest only**, via `[dependency-groups] dev` (PEP 735); `[tool.uv] default-groups = ["dev"]` so `uv run pytest` just works without an explicit `--group` flag.
 2. **Six test files, ~30 unit tests, all using `tmp_path` + a `tmp_docent_home` fixture** that redirects `~/.docent` via the existing `DOCENT_HOME` env var. No mocks of internal state — point the env var at tmp and let `paths.root_dir()` do the work.
@@ -62,7 +62,7 @@ Live entries below cover the most recent work; older active decisions are still 
 **Status:** Active. Suite runs in ~0.6s; 30/30 green. (PaperQueueStore carve-out shipped in Step 10.7.)
 
 ## 2026-04-29 — Step 10.7: PaperQueueStore extraction
-**Context:** Codex review (option 2) recommended carving out `PaperQueueStore` (persistence + state recompute) before Step 11 lands `sync-promote`, which mutates the queue from a new direction (`keep_in_mendeley` flag, future `watch_files` / `mendeley_linked` counts). `paper.py` had grown to ~890 lines mixing schemas, JSON storage, the metadata fallback chain, the prompting layer, progress events, and run-logging. State-recompute zeros out three filesystem-derived fields today; Step 11 needs to populate them without scattering filesystem-walk logic across each new sync action.
+**Context:** Codex review (`memory/archive/codex-review-2026-04-29.md`, option 2) recommended carving out `PaperQueueStore` (persistence + state recompute) before Step 11 lands `sync-promote`, which mutates the queue from a new direction (`keep_in_mendeley` flag, future `watch_files` / `mendeley_linked` counts). `paper.py` had grown to ~890 lines mixing schemas, JSON storage, the metadata fallback chain, the prompting layer, progress events, and run-logging. State-recompute zeros out three filesystem-derived fields today; Step 11 needs to populate them without scattering filesystem-walk logic across each new sync action.
 **Decision:**
 1. **Instance-bearing class** `PaperQueueStore(root: Path)` with public methods `load_queue` / `load_index` / `save_queue` / `banner_counts`. `PaperPipeline.__init__` constructs `self._store = PaperQueueStore(data_dir() / "paper")` once.
 2. **Self-initializing on write** — `save_queue` does `root.mkdir(parents=True, exist_ok=True)` and atomic-renames each JSON file. Reads return `[]` / `{}` / `BannerCounts()` on missing files. The old `_ensure_dirs` (which seeded empty files at action entry) is gone — same end state via lazy defaults + write-time mkdir.

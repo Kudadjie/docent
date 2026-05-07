@@ -17,11 +17,7 @@ Created 2026-05-07 based on user direction.
 
 ### Track 2 — Docent UI (Reading Page)
 
-**v1.0 milestone:** UI todos in `memory/ui_todos.md` Must-do items complete:
-  - Export button wired
-  - Edit modal working
-  - Error handling surfaced
-  - Scan/sync success toast
+**v1.0 milestone: MET (shipped 2026-05-06).** All Must-do items complete (export, edit modal, error handling, scan/sync toasts). Must-dos, Should-dos, and Nice-to-haves all `[x]` — see archived `memory/archive/ui-todos-v1.0-2026-05.md`.
 - Release as separate GitHub release with tag `ui-v1.0.0`
 - Docs page: how to run the frontend, feature screenshots
 

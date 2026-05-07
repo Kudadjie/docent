@@ -8,7 +8,7 @@ Output Shapes (typed return vocabulary for tool actions) is recognized as needed
 
 **Why:** Step 10 (progress streaming) is the immediate priority and is already coupled to the future UI's "Live Telemetry" pane. Adding an Output Shapes retrofit on top of Step 10 widens scope. Defer until paper-pipeline is more complete or until a second complex tool forces the issue.
 
-**How to apply:** Don't quietly start returning typed shapes from new actions in the meantime — that creates half-retrofitted state. Continue the existing `dict | str | list` ad-hoc returns. When the user reopens this thread, the design below is the starting point — don't rebuild it from scratch.
+**How to apply:** The reading tool already returns typed Pydantic result models with `__rich_console__` renderers (shipped Step 11.T). What remains deferred is the `list[Shape]` *composition vocabulary* for the FastAPI/UI wire format — the layer that lets the frontend render shapes without per-tool special cases. Don't add per-tool frontend components; wait for the Shape vocabulary to land before any UI wiring. When the user reopens this thread, the design below is the starting point — don't rebuild it from scratch.
 
 ## Starter vocabulary (7 shapes)
 

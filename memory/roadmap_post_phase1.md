@@ -6,13 +6,9 @@ type: project
 
 Created 2026-04-25 after user asked "what's the next big thing once the build checklist is up?" Captures intent before momentum is lost. Living doc — update as decisions land.
 
-## Phase 1 (current build checklist)
+## Phase 1 (complete as of 2026-05-07)
 
-In-flight per `build_progress.md`. Steps 1-10.5 done. Remaining:
-
-- **Step 11** — Paper sync ops (`sync-status` / `sync-pull` / `sync-promote` / `sync-mendeley`) + minimal MCP adapter for Mendeley.
-- **Step 12** — External `~/.docent/plugins/` discovery — auto-register tools dropped into the plugins folder without modifying core. Direct prerequisite for "user adds new skills as they create them."
-- **Step 13** — Full MCP adapter so Docent tools become callable from Claude Code (and other MCP clients) over the wire.
+Steps 1–13 shipped. See `build_progress.md` for the full checklist and per-step detail.
 
 ## Phase 1.5 — Skill ports + Output Shapes lands
 

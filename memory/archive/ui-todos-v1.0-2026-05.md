@@ -1,8 +1,10 @@
 ---
-name: Reading UI — open todos
-description: Tracked list of remaining work on the Reading page frontend (frontend/). Read when picking up UI work.
+name: Reading UI v1.0 — completed todos
+description: Archived completed todo list for the Reading page frontend; all items shipped 2026-05-06. Reference for what the v1.0 UI surface includes.
 type: project
 ---
+
+All items complete as of 2026-05-06. Archived from `memory/ui_todos.md`.
 
 UI is live at http://localhost:3000. Dev server: `node frontend/node_modules/next/dist/bin/next dev` from repo root (or `npm run dev` inside `frontend/`).
 
