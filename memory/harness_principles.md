@@ -29,7 +29,7 @@ Docent is structurally a research-oriented harness for Claude. So the frame fits
 
 ## Deferred concrete item: eval harness
 
-**Trigger:** the first tool whose `run()` or action makes a real `LLMClient.complete()` call with a non-trivial prompt — likely Step 9's `paper add --pdf` (CrossRef metadata extraction or filename-fallback heuristics), or whenever else gets there first.
+**Trigger:** the first tool whose `run()` or action makes a real `LLMClient.complete()` call with a non-trivial prompt — the `research-to-notebook` port (Phase 1.5-C) is the current forcing function. `paper add --pdf` was the original candidate but was removed in Step 11.8 (homegrown extraction ripped out; Mendeley owns metadata).
 
 **What to build (minimum viable):**
 - `tests/golden/<tool>/` directory with ~10–20 input fixtures + expected outputs

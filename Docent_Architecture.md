@@ -8,37 +8,63 @@ A Python CLI "Control Center" for grad school workflows. Dispatcher/orchestrator
 
 ```
 docent/
-├── pyproject.toml          # Dependency mgmt
+├── pyproject.toml              # Dependency mgmt (uv)
 ├── README.md
-├── docent/                 # The package itself
-│   ├── __init__.py
-│   ├── cli.py              # Typer app entry point + command routing
-│   ├── core/
-│   │   ├── registry.py     # Tool registry (the plugin system)
-│   │   ├── tool.py         # Base Tool interface/protocol
-│   │   ├── context.py      # Shared runtime context (config, logger, LLM client)
-│   │   └── executor.py     # subprocess wrapper for external workers
-│   ├── ui/
-│   │   ├── console.py      # Rich console singleton
-│   │   ├── renderers.py    # Markdown, tables, spinners, panels
-│   │   └── theme.py        # Colors, styles
-│   ├── llm/
-│   │   └── client.py       # litellm wrapper — single entry for all model calls
-│   ├── config/
-│   │   ├── settings.py     # Pydantic settings (API keys, paths, defaults)
-│   │   └── loader.py       # Reads ~/.docent/config.toml
-│   ├── tools/              # ← YOUR SKILLS LIVE HERE (the plugins)
-│   │   ├── __init__.py     # Auto-discovery happens here
-│   │   ├── skill_one.py
-│   │   └── skill_two.py
-│   └── utils/
-│       ├── logging.py
-│       └── paths.py        # XDG-style paths for cache, config, data
+├── AGENTS.md                   # Behavioral contract for Claude Code + MCP callers
+├── .mcp.json                   # MCP server stanza template (copy into Claude Code config)
+├── scripts/
+│   └── oc_delegate.py          # Delegate bounded tasks to OpenCode Go sub
+├── frontend/                   # Next.js 16 + React 19 + Tailwind CSS v4 reading page UI
+├── src/
+│   └── docent/                 # The package itself
+│       ├── __init__.py
+│       ├── cli.py              # Typer app entry point + command routing
+│       ├── mcp_server.py       # MCP adapter — exposes registry as MCP tools (`docent serve`)
+│       ├── core/
+│       │   ├── registry.py     # Tool registry (the plugin system)
+│       │   ├── tool.py         # Base Tool interface/protocol + @action decorator
+│       │   ├── context.py      # Shared runtime context (config, LLM client, executor)
+│       │   ├── events.py       # ProgressEvent — yielded by generator actions
+│       │   ├── shapes.py       # Output Shapes vocabulary (MarkdownShape, DataTableShape, …)
+│       │   └── plugin_loader.py # Discovers + loads bundled + external plugins
+│       ├── ui/
+│       │   ├── console.py      # Rich console singleton
+│       │   ├── renderers.py    # Per-shape Rich render registry (render_shapes)
+│       │   └── theme.py        # Centralized color tokens (ACCENT, DIM, SUCCESS, …)
+│       ├── llm/
+│       │   └── client.py       # litellm wrapper — single entry for all model calls
+│       ├── execution/
+│       │   └── executor.py     # subprocess wrapper for external workers
+│       ├── learning/
+│       │   └── run_log.py      # Per-namespace JSONL run log (append, cap-and-roll)
+│       ├── config/
+│       │   ├── settings.py     # Pydantic settings (API keys, paths, per-tool nested models)
+│       │   └── loader.py       # Reads ~/.docent/config.toml; write_setting for config-set
+│       ├── tools/              # Flat single-file tools (auto-discovered; _ prefix = skipped)
+│       │   └── __init__.py
+│       ├── bundled_plugins/    # Multi-module first-party tools (packaged with Docent)
+│       │   └── reading/        # Reading queue tool (the first bundled plugin)
+│       │       ├── __init__.py         # Re-exports ReadingQueue
+│       │       ├── reading.py          # ReadingQueue Tool class + all actions
+│       │       ├── reading_store.py    # ReadingQueueStore — persistence + state recompute
+│       │       ├── mendeley_client.py  # In-process MCP client facade (list_folders, list_documents)
+│       │       ├── mendeley_cache.py   # File-backed read-through cache (TTL 300s / 24h for folder ids)
+│       │       └── reading_notify.py   # Startup deadline check (daily dedup)
+│       └── utils/
+│           ├── paths.py        # XDG-style paths for cache, config, data
+│           └── prompt.py       # prompt_for_path with quote-strip + validation
 ├── tests/
 └── ~/.docent/              # User data (created at runtime)
     ├── config.toml
     ├── cache/
-    └── logs/
+    │   └── paper/
+    │       └── mendeley_collection.json  # Read-through Mendeley cache
+    ├── data/
+    │   └── reading/
+    │       ├── queue.json          # Sidecar state (order, status, deadline, category…)
+    │       ├── queue-index.json    # Fast-lookup index keyed by id
+    │       └── run-log.jsonl       # Append-only structured event log
+    └── plugins/                    # User-installed external plugins (drop .py or package here)
 ```
 
 ---

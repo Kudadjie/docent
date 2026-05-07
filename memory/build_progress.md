@@ -56,5 +56,3 @@ Run `uv run docent --version` and glance at `src/docent/`. Make sure the checkbo
 ## Deferred / explicitly out-of-scope
 
 - `utils/logging.py` — defer until a step needs logged output
-- `ui/renderers.py` — defer until there's a second tool whose result render shape justifies reusable panels
-- MCP adapter — build last, once the native registry is battle-tested

@@ -15,7 +15,7 @@ Steps 1–13 shipped. See `build_progress.md` for the full checklist and per-ste
 After Step 11 (not after Step 13). Three threads run in this order:
 
 ### A. Output Shapes vocabulary lands
-Trigger moved up (see `output_shapes_deferred.md`). Driven by Step 11 `sync-status` being the canonical composite-output case. Defines `markdown` / `data_table` / `metric` / `link` / `message` / `error` / `progress` (from existing draft); retrofits paper's existing typed results to compose into shapes; lands `ui/renderers.py` as the per-shape Rich renderer registry. After this, every new ported skill returns shapes from day one — no retrofit debt.
+**DONE 2026-05-07.** `src/docent/core/shapes.py` + `ui/renderers.py` + `ui/theme.py` shipped. Six leaf types: `MarkdownShape`, `DataTableShape`, `MetricShape`, `LinkShape`, `MessageShape`, `ErrorShape`. Reading tool results all implement `to_shapes()`. See `archive/output-shapes-shipped-2026-05.md` and `decisions.md` Phase 1.5-A entry for full detail.
 
 ### B. Skill ports (research/grad-school subset)
 Priority-ordered. Each port is a Tool subclass following the contract paper-pipeline established. Stop porting if a port reveals a contract gap; fix the contract, then continue.
