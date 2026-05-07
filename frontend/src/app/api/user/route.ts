@@ -17,6 +17,8 @@ export async function GET() {
   try {
     if (!existsSync(USER_PATH)) return NextResponse.json(EMPTY);
     const data = JSON.parse(readFileSync(USER_PATH, 'utf-8')) as UserProfile;
+    // Treat old sentinel 'You' (from pre-onboarding skip) as unset
+    if (data.name === 'You' && !data.program && !data.level) return NextResponse.json(EMPTY);
     return NextResponse.json({ name: data.name ?? '', program: data.program ?? '', level: data.level ?? '' });
   } catch {
     return NextResponse.json(EMPTY);

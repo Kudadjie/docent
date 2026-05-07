@@ -393,6 +393,12 @@ export default function PaperTable({ entries, newIds, highlightId, activeFilter,
     );
   }
 
+  // Sort entries: non-done by order ascending, then append done entries
+  const sortedEntries = [
+    ...entries.filter(e => e.status !== 'done').sort((a, b) => a.order - b.order),
+    ...entries.filter(e => e.status === 'done'),
+  ];
+
   return (
     <div style={{ flex: 1, overflowY: 'auto' }}>
       <table
@@ -430,7 +436,7 @@ export default function PaperTable({ entries, newIds, highlightId, activeFilter,
           </tr>
         </thead>
         <tbody>
-          {entries.map((entry) => (
+          {sortedEntries.map((entry) => (
             <PaperRow
               key={entry.id}
               entry={entry}
