@@ -142,6 +142,14 @@ Then `docent echo --msg hi --count 3` just works. No CLI edits, no registration 
 
 For tools with several related operations on shared state (a reading queue, a research notebook, a browser session), use the multi-action shape — decorate methods with `@action(...)` instead of overriding `run()`. Each action gets its own Pydantic input schema and becomes `docent <tool> <action> --flag ...`. See `src/docent/tools/reading.py` for the reference implementation.
 
+## Coming Soon
+
+- **`docent research`** — AI-powered research tool: paper search (alphaXiv, Google Scholar), literature review, and multi-source synthesis pipelines. Routes through [Feynman](https://github.com/Kudadjie/feynman) as the primary research agent, with a direct Claude fallback if Feynman isn't available.
+
+- **Web dashboard** — a visual interface over the same tool registry. Browse your reading queue, run actions, and view stats from a browser — no terminal required. The reading page is already live; the full dashboard is next.
+
+- **Omnibox (natural language interface)** — type what you want in plain English and Docent routes it to the right action: *"what should I read next for CES701?"* or *"sync my Mendeley queue"* — no flags, no subcommands.
+
 ## Why
 
 I have a pile of Claude Code skills I actually use (research-to-notebook, paper-pipeline, feynman wrappers, literature-review, etc.) but they only work inside a Claude session. Docent is the terminal-first home for the same workflows — scriptable, pipeable, cron-able, and eventually a dashboard. MCP is not a replacement; Docent can later expose itself *through* MCP, but that's a late-stage adapter, not the core.
