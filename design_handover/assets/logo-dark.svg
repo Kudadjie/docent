@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 40" fill="none">
+  <rect x="0" y="4" width="32" height="32" rx="7" fill="#ededed"></rect>
+  <rect x="7" y="11" width="18" height="18" rx="3.5" fill="#0d0d0d"></rect>
+  <rect x="11" y="15" width="10" height="10" rx="2" fill="#18E299"></rect>
+  <text x="42" y="28" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="600" letter-spacing="-0.5" fill="#ededed">docent</text>
+</svg>

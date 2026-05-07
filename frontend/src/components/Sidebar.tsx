@@ -1,23 +1,8 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { LayoutDashboard, BookOpen } from 'lucide-react';
-
-type DotState = 'idle' | 'working' | 'error' | 'done';
-
-const DOT_COLOR: Record<DotState, string> = {
-  idle:    '#18E299',
-  working: '#F5A623',
-  error:   '#E53535',
-  done:    '#18E299',
-};
-
-const DOT_ANIM: Record<DotState, string> = {
-  idle:    'none',
-  working: 'logo-dot-blink 1s step-end infinite',
-  error:   'logo-dot-blink 0.7s step-end infinite',
-  done:    'logo-dot-done 0.5s ease-in-out 3',
-};
 
 interface NavItem {
   id: string;
@@ -44,10 +29,10 @@ const NAV: NavItem[] = [
 interface Props {
   active: string;
   queueCount: number;
-  dotState?: DotState;
+  dark?: boolean;
 }
 
-export default function Sidebar({ active, queueCount, dotState = 'idle' }: Props) {
+export default function Sidebar({ active, queueCount, dark = false }: Props) {
   return (
     <nav
       aria-label="Main navigation"
@@ -71,41 +56,14 @@ export default function Sidebar({ active, queueCount, dotState = 'idle' }: Props
           borderBottom: '1px solid var(--border)',
         }}
       >
-        <div
-          style={{
-            height: 28,
-            display: 'inline-flex',
-            alignItems: 'center',
-            padding: '0 11px',
-            gap: 7,
-            borderRadius: 9999,
-            border: '1.5px solid var(--logo-border)',
-            background: 'var(--bg)',
-          }}
-        >
-          <span
-            style={{
-              width: 7,
-              height: 7,
-              borderRadius: '50%',
-              background: DOT_COLOR[dotState],
-              flexShrink: 0,
-              animation: DOT_ANIM[dotState],
-            }}
-          />
-          <span
-            style={{
-              fontFamily: 'var(--sans)',
-              fontSize: 13.5,
-              fontWeight: 600,
-              color: 'var(--fg1)',
-              letterSpacing: '-0.2px',
-              lineHeight: 1,
-            }}
-          >
-            docent
-          </span>
-        </div>
+        <Image
+          src={dark ? '/logo-dark.svg' : '/logo.svg'}
+          alt="docent"
+          height={24}
+          width={96}
+          style={{ display: 'block' }}
+          priority
+        />
       </div>
 
       {/* Nav items */}

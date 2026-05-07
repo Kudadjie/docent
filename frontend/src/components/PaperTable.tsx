@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { CheckCircle, Pencil, Trash2, BookOpen } from 'lucide-react';
+import { CheckCircle, Pencil, Trash2, BookOpen, Play } from 'lucide-react';
 import StatusBadge from './StatusBadge';
 import OrderIndicator from './OrderIndicator';
 import type { QueueEntry } from '@/lib/types';
@@ -37,14 +37,19 @@ function PaperRow({
   dark,
   onMarkDone,
   onDelete,
+  onEdit,
+  onStart,
 }: {
   entry: QueueEntry;
   isNew: boolean;
   dark: boolean;
   onMarkDone: (id: string) => void;
   onDelete: (id: string) => void;
+  onEdit: (entry: QueueEntry) => void;
+  onStart: (id: string) => void;
 }) {
   const [hov, setHov] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const deadlineUrgency = isDeadlineUrgent(entry.deadline);
   const typeTag = TYPE_LABEL[entry.type];
 
@@ -210,7 +215,15 @@ function PaperRow({
       {/* Actions */}
       <td style={{ padding: '14px 16px', verticalAlign: 'middle', textAlign: 'right' }}>
         <div className="row-actions" style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-          {entry.status !== 'done' && (
+          {entry.status === 'queued' && (
+            <IconBtn
+              icon={<Play size={14} strokeWidth={1.5} />}
+              label="Start reading"
+              color="#0fa76e"
+              onClick={() => onStart(entry.id)}
+            />
+          )}
+          {entry.status === 'reading' && (
             <IconBtn
               icon={<CheckCircle size={15} strokeWidth={1.5} />}
               label="Mark done"
@@ -222,14 +235,41 @@ function PaperRow({
             icon={<Pencil size={15} strokeWidth={1.5} />}
             label="Edit"
             color="var(--fg4)"
-            onClick={() => {}}
+            onClick={() => onEdit(entry)}
           />
-          <IconBtn
-            icon={<Trash2 size={15} strokeWidth={1.5} />}
-            label="Delete"
-            color="#D45656"
-            onClick={() => onDelete(entry.id)}
-          />
+          {confirmDelete ? (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 2 }}>
+              <button
+                onClick={() => { onDelete(entry.id); setConfirmDelete(false); }}
+                style={{
+                  fontFamily: 'var(--sans)', fontSize: 11, fontWeight: 600,
+                  color: '#D45656', background: 'rgba(212,86,86,0.1)',
+                  border: '1px solid rgba(212,86,86,0.3)',
+                  borderRadius: 6, padding: '2px 8px', cursor: 'pointer', whiteSpace: 'nowrap',
+                }}
+              >
+                Delete?
+              </button>
+              <button
+                onClick={() => setConfirmDelete(false)}
+                aria-label="Cancel delete"
+                style={{
+                  fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500,
+                  color: 'var(--fg4)', background: 'transparent',
+                  border: 'none', cursor: 'pointer', padding: '2px 4px', lineHeight: 1,
+                }}
+              >
+                ✕
+              </button>
+            </span>
+          ) : (
+            <IconBtn
+              icon={<Trash2 size={15} strokeWidth={1.5} />}
+              label="Delete"
+              color="#D45656"
+              onClick={() => setConfirmDelete(true)}
+            />
+          )}
         </div>
       </td>
     </tr>
@@ -280,9 +320,11 @@ interface Props {
   dark: boolean;
   onMarkDone: (id: string) => void;
   onDelete: (id: string) => void;
+  onEdit: (entry: QueueEntry) => void;
+  onStart: (id: string) => void;
 }
 
-export default function PaperTable({ entries, newIds, dark, onMarkDone, onDelete }: Props) {
+export default function PaperTable({ entries, newIds, dark, onMarkDone, onDelete, onEdit, onStart }: Props) {
   if (entries.length === 0) {
     return (
       <div
@@ -348,6 +390,8 @@ export default function PaperTable({ entries, newIds, dark, onMarkDone, onDelete
               dark={dark}
               onMarkDone={onMarkDone}
               onDelete={onDelete}
+              onEdit={onEdit}
+              onStart={onStart}
             />
           ))}
         </tbody>

@@ -8,25 +8,25 @@ UI is live at http://localhost:3000. Dev server: `node frontend/node_modules/nex
 
 ## Must do (broken or missing)
 
-- [ ] **Export button** — stub. Wire `docent reading export --format json` via POST /api/actions, then trigger a file download with the response body.
-- [ ] **Edit row action** — currently no-ops. Needs an edit modal pre-populated with status / order / deadline / notes / tags (all user-settable fields per the spec). Calls `docent reading edit --id <id> ...` on save.
-- [ ] **Scan/Sync feedback** — busy text shows ("Scanning…") but no success/error toast. User can't tell if it worked. Add a simple status notification after the action resolves.
-- [ ] **Error handling** — API errors are silently swallowed. If the CLI call fails, surface the error.message to the user.
+- [x] **Export button** — client-side download from `/api/queue` data; JSON.stringify + Blob + `<a>` click; toast on success/fail.
+- [x] **Edit row action** — `EditModal.tsx` with status/order/deadline/notes/tags fields; `edit` case in API route uses spawn (safe arg passing); wired through PaperTable + page.tsx.
+- [x] **Scan/Sync feedback** — toast shown after each action (success + error) via `toastSuccess`/`toastError` helpers.
+- [x] **Error handling** — API errors surfaced as error toast with cleaned CLI output.
 
 ## Should do (UX gaps)
 
-- [ ] **Dark mode persistence** — resets to light on every page reload. Persist the preference to `localStorage` and read it on mount.
+- [x] **Dark mode persistence** — reads `localStorage('docent:dark')` on mount; saves on every toggle.
 - [ ] **Real-time refresh** — if the CLI mutates the queue externally (e.g. `docent reading sync-from-mendeley` run in terminal), the UI doesn't know. Add a polling interval (e.g. 30s) or a manual "Refresh" button.
 - [ ] **User footer** — hardcoded to "John" / "Graduate student". Read from a config endpoint or env var.
 - [ ] **Modal a11y** — HowToAddModal: add Escape key close handler + focus trap (focus first focusable element on open, trap Tab, return focus on close).
-- [ ] **Delete confirm** — currently `window.confirm()` which is blocked in some environments. Replace with an inline confirm state (e.g. a "Really delete?" tooltip-button).
+- [x] **Delete confirm** — inline confirm state in PaperRow; first click shows "Delete? / ✕", second click fires delete. No `window.confirm`.
 
 ## Nice to have
 
 - [ ] **Filter/search in URL** — filter and search state doesn't survive page refresh. Encode as `?filter=queued&q=storm` search params.
 - [ ] **Per-filter empty state** — generic "No papers found" regardless of context. Contextualise: "No queued papers — sync Mendeley to pull new ones."
 - [ ] **TypeScript build** — `npm run build` still fails on `.next/dev/types/routes.d.ts` (Next.js 16 generated-file bug). `tsconfig.json` already excludes `.next/dev/types` but Next.js may re-add it. Investigate when shipping production build.
-- [ ] **"Start reading" action** — row action to mark a queued paper as "reading" (`docent reading start --id <id>`). Currently only "Mark done" is shown. Add a play icon for queued entries.
+- [x] **"Start reading" action** — Play icon for `queued` entries; CheckCircle for `reading` entries only. Wired to `handleStart` → `runAction('start', id)`.
 
 ## Done
 

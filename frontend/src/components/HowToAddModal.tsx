@@ -20,23 +20,7 @@ const STEPS = [
   {
     icon: <RefreshCw size={15} strokeWidth={1.5} />,
     label: 'Sync',
-    detail: (
-      <>
-        Run{' '}
-        <code
-          style={{
-            fontFamily: 'var(--mono)',
-            fontSize: 11,
-            background: 'var(--gray100)',
-            padding: '1px 5px',
-            borderRadius: 4,
-          }}
-        >
-          docent reading sync-from-mendeley
-        </code>{' '}
-        to pull it into your queue.
-      </>
-    ),
+    detail: 'Click "Sync Mendeley" in the toolbar — Docent will pull the new entry into your queue.',
   },
 ];
 
