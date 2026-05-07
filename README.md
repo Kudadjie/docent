@@ -154,7 +154,7 @@ For tools with several related operations on shared state, use the multi-action 
 
 ## 🚀 Coming Soon
 
-- **`docent research`** — AI-powered research tool: paper search (alphaXiv, Google Scholar), literature review, and multi-source synthesis pipelines. Routes through [Feynman](https://github.com/Kudadjie/feynman) as the primary research agent, with a direct Claude fallback if Feynman isn't available.
+- **`docent research`** — AI-powered research tool: paper search (alphaXiv, Google Scholar), literature review, and multi-source synthesis pipelines. Routes through [Feynman](https://www.feynman.is/) as the primary research agent, with a direct Claude fallback if Feynman isn't available.
 
 - **Web dashboard** — a visual interface over the same tool registry. Browse your reading queue, run actions, and view stats from a browser — no terminal required. The reading page is already live; the full dashboard is next.
 

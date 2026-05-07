@@ -2,6 +2,8 @@
 
 Docent is a personal CLI control center for grad-school workflows. It manages an academic reading queue and syncs with a Mendeley library. All tools are also exposed as MCP (Model Context Protocol) tools so Claude Code can call them directly.
 
+> **Mendeley setup:** Docent connects to your Mendeley library via [mendeley-mcp](https://github.com/pallaprolus/mendeley-mcp). You'll need to register a Mendeley API client (Client ID + Secret) and run through the OAuth flow once before `sync-from-mendeley` works. Full instructions at the link above.
+
 ---
 
 ## 1. Installation
