@@ -285,5 +285,26 @@ for _tool_cls in all_tools().values():
     _register_tool_in_app(_tool_cls)
 
 
+@app.command("serve", help="Start the Docent MCP server (stdio transport).")
+def serve_command() -> None:
+    """Expose all registered Docent actions as MCP tools over stdio.
+
+    Add to Claude Code's .mcp.json:
+
+    \\b
+    {
+      "mcpServers": {
+        "docent": {
+          "command": "uv",
+          "args": ["--directory", "/path/to/docent", "run", "docent", "serve"]
+        }
+      }
+    }
+    """
+    from docent.mcp_server import run_server
+
+    run_server()
+
+
 if __name__ == "__main__":
     app()

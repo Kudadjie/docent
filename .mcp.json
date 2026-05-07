@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "docent": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/path/to/docent",
+        "run",
+        "docent",
+        "serve"
+      ]
+    }
+  }
+}
