@@ -1,13 +1,13 @@
 # CONTEXT — resume hint for next session
 
-**Current Task:** MCP adapter fixed (placeholder path → real path in .mcp.json); startup message added to `run_server()`; MCP section in `docs/cli.md` expanded with example use cases.
+**Current Task:** CLI v1.0 shipped to PyPI (`docent-cli`) and GitHub (`v1.0.2`); main/dev branch split done; UI must-dos are next.
 
 **Key Decisions:**
-- MCP tool naming: `{tool}__{action}` (double underscore, hyphens → underscores)
-- Two independent release tracks: CLI (`v1.0.0`) and UI (`ui-v1.0.0`)
-- Internal agentic tools (future `research` action) are separate from MCP — Docent calls LLM internally, MCP is for external Claude orchestration
+- Package name is `docent-cli` on PyPI (plain `docent` was taken); module name is still `docent`
+- `main` = clean public branch (no memory/, oc_briefs/, .mcp.json, scripts/); `dev` = everything; all work goes to `dev`
+- GitHub Actions publish triggers on `v*` tags (Trusted Publisher OIDC, no stored secrets)
 
 **Next Steps:**
-1. CLI v1.0 release — cut GitHub release tag `v1.0.0` with `docs/cli.md` as release notes
-2. UI Must-do todos — export button, edit modal, error toasts, scan feedback (memory/ui_todos.md)
-3. UI v1.0 release after Must-do done — tag `ui-v1.0.0`
+1. UI must-dos for `ui-v1.0.0` — export button, edit modal, error toasts, scan/sync feedback (`memory/ui_todos.md`)
+2. Cut `ui-v1.0.0` GitHub release after must-dos done — merge `dev` → `main`, tag `ui-v1.0.0`
+3. Phase 1.5 — Output Shapes + `docent research` tool (Feynman primary, Claude fallback)
