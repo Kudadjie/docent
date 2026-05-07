@@ -31,12 +31,21 @@ const NAV: NavItem[] = [
 interface Props {
   active: string;
   queueCount: number;
-  dark?: boolean;
+  dark?: boolean; // if passed, overrides localStorage; if omitted, Sidebar reads localStorage itself
 }
 
-export default function Sidebar({ active, queueCount, dark = false }: Props) {
+export default function Sidebar({ active, queueCount, dark: darkProp }: Props) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
+  const [localDark, setLocalDark] = useState(false);
+
+  useEffect(() => {
+    if (darkProp === undefined) {
+      setLocalDark(localStorage.getItem('docent:dark') === 'true');
+    }
+  }, [darkProp]);
+
+  const dark = darkProp !== undefined ? darkProp : localDark;
 
   useEffect(() => {
     fetch('/api/user')
