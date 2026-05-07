@@ -1,13 +1,13 @@
 # CONTEXT — resume hint for next session
 
-**Current Task:** Memory/context/architecture audit + cleanup complete.
+**Current Task:** UI polish sprint complete (commit 27d690c on dev). Next milestone is bundled release (docent-ui inside docent-cli).
 
 **Key Decisions:**
-- `decisions.md` now has ADR entries for all steps 11.8 → Phase 1.5-B (was cut off at 11.7).
-- `Docent_Architecture.md` Layer 0 tree updated to match actual `src/docent/` layout.
-- Stale references fixed: harness trigger, roadmap dead link, build_progress deferred section.
+- Bundled release = FastAPI + Next.js static export; `docent ui` starts uvicorn on localhost:7432, Ctrl+C to stop. Full plan in `memory/project_ui_bundling.md`.
+- Entries managed via Mendeley only — delete button removed from UI permanently.
+- `__rich_console__` must be generator functions (`yield from ()`) — fixed on all 10 result classes.
 
 **Next Steps:**
-1. Fix publish.yml Action SHA pinning (before pushing to GitHub) — still pending
-2. Phase 1.5-C: `research-to-notebook` tool port (bundled plugin, same pattern as reading)
-3. Eval harness trigger fires when research-to-notebook makes its first real LLM call
+1. Bundled release: FastAPI server + `output: 'export'` + `docent ui` command (see memory/project_ui_bundling.md)
+2. Fix publish.yml Action SHA pinning before any push to main
+3. Phase 1.5-C research-to-notebook plugin (plan in memory/project_feynman_port.md)
