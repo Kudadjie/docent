@@ -167,7 +167,7 @@ For tools with several related operations on shared state, use the multi-action 
 
 - **`docent research`** — AI-powered research tool: paper search (alphaXiv, Google Scholar), literature review, and multi-source synthesis pipelines. Routes through [Feynman](https://www.feynman.is/) as the primary research agent, with a direct Claude fallback if Feynman isn't available.
 
-- **Web dashboard** — a visual interface over the same tool registry. Browse your reading queue, run actions, and view stats from a browser — no terminal required. The reading page is already live; the full dashboard is next. UI is designed with [Claude](https://claude.ai) and inspired by the [Mintlify design system](https://getdesign.md/mintlify/design-md) — clean aesthetics, green accents, reading-optimized layouts.
+- **Web dashboard** — a visual interface over the same tool registry. Browse your reading queue, run actions, and view stats from a browser — no terminal required. UI is designed with [Claude](https://claude.ai) and inspired by the [Mintlify design system](https://getdesign.md/mintlify/design-md) — clean aesthetics, green accents, reading-optimized layouts.
 
 - **Omnibox (natural language interface)** — type what you want in plain English and Docent routes it to the right action: *"what should I read next for CES701?"* or *"sync my Mendeley queue"* — no flags, no subcommands.
 
