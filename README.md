@@ -1,5 +1,9 @@
 <div align="center">
-  <img src="design_handover/assets/logo.svg" alt="Docent" width="200" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="design_handover/assets/logo-light.svg">
+    <source media="(prefers-color-scheme: light)" srcset="design_handover/assets/logo.svg">
+    <img src="design_handover/assets/logo.svg" alt="Docent" width="200" />
+  </picture>
   <br /><br />
 
   [![PyPI version](https://img.shields.io/pypi/v/docent-cli?color=18E299&label=pypi&style=flat-square)](https://pypi.org/project/docent-cli/)
