@@ -64,6 +64,14 @@ export async function POST(req: NextRequest) {
       if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
       cmd = `docent reading remove --id "${safeId(id)}"`;
       break;
+    case 'move-up':
+      if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
+      cmd = `docent reading move-up --id "${safeId(id)}"`;
+      break;
+    case 'move-down':
+      if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
+      cmd = `docent reading move-down --id "${safeId(id)}"`;
+      break;
     case 'sync':
       cmd = 'docent reading sync-from-mendeley';
       break;

@@ -16,16 +16,16 @@ UI is live at http://localhost:3000. Dev server: `node frontend/node_modules/nex
 ## Should do (UX gaps)
 
 - [x] **Dark mode persistence** — reads `localStorage('docent:dark')` on mount; saves on every toggle.
-- [ ] **Real-time refresh** — if the CLI mutates the queue externally (e.g. `docent reading sync-from-mendeley` run in terminal), the UI doesn't know. Add a polling interval (e.g. 30s) or a manual "Refresh" button.
-- [ ] **User footer** — hardcoded to "John" / "Graduate student". Read from a config endpoint or env var.
-- [ ] **Modal a11y** — HowToAddModal: add Escape key close handler + focus trap (focus first focusable element on open, trap Tab, return focus on close).
+- [x] **Real-time refresh** — 30s polling interval calls `refresh()` (disk read, no CLI). Auto-sync on load if `last_updated` > 30 min stale; success toast shown, errors swallowed.
+- [x] **User footer** — onboarding modal (`WelcomeModal.tsx`) on first load; saves to `~/.docent/user.json` via `/api/user`; Sidebar reads and displays live.
+- [x] **Modal a11y** — HowToAddModal: Escape closes, focus trap on Tab/Shift+Tab, first focusable element auto-focused on open.
 - [x] **Delete confirm** — inline confirm state in PaperRow; first click shows "Delete? / ✕", second click fires delete. No `window.confirm`.
 
 ## Nice to have
 
-- [ ] **Filter/search in URL** — filter and search state doesn't survive page refresh. Encode as `?filter=queued&q=storm` search params.
-- [ ] **Per-filter empty state** — generic "No papers found" regardless of context. Contextualise: "No queued papers — sync Mendeley to pull new ones."
-- [ ] **TypeScript build** — `npm run build` still fails on `.next/dev/types/routes.d.ts` (Next.js 16 generated-file bug). `tsconfig.json` already excludes `.next/dev/types` but Next.js may re-add it. Investigate when shipping production build.
+- [x] **Filter/search in URL** — reads `?filter=&q=` on mount via `URLSearchParams`; writes back on change via `history.replaceState`. Survives page refresh.
+- [x] **Per-filter empty state** — contextual messages per filter; "No papers match your search." when search is active.
+- [x] **TypeScript build** — `npm run build` passes clean (was already resolved).
 - [x] **"Start reading" action** — Play icon for `queued` entries; CheckCircle for `reading` entries only. Wired to `handleStart` → `runAction('start', id)`.
 
 ## Done

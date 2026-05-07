@@ -1,10 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { CheckCircle, Pencil, Trash2, BookOpen, Play } from 'lucide-react';
+import { CheckCircle, Pencil, Trash2, BookOpen, Play, ChevronUp, ChevronDown } from 'lucide-react';
 import StatusBadge from './StatusBadge';
 import OrderIndicator from './OrderIndicator';
-import type { QueueEntry } from '@/lib/types';
+import type { QueueEntry, FilterValue } from '@/lib/types';
 
 function formatDate(iso: string): string {
   try {
@@ -34,19 +34,27 @@ const TYPE_LABEL: Record<string, string> = {
 function PaperRow({
   entry,
   isNew,
+  highlighted,
   dark,
   onMarkDone,
   onDelete,
   onEdit,
   onStart,
+  onMoveUp,
+  onMoveDown,
+  onShowDetail,
 }: {
   entry: QueueEntry;
   isNew: boolean;
+  highlighted: boolean;
   dark: boolean;
   onMarkDone: (id: string) => void;
   onDelete: (id: string) => void;
   onEdit: (entry: QueueEntry) => void;
   onStart: (id: string) => void;
+  onMoveUp: (id: string) => void;
+  onMoveDown: (id: string) => void;
+  onShowDetail: (entry: QueueEntry) => void;
 }) {
   const [hov, setHov] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -55,12 +63,16 @@ function PaperRow({
 
   return (
     <tr
+      data-entry-id={entry.id}
       className={`paper-row${isNew ? ' row-fade' : ''}`}
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
       style={{
         borderBottom: '1px solid var(--border)',
-        background: hov ? 'var(--row-hover)' : 'transparent',
+        background: highlighted
+          ? 'rgba(24,226,153,0.08)'
+          : hov ? 'var(--row-hover)' : 'transparent',
+        transition: 'background 0.3s',
       }}
     >
       {/* Paper */}
@@ -80,7 +92,13 @@ function PaperRow({
               lineHeight: 1.4,
             }}
           >
-            <span style={{ textWrap: 'pretty' } as React.CSSProperties}>{entry.title || entry.id}</span>
+            <span
+              onClick={() => onShowDetail(entry)}
+              style={{ textWrap: 'pretty', cursor: 'pointer' } as React.CSSProperties}
+              title="Click to view details"
+            >
+              {entry.title || entry.id}
+            </span>
             {typeTag && (
               <span
                 style={{
@@ -231,6 +249,22 @@ function PaperRow({
               onClick={() => onMarkDone(entry.id)}
             />
           )}
+          {entry.status !== 'done' && (
+            <>
+              <IconBtn
+                icon={<ChevronUp size={14} strokeWidth={1.5} />}
+                label="Move up"
+                color="var(--fg4)"
+                onClick={() => onMoveUp(entry.id)}
+              />
+              <IconBtn
+                icon={<ChevronDown size={14} strokeWidth={1.5} />}
+                label="Move down"
+                color="var(--fg4)"
+                onClick={() => onMoveDown(entry.id)}
+              />
+            </>
+          )}
           <IconBtn
             icon={<Pencil size={15} strokeWidth={1.5} />}
             label="Edit"
@@ -314,18 +348,32 @@ function IconBtn({
   );
 }
 
+const EMPTY_MSG: Record<FilterValue, string> = {
+  all:     'Your queue is empty — sync Mendeley to get started.',
+  queued:  'No queued papers — sync Mendeley to pull new ones.',
+  reading: 'Nothing in progress — start reading a queued paper.',
+  done:    'No papers marked as done yet.',
+};
+
 interface Props {
   entries: QueueEntry[];
   newIds: Set<string>;
+  highlightId: string | null;
+  activeFilter: FilterValue;
+  hasSearch: boolean;
   dark: boolean;
   onMarkDone: (id: string) => void;
   onDelete: (id: string) => void;
   onEdit: (entry: QueueEntry) => void;
   onStart: (id: string) => void;
+  onMoveUp: (id: string) => void;
+  onMoveDown: (id: string) => void;
+  onShowDetail: (entry: QueueEntry) => void;
 }
 
-export default function PaperTable({ entries, newIds, dark, onMarkDone, onDelete, onEdit, onStart }: Props) {
+export default function PaperTable({ entries, newIds, highlightId, activeFilter, hasSearch, dark, onMarkDone, onDelete, onEdit, onStart, onMoveUp, onMoveDown, onShowDetail }: Props) {
   if (entries.length === 0) {
+    const msg = hasSearch ? 'No papers match your search.' : EMPTY_MSG[activeFilter];
     return (
       <div
         style={{
@@ -340,7 +388,7 @@ export default function PaperTable({ entries, newIds, dark, onMarkDone, onDelete
         }}
       >
         <BookOpen size={32} strokeWidth={1} style={{ opacity: 0.4 }} />
-        <span style={{ fontFamily: 'var(--sans)', fontSize: 13 }}>No papers found</span>
+        <span style={{ fontFamily: 'var(--sans)', fontSize: 13 }}>{msg}</span>
       </div>
     );
   }
@@ -387,11 +435,15 @@ export default function PaperTable({ entries, newIds, dark, onMarkDone, onDelete
               key={entry.id}
               entry={entry}
               isNew={newIds.has(entry.id)}
+              highlighted={highlightId === entry.id}
               dark={dark}
               onMarkDone={onMarkDone}
               onDelete={onDelete}
               onEdit={onEdit}
               onStart={onStart}
+              onMoveUp={onMoveUp}
+              onMoveDown={onMoveDown}
+              onShowDetail={onShowDetail}
             />
           ))}
         </tbody>

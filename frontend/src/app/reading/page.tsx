@@ -1,13 +1,15 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, Download, Upload, Search, Filter, HelpCircle, BookOpen } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { RefreshCw, Download, Upload, Search, Filter, HelpCircle, BookOpen, ArrowRight, BarChart2 } from 'lucide-react';
 
 import Sidebar from '@/components/Sidebar';
 import StatusBanner from '@/components/StatusBanner';
 import PaperTable from '@/components/PaperTable';
 import HowToAddModal from '@/components/HowToAddModal';
 import EditModal, { type EditFields } from '@/components/EditModal';
+import StatsModal from '@/components/StatsModal';
+import DetailModal from '@/components/DetailModal';
 import Toast, { type ToastData } from '@/components/Toast';
 import type { QueueData, QueueEntry, FilterValue, BannerCounts } from '@/lib/types';
 
@@ -92,6 +94,11 @@ export default function ReadingPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
   const [editEntry, setEditEntry] = useState<QueueEntry | null>(null);
+  const [detailEntry, setDetailEntry] = useState<QueueEntry | null>(null);
+  const [statsOpen, setStatsOpen] = useState(false);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const [urlReady, setUrlReady] = useState(false);
+  const autoSyncedRef = useRef(false);
 
   // Dark mode: persist to localStorage, apply data-theme attribute
   useEffect(() => {
@@ -117,6 +124,56 @@ export default function ReadingPage() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // Read filter + search from URL on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const f = params.get('filter');
+    if (f && ['all', 'reading', 'queued', 'done'].includes(f)) setFilter(f as FilterValue);
+    const q = params.get('q');
+    if (q) setSearch(q);
+    setUrlReady(true);
+  }, []);
+
+  // Write filter + search to URL whenever they change (after initial read)
+  useEffect(() => {
+    if (!urlReady) return;
+    const params = new URLSearchParams();
+    if (filter !== 'all') params.set('filter', filter);
+    if (search) params.set('q', search);
+    const qs = params.toString();
+    window.history.replaceState(null, '', qs ? `?${qs}` : window.location.pathname);
+  }, [filter, search, urlReady]);
+
+  // 30s polling — re-reads queue.json from disk, no CLI call
+  useEffect(() => {
+    const id = setInterval(refresh, 30_000);
+    return () => clearInterval(id);
+  }, [refresh]);
+
+  // Auto-sync on load if queue is stale (> 30 min)
+  useEffect(() => {
+    if (!data || autoSyncedRef.current) return;
+    autoSyncedRef.current = true;
+    const age = data.last_updated
+      ? Date.now() - new Date(data.last_updated).getTime()
+      : Infinity;
+    if (age < 30 * 60 * 1000) return;
+    // Silent sync: show success toast, swallow errors
+    fetch('/api/actions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'sync' }),
+    })
+      .then(r => r.json())
+      .then((body: Record<string, string>) => {
+        if (body.ok) {
+          setToast({ type: 'success', message: toastSuccess('sync', body.stdout ?? '') });
+          refresh();
+        }
+      })
+      .catch(() => {});
+  }, [data, refresh]);
 
   // Actions
   async function runAction(action: string, id?: string, extra?: Record<string, unknown>) {
@@ -168,7 +225,9 @@ export default function ReadingPage() {
     if (action === 'done')   return 'Marked as done.';
     if (action === 'remove') return 'Entry removed from queue.';
     if (action === 'start')  return 'Marked as reading.';
-    if (action === 'edit')   return 'Entry updated.';
+    if (action === 'edit')      return 'Entry updated.';
+    if (action === 'move-up')   return 'Moved up.';
+    if (action === 'move-down') return 'Moved down.';
     return 'Done.';
   }
 
@@ -179,7 +238,9 @@ export default function ReadingPage() {
       done:   'Could not mark done',
       remove: 'Could not remove entry',
       start:  'Could not start entry',
-      edit:   'Could not update entry',
+      edit:        'Could not update entry',
+      'move-up':   'Could not move up',
+      'move-down': 'Could not move down',
     };
     // Strip ANSI escape codes and Rich markup from CLI output
     const clean = detail.replace(/\x1b\[[0-9;]*m/g, '').trim();
@@ -197,6 +258,30 @@ export default function ReadingPage() {
 
   async function handleStart(id: string) {
     await runAction('start', id);
+  }
+
+  async function handleMoveUp(id: string) {
+    await runAction('move-up', id);
+  }
+
+  async function handleMoveDown(id: string) {
+    await runAction('move-down', id);
+  }
+
+  function handleNext() {
+    const queued = entries
+      .filter(e => e.status === 'queued')
+      .sort((a, b) => a.order - b.order);
+    if (queued.length === 0) {
+      setToast({ type: 'error', message: 'No queued papers.' });
+      return;
+    }
+    const next = queued[0];
+    setHighlightId(next.id);
+    document.querySelector(`[data-entry-id="${next.id}"]`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => setHighlightId(null), 2500);
+    setToast({ type: 'success', message: `Next: ${next.title || next.id}` });
   }
 
   async function handleSync() {
@@ -260,7 +345,7 @@ export default function ReadingPage() {
           databaseCount={data?.database_count ?? null}
           dark={dark}
           onToggleDark={() => setDark((d) => !d)}
-          dotState={busy === 'sync' ? 'working' : 'idle'}
+          dotState={busy === 'sync' || busy === 'refresh' ? 'working' : 'idle'}
         />
 
         {/* Page header */}
@@ -337,9 +422,9 @@ export default function ReadingPage() {
             <div style={{ display: 'flex', gap: 6 }}>
               <GhostBtn
                 icon={<RefreshCw size={14} strokeWidth={1.5} />}
-                onClick={refresh}
+                onClick={async () => { setBusy('refresh'); await refresh(); setBusy(null); }}
               >
-                Refresh
+                {busy === 'refresh' ? 'Refreshing…' : 'Refresh'}
               </GhostBtn>
               <GhostBtn
                 icon={<Download size={14} strokeWidth={1.5} />}
@@ -349,6 +434,12 @@ export default function ReadingPage() {
               </GhostBtn>
               <GhostBtn icon={<Upload size={14} strokeWidth={1.5} />} onClick={handleExport}>
                 Export
+              </GhostBtn>
+              <GhostBtn icon={<ArrowRight size={14} strokeWidth={1.5} />} onClick={handleNext}>
+                Next
+              </GhostBtn>
+              <GhostBtn icon={<BarChart2 size={14} strokeWidth={1.5} />} onClick={() => setStatsOpen(true)}>
+                Stats
               </GhostBtn>
             </div>
 
@@ -446,11 +537,17 @@ export default function ReadingPage() {
         <PaperTable
           entries={filtered}
           newIds={newIds}
+          highlightId={highlightId}
+          activeFilter={filter}
+          hasSearch={!!search.trim()}
           dark={dark}
           onMarkDone={handleMarkDone}
           onDelete={handleDelete}
           onEdit={(entry) => setEditEntry(entry)}
           onStart={handleStart}
+          onMoveUp={handleMoveUp}
+          onMoveDown={handleMoveDown}
+          onShowDetail={(entry) => setDetailEntry(entry)}
         />
       </main>
 
@@ -463,6 +560,23 @@ export default function ReadingPage() {
           entry={editEntry}
           onSave={handleEditSave}
           onClose={() => setEditEntry(null)}
+        />
+      )}
+
+      {/* Detail modal */}
+      {detailEntry && (
+        <DetailModal
+          entry={detailEntry}
+          dark={dark}
+          onClose={() => setDetailEntry(null)}
+        />
+      )}
+
+      {/* Stats modal */}
+      {statsOpen && (
+        <StatsModal
+          entries={entries}
+          onClose={() => setStatsOpen(false)}
         />
       )}
 
