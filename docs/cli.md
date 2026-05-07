@@ -7,15 +7,27 @@ Docent is a personal CLI control center for grad-school workflows. It manages an
 ## 1. Installation
 
 ```bash
-# Requires Python 3.11+. Install with uv (recommended):
-pip install uv        # once
-uv tool install --editable .    # from the repo root
+# Requires Python 3.11+
+
+# Recommended — uv (fastest):
+uv tool install docent-cli
+
+# Or pipx:
+pipx install docent-cli
+
+# Or plain pip:
+pip install docent-cli
 
 # Verify:
 docent --version
 ```
 
-Note: after any `pyproject.toml` change, reinstall with `uv tool install --reinstall --editable .`
+**Updates:**
+```bash
+uv tool upgrade docent-cli   # uv
+pipx upgrade docent-cli      # pipx
+pip install --upgrade docent-cli  # pip
+```
 
 ---
 
