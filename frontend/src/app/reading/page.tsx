@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { RefreshCw, Download, Upload, Search, Filter, HelpCircle, BookOpen, ArrowRight, BarChart2 } from 'lucide-react';
+import { RefreshCw, Download, Printer, Search, Filter, HelpCircle, BookOpen, ArrowRight, BarChart2 } from 'lucide-react';
 
 import Sidebar from '@/components/Sidebar';
 import StatusBanner from '@/components/StatusBanner';
@@ -47,10 +47,12 @@ function GhostBtn({
   icon,
   children,
   onClick,
+  active,
 }: {
   icon?: React.ReactNode;
   children: React.ReactNode;
   onClick?: () => void;
+  active?: boolean;
 }) {
   const [hov, setHov] = useState(false);
   return (
@@ -64,9 +66,9 @@ function GhostBtn({
         gap: 6,
         padding: '5px 12px',
         borderRadius: 9999,
-        border: '1px solid var(--border-md)',
-        background: hov ? 'var(--gray100)' : 'transparent',
-        color: 'var(--fg2)',
+        border: active ? '1px solid #18E299' : '1px solid var(--border-md)',
+        background: active ? 'rgba(24,226,153,0.1)' : hov ? 'var(--gray100)' : 'transparent',
+        color: active ? '#0fa76e' : 'var(--fg2)',
         fontFamily: 'var(--sans)',
         fontSize: 13,
         fontWeight: 500,
@@ -76,7 +78,7 @@ function GhostBtn({
       }}
     >
       {icon && (
-        <span style={{ color: 'var(--fg4)', display: 'flex' }}>{icon}</span>
+        <span style={{ color: active ? '#0fa76e' : 'var(--fg4)', display: 'flex' }}>{icon}</span>
       )}
       {children}
     </button>
@@ -98,6 +100,8 @@ export default function ReadingPage() {
   const [statsOpen, setStatsOpen] = useState(false);
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const [urlReady, setUrlReady] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const filterRef = useRef<HTMLDivElement>(null);
   const autoSyncedRef = useRef(false);
 
   // Dark mode: persist to localStorage, apply data-theme attribute
@@ -144,6 +148,18 @@ export default function ReadingPage() {
     const qs = params.toString();
     window.history.replaceState(null, '', qs ? `?${qs}` : window.location.pathname);
   }, [filter, search, urlReady]);
+
+  // Close filter dropdown on outside click
+  useEffect(() => {
+    if (!filterOpen) return;
+    function handle(e: MouseEvent) {
+      if (filterRef.current && !filterRef.current.contains(e.target as Node)) {
+        setFilterOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, [filterOpen]);
 
   // 30s polling — re-reads queue.json from disk, no CLI call
   useEffect(() => {
@@ -196,6 +212,16 @@ export default function ReadingPage() {
       if (!res.ok) {
         const detail = body.error ?? body.stderr ?? 'Unknown error';
         setToast({ type: 'error', message: toastError(action, detail) });
+      } else if (action === 'sync') {
+        // Sync exits 0 even for handled failures (wrong collection, auth error).
+        // Only show success if the count pattern is present in stdout.
+        const stdout = body.stdout ?? '';
+        if (/\d+ added.*?\d+ unchanged.*?\d+ removed/.test(stdout)) {
+          setToast({ type: 'success', message: toastSuccess(action, stdout) });
+        } else {
+          const clean = stdout.replace(/\x1b\[[0-9;]*m/g, '').trim();
+          setToast({ type: 'error', message: clean.slice(0, 200) || 'Sync returned no results — check your collection name in Settings.' });
+        }
       } else {
         setToast({ type: 'success', message: toastSuccess(action, body.stdout ?? '') });
       }
@@ -219,11 +245,13 @@ export default function ReadingPage() {
         if (parts.length === 0)    parts.push('Nothing changed');
         return `Mendeley sync — ${parts.join(', ')}.`;
       }
+      // CLI exited 0 but printed a warning (wrong collection name, auth issue, etc.)
+      const clean = stdout.replace(/\x1b\[[0-9;]*m/g, '').trim();
+      if (clean) return clean.slice(0, 160);
       return 'Mendeley sync complete.';
     }
     if (action === 'scan')   return 'Folder scan complete.';
     if (action === 'done')   return 'Marked as done.';
-    if (action === 'remove') return 'Entry removed from queue.';
     if (action === 'start')  return 'Marked as reading.';
     if (action === 'edit')      return 'Entry updated.';
     if (action === 'move-up')   return 'Moved up.';
@@ -236,7 +264,6 @@ export default function ReadingPage() {
       sync:   'Mendeley sync failed',
       scan:   'Scan failed',
       done:   'Could not mark done',
-      remove: 'Could not remove entry',
       start:  'Could not start entry',
       edit:        'Could not update entry',
       'move-up':   'Could not move up',
@@ -250,10 +277,6 @@ export default function ReadingPage() {
 
   async function handleMarkDone(id: string) {
     await runAction('done', id);
-  }
-
-  async function handleDelete(id: string) {
-    await runAction('remove', id);
   }
 
   async function handleStart(id: string) {
@@ -300,15 +323,117 @@ export default function ReadingPage() {
         return;
       }
       const qdata: QueueData = await res.json();
-      const json = JSON.stringify(qdata.entries, null, 2);
-      const blob = new Blob([json], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `reading-queue-${new Date().toISOString().slice(0, 10)}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      setToast({ type: 'success', message: `Exported ${qdata.entries.length} entries.` });
+      const exportDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+      const groups: { label: string; status: string; entries: QueueEntry[] }[] = [
+        { label: 'Currently Reading', status: 'reading', entries: [] },
+        { label: 'Queued', status: 'queued', entries: [] },
+        { label: 'Done', status: 'done', entries: [] },
+      ];
+      for (const e of qdata.entries) {
+        const g = groups.find(g => g.status === e.status);
+        if (g) g.entries.push(e);
+      }
+      // Sort active groups by order; done by finished date
+      groups[0].entries.sort((a, b) => a.order - b.order);
+      groups[1].entries.sort((a, b) => a.order - b.order);
+
+      function fmtDate(iso: string | null) {
+        if (!iso) return '';
+        try { return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
+        catch { return iso; }
+      }
+
+      function entryHtml(e: QueueEntry, idx: number) {
+        const typeTag = e.type === 'book' ? 'Book' : e.type === 'book_chapter' ? 'Chapter' : '';
+        const meta = [e.authors, e.year, e.category].filter(Boolean).join('  ·  ');
+        const deadline = e.deadline ? `Due ${fmtDate(e.deadline)}` : '';
+        const started = e.started ? `Started ${fmtDate(e.started)}` : '';
+        const finished = e.finished ? `Finished ${fmtDate(e.finished)}` : '';
+        const dates = [started, finished, deadline].filter(Boolean).join('  ·  ');
+        return `
+          <div class="entry">
+            <div class="entry-num">${idx + 1}</div>
+            <div class="entry-body">
+              <div class="entry-title">${e.title || e.id}${typeTag ? ` <span class="type-tag">${typeTag}</span>` : ''}</div>
+              ${meta ? `<div class="entry-meta">${meta}</div>` : ''}
+              ${dates ? `<div class="entry-dates">${dates}</div>` : ''}
+              ${e.doi ? `<div class="entry-doi">DOI: ${e.doi}</div>` : ''}
+              ${e.tags.length ? `<div class="entry-tags">${e.tags.map(t => `<span class="tag">${t}</span>`).join('')}</div>` : ''}
+              ${e.notes ? `<div class="entry-notes">${e.notes}</div>` : ''}
+            </div>
+          </div>`;
+      }
+
+      const sectionsHtml = groups
+        .filter(g => g.entries.length > 0)
+        .map(g => `
+          <section>
+            <h2>${g.label} <span class="section-count">${g.entries.length}</span></h2>
+            ${g.entries.map((e, i) => entryHtml(e, i)).join('')}
+          </section>`)
+        .join('');
+
+      const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Reading Queue — ${exportDate}</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 12pt; color: #1a1a1a; background: #fff; padding: 48px; max-width: 780px; margin: 0 auto; }
+  header { border-bottom: 2px solid #18E299; padding-bottom: 16px; margin-bottom: 36px; }
+  .logo { font-size: 22pt; font-weight: 700; letter-spacing: -0.5px; color: #0fa76e; }
+  .header-sub { font-size: 10pt; color: #888; margin-top: 4px; }
+  .summary { display: flex; gap: 24px; margin-bottom: 36px; }
+  .summary-item { font-size: 10pt; color: #555; }
+  .summary-item strong { color: #1a1a1a; font-size: 14pt; display: block; }
+  section { margin-bottom: 36px; }
+  h2 { font-size: 11pt; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; color: #555; border-bottom: 1px solid #eee; padding-bottom: 8px; margin-bottom: 16px; }
+  .section-count { font-weight: 400; color: #aaa; }
+  .entry { display: flex; gap: 14px; margin-bottom: 18px; padding-bottom: 18px; border-bottom: 1px solid #f0f0f0; }
+  .entry:last-child { border-bottom: none; }
+  .entry-num { font-size: 10pt; color: #ccc; font-weight: 600; min-width: 24px; padding-top: 2px; }
+  .entry-title { font-size: 12pt; font-weight: 600; color: #1a1a1a; line-height: 1.4; }
+  .type-tag { font-size: 8pt; font-weight: 500; text-transform: uppercase; letter-spacing: 0.4px; color: #888; background: #f2f2f2; padding: 1px 5px; border-radius: 3px; vertical-align: middle; margin-left: 6px; }
+  .entry-meta { font-size: 10pt; color: #666; margin-top: 4px; }
+  .entry-dates { font-size: 9pt; color: #999; margin-top: 3px; }
+  .entry-doi { font-size: 9pt; color: #aaa; margin-top: 3px; font-family: monospace; }
+  .entry-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .tag { font-size: 8pt; text-transform: uppercase; letter-spacing: 0.3px; color: #888; background: #f5f5f5; padding: 2px 7px; border-radius: 99px; }
+  .entry-notes { font-size: 10pt; color: #555; margin-top: 6px; font-style: italic; line-height: 1.5; }
+  @media print {
+    body { padding: 0; }
+    .entry { break-inside: avoid; }
+    section { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">docent</div>
+  <div class="header-sub">Reading Queue — exported ${exportDate}</div>
+</header>
+<div class="summary">
+  <div class="summary-item"><strong>${groups[1].entries.length}</strong>Queued</div>
+  <div class="summary-item"><strong>${groups[0].entries.length}</strong>Reading</div>
+  <div class="summary-item"><strong>${groups[2].entries.length}</strong>Done</div>
+  <div class="summary-item"><strong>${qdata.entries.length}</strong>Total</div>
+</div>
+${sectionsHtml}
+</body>
+</html>`;
+
+      const w = window.open('', '_blank');
+      if (!w) {
+        setToast({ type: 'error', message: 'Pop-up blocked — allow pop-ups to export as PDF.' });
+        return;
+      }
+      w.document.write(html);
+      w.document.close();
+      w.focus();
+      setTimeout(() => w.print(), 300);
+      setToast({ type: 'success', message: `Opened print dialog for ${qdata.entries.length} entries.` });
     } catch {
       setToast({ type: 'error', message: 'Export failed.' });
     }
@@ -396,7 +521,11 @@ export default function ReadingPage() {
                   margin: 0,
                 }}
               >
-                Local reading queue · {entries.length} papers
+                Local reading queue · {entries.length} {entries.length === 1 ? 'entry' : 'entries'}{' '}
+              <span style={{ color: 'var(--fg4)' }}>·</span>{' '}
+              <span title="Entries are added and removed by syncing with Mendeley. Docent does not edit your Mendeley library.">
+                managed via Mendeley
+              </span>
               </p>
             </div>
 
@@ -432,8 +561,8 @@ export default function ReadingPage() {
               >
                 {busy === 'sync' ? 'Syncing…' : 'Sync Mendeley'}
               </GhostBtn>
-              <GhostBtn icon={<Upload size={14} strokeWidth={1.5} />} onClick={handleExport}>
-                Export
+              <GhostBtn icon={<Printer size={14} strokeWidth={1.5} />} onClick={handleExport}>
+                Export PDF
               </GhostBtn>
               <GhostBtn icon={<ArrowRight size={14} strokeWidth={1.5} />} onClick={handleNext}>
                 Next
@@ -461,10 +590,10 @@ export default function ReadingPage() {
                 </span>
                 <input
                   type="search"
-                  placeholder="Search papers…"
+                  placeholder="Search entries…"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  aria-label="Search papers"
+                  aria-label="Search entries"
                   style={{
                     width: 180,
                     padding: '5px 12px 5px 32px',
@@ -478,9 +607,57 @@ export default function ReadingPage() {
                   }}
                 />
               </div>
-              <GhostBtn icon={<Filter size={14} strokeWidth={1.5} />}>
-                Filter
-              </GhostBtn>
+              {/* Filter dropdown */}
+              <div ref={filterRef} style={{ position: 'relative' }}>
+                <GhostBtn
+                  icon={<Filter size={14} strokeWidth={1.5} />}
+                  onClick={() => setFilterOpen(o => !o)}
+                  active={filter !== 'all'}
+                >
+                  {filter === 'all' ? 'Filter' : FILTERS.find(f => f.value === filter)?.label ?? 'Filter'}
+                </GhostBtn>
+                {filterOpen && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      right: 0,
+                      top: 'calc(100% + 4px)',
+                      zIndex: 20,
+                      background: 'var(--bg)',
+                      border: '1px solid var(--border-md)',
+                      borderRadius: 8,
+                      boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+                      minWidth: 120,
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {FILTERS.map(({ value, label }) => (
+                      <button
+                        key={value}
+                        onClick={() => { setFilter(value); setFilterOpen(false); }}
+                        style={{
+                          display: 'block',
+                          width: '100%',
+                          padding: '8px 14px',
+                          textAlign: 'left',
+                          border: 'none',
+                          background: filter === value ? 'rgba(24,226,153,0.08)' : 'transparent',
+                          color: filter === value ? '#0fa76e' : 'var(--fg2)',
+                          fontFamily: 'var(--sans)',
+                          fontSize: 13,
+                          fontWeight: filter === value ? 500 : 400,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {label}
+                        <span style={{ float: 'right', fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--fg4)' }}>
+                          {countByStatus(entries, value)}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -542,7 +719,6 @@ export default function ReadingPage() {
           hasSearch={!!search.trim()}
           dark={dark}
           onMarkDone={handleMarkDone}
-          onDelete={handleDelete}
           onEdit={(entry) => setEditEntry(entry)}
           onStart={handleStart}
           onMoveUp={handleMoveUp}

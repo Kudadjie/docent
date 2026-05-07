@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { CheckCircle, Pencil, Trash2, BookOpen, Play, ChevronUp, ChevronDown } from 'lucide-react';
+import { CheckCircle, Pencil, BookOpen, Play, ChevronUp, ChevronDown } from 'lucide-react';
 import StatusBadge from './StatusBadge';
 import OrderIndicator from './OrderIndicator';
 import type { QueueEntry, FilterValue } from '@/lib/types';
@@ -37,7 +37,6 @@ function PaperRow({
   highlighted,
   dark,
   onMarkDone,
-  onDelete,
   onEdit,
   onStart,
   onMoveUp,
@@ -49,7 +48,6 @@ function PaperRow({
   highlighted: boolean;
   dark: boolean;
   onMarkDone: (id: string) => void;
-  onDelete: (id: string) => void;
   onEdit: (entry: QueueEntry) => void;
   onStart: (id: string) => void;
   onMoveUp: (id: string) => void;
@@ -57,7 +55,6 @@ function PaperRow({
   onShowDetail: (entry: QueueEntry) => void;
 }) {
   const [hov, setHov] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const deadlineUrgency = isDeadlineUrgent(entry.deadline);
   const typeTag = TYPE_LABEL[entry.type];
 
@@ -271,39 +268,6 @@ function PaperRow({
             color="var(--fg4)"
             onClick={() => onEdit(entry)}
           />
-          {confirmDelete ? (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 2 }}>
-              <button
-                onClick={() => { onDelete(entry.id); setConfirmDelete(false); }}
-                style={{
-                  fontFamily: 'var(--sans)', fontSize: 11, fontWeight: 600,
-                  color: '#D45656', background: 'rgba(212,86,86,0.1)',
-                  border: '1px solid rgba(212,86,86,0.3)',
-                  borderRadius: 6, padding: '2px 8px', cursor: 'pointer', whiteSpace: 'nowrap',
-                }}
-              >
-                Delete?
-              </button>
-              <button
-                onClick={() => setConfirmDelete(false)}
-                aria-label="Cancel delete"
-                style={{
-                  fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500,
-                  color: 'var(--fg4)', background: 'transparent',
-                  border: 'none', cursor: 'pointer', padding: '2px 4px', lineHeight: 1,
-                }}
-              >
-                ✕
-              </button>
-            </span>
-          ) : (
-            <IconBtn
-              icon={<Trash2 size={15} strokeWidth={1.5} />}
-              label="Delete"
-              color="#D45656"
-              onClick={() => setConfirmDelete(true)}
-            />
-          )}
         </div>
       </td>
     </tr>
@@ -363,7 +327,6 @@ interface Props {
   hasSearch: boolean;
   dark: boolean;
   onMarkDone: (id: string) => void;
-  onDelete: (id: string) => void;
   onEdit: (entry: QueueEntry) => void;
   onStart: (id: string) => void;
   onMoveUp: (id: string) => void;
@@ -371,7 +334,7 @@ interface Props {
   onShowDetail: (entry: QueueEntry) => void;
 }
 
-export default function PaperTable({ entries, newIds, highlightId, activeFilter, hasSearch, dark, onMarkDone, onDelete, onEdit, onStart, onMoveUp, onMoveDown, onShowDetail }: Props) {
+export default function PaperTable({ entries, newIds, highlightId, activeFilter, hasSearch, dark, onMarkDone, onEdit, onStart, onMoveUp, onMoveDown, onShowDetail }: Props) {
   if (entries.length === 0) {
     const msg = hasSearch ? 'No papers match your search.' : EMPTY_MSG[activeFilter];
     return (
@@ -444,7 +407,6 @@ export default function PaperTable({ entries, newIds, highlightId, activeFilter,
               highlighted={highlightId === entry.id}
               dark={dark}
               onMarkDone={onMarkDone}
-              onDelete={onDelete}
               onEdit={onEdit}
               onStart={onStart}
               onMoveUp={onMoveUp}

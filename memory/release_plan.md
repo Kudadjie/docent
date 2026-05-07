@@ -25,7 +25,7 @@ Created 2026-05-07 based on user direction.
 
 **Distribution method: bundle into PyPI package, launch via `docent ui`.**
 
-- Frontend stack: Next.js 16 + React 19 + TypeScript + Tailwind CSS v4 + Lucide React (`frontend/package.json`)
+- Frontend stack: Next.js 16 + React 19 + TypeScript + Tailwind CSS v4 + Lucide React (`frontend/package.json`, package name: `docent-ui`)
 - Ship via PyPI alongside CLI — no separate installer. Mirrors how TensorBoard, MLflow, Jupyter do it.
 - `next build` output goes into `src/docent/ui_dist/` as package data.
 - `docent ui` command starts a local server (FastAPI or stdlib) and opens the browser.

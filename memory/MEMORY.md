@@ -16,3 +16,5 @@
 - [Research tool routing](feedback_research_tool_routing.md) — routes through Feynman first; falls back to Claude (litellm) if Feynman unavailable
 - [OpenCode for Docent agentic tools](feedback_opencode_for_agentic_tools.md) — route LLM calls in Docent's agentic tools through OpenCode (not Anthropic API); design as single-shot briefs
 - [Release plan](release_plan.md) — two independent release tracks: CLI (v1.0 = Step 13 done) and UI (v1.0 = reading page Must-do complete)
+- [UI bundling strategy](project_ui_bundling.md) — decided: FastAPI + Next.js static export; `docent ui` command; two-file sync cost per new endpoint; deferred to next release
+- [Feynman port plan](project_feynman_port.md) — full plan to port Feynman's research suite into Docent (zero API cost via OpenCode); architecture, phases, risks

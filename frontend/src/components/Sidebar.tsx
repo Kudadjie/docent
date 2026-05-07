@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { LayoutDashboard, BookOpen } from 'lucide-react';
+import { LayoutDashboard, BookOpen, Settings } from 'lucide-react';
 import WelcomeModal, { type UserProfile } from './WelcomeModal';
 
 interface NavItem {
@@ -25,6 +25,12 @@ const NAV: NavItem[] = [
     href: '/reading',
     label: 'Reading',
     icon: <BookOpen size={16} strokeWidth={1.5} />,
+  },
+  {
+    id: 'settings',
+    href: '/settings',
+    label: 'Settings',
+    icon: <Settings size={16} strokeWidth={1.5} />,
   },
 ];
 
@@ -176,13 +182,17 @@ export default function Sidebar({ active, queueCount, dark: darkProp }: Props) {
 
         {/* User footer */}
         {profileSet ? (
-          <div
+          <button
+            onClick={() => setShowWelcome(true)}
+            title="Edit profile"
             style={{
+              width: '100%',
               padding: '12px 18px',
               borderTop: '1px solid var(--border)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
+              borderLeft: 'none', borderRight: 'none', borderBottom: 'none',
+              background: 'transparent',
+              display: 'flex', alignItems: 'center', gap: 8,
+              cursor: 'pointer', textAlign: 'left',
             }}
           >
             <div style={{
@@ -207,7 +217,7 @@ export default function Sidebar({ active, queueCount, dark: darkProp }: Props) {
                 {displayRole}
               </div>
             </div>
-          </div>
+          </button>
         ) : (
           <button
             onClick={() => setShowWelcome(true)}

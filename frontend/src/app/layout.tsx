@@ -25,7 +25,15 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${inter.variable} ${geistMono.variable} h-full`}>
+    <html lang="en" className={`${inter.variable} ${geistMono.variable} h-full`} suppressHydrationWarning>
+      <head>
+        {/* Runs synchronously before first paint — prevents dark-mode flash */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{if(localStorage.getItem('docent:dark')==='true'){document.documentElement.setAttribute('data-theme','dark');}}catch(e){}})();`,
+          }}
+        />
+      </head>
       <body className="h-full antialiased" style={{ fontFamily: 'var(--font-inter, Inter, system-ui, sans-serif)' }}>
         {children}
       </body>

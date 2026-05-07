@@ -14,7 +14,7 @@ docent/
 ├── .mcp.json                   # MCP server stanza template (copy into Claude Code config)
 ├── scripts/
 │   └── oc_delegate.py          # Delegate bounded tasks to OpenCode Go sub
-├── frontend/                   # Next.js 16 + React 19 + Tailwind CSS v4 reading page UI
+├── frontend/                   # docent-ui — Next.js 16 + React 19 + Tailwind CSS v4
 ├── src/
 │   └── docent/                 # The package itself
 │       ├── __init__.py

@@ -1,6 +1,6 @@
 <div align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="design_handover/assets/logo-light.svg">
+    <source media="(prefers-color-scheme: dark)" srcset="design_handover/assets/logo-dark.svg">
     <img src="design_handover/assets/logo.svg" alt="Docent" width="200" />
   </picture>
   <br /><br />
