@@ -1,6 +1,6 @@
 [project]
 name = "docent-cli"
-version = "1.0.0"
+dynamic = ["version"]
 description = "A personal control center for grad school workflows."
 readme = "README.md"
 license = { text = "MIT" }
@@ -36,11 +36,17 @@ Repository = "https://github.com/Kudadjie/docent"
 docent = "docent.cli:app"
 
 [build-system]
-requires = ["uv_build>=0.11.6,<0.12.0"]
-build-backend = "uv_build"
+requires = ["hatchling>=1.21.0", "hatch-vcs"]
+build-backend = "hatchling.build"
 
-[tool.uv.build-backend]
-module-name = "docent"
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/docent/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/docent"]
 
 [dependency-groups]
 dev = ["pytest>=8.0", "pip-audit>=2.7"]
