@@ -1,13 +1,13 @@
 # CONTEXT — resume hint for next session
 
-**Current Task:** UI todos complete — all must-dos, should-dos, and nice-to-haves shipped.
+**Current Task:** Phase 1.5-A Output Shapes landed; AGENTS.md + contract tests are next.
 
 **Key Decisions:**
-- Onboarding modal (WelcomeModal) on first load; saves to `~/.docent/user.json`; shared with CLI
-- CLI first-run onboarding added to `app.callback()` in `cli.py`; skips silently in non-TTY contexts
-- Table sorted by `order` asc; move-up/down now visually reorders rows immediately
+- Output Shapes: 7 types in `core/shapes.py`; `ui/renderers.py` Rich dispatcher; all 10 reading results have `to_shapes()`. 141 tests green.
+- `oc_delegate.py` gained `--stream` flag (SSE `/event` endpoint, live token + tool-call feed).
+- Brief convention: project-specific imports/fixtures must be explicit. See `memory/feedback_oc_brief_conventions.md`.
 
 **Next Steps:**
-1. Cut `ui-v1.0.0` GitHub release — merge `dev` → `main`, tag `ui-v1.0.0`
-2. Phase 1.5 — Output Shapes + `docent research` tool (Feynman primary, Claude fallback)
-3. Consider `docent ui` command to launch the Next.js frontend from the CLI
+1. Phase 1.5-B: `AGENTS.md` (3-rule max, architecture invariants)
+2. Phase 1.5-B: Contract tests for Tool ABC + registry + dispatcher
+3. Phase 1.5-C: `research-to-notebook` skill port (Feynman primary, litellm fallback)

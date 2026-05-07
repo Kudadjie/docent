@@ -14,6 +14,16 @@ from rich.text import Text
 
 from docent.config import write_setting
 from docent.core import Context, ProgressEvent, Tool, action, register_tool
+from docent.core.shapes import (
+    DataTableShape,
+    ErrorShape,
+    LinkShape,
+    MarkdownShape,
+    MessageShape,
+    MetricShape,
+    ProgressShape,
+    Shape,
+)
 from docent.learning import RunLog
 from .reading_store import BannerCounts, ReadingQueueStore
 from .mendeley_cache import MendeleyCache
@@ -67,9 +77,15 @@ class AddResult(BaseModel):
     banner: BannerCounts
     message: str
 
+    def to_shapes(self) -> list[Shape]:
+        return [
+            MarkdownShape(content=self.message),
+            MessageShape(text=f"Queue: {self.queue_size} entries", level="info"),
+        ]
+
     def __rich_console__(self, console, options):
-        yield Panel(self.message, title="How to add papers", border_style="cyan", padding=(0, 1))
-        yield Text(f"Queue: {self.queue_size} entries", style="dim")
+        from docent.ui.renderers import render_shapes
+        render_shapes(self.to_shapes(), console)
 
 
 class IdOnlyInputs(BaseModel):
@@ -124,13 +140,16 @@ class ConfigShowResult(BaseModel):
     database_dir: str | None
     queue_collection: str
 
-    def __rich_console__(self, console, options):
-        lines = [
-            f"[dim]Config:[/dim] {self.config_path}",
-            f"[bold]database_dir:[/bold] {self.database_dir or '[dim](not set)[/dim]'}",
-            f"[bold]queue_collection:[/bold] {self.queue_collection}",
+    def to_shapes(self) -> list[Shape]:
+        return [
+            MetricShape(label="Config", value=self.config_path),
+            MetricShape(label="database_dir", value=self.database_dir or "(not set)"),
+            MetricShape(label="queue_collection", value=self.queue_collection),
         ]
-        yield Panel("\n".join(lines), title="Reading Config", border_style="cyan", padding=(0, 1))
+
+    def __rich_console__(self, console, options):
+        from docent.ui.renderers import render_shapes
+        render_shapes(self.to_shapes(), console)
 
 
 class ConfigSetResult(BaseModel):
@@ -140,9 +159,14 @@ class ConfigSetResult(BaseModel):
     config_path: str
     message: str
 
+    def to_shapes(self) -> list[Shape]:
+        return [
+            MessageShape(text=self.message, level="success" if self.ok else "error"),
+        ]
+
     def __rich_console__(self, console, options):
-        style = "green" if self.ok else "red"
-        yield Text(self.message, style=style)
+        from docent.ui.renderers import render_shapes
+        render_shapes(self.to_shapes(), console)
 
 
 class MutationResult(BaseModel):
@@ -153,30 +177,34 @@ class MutationResult(BaseModel):
     banner: BannerCounts
     message: str
 
-    def __rich_console__(self, console, options):
+    def to_shapes(self) -> list[Shape]:
         if not self.ok or self.entry is None:
-            yield Text(f"[FAIL] {self.message}", style="red")
-            return
+            return [ErrorShape(reason=self.message)]
         e = self.entry
-        lines: list[str] = [f"[bold]{e.title}[/bold]"]
+        lines: list[str] = [e.title]
         meta_parts = [p for p in [e.authors, str(e.year) if e.year else ""] if p and p != "Unknown"]
         if meta_parts:
-            lines.append("[dim]" + "  ·  ".join(meta_parts) + "[/dim]")
-        detail_parts = [f"[dim]Order:[/dim] {e.order}", f"[dim]Status:[/dim] {e.status}"]
+            lines.append("  ·  ".join(meta_parts))
+        detail_parts = [f"Order: {e.order}", f"Status: {e.status}"]
         if e.type and e.type != "paper":
-            detail_parts.append(f"[dim]Type:[/dim] {e.type.replace('_', ' ')}")
+            detail_parts.append(f"Type: {e.type.replace('_', ' ')}")
         if e.category:
-            detail_parts.append(f"[dim]Category:[/dim] {e.category}")
+            detail_parts.append(f"Category: {e.category}")
         if e.deadline:
-            detail_parts.append(f"[dim]Deadline:[/dim] [yellow]{e.deadline}[/yellow]")
+            detail_parts.append(f"Deadline: {e.deadline}")
         lines.append("  ".join(detail_parts))
         if e.doi:
-            lines.append(f"[dim]DOI:[/dim] {e.doi}")
+            lines.append(f"DOI: {e.doi}")
         if e.notes:
-            lines.append(f"[dim]Notes:[/dim] {e.notes}")
-        yield Panel("\n".join(lines), border_style="cyan", padding=(0, 1))
+            lines.append(f"Notes: {e.notes}")
+        shapes: list[Shape] = [MarkdownShape(content="\n".join(lines))]
         if self.message:
-            yield Text(self.message, style="dim")
+            shapes.append(MessageShape(text=self.message, level="info"))
+        return shapes
+
+    def __rich_console__(self, console, options):
+        from docent.ui.renderers import render_shapes
+        render_shapes(self.to_shapes(), console)
 
 
 class SearchResult(BaseModel):
@@ -185,31 +213,30 @@ class SearchResult(BaseModel):
     total: int
     queue_size: int
 
-    def __rich_console__(self, console, options):
+    def to_shapes(self) -> list[Shape]:
         label = "match" if self.total == 1 else "matches"
-        yield Text(f"{self.total} {label} for {self.query!r}", style="bold")
-        if not self.matches:
-            return
-        table = Table(show_header=True, header_style="bold dim", box=None, padding=(0, 1))
-        table.add_column("#", style="dim", width=3)
-        table.add_column("Title")
-        table.add_column("Authors", style="dim")
-        table.add_column("Year", style="dim", width=6)
-        table.add_column("Type", style="dim")
-        table.add_column("Category", style="dim")
-        table.add_column("Status", style="dim")
-        for e in self.matches:
-            etype = (e.type or "paper").replace("_", " ") if (e.type or "paper") != "paper" else ""
-            table.add_row(
-                str(e.order),
-                e.title,
-                e.authors if e.authors != "Unknown" else "",
-                str(e.year) if e.year else "",
-                etype,
-                e.category or "",
-                e.status,
-            )
-        yield table
+        shapes: list[Shape] = [
+            MessageShape(text=f"{self.total} {label} for {self.query!r}", level="info"),
+        ]
+        if self.matches:
+            rows = []
+            for e in self.matches:
+                etype = (e.type or "paper").replace("_", " ") if (e.type or "paper") != "paper" else ""
+                rows.append([
+                    str(e.order), e.title,
+                    e.authors if e.authors != "Unknown" else "",
+                    str(e.year) if e.year else "",
+                    etype, e.category or "", e.status,
+                ])
+            shapes.append(DataTableShape(
+                columns=["#", "Title", "Authors", "Year", "Type", "Category", "Status"],
+                rows=rows,
+            ))
+        return shapes
+
+    def __rich_console__(self, console, options):
+        from docent.ui.renderers import render_shapes
+        render_shapes(self.to_shapes(), console)
 
 
 class StatsResult(BaseModel):
@@ -218,17 +245,24 @@ class StatsResult(BaseModel):
     by_category: dict[str, int]
     banner: BannerCounts
 
-    def __rich_console__(self, console, options):
-        lines = [f"[bold]Total:[/bold] {self.total} entries", ""]
-        lines.append("[bold]By status[/bold]")
-        for k, v in sorted(self.by_status.items()):
-            lines.append(f"  {k}: {v}")
+    def to_shapes(self) -> list[Shape]:
+        shapes: list[Shape] = [
+            MetricShape(label="Total", value=self.total, unit="entries"),
+            DataTableShape(
+                columns=["Status", "Count"],
+                rows=[[k, str(v)] for k, v in sorted(self.by_status.items())],
+            ),
+        ]
         if self.by_category:
-            lines.append("")
-            lines.append("[bold]By category[/bold]")
-            for k, v in sorted(self.by_category.items()):
-                lines.append(f"  {k or '(none)'}: {v}")
-        yield Panel("\n".join(lines), title="Reading Queue", border_style="cyan", padding=(0, 1))
+            shapes.append(DataTableShape(
+                columns=["Category", "Count"],
+                rows=[[k or "(none)", str(v)] for k, v in sorted(self.by_category.items())],
+            ))
+        return shapes
+
+    def __rich_console__(self, console, options):
+        from docent.ui.renderers import render_shapes
+        render_shapes(self.to_shapes(), console)
 
 
 class ExportResult(BaseModel):
@@ -236,9 +270,15 @@ class ExportResult(BaseModel):
     count: int
     content: str
 
+    def to_shapes(self) -> list[Shape]:
+        return [
+            MessageShape(text=f"Exported {self.count} entries ({self.format})", level="info"),
+            MarkdownShape(content=self.content),
+        ]
+
     def __rich_console__(self, console, options):
-        yield Text(f"Exported {self.count} entries ({self.format})", style="dim")
-        yield Text(self.content)
+        from docent.ui.renderers import render_shapes
+        render_shapes(self.to_shapes(), console)
 
 
 class QueueClearInputs(BaseModel):
@@ -252,9 +292,14 @@ class QueueClearResult(BaseModel):
     banner: BannerCounts
     message: str
 
+    def to_shapes(self) -> list[Shape]:
+        return [
+            MessageShape(text=self.message, level="success" if self.cleared else "warning"),
+        ]
+
     def __rich_console__(self, console, options):
-        style = "green" if self.cleared else "yellow"
-        yield Text(self.message, style=style)
+        from docent.ui.renderers import render_shapes
+        render_shapes(self.to_shapes(), console)
 
 
 class SyncStatusInputs(BaseModel):
@@ -284,34 +329,34 @@ class SyncFromMendeleyResult(BaseModel):
     summary: str
     message: str = ""
 
-    def __rich_console__(self, console, options):
+    def to_shapes(self) -> list[Shape]:
         if self.message:
-            yield Text(self.message, style="yellow")
-            return
+            return [MessageShape(text=self.message, level="warning")]
         is_dry = bool(self.dry_run_added or self.dry_run_removed)
         actual_added = self.dry_run_added if is_dry else self.added
         actual_removed = self.dry_run_removed if is_dry else self.removed
-        prefix = "[dim](dry run)[/dim] " if is_dry else ""
-        lines = [
-            f"{prefix}[bold]Collection:[/bold] {self.queue_collection}",
-            f"  Added: [green]{len(actual_added)}[/green]  "
-            f"Unchanged: {len(self.unchanged)}  "
-            f"Removed: [yellow]{len(actual_removed)}[/yellow]  "
-            f"Failed: [red]{len(self.failed)}[/red]",
+        shapes: list[Shape] = [
+            MessageShape(text=f"Collection: {self.queue_collection}", level="info"),
+            MetricShape(label="Added", value=len(actual_added)),
+            MetricShape(label="Unchanged", value=len(self.unchanged)),
+            MetricShape(label="Removed", value=len(actual_removed)),
+            MetricShape(label="Failed", value=len(self.failed)),
         ]
         if actual_added:
-            lines.append("")
-            lines.append("[bold]Added[/bold]")
-            for item in actual_added[:10]:
-                lines.append(f"  • {item.get('id', '')} — {item.get('title', '')[:60]}")
-            if len(actual_added) > 10:
-                lines.append(f"  … and {len(actual_added) - 10} more")
+            shapes.append(DataTableShape(
+                columns=["id", "title"],
+                rows=[[item.get("id", ""), item.get("title", "")[:60]] for item in actual_added[:10]],
+            ))
         if self.failed:
-            lines.append("")
-            lines.append("[bold red]Failed[/bold red]")
-            for item in self.failed:
-                lines.append(f"  • {item.get('mendeley_id', '')[:12]}: {item.get('error', '')}")
-        yield Panel("\n".join(lines), title="Sync from Mendeley", border_style="cyan", padding=(0, 1))
+            shapes.append(DataTableShape(
+                columns=["mendeley_id", "error"],
+                rows=[[item.get("mendeley_id", "")[:12], item.get("error", "")] for item in self.failed],
+            ))
+        return shapes
+
+    def __rich_console__(self, console, options):
+        from docent.ui.renderers import render_shapes
+        render_shapes(self.to_shapes(), console)
 
 
 class SyncStatusResult(BaseModel):
@@ -321,15 +366,19 @@ class SyncStatusResult(BaseModel):
     summary: str
     message: str = ""
 
-    def __rich_console__(self, console, options):
-        lines = [
-            f"[bold]Database:[/bold] {self.database_dir or '[dim](not configured)[/dim]'}",
-            f"[bold]Queue:[/bold] {self.queue_size} entries",
-            f"[bold]PDFs in database:[/bold] {len(self.database_pdfs)}",
+    def to_shapes(self) -> list[Shape]:
+        shapes: list[Shape] = [
+            MetricShape(label="Database", value=self.database_dir or "(not configured)"),
+            MetricShape(label="Queue", value=self.queue_size, unit="entries"),
+            MetricShape(label="PDFs in database", value=len(self.database_pdfs)),
         ]
         if self.message:
-            lines.append(f"[yellow]{self.message}[/yellow]")
-        yield Panel("\n".join(lines), title="Sync Status", border_style="cyan", padding=(0, 1))
+            shapes.append(MessageShape(text=self.message, level="warning"))
+        return shapes
+
+    def __rich_console__(self, console, options):
+        from docent.ui.renderers import render_shapes
+        render_shapes(self.to_shapes(), console)
 
 
 class MoveToInputs(BaseModel):

@@ -12,6 +12,7 @@
 - [Keep Docent memory in the repo](feedback_memory_location.md) — save memory files to `memory/` in the repo, not to `~/.claude/projects/…/memory/`
 - [User runs global `docent`, not `uv run docent`](feedback_global_docent_install.md) — installed editable 2026-05-02; remind to reinstall after every new dep
 - [Multi-model workflow design](multimodel_workflow.md) — OpenCode (Go sub) as bounded implementer via REST API; glm-5.1 is default implement model
+- [OpenCode brief conventions](feedback_oc_brief_conventions.md) — project-specific rules (import paths, fixtures, no Rich markup in shapes) must be stated explicitly in every brief
 - [Research tool routing](feedback_research_tool_routing.md) — routes through Feynman first; falls back to Claude (litellm) if Feynman unavailable
 - [OpenCode for Docent agentic tools](feedback_opencode_for_agentic_tools.md) — route LLM calls in Docent's agentic tools through OpenCode (not Anthropic API); design as single-shot briefs
 - [Release plan](release_plan.md) — two independent release tracks: CLI (v1.0 = Step 13 done) and UI (v1.0 = reading page Must-do complete)

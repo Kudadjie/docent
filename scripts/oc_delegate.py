@@ -5,6 +5,7 @@ Usage:
     python scripts/oc_delegate.py brief.md
     python scripts/oc_delegate.py --task simple brief.md
     python scripts/oc_delegate.py --model deepseek-v4-pro brief.md
+    python scripts/oc_delegate.py --stream brief.md   # live token stream to stderr
     cat brief.md | python scripts/oc_delegate.py -
 
 Task types (auto-routed to model if --model not given):
@@ -24,6 +25,7 @@ import argparse
 import json
 import re
 import sys
+import threading
 import urllib.error
 import urllib.request
 from datetime import date
@@ -118,6 +120,54 @@ def extract_text(response: dict) -> str:
     )
 
 
+def stream_session(session_id: str, stop: threading.Event) -> None:
+    """SSE listener: print live tokens + tool calls to stderr until stop is set."""
+    _TOOL_PART_TYPES = {"tool-invocation", "tool-result", "file", "step-start", "step-finish"}
+    _STATUS_STYLE = {"busy": "\n[oc:live] thinking...", "idle": "\n[oc:live] done"}
+    req = urllib.request.Request(
+        f"{BASE_URL}/event",
+        headers={"Accept": "text/event-stream"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=None) as r:
+            for raw_line in r:
+                if stop.is_set():
+                    break
+                line = raw_line.decode(errors="replace").strip()
+                if not line.startswith("data:"):
+                    continue
+                try:
+                    evt = json.loads(line[5:].strip())
+                except json.JSONDecodeError:
+                    continue
+                props = evt.get("properties", {})
+                if props.get("sessionID") != session_id:
+                    continue
+                etype = evt.get("type", "")
+
+                if etype == "message.part.delta" and props.get("field") == "text":
+                    print(props.get("delta", ""), end="", flush=True, file=sys.stderr)
+
+                elif etype == "message.part.updated":
+                    part = props.get("part", {})
+                    ptype = part.get("type", "")
+                    if ptype in _TOOL_PART_TYPES:
+                        name = part.get("toolName") or part.get("name") or ptype
+                        state = part.get("state", {})
+                        status = state.get("status", "") if isinstance(state, dict) else ""
+                        print(f"\n[oc:tool] {name} {status}".rstrip(), file=sys.stderr, flush=True)
+
+                elif etype == "session.status":
+                    status_type = props.get("status", {}).get("type", "")
+                    label = _STATUS_STYLE.get(status_type)
+                    if label:
+                        print(label, file=sys.stderr, flush=True)
+                    if status_type == "idle":
+                        break
+    except Exception:  # noqa: BLE001
+        pass  # SSE closed by stop signal or connection reset — expected
+
+
 def get_diff(session_id: str) -> list[dict]:
     return api("GET", f"/session/{session_id}/diff")
 
@@ -170,6 +220,11 @@ def main() -> None:
         default=DEFAULT_PROVIDER,
         help=f"Provider ID (default: {DEFAULT_PROVIDER})",
     )
+    parser.add_argument(
+        "--stream",
+        action="store_true",
+        help="Print live token stream and tool calls to stderr while the model runs.",
+    )
     args = parser.parse_args()
 
     if args.brief == "-":
@@ -188,7 +243,16 @@ def main() -> None:
     source = f"--task {args.task}" if args.task else ("--model" if args.model else "auto")
     print(f"[oc] session {session_id}  model {model}  ({source})", file=sys.stderr)
 
+    stop_event = threading.Event()
+    if args.stream:
+        sse_thread = threading.Thread(target=stream_session, args=(session_id, stop_event), daemon=True)
+        sse_thread.start()
+
     response = send_brief(session_id, brief_text, model, args.provider)
+
+    if args.stream:
+        stop_event.set()
+        sse_thread.join(timeout=2)
     info = response.get("info", {})
     tokens = info.get("tokens", {})
     cost = info.get("cost", 0)
