@@ -1,6 +1,14 @@
-# 🎓 Docent
+<div align="center">
+  <img src="design_handover/assets/logo.svg" alt="Docent" width="200" />
+  <br /><br />
 
-A personal CLI control center for grad-school workflows — papers, research, writing tools, and subprocess wrappers, all behind a single `docent <tool>` command. Built so a web dashboard can wrap the same tool registry later without rewriting anything.
+  [![PyPI version](https://img.shields.io/pypi/v/docent-cli?color=18E299&label=pypi&style=flat-square)](https://pypi.org/project/docent-cli/)
+  [![Python](https://img.shields.io/pypi/pyversions/docent-cli?style=flat-square&color=18E299)](https://pypi.org/project/docent-cli/)
+  [![License](https://img.shields.io/github/license/Kudadjie/docent?style=flat-square&color=18E299)](LICENSE)
+  [![GitHub stars](https://img.shields.io/github/stars/Kudadjie/docent?style=flat-square&color=18E299)](https://github.com/Kudadjie/docent/stargazers)
+
+  <p>A personal CLI control center for grad-school workflows — papers, research, writing tools, and subprocess wrappers, all behind a single <code>docent &lt;tool&gt;</code> command.</p>
+</div>
 
 > **Built with AI, Architected by a Human:** Much of the codebase was written by Claude Code (Opus 4.7) and OpenCode Go subscription models (Kimi K2.6, DeepSeek V4 Pro, Qwen 3.5 Plus, MiniMax M2.7), but the architecture was strictly human-directed — designed, planned, tested, and iterated over many sessions.
 
