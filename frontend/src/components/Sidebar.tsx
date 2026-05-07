@@ -1,23 +1,10 @@
 'use client';
 
+import { useState, useEffect } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { LayoutDashboard, BookOpen } from 'lucide-react';
-
-type DotState = 'idle' | 'working' | 'error' | 'done';
-
-const DOT_COLOR: Record<DotState, string> = {
-  idle:    '#18E299',
-  working: '#F5A623',
-  error:   '#E53535',
-  done:    '#18E299',
-};
-
-const DOT_ANIM: Record<DotState, string> = {
-  idle:    'none',
-  working: 'logo-dot-blink 1s step-end infinite',
-  error:   'logo-dot-blink 0.7s step-end infinite',
-  done:    'logo-dot-done 0.5s ease-in-out 3',
-};
+import WelcomeModal, { type UserProfile } from './WelcomeModal';
 
 interface NavItem {
   id: string;
@@ -44,189 +31,220 @@ const NAV: NavItem[] = [
 interface Props {
   active: string;
   queueCount: number;
-  dotState?: DotState;
+  dark?: boolean; // if passed, overrides localStorage; if omitted, Sidebar reads localStorage itself
 }
 
-export default function Sidebar({ active, queueCount, dotState = 'idle' }: Props) {
-  return (
-    <nav
-      aria-label="Main navigation"
-      style={{
-        width: 220,
-        flexShrink: 0,
-        height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-        background: 'var(--bg)',
-        borderRight: '1px solid var(--border)',
-      }}
-    >
-      {/* Logo */}
-      <div
-        style={{
-          height: 56,
-          display: 'flex',
-          alignItems: 'center',
-          padding: '0 18px',
-          borderBottom: '1px solid var(--border)',
-        }}
-      >
-        <div
-          style={{
-            height: 28,
-            display: 'inline-flex',
-            alignItems: 'center',
-            padding: '0 11px',
-            gap: 7,
-            borderRadius: 9999,
-            border: '1.5px solid var(--logo-border)',
-            background: 'var(--bg)',
-          }}
-        >
-          <span
-            style={{
-              width: 7,
-              height: 7,
-              borderRadius: '50%',
-              background: DOT_COLOR[dotState],
-              flexShrink: 0,
-              animation: DOT_ANIM[dotState],
-            }}
-          />
-          <span
-            style={{
-              fontFamily: 'var(--sans)',
-              fontSize: 13.5,
-              fontWeight: 600,
-              color: 'var(--fg1)',
-              letterSpacing: '-0.2px',
-              lineHeight: 1,
-            }}
-          >
-            docent
-          </span>
-        </div>
-      </div>
+export default function Sidebar({ active, queueCount, dark: darkProp }: Props) {
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [showWelcome, setShowWelcome] = useState(false);
+  const [localDark, setLocalDark] = useState(false);
 
-      {/* Nav items */}
-      <div
+  useEffect(() => {
+    if (darkProp === undefined) {
+      setLocalDark(localStorage.getItem('docent:dark') === 'true');
+    }
+  }, [darkProp]);
+
+  const dark = darkProp !== undefined ? darkProp : localDark;
+
+  useEffect(() => {
+    fetch('/api/user')
+      .then(r => r.json())
+      .then((data: UserProfile) => {
+        setUser(data);
+        if (!data.name) setShowWelcome(true);
+      })
+      .catch(() => {});
+  }, []);
+
+  async function handleWelcomeComplete(profile: UserProfile) {
+    setShowWelcome(false);
+    setUser(profile);
+    try {
+      await fetch('/api/user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(profile),
+      });
+    } catch { /* ignore */ }
+  }
+
+  const profileSet = !!user?.name;
+  const displayName = user?.name || 'You';
+  const displayRole = user?.level && user?.program
+    ? `${user.level} · ${user.program}`
+    : user?.level || user?.program || 'Graduate student';
+  const initial = displayName[0].toUpperCase();
+
+  return (
+    <>
+      {showWelcome && <WelcomeModal onComplete={handleWelcomeComplete} />}
+
+      <nav
+        aria-label="Main navigation"
         style={{
-          flex: 1,
-          padding: '10px 8px',
+          width: 220,
+          flexShrink: 0,
+          height: '100%',
           display: 'flex',
           flexDirection: 'column',
-          gap: 2,
+          background: 'var(--bg)',
+          borderRight: '1px solid var(--border)',
         }}
       >
-        {NAV.map((item) => {
-          const isActive = item.id === active;
-          return (
-            <Link
-              key={item.id}
-              href={item.href}
-              aria-current={isActive ? 'page' : undefined}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 9,
-                width: '100%',
-                padding: '7px 10px',
-                borderRadius: 8,
-                border: 'none',
-                textDecoration: 'none',
-                background: isActive ? 'rgba(24,226,153,0.13)' : 'transparent',
-                color: isActive ? '#0fa76e' : 'var(--fg3)',
-                fontFamily: 'var(--sans)',
-                fontSize: 13,
-                fontWeight: isActive ? 500 : 400,
-                transition: 'background 0.1s, color 0.1s',
-                boxShadow: isActive ? 'rgba(0,0,0,0.04) 0px 1px 3px' : 'none',
-              }}
-            >
-              <span style={{ display: 'flex', color: isActive ? '#0fa76e' : 'var(--fg4)' }}>
-                {item.icon}
-              </span>
-              <span>{item.label}</span>
-              {isActive && (
-                <span
-                  style={{
-                    marginLeft: 'auto',
-                    fontFamily: 'var(--mono)',
-                    fontSize: 9,
-                    fontWeight: 500,
-                    padding: '1px 6px',
-                    borderRadius: 9999,
-                    background: 'rgba(24,226,153,0.2)',
-                    color: '#0fa76e',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.3px',
-                  }}
-                >
-                  {queueCount}
-                </span>
-              )}
-            </Link>
-          );
-        })}
-      </div>
-
-      {/* User footer */}
-      <div
-        style={{
-          padding: '12px 18px',
-          borderTop: '1px solid var(--border)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-        }}
-      >
+        {/* Logo */}
         <div
           style={{
-            width: 28,
-            height: 28,
-            borderRadius: '50%',
-            background: 'rgba(24,226,153,0.15)',
-            color: '#0fa76e',
+            height: 56,
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            fontFamily: 'var(--sans)',
-            fontWeight: 600,
-            fontSize: 12,
-            flexShrink: 0,
+            padding: '0 18px',
+            borderBottom: '1px solid var(--border)',
           }}
         >
-          J
+          <Image
+            src={dark ? '/logo-dark.svg' : '/logo.svg'}
+            alt="docent"
+            height={24}
+            width={96}
+            style={{ display: 'block' }}
+            priority
+          />
         </div>
-        <div style={{ minWidth: 0 }}>
+
+        {/* Nav items */}
+        <div
+          style={{
+            flex: 1,
+            padding: '10px 8px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 2,
+          }}
+        >
+          {NAV.map((item) => {
+            const isActive = item.id === active;
+            return (
+              <Link
+                key={item.id}
+                href={item.href}
+                aria-current={isActive ? 'page' : undefined}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 9,
+                  width: '100%',
+                  padding: '7px 10px',
+                  borderRadius: 8,
+                  border: 'none',
+                  textDecoration: 'none',
+                  background: isActive ? 'rgba(24,226,153,0.13)' : 'transparent',
+                  color: isActive ? '#0fa76e' : 'var(--fg3)',
+                  fontFamily: 'var(--sans)',
+                  fontSize: 13,
+                  fontWeight: isActive ? 500 : 400,
+                  transition: 'background 0.1s, color 0.1s',
+                  boxShadow: isActive ? 'rgba(0,0,0,0.04) 0px 1px 3px' : 'none',
+                }}
+              >
+                <span style={{ display: 'flex', color: isActive ? '#0fa76e' : 'var(--fg4)' }}>
+                  {item.icon}
+                </span>
+                <span>{item.label}</span>
+                {isActive && (
+                  <span
+                    style={{
+                      marginLeft: 'auto',
+                      fontFamily: 'var(--mono)',
+                      fontSize: 9,
+                      fontWeight: 500,
+                      padding: '1px 6px',
+                      borderRadius: 9999,
+                      background: 'rgba(24,226,153,0.2)',
+                      color: '#0fa76e',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.3px',
+                    }}
+                  >
+                    {queueCount}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
+        </div>
+
+        {/* User footer */}
+        {profileSet ? (
           <div
             style={{
-              fontFamily: 'var(--sans)',
-              fontWeight: 500,
-              fontSize: 12,
-              color: 'var(--fg1)',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
+              padding: '12px 18px',
+              borderTop: '1px solid var(--border)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
             }}
           >
-            John
+            <div style={{
+              width: 28, height: 28, borderRadius: '50%',
+              background: 'rgba(24,226,153,0.15)', color: '#0fa76e',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontFamily: 'var(--sans)', fontWeight: 600, fontSize: 12, flexShrink: 0,
+            }}>
+              {initial}
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{
+                fontFamily: 'var(--sans)', fontWeight: 500, fontSize: 12,
+                color: 'var(--fg1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+                {displayName}
+              </div>
+              <div style={{
+                fontFamily: 'var(--sans)', fontWeight: 400, fontSize: 11,
+                color: 'var(--fg4)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+                {displayRole}
+              </div>
+            </div>
           </div>
-          <div
+        ) : (
+          <button
+            onClick={() => setShowWelcome(true)}
             style={{
-              fontFamily: 'var(--sans)',
-              fontWeight: 400,
-              fontSize: 11,
-              color: 'var(--fg4)',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
+              width: '100%',
+              padding: '12px 18px',
+              borderTop: '1px solid var(--border)',
+              borderLeft: 'none', borderRight: 'none', borderBottom: 'none',
+              background: 'transparent',
+              display: 'flex', alignItems: 'center', gap: 8,
+              cursor: 'pointer',
+              textAlign: 'left',
             }}
           >
-            Graduate student
-          </div>
-        </div>
-      </div>
-    </nav>
+            <div style={{
+              width: 28, height: 28, borderRadius: '50%',
+              background: 'var(--gray100)', color: 'var(--fg4)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontFamily: 'var(--sans)', fontWeight: 600, fontSize: 14, flexShrink: 0,
+            }}>
+              ?
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{
+                fontFamily: 'var(--sans)', fontWeight: 500, fontSize: 12, color: '#0fa76e',
+              }}>
+                Set up your profile
+              </div>
+              <div style={{
+                fontFamily: 'var(--sans)', fontWeight: 400, fontSize: 11, color: 'var(--fg4)',
+              }}>
+                Name, program, level
+              </div>
+            </div>
+          </button>
+        )}
+      </nav>
+    </>
   );
 }

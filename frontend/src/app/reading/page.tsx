@@ -1,12 +1,16 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { FolderOpen, RefreshCw, Upload, Search, Filter, HelpCircle, BookOpen } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { RefreshCw, Download, Upload, Search, Filter, HelpCircle, BookOpen, ArrowRight, BarChart2 } from 'lucide-react';
 
 import Sidebar from '@/components/Sidebar';
 import StatusBanner from '@/components/StatusBanner';
 import PaperTable from '@/components/PaperTable';
 import HowToAddModal from '@/components/HowToAddModal';
+import EditModal, { type EditFields } from '@/components/EditModal';
+import StatsModal from '@/components/StatsModal';
+import DetailModal from '@/components/DetailModal';
+import Toast, { type ToastData } from '@/components/Toast';
 import type { QueueData, QueueEntry, FilterValue, BannerCounts } from '@/lib/types';
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -88,10 +92,23 @@ export default function ReadingPage() {
   const [showInfo, setShowInfo] = useState(false);
   const [dark, setDark] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [toast, setToast] = useState<ToastData | null>(null);
+  const [editEntry, setEditEntry] = useState<QueueEntry | null>(null);
+  const [detailEntry, setDetailEntry] = useState<QueueEntry | null>(null);
+  const [statsOpen, setStatsOpen] = useState(false);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const [urlReady, setUrlReady] = useState(false);
+  const autoSyncedRef = useRef(false);
 
-  // Dark mode: toggle data-theme attribute on root
+  // Dark mode: persist to localStorage, apply data-theme attribute
+  useEffect(() => {
+    const saved = localStorage.getItem('docent:dark');
+    if (saved === 'true') setDark(true);
+  }, []);
+
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', dark ? 'dark' : '');
+    localStorage.setItem('docent:dark', dark ? 'true' : 'false');
   }, [dark]);
 
   // Fetch queue
@@ -108,19 +125,127 @@ export default function ReadingPage() {
     refresh();
   }, [refresh]);
 
+  // Read filter + search from URL on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const f = params.get('filter');
+    if (f && ['all', 'reading', 'queued', 'done'].includes(f)) setFilter(f as FilterValue);
+    const q = params.get('q');
+    if (q) setSearch(q);
+    setUrlReady(true);
+  }, []);
+
+  // Write filter + search to URL whenever they change (after initial read)
+  useEffect(() => {
+    if (!urlReady) return;
+    const params = new URLSearchParams();
+    if (filter !== 'all') params.set('filter', filter);
+    if (search) params.set('q', search);
+    const qs = params.toString();
+    window.history.replaceState(null, '', qs ? `?${qs}` : window.location.pathname);
+  }, [filter, search, urlReady]);
+
+  // 30s polling — re-reads queue.json from disk, no CLI call
+  useEffect(() => {
+    const id = setInterval(refresh, 30_000);
+    return () => clearInterval(id);
+  }, [refresh]);
+
+  // Auto-sync on load if queue is stale (> 30 min)
+  useEffect(() => {
+    if (!data || autoSyncedRef.current) return;
+    autoSyncedRef.current = true;
+    const age = data.last_updated
+      ? Date.now() - new Date(data.last_updated).getTime()
+      : Infinity;
+    if (age < 30 * 60 * 1000) return;
+    // Silent sync: show success toast, swallow errors
+    fetch('/api/actions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'sync' }),
+    })
+      .then(r => r.json())
+      .then((body: Record<string, string>) => {
+        if (body.ok) {
+          setToast({ type: 'success', message: toastSuccess('sync', body.stdout ?? '') });
+          refresh();
+        }
+      })
+      .catch(() => {});
+  }, [data, refresh]);
+
   // Actions
-  async function runAction(action: string, id?: string) {
+  async function runAction(action: string, id?: string, extra?: Record<string, unknown>) {
     setBusy(action + (id ?? ''));
     try {
-      await fetch('/api/actions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, id }),
-      });
+      let res: Response;
+      try {
+        res = await fetch('/api/actions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action, id, ...extra }),
+        });
+      } catch {
+        setToast({ type: 'error', message: 'Network error — is the server running?' });
+        return;
+      }
+
+      const body = await res.json().catch(() => ({})) as Record<string, string>;
+
+      if (!res.ok) {
+        const detail = body.error ?? body.stderr ?? 'Unknown error';
+        setToast({ type: 'error', message: toastError(action, detail) });
+      } else {
+        setToast({ type: 'success', message: toastSuccess(action, body.stdout ?? '') });
+      }
+
       await refresh();
     } finally {
       setBusy(null);
     }
+  }
+
+  function toastSuccess(action: string, stdout: string): string {
+    if (action === 'sync') {
+      // stdout contains "X added, Y unchanged, Z removed, W failed."
+      const m = stdout.match(/(\d+) added.*?(\d+) unchanged.*?(\d+) removed/);
+      if (m) {
+        const [, added, unchanged, removed] = m;
+        const parts = [];
+        if (Number(added) > 0)     parts.push(`${added} added`);
+        if (Number(removed) > 0)   parts.push(`${removed} removed`);
+        if (Number(unchanged) > 0) parts.push(`${unchanged} unchanged`);
+        if (parts.length === 0)    parts.push('Nothing changed');
+        return `Mendeley sync — ${parts.join(', ')}.`;
+      }
+      return 'Mendeley sync complete.';
+    }
+    if (action === 'scan')   return 'Folder scan complete.';
+    if (action === 'done')   return 'Marked as done.';
+    if (action === 'remove') return 'Entry removed from queue.';
+    if (action === 'start')  return 'Marked as reading.';
+    if (action === 'edit')      return 'Entry updated.';
+    if (action === 'move-up')   return 'Moved up.';
+    if (action === 'move-down') return 'Moved down.';
+    return 'Done.';
+  }
+
+  function toastError(action: string, detail: string): string {
+    const label: Record<string, string> = {
+      sync:   'Mendeley sync failed',
+      scan:   'Scan failed',
+      done:   'Could not mark done',
+      remove: 'Could not remove entry',
+      start:  'Could not start entry',
+      edit:        'Could not update entry',
+      'move-up':   'Could not move up',
+      'move-down': 'Could not move down',
+    };
+    // Strip ANSI escape codes and Rich markup from CLI output
+    const clean = detail.replace(/\x1b\[[0-9;]*m/g, '').trim();
+    const first = clean.split('\n').find(l => l.trim()) ?? clean;
+    return `${label[action] ?? 'Action failed'}: ${first.slice(0, 120)}`;
   }
 
   async function handleMarkDone(id: string) {
@@ -128,16 +253,65 @@ export default function ReadingPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Remove this entry from your queue?')) return;
     await runAction('remove', id);
   }
 
-  async function handleScan() {
-    await runAction('scan');
+  async function handleStart(id: string) {
+    await runAction('start', id);
+  }
+
+  async function handleMoveUp(id: string) {
+    await runAction('move-up', id);
+  }
+
+  async function handleMoveDown(id: string) {
+    await runAction('move-down', id);
+  }
+
+  function handleNext() {
+    const queued = entries
+      .filter(e => e.status === 'queued')
+      .sort((a, b) => a.order - b.order);
+    if (queued.length === 0) {
+      setToast({ type: 'error', message: 'No queued papers.' });
+      return;
+    }
+    const next = queued[0];
+    setHighlightId(next.id);
+    document.querySelector(`[data-entry-id="${next.id}"]`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => setHighlightId(null), 2500);
+    setToast({ type: 'success', message: `Next: ${next.title || next.id}` });
   }
 
   async function handleSync() {
     await runAction('sync');
+  }
+
+  async function handleEditSave(id: string, fields: EditFields) {
+    await runAction('edit', id, fields as Record<string, unknown>);
+  }
+
+  async function handleExport() {
+    try {
+      const res = await fetch('/api/queue');
+      if (!res.ok) {
+        setToast({ type: 'error', message: 'Export failed: could not fetch queue data.' });
+        return;
+      }
+      const qdata: QueueData = await res.json();
+      const json = JSON.stringify(qdata.entries, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `reading-queue-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setToast({ type: 'success', message: `Exported ${qdata.entries.length} entries.` });
+    } catch {
+      setToast({ type: 'error', message: 'Export failed.' });
+    }
   }
 
   const entries: QueueEntry[] = data?.entries ?? [];
@@ -153,7 +327,7 @@ export default function ReadingPage() {
         background: 'var(--bg)',
       }}
     >
-      <Sidebar active="reading" queueCount={entries.length} />
+      <Sidebar active="reading" queueCount={entries.length} dark={dark} />
 
       <main
         style={{
@@ -171,6 +345,7 @@ export default function ReadingPage() {
           databaseCount={data?.database_count ?? null}
           dark={dark}
           onToggleDark={() => setDark((d) => !d)}
+          dotState={busy === 'sync' || busy === 'refresh' ? 'working' : 'idle'}
         />
 
         {/* Page header */}
@@ -246,19 +421,25 @@ export default function ReadingPage() {
             {/* Left: action buttons */}
             <div style={{ display: 'flex', gap: 6 }}>
               <GhostBtn
-                icon={<FolderOpen size={14} strokeWidth={1.5} />}
-                onClick={handleScan}
+                icon={<RefreshCw size={14} strokeWidth={1.5} />}
+                onClick={async () => { setBusy('refresh'); await refresh(); setBusy(null); }}
               >
-                {busy === 'scan' ? 'Scanning…' : 'Scan folder'}
+                {busy === 'refresh' ? 'Refreshing…' : 'Refresh'}
               </GhostBtn>
               <GhostBtn
-                icon={<RefreshCw size={14} strokeWidth={1.5} />}
+                icon={<Download size={14} strokeWidth={1.5} />}
                 onClick={handleSync}
               >
                 {busy === 'sync' ? 'Syncing…' : 'Sync Mendeley'}
               </GhostBtn>
-              <GhostBtn icon={<Upload size={14} strokeWidth={1.5} />}>
+              <GhostBtn icon={<Upload size={14} strokeWidth={1.5} />} onClick={handleExport}>
                 Export
+              </GhostBtn>
+              <GhostBtn icon={<ArrowRight size={14} strokeWidth={1.5} />} onClick={handleNext}>
+                Next
+              </GhostBtn>
+              <GhostBtn icon={<BarChart2 size={14} strokeWidth={1.5} />} onClick={() => setStatsOpen(true)}>
+                Stats
               </GhostBtn>
             </div>
 
@@ -356,14 +537,51 @@ export default function ReadingPage() {
         <PaperTable
           entries={filtered}
           newIds={newIds}
+          highlightId={highlightId}
+          activeFilter={filter}
+          hasSearch={!!search.trim()}
           dark={dark}
           onMarkDone={handleMarkDone}
           onDelete={handleDelete}
+          onEdit={(entry) => setEditEntry(entry)}
+          onStart={handleStart}
+          onMoveUp={handleMoveUp}
+          onMoveDown={handleMoveDown}
+          onShowDetail={(entry) => setDetailEntry(entry)}
         />
       </main>
 
       {/* Info modal */}
       {showInfo && <HowToAddModal onClose={() => setShowInfo(false)} />}
+
+      {/* Edit modal */}
+      {editEntry && (
+        <EditModal
+          entry={editEntry}
+          onSave={handleEditSave}
+          onClose={() => setEditEntry(null)}
+        />
+      )}
+
+      {/* Detail modal */}
+      {detailEntry && (
+        <DetailModal
+          entry={detailEntry}
+          dark={dark}
+          onClose={() => setDetailEntry(null)}
+        />
+      )}
+
+      {/* Stats modal */}
+      {statsOpen && (
+        <StatsModal
+          entries={entries}
+          onClose={() => setStatsOpen(false)}
+        />
+      )}
+
+      {/* Toast notifications */}
+      {toast && <Toast toast={toast} onDismiss={() => setToast(null)} />}
     </div>
   );
 }

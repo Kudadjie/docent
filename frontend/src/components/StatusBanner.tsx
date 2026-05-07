@@ -3,12 +3,36 @@
 import { Sun, Moon } from 'lucide-react';
 import type { BannerCounts } from '@/lib/types';
 
+type DotState = 'idle' | 'working' | 'error' | 'done';
+
+const DOT_COLOR: Record<DotState, string> = {
+  idle:    '#18E299',
+  working: '#F5A623',
+  error:   '#E53535',
+  done:    '#18E299',
+};
+
+const DOT_ANIM: Record<DotState, string> = {
+  idle:    'none',
+  working: 'logo-dot-blink 1s step-end infinite',
+  error:   'logo-dot-blink 0.7s step-end infinite',
+  done:    'logo-dot-done 0.5s ease-in-out 3',
+};
+
+const SYNC_LABEL: Record<DotState, string> = {
+  idle:    '',      // filled in dynamically with age
+  working: 'Syncing…',
+  error:   'Sync Error',
+  done:    '',      // filled in dynamically with age
+};
+
 interface Props {
   banner: BannerCounts;
   lastUpdated: string | null;
   databaseCount: number | null;
   dark: boolean;
   onToggleDark: () => void;
+  dotState?: DotState;
 }
 
 function formatAge(iso: string | null): string {
@@ -62,14 +86,19 @@ export default function StatusBanner({
   databaseCount,
   dark,
   onToggleDark,
+  dotState = 'idle',
 }: Props) {
   const queueTotal = banner.queued + banner.reading;
   const age = formatAge(lastUpdated);
+  const syncLabel =
+    dotState === 'working' || dotState === 'error'
+      ? SYNC_LABEL[dotState]
+      : `Synced ${age}`;
 
   return (
     <div
       style={{
-        height: 40,
+        height: 56,
         background: 'var(--bg-subtle)',
         borderBottom: '1px solid var(--border)',
         padding: '0 24px',
@@ -115,17 +144,8 @@ export default function StatusBanner({
         </span>
       </button>
 
-      {/* Synced indicator */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span
-          style={{
-            width: 6,
-            height: 6,
-            borderRadius: '50%',
-            background: '#18E299',
-            flexShrink: 0,
-          }}
-        />
+      {/* Synced indicator + status pill */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span
           style={{
             fontFamily: 'var(--mono)',
@@ -135,8 +155,44 @@ export default function StatusBanner({
             color: 'var(--fg4)',
           }}
         >
-          Synced {age}
+          {syncLabel}
         </span>
+        {/* Status pill */}
+        <div
+          style={{
+            height: 24,
+            display: 'inline-flex',
+            alignItems: 'center',
+            padding: '0 9px',
+            gap: 6,
+            borderRadius: 9999,
+            border: '1.5px solid var(--logo-border)',
+            flexShrink: 0,
+          }}
+        >
+          <span
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
+              background: DOT_COLOR[dotState],
+              flexShrink: 0,
+              animation: DOT_ANIM[dotState],
+            }}
+          />
+          <span
+            style={{
+              fontFamily: 'var(--sans)',
+              fontSize: 11.5,
+              fontWeight: 600,
+              color: 'var(--fg1)',
+              letterSpacing: '-0.2px',
+              lineHeight: 1,
+            }}
+          >
+            docent
+          </span>
+        </div>
       </div>
     </div>
   );
