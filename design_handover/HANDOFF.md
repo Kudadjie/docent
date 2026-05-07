@@ -49,9 +49,12 @@ design_handoff_reading/
 │       ├── DocumentPanel.jsx               ← reference doc panel
 │       └── app-index.html                  ← reference app shell
 └── assets/
-    ├── logo.svg
+    ├── logo.svg                            ← dark mark/wordmark, for light backgrounds
+    ├── logo-light.svg                      ← white mark/wordmark, for dark backgrounds
     └── favicon.svg
 ```
+
+**Logo usage:** the green accent square (`#18E299`) is preserved across both versions so brand recognition stays consistent — only the mark container and wordmark color flip. Pick `logo.svg` on light surfaces and `logo-light.svg` on dark surfaces; do not invert with CSS filters.
 
 **Open `designs/Reading.html` in a browser** to see the working prototype. Toggle the Tweaks panel (top-right toolbar in the host environment) to explore variants — these are exploratory only.
 
