@@ -267,15 +267,14 @@ def main() -> None:
     slug = slugify(first_line) or "task"
     archive_path = archive_brief(brief_text, slug)
 
-    # Output
-    print(text)
+    # Output — encode to UTF-8 to survive Windows cp1252 terminals
+    sys.stdout.buffer.write((text + "\n").encode("utf-8", errors="replace"))
 
-    print(
-        f"\n[oc] model={model_used}  tokens={tokens.get('total', '?')}  cost=${cost:.5f}",
-        file=sys.stderr,
+    sys.stderr.buffer.write(
+        (f"\n[oc] model={model_used}  tokens={tokens.get('total', '?')}  cost=${cost:.5f}\n").encode("utf-8", errors="replace")
     )
-    print(f"[oc] diff:\n{diff_summary}", file=sys.stderr)
-    print(f"[oc] brief archived → {archive_path}", file=sys.stderr)
+    sys.stderr.buffer.write(f"[oc] diff:\n{diff_summary}\n".encode("utf-8", errors="replace"))
+    sys.stderr.buffer.write(f"[oc] brief archived -> {archive_path}\n".encode("utf-8", errors="replace"))
 
 
 if __name__ == "__main__":

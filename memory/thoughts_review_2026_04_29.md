@@ -80,20 +80,20 @@ Both lightweight, both good. `/safe-commit` matches existing manual workflow. `/
 
 This is the **load-bearing recommendation** — what to do with the list. Mirrors but extends `roadmap_post_phase1.md` (capability arc) with a **hardening arc** running in parallel post-Step 11.
 
-### Phase A — "Ready for first GitHub push" bundle
-Trigger: paper-pipeline fully ported (after ~Step 12).
-- §3 security audit + `.env.example` + `.gitignore` audit (`.env`, `docent.db`, `*.log`, `.DS_Store`)
-- §6 version decision (stay 0.1.0)
-- §15 `/safe-commit` + ~~`/memory-cleanup`~~ (shipped 2026-04-30) slash commands
-- §14 `sec-ops` subagent (one-shot review before push)
+### Phase A — "Ready for first GitHub push" bundle — DONE 2026-05-07
+- ~~§3 security audit + `.env.example` + `.gitignore` audit~~ (done — CSO audit run, 1 MEDIUM finding fixed)
+- ~~§6 version decision~~ (done — v1.0.0 per release_plan.md)
+- ~~§15 `/safe-commit` + `/memory-cleanup`~~ (both shipped)
+- ~~§14 `sec-ops` subagent~~ (done — CSO audit + `/safe-commit` slash command)
+- ~~`/ui-spec-writer` subagent~~ (done — slash command created)
 
 ### Phase B — Pre-1.0 hardening pass
-Trigger: skills ported, Output Shapes shipped (per `roadmap_post_phase1.md` Phase 1.5).
+Trigger: skills ported, Output Shapes shipped. **Output Shapes done 2026-05-07. Skills not yet.**
 - §4 CLI robustness (binary preflight, subprocess timeouts with process-group kill, pathlib audit)
 - §9 state resilience (idempotency check, SIGINT handler with Windows test, error code mapping w/ underlying exception)
 - §10 `docent doctor` + atomic-write verification
-- §13 testing (contract-shape unit tests for Tool ABC + registry + dispatcher; per `roadmap_post_phase1.md` Plumbing C)
-- §14 `code-reviewer` + `test-engineer` subagents (continuous use)
+- ~~§13 testing~~ (done — `test_tool_abc.py` + `test_dispatcher.py`, 160 tests green)
+- ~~§14 `code-reviewer` + `test-engineer` subagents~~ (done — slash commands created)
 
 ### Phase C — Post-1.0 features
 Trigger: 1.0 shipped, real usage data available.

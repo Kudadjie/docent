@@ -24,3 +24,25 @@ concerns.txt
 # Development context — tracked on dev, not on main
 CLAUDE.md
 CLAUDE.performance.md
+
+# Secrets and local config
+.env
+.env.*
+!.env.example
+*.local
+
+# Logs
+*.log
+logs/
+
+# OS junk
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Database files
+*.db
+*.sqlite
+
+# Local gstack security reports and session data
+.gstack/

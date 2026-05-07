@@ -1,13 +1,13 @@
 # CONTEXT — resume hint for next session
 
-**Current Task:** Phase 1.5-A Output Shapes landed; AGENTS.md + contract tests are next.
+**Current Task:** Phase A (GitHub push readiness) complete. Phase 1.5-C next.
 
 **Key Decisions:**
-- Output Shapes: 7 types in `core/shapes.py`; `ui/renderers.py` Rich dispatcher; all 10 reading results have `to_shapes()`. 141 tests green.
-- `oc_delegate.py` gained `--stream` flag (SSE `/event` endpoint, live token + tool-call feed).
-- Brief convention: project-specific imports/fixtures must be explicit. See `memory/feedback_oc_brief_conventions.md`.
+- CSO audit: 1 MEDIUM finding — pin `actions/checkout` + `astral-sh/setup-uv` to commit SHAs before first public push.
+- Slash commands added: `/safe-commit`, `/code-reviewer`, `/test-engineer`, `/ui-spec-writer`.
+- `oc_delegate.py` now writes UTF-8 via buffer — no more cp1252 choke on Unicode output.
 
 **Next Steps:**
-1. Phase 1.5-B: `AGENTS.md` (3-rule max, architecture invariants)
-2. Phase 1.5-B: Contract tests for Tool ABC + registry + dispatcher
-3. Phase 1.5-C: `research-to-notebook` skill port (Feynman primary, litellm fallback)
+1. Fix publish.yml Action SHA pinning (before pushing to GitHub)
+2. Phase 1.5-C: `research-to-notebook` tool port (registered Tool in the registry, MCP-callable)
+3. Decide: standalone or bundled plugin? (bundled makes more sense — same pattern as reading tool)

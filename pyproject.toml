@@ -43,7 +43,7 @@ build-backend = "uv_build"
 module-name = "docent"
 
 [dependency-groups]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "pip-audit>=2.7"]
 
 [tool.uv]
 default-groups = ["dev"]

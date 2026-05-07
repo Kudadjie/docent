@@ -1,8 +1,20 @@
 ---
-name: Output Shapes deferred
-description: Output Shapes vocabulary for tool returns — design discussed and accepted in principle, but explicitly deferred. Read when picking up the schema-driven UI / Phase 2 thread, or when a new tool's return type feels ad-hoc.
+name: Output Shapes — shipped Phase 1.5-A (archived from output_shapes_deferred.md)
+description: Original deferred-design document; preserved for historical context. The design shipped 2026-05-07. Live code is the authoritative spec.
 type: project
 ---
+
+**Status: SHIPPED 2026-05-07 as Phase 1.5-A.**
+- `src/docent/core/shapes.py` — 7 shape types, discriminated union
+- `src/docent/ui/renderers.py` — Rich dispatcher
+- All 10 reading result types have `to_shapes()`
+- 141 tests covered it at ship; suite at 160 after Phase 1.5-B
+
+This document is the original deferred-design record. Archived because the design is now in the code. If you're reading this to understand the vocabulary decisions, read the source instead.
+
+---
+
+*(original content below — preserved for decision archaeology)*
 
 Output Shapes (typed return vocabulary for tool actions) is recognized as needed and the design is roughly settled, but **explicitly deferred** — not now. User said "sounds good but not now, save for later" on 2026-04-25 after a discussion prompted by `Interesting stuff.txt` (the Phase 2 vision doc + reviewer critique).
 
@@ -37,14 +49,3 @@ If/when ported, it composes:
 - `progress` — streaming events while running
 
 No new shape needed. That composition test is how to know the abstraction is working: if a new tool can't be expressed as a list of existing shapes, *that's* when you extend — for the category.
-
-## When to revisit
-
-Triggers to pull this off the shelf:
-- **Right after Step 11 ships** (revised 2026-04-25). Paper alone has earned it: tables (search, stats), bars (scan), single-line mutations (add/done/edit), text blobs (export), and Step 11 adds the canonical "needs Output Shapes" case in `sync-status` (composite of table + warnings + summary). Don't wait for a "second tool" — paper has enough variety on its own.
-- Starting any UI/FastAPI work (shapes are the wire format) — but Output Shapes should land before that.
-- Reviewer critique on `Interesting stuff.txt` (Phase 2 vision doc) flagged this exact point: "Before you add any more tools, define the Shape vocabulary — even just 4-5 types covers most cases — and retrofit paper to return them."
-
-## Correction note (2026-04-25)
-
-The memory above (under "How to apply") said *"Continue the existing `dict | str | list` ad-hoc returns."* This was inaccurate — paper actions already return typed Pydantic models per action (`AddResult`, `MutationResult`, `SearchResult`, `StatsResult`, `ScanResult`, `ConfigShowResult`, etc.). The actual missing layer is **rendering**, not typing: today the CLI does `console.print(model)` which dumps Rich's repr (functional but ugly). Output Shapes addresses the rendering boundary — give every result a small fixed vocabulary the CLI/UI/MCP renderers can consume — not "make paper typed" (it already is).

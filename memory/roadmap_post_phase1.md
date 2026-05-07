@@ -63,9 +63,9 @@ Per `Interesting stuff.txt`: CLI stays the source of truth; UI is a "visual skin
 [done]    Step 12  (~/.docent/plugins/ discovery + reading as bundled plugin)
 [done]    Step 13  (full MCP adapter — shipped 2026-05-07)
 [done]    Reading page frontend (Next.js — built ahead of plan, shipped 2026-05-06)
-[next]    Output Shapes vocabulary + ui/renderers.py     }  Phase 1.5
-          Tests + AGENTS.md                              }
-          Skill ports (research-to-notebook first)       }
+[done]    Output Shapes vocabulary + ui/renderers.py     }  Phase 1.5
+[done]    Tests + AGENTS.md                             }
+[next]    Skill ports (research-to-notebook first)      }
 [then]    FastAPI layer + JSON wire format               }  Phase 2
           UI polish + schema-driven forms                }  (base app exists)
           Omnibox (NL → action mode only)                }

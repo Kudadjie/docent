@@ -18,4 +18,6 @@ OpenCode models follow explicit instructions well but miss implicit project conv
 
 **Why:** glm-5.1 read conftest.py during the test_shapes.py task but still used the full package import path, causing a double-registration error that only surfaces when the full suite runs together. The fix was trivial but wouldn't have been needed with an explicit rule.
 
-**How to apply:** Before finalising any brief that creates test files or imports from bundled plugins, add a "Project conventions" section with these rules spelled out as bullet points.
+4. **Brief file location:** Always write briefs to `oc_briefs/` (not `briefs/`, not `memory/tasks/`). The folder is `oc_briefs/` at the project root.
+
+**How to apply:** Before finalising any brief that creates test files or imports from bundled plugins, add a "Project conventions" section with these rules spelled out as bullet points. Always save the brief to `oc_briefs/`.

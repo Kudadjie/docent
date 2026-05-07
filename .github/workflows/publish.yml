@@ -13,10 +13,15 @@ jobs:
       id-token: write  # required for Trusted Publisher OIDC
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
+
+      - name: Audit dependencies
+        # CVE-2026-42203/42208/42271 affect litellm's proxy/server — Docent uses
+        # litellm for outbound API calls only. Suppressed until a stable fix lands.
+        run: uv run pip-audit --ignore-vuln CVE-2026-42203 --ignore-vuln CVE-2026-42208 --ignore-vuln CVE-2026-42271
 
       - name: Build package
         run: uv build
