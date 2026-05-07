@@ -246,8 +246,8 @@ export default function DocsPage() {
                 that are callable from the terminal, from Claude via MCP, or from this UI.
               </Prose>
               <Prose>
-                Papers live in <strong>Mendeley</strong>. Docent syncs from a named Mendeley collection
-                and maintains a lightweight local queue. You never add papers directly in Docent — you
+                Documents live in <strong>Mendeley</strong>. Docent syncs from a named Mendeley collection
+                and maintains a lightweight local queue. You never add documents directly in Docent — you
                 add them to Mendeley first, then pull.
               </Prose>
               <SubHeading>How it fits together</SubHeading>
@@ -264,38 +264,39 @@ docent serve  →  Claude MCP  (or this UI)`}</CodeBlock>
             <Card>
               <SectionHeading id="reading-queue">Reading Queue</SectionHeading>
               <Prose>
-                Manage your paper reading list. All state lives in{' '}
+                Manage your reading list. Each entry is a document from Mendeley — a paper, book, or
+                book chapter. All state lives in{' '}
                 <Code>~/.docent/data/reading/queue.json</Code>. Metadata is always authoritative from
                 Mendeley — Docent caches it locally for fast reads.
               </Prose>
 
-              <SubHeading>Adding &amp; syncing papers</SubHeading>
+              <SubHeading>Adding &amp; syncing documents</SubHeading>
               <CommandTable rows={[
-                { cmd: 'docent reading sync-from-mendeley', desc: 'Pull papers from your configured Mendeley collection into the queue. Adds new entries, removes deleted ones.' },
+                { cmd: 'docent reading sync-from-mendeley', desc: 'Pull documents from your configured Mendeley collection into the queue. Adds new entries, removes deleted ones.' },
                 { cmd: 'docent reading sync-from-mendeley --dry-run', desc: 'Preview what would be added or removed without making changes.' },
-                { cmd: 'docent reading add', desc: 'Shows guidance on how to add papers (via Mendeley — Docent does not accept direct adds).' },
+                { cmd: 'docent reading add', desc: 'Shows guidance on how to add documents (via Mendeley — Docent does not accept direct adds).' },
               ]} />
 
               <SubHeading>Moving through the queue</SubHeading>
               <CommandTable rows={[
-                { cmd: 'docent reading next', desc: 'Show the next paper to read (lowest order, status = queued).' },
-                { cmd: 'docent reading next --course <name>', desc: 'Filter next paper by course name.' },
-                { cmd: 'docent reading start <id>', desc: 'Mark a paper as currently reading. Stamps started_at timestamp.' },
-                { cmd: 'docent reading done <id>', desc: 'Mark a paper as done. Stamps finished_at timestamp.' },
-                { cmd: 'docent reading show <id>', desc: 'Show full details for a paper.' },
+                { cmd: 'docent reading next', desc: 'Show the next entry to read (lowest order, status = queued).' },
+                { cmd: 'docent reading next --course <name>', desc: 'Filter next entry by course name.' },
+                { cmd: 'docent reading start <id>', desc: 'Mark an entry as currently reading. Stamps started_at timestamp.' },
+                { cmd: 'docent reading done <id>', desc: 'Mark an entry as done. Stamps finished_at timestamp.' },
+                { cmd: 'docent reading show <id>', desc: 'Show full details for an entry.' },
               ]} />
 
               <SubHeading>Editing &amp; organising</SubHeading>
               <CommandTable rows={[
-                { cmd: 'docent reading edit <id> --notes "…"', desc: 'Update notes for a paper.' },
+                { cmd: 'docent reading edit <id> --notes "…"', desc: 'Update notes for an entry.' },
                 { cmd: 'docent reading edit <id> --category thesis', desc: 'Set category: course, thesis, or personal.' },
                 { cmd: 'docent reading edit <id> --course-name "CVEN 601"', desc: 'Tag with a course name.' },
                 { cmd: 'docent reading edit <id> --type book_chapter', desc: 'Set type: paper, book, or book_chapter.' },
                 { cmd: 'docent reading set-deadline <id> --date 2026-06-01', desc: 'Set a reading deadline. Docent warns at startup when a deadline is approaching.' },
                 { cmd: 'docent reading set-deadline <id> --clear', desc: 'Clear a deadline.' },
-                { cmd: 'docent reading move-up <id>', desc: 'Move a paper one position up in the queue.' },
-                { cmd: 'docent reading move-down <id>', desc: 'Move a paper one position down.' },
-                { cmd: 'docent reading move-to <id> --position <n>', desc: 'Move a paper to an absolute queue position.' },
+                { cmd: 'docent reading move-up <id>', desc: 'Move an entry one position up in the queue.' },
+                { cmd: 'docent reading move-down <id>', desc: 'Move an entry one position down.' },
+                { cmd: 'docent reading move-to <id> --position <n>', desc: 'Move an entry to an absolute queue position.' },
               ]} />
 
               <SubHeading>Search &amp; stats</SubHeading>
@@ -307,7 +308,7 @@ docent serve  →  Claude MCP  (or this UI)`}</CodeBlock>
               <SubHeading>Export &amp; maintenance</SubHeading>
               <CommandTable rows={[
                 { cmd: 'docent reading export', desc: 'Export the full queue to a styled HTML document with a print dialog for PDF output.' },
-                { cmd: 'docent reading remove <id>', desc: 'Remove a paper from the local queue (does not delete from Mendeley).' },
+                { cmd: 'docent reading remove <id>', desc: 'Remove an entry from the local queue (does not delete from Mendeley).' },
                 { cmd: 'docent reading queue-clear --yes', desc: 'Wipe the entire local queue. Irreversible without a re-sync.' },
                 { cmd: 'docent reading sync-status', desc: 'Check queue size vs PDF count in your database directory.' },
               ]} />
@@ -324,6 +325,7 @@ docent serve  →  Claude MCP  (or this UI)`}</CodeBlock>
                 { cmd: 'docent list', desc: 'List all registered tools and their available actions.' },
                 { cmd: 'docent info <tool>', desc: 'Show detailed info and action list for a tool.' },
                 { cmd: 'docent serve', desc: 'Start the MCP stdio server. Wire this into Claude\'s .mcp.json.' },
+                { cmd: 'docent update', desc: 'Upgrade Docent to the latest version on PyPI. Reminds you to restart Claude if using MCP.' },
               ]} />
 
               <SubHeading>Config commands (per-tool)</SubHeading>

@@ -347,6 +347,24 @@ for _tool_cls in all_tools().values():
     _register_tool_in_app(_tool_cls)
 
 
+@app.command("update", help="Upgrade Docent to the latest version on PyPI.")
+def update_command() -> None:
+    """Upgrade the installed docent-cli package via uv tool upgrade."""
+    import subprocess
+
+    console = get_console()
+    console.print(f"[dim]Installed version:[/] {__version__}")
+    console.print("[dim]Running:[/] uv tool upgrade docent-cli\n")
+    result = subprocess.run(["uv", "tool", "upgrade", "docent-cli"])
+    if result.returncode != 0:
+        console.print("\n[red]Upgrade failed.[/] Check the output above.")
+        raise typer.Exit(1)
+    console.print("\n[green]Upgraded successfully.[/]")
+    console.print(
+        "[dim]If you use Docent via MCP, restart Claude to load the new version.[/]"
+    )
+
+
 @app.command("serve", help="Start the Docent MCP server (stdio transport).")
 def serve_command() -> None:
     """Expose all registered Docent actions as MCP tools over stdio.

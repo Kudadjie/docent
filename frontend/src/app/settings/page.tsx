@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Settings, Trash2, Pencil, Check, X, FolderOpen, BookOpen } from 'lucide-react';
+import { Settings, Trash2, Pencil, Check, X, FolderOpen, BookOpen, RefreshCw } from 'lucide-react';
 import Sidebar from '@/components/Sidebar';
 import Toast, { type ToastData } from '@/components/Toast';
 
@@ -160,12 +160,21 @@ function ConfigRow({
   );
 }
 
+interface VersionInfo {
+  installed: string | null;
+  latest: string | null;
+  up_to_date: boolean | null;
+  error?: string;
+}
+
 export default function SettingsPage() {
   const [dark, setDark] = useState(false);
   const [config, setConfig] = useState<ConfigData | null>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
+  const [checkingVersion, setCheckingVersion] = useState(false);
 
   useEffect(() => {
     setDark(localStorage.getItem('docent:dark') === 'true');
@@ -218,6 +227,19 @@ export default function SettingsPage() {
     } finally {
       setClearing(false);
       setConfirmClear(false);
+    }
+  }
+
+  async function checkForUpdates() {
+    setCheckingVersion(true);
+    try {
+      const res = await fetch('/api/version');
+      const data = await res.json() as VersionInfo;
+      setVersionInfo(data);
+    } catch {
+      setVersionInfo({ installed: null, latest: null, up_to_date: null, error: 'Network error' });
+    } finally {
+      setCheckingVersion(false);
     }
   }
 
@@ -277,6 +299,91 @@ export default function SettingsPage() {
                   onSave={v => handleSaveReading(f.key, v)}
                 />
               ))}
+            </div>
+          </section>
+
+          {/* Version */}
+          <section style={{ marginBottom: 48 }}>
+            <h2 style={{
+              fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600,
+              color: 'var(--fg4)', letterSpacing: '0.5px', textTransform: 'uppercase',
+              margin: '0 0 16px',
+            }}>
+              Updates
+            </h2>
+
+            <div style={{
+              border: '1px solid var(--border)',
+              borderRadius: 10,
+              padding: '20px 24px',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 24 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{
+                    fontFamily: 'var(--sans)', fontSize: 14, fontWeight: 500,
+                    color: 'var(--fg1)', marginBottom: 4,
+                  }}>
+                    Docent version
+                  </div>
+
+                  {versionInfo ? (
+                    <div style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg3)', lineHeight: 1.6 }}>
+                      {versionInfo.error ? (
+                        <span style={{ color: '#D45656' }}>{versionInfo.error}</span>
+                      ) : versionInfo.up_to_date ? (
+                        <span style={{ color: '#0fa76e' }}>
+                          v{versionInfo.installed} — up to date
+                        </span>
+                      ) : (
+                        <>
+                          <span>Installed: <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>v{versionInfo.installed}</span></span>
+                          {versionInfo.latest && (
+                            <>
+                              {' · '}
+                              <span style={{ color: '#C97B00' }}>
+                                v{versionInfo.latest} available
+                              </span>
+                              <div style={{ marginTop: 6 }}>
+                                Run{' '}
+                                <span style={{
+                                  fontFamily: 'var(--mono)', fontSize: 11,
+                                  background: 'var(--gray100)', padding: '1px 6px',
+                                  borderRadius: 4, border: '1px solid var(--border)',
+                                  color: 'var(--fg1)',
+                                }}>
+                                  docent update
+                                </span>
+                                {' '}in your terminal, then restart Claude.
+                              </div>
+                            </>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg4)' }}>
+                      Click to check for updates.
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  onClick={checkForUpdates}
+                  disabled={checkingVersion}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    padding: '6px 14px', borderRadius: 7,
+                    border: '1px solid var(--border-md)',
+                    background: 'transparent', color: 'var(--fg3)',
+                    fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500,
+                    cursor: checkingVersion ? 'default' : 'pointer',
+                    opacity: checkingVersion ? 0.6 : 1, flexShrink: 0,
+                  }}
+                >
+                  <RefreshCw size={13} strokeWidth={1.5} style={{ animation: checkingVersion ? 'spin 1s linear infinite' : 'none' }} />
+                  {checkingVersion ? 'Checking…' : 'Check for updates'}
+                </button>
+              </div>
             </div>
           </section>
 
