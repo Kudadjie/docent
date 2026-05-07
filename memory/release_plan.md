@@ -25,6 +25,19 @@ Created 2026-05-07 based on user direction.
 - Release as separate GitHub release with tag `ui-v1.0.0`
 - Docs page: how to run the frontend, feature screenshots
 
+## UI shipping strategy (decided 2026-05-07)
+
+**Distribution method: bundle into PyPI package, launch via `docent ui`.**
+
+- Frontend stack: Next.js 16 + React 19 + TypeScript + Tailwind CSS v4 + Lucide React (`frontend/package.json`)
+- Ship via PyPI alongside CLI — no separate installer. Mirrors how TensorBoard, MLflow, Jupyter do it.
+- `next build` output goes into `src/docent/ui_dist/` as package data.
+- `docent ui` command starts a local server (FastAPI or stdlib) and opens the browser.
+- For now: commit the `ui_dist/` build artifacts to the repo (personal tool, manageable size). Move build step to GitHub Actions CI later.
+- One update path for users: `uv tool upgrade docent-cli` gets both CLI and UI.
+
+**Why not an installer?** Users are grad students comfortable with Python tooling; PyPI keeps distribution unified and eliminates code-signing and platform packaging pain.
+
 ## How to apply
 
 - Treat CLI and UI as independent. A new CLI action doesn't need to wait for UI work to ship, and vice versa.
