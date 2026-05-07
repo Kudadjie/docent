@@ -35,7 +35,7 @@ TASKS_ARCHIVE = Path(__file__).parent.parent / "memory" / "tasks" / "done"
 
 TASK_MODELS = {
     "simple": "qwen3.5-plus",
-    "implement": "kimi-k2.6",
+    "implement": "glm-5.1",       # preferred default for multi-file implementation
     "reason": "deepseek-v4-pro",
     "long": "minimax-m2.7",
 }
@@ -52,7 +52,7 @@ def pick_model(task: str | None, brief: str) -> str:
     lower = brief.lower()
     word_count = len(lower.split())
 
-    if word_count > 600:
+    if word_count > 1500:
         return TASK_MODELS["long"]
     if any(w in lower for w in _REASON_WORDS):
         return TASK_MODELS["reason"]

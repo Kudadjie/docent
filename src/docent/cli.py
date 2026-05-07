@@ -296,7 +296,7 @@ def serve_command() -> None:
       "mcpServers": {
         "docent": {
           "command": "uv",
-          "args": ["--directory", "/path/to/docent", "run", "docent", "serve"]
+          "args": ["--directory", "<project-root>", "run", "docent", "serve"]
         }
       }
     }

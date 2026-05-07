@@ -19,7 +19,7 @@ Claude Code .mcp.json:
       "mcpServers": {
         "docent": {
           "command": "uv",
-          "args": ["--directory", "/path/to/docent", "run", "docent", "serve"]
+          "args": ["--directory", "<project-root>", "run", "docent", "serve"]
         }
       }
     }
@@ -152,8 +152,11 @@ def run_server() -> None:
 
     Called by `docent serve`. Blocks until the client disconnects.
     """
+    import sys
     discover_tools()
     load_plugins()
+    tools = build_mcp_tools()
+    print(f"[docent] MCP server ready — {len(tools)} tools registered. Waiting for client…", file=sys.stderr, flush=True)
 
     server = Server("docent")
 

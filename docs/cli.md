@@ -92,22 +92,26 @@ docent reading config-set --key queue_collection --value "Docent-Queue"
 
 ## 5. Connecting to Claude Code (MCP)
 
-`docent serve` starts an MCP server over stdio, exposing every registered Docent action as an MCP tool. This lets Claude Code (or any MCP client) call `reading__next`, `reading__stats`, `reading__sync_from_mendeley`, etc. directly.
+`docent serve` starts an MCP server over stdio, exposing every registered Docent action as an MCP tool. This lets Claude Code call your reading queue tools directly — no terminal needed.
 
 ### Tool Naming
 
-MCP tool names follow the pattern `{tool}__{action}`, with hyphens in action names replaced by underscores:
+MCP tool names follow the pattern `{tool}__{action}`, with hyphens replaced by underscores:
 
 | Docent action | MCP tool name |
 |---------------|---------------|
 | `reading next` | `reading__next` |
 | `reading stats` | `reading__stats` |
+| `reading search` | `reading__search` |
 | `reading sync-from-mendeley` | `reading__sync_from_mendeley` |
 | `reading set-deadline` | `reading__set_deadline` |
+| `reading move-up` | `reading__move_up` |
+
+All registered actions are exposed automatically — run `docent list` to see the full set.
 
 ### Setup: `.mcp.json`
 
-Create or edit `.mcp.json` in your Claude Code project root (or `~/.claude/settings.json` for global):
+Create `.mcp.json` in your Claude Code project root (or add to `~/.claude/settings.json` for global access):
 
 ```json
 {
@@ -126,19 +130,71 @@ Create or edit `.mcp.json` in your Claude Code project root (or `~/.claude/setti
 }
 ```
 
-Replace `/absolute/path/to/docent-repo` with the actual path. On Windows, for example: `C:/Users/DELL/Desktop/Docent`.
+Replace `/absolute/path/to/docent-repo` with the actual path. On Windows: `C:/Users/DELL/Desktop/Docent` (forward slashes work fine).
 
-After saving, reload Claude Code. The Docent MCP server starts automatically when Claude Code needs it.
+Restart Claude Code after saving — the server starts automatically when needed.
 
 ### Verify Connection
 
-In Claude Code, ask: *"List my reading queue"* — Claude will call `reading__stats` or `reading__next` via MCP.
-
-Or test the server directly:
+Test the server directly first:
 
 ```bash
-docent serve   # starts, waits for JSON-RPC on stdin; Ctrl+C to stop
+docent serve
+# [docent] MCP server ready — 18 tools registered. Waiting for client…
+# (blocks on stdin — Ctrl+C to stop)
 ```
+
+Then in Claude Code, try one of the example prompts below.
+
+### Example Use Cases
+
+**Check your queue without opening a terminal:**
+> "What's next on my reading queue?"
+
+Claude calls `reading__next` and returns your top-priority item with its deadline, category, and type.
+
+---
+
+**Get a queue overview before a study session:**
+> "Give me a stats summary of my reading queue."
+
+Claude calls `reading__stats` — total items, breakdown by category and type, overdue deadlines.
+
+---
+
+**Find something specific:**
+> "Do I have anything in my queue about storm surge or coastal flooding?"
+
+Claude calls `reading__search` with the relevant query and returns matching entries.
+
+---
+
+**Sync your Mendeley library into the queue:**
+> "Pull in any new papers from my Mendeley Docent-Queue collection."
+
+Claude calls `reading__sync_from_mendeley` and reports what was added, unchanged, or removed.
+
+---
+
+**Set a deadline mid-conversation:**
+> "I need to finish the Komen 2023 paper before my supervisor meeting on Friday — set a deadline."
+
+Claude calls `reading__set_deadline` with the entry id and date. No context-switching required.
+
+---
+
+**Reorder your queue:**
+> "Move the storm surge paper to the top of my queue."
+
+Claude calls `reading__search` to find the entry id, then `reading__move_to` with position 1.
+
+---
+
+**Agentic pipeline (future):**
+When Docent gains a `research` tool, you'll be able to say:
+> "Research recent papers on XBeach model validation and add the most relevant ones to my queue."
+
+Claude will orchestrate the full pipeline — find papers, download to `database_dir`, trigger a Mendeley sync — without you touching the terminal.
 
 ---
 
