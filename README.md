@@ -1,56 +1,60 @@
-# Docent
+# 🎓 Docent
 
-A personal CLI control center for grad-school workflows — papers, research, writing tools, subprocess wrappers — all behind a single `docent <tool>` command. Built so a web dashboard can wrap the same tool registry later without rewriting anything.
+A personal CLI control center for grad-school workflows — papers, research, writing tools, and subprocess wrappers, all behind a single `docent <tool>` command. Built so a web dashboard can wrap the same tool registry later without rewriting anything.
 
-> **Built with AI, Architected by a Human:** Much of the codebase for Docent was written by Claude Code (Opus 4.7) and OpenCode Go subscription models (Kimi K2.6, DeepSeek V4 Pro, Qwen 3.5 Plus, MiniMax M2.7), but the architecture was strictly human-directed — designed, planned, tested, and iterated over many sessions.
+> **Built with AI, Architected by a Human:** Much of the codebase was written by Claude Code (Opus 4.7) and OpenCode Go subscription models (Kimi K2.6, DeepSeek V4 Pro, Qwen 3.5 Plus, MiniMax M2.7), but the architecture was strictly human-directed — designed, planned, tested, and iterated over many sessions.
 
-## What works today
+## ✨ What works today
 
 - `docent --version`, `docent --help`, `docent list`, `docent info <tool>`
 - **Tool contract — two shapes:**
   - *Single-action*: subclass `Tool`, set `input_schema`, override `run()`. CLI: `docent <tool> --flag ...`
   - *Multi-action*: decorate methods with `@action(...)`. CLI: `docent <tool> <action> --flag ...`
   - A tool is one or the other — registry enforces mutual exclusivity at import time.
-- **Auto-discovery**: drop a file in `src/docent/tools/`, decorate with `@register_tool`, and Typer commands generate at startup from the Pydantic input schema. No CLI edits.
-- **Context plumbing**: `context.settings` (Pydantic + `~/.docent/config.toml` + env overrides), `context.llm` (lazy litellm wrapper), `context.executor` (list-args subprocess, no shell-injection surface).
-- **`docent.learning.RunLog`**: per-namespace JSONL run-log with cap-and-roll, for tools that want a "what did I do recently" history (used by `paper`'s mutators).
-- **`reading` tool**: reading queue CRUD (`next / show / search / stats / remove / edit / done / start / export`); `add` (guidance mode — ingestion goes through Mendeley); `sync-from-mendeley` (reconciles the configured Mendeley collection into the local queue, overlays fresh metadata on display); `sync-pull` (Unpaywall OA download); `sync-status`; `move-up / move-down / move-to`; deadline notifications at startup; `config-show / config-set`; `queue-clear`. Mendeley is the source of truth for title/authors/year/doi — the reading tool is a thin workflow layer on top.
-- **`ReadingQueueStore`**: persistence seam in `reading_store.py`. Actions mutate queue state through the store, never by reaching into JSON directly.
-- **`MendeleyCache`**: read-through file-backed cache (5-min TTL) used by `next / show / search` to overlay live Mendeley metadata. Degrades gracefully to queue snapshot on auth/transport failure.
-- Themed Rich console singleton; tools never touch it directly (they return typed data; CLI renders).
+- **Auto-discovery** — drop a file in `src/docent/tools/`, decorate with `@register_tool`, and Typer commands generate at startup from the Pydantic input schema. No CLI edits.
+- **Context plumbing** — `context.settings` (Pydantic + `~/.docent/config.toml` + env overrides), `context.llm` (lazy litellm wrapper), `context.executor` (list-args subprocess, no shell-injection surface).
+- **`docent.learning.RunLog`** — per-namespace JSONL run-log with cap-and-roll, for tools that want a "what did I do recently" history.
+- **`reading` tool** — reading queue CRUD (`next / show / search / stats / remove / edit / done / start / export`); Mendeley-backed ingestion; deadline notifications at startup; `move-up / move-down / move-to`; MCP-exposed so Claude Code can call it directly.
+- **`MendeleyCache`** — read-through file-backed cache (5-min TTL) for fresh metadata on every `next / show / search`. Degrades gracefully to queue snapshot on auth failure.
+- **Plugin system** — drop a `.py` file into `~/.docent/plugins/` and Docent auto-discovers it on next run.
 
-## Install
-
-Requires [uv](https://docs.astral.sh/uv/) and Python 3.11+.
+## 📦 Install
 
 ```bash
-uv sync
-uv run docent --version
-```
+# Recommended
+uv tool install docent-cli
 
-For a global install once you want `docent` on your PATH:
+# Or pipx
+pipx install docent-cli
 
-```bash
-uv tool install .
+# Or plain pip
+pip install docent-cli
+
+# Verify
 docent --version
 ```
 
-## Architecture
+**Updates:**
+```bash
+uv tool upgrade docent-cli
+```
+
+## 🏗 Architecture
 
 See [`Docent_Architecture.md`](Docent_Architecture.md) for the full design. The short version:
 
 - **Tool registry** — tools self-register via `@register_tool` at import time. Registry stores the class, not an instance, so nothing runs until the tool is actually invoked.
 - **Context object** — frozen dataclass passed to every tool. Provides `settings`, `llm` (lazy litellm), and `executor` (subprocess wrapper).
 - **UI / logic boundary** — tools return typed Pydantic data. They never import `docent.ui` and never touch Rich. The CLI renders; the future dashboard will serialize the same data to JSON.
-- **Plugin system** — drop a file in `src/docent/tools/`, decorate with `@register_tool`, and Typer commands generate at startup. No CLI edits needed.
+- **Plugin system** — drop a file in `~/.docent/plugins/`, decorate with `@register_tool`, and Typer commands generate at startup. No CLI edits needed.
 
-## Tools
+## 📚 Tools
 
 ### `reading` — Reading Queue
 
 Manages your academic reading queue and syncs with Mendeley.
 
-**Workflow:** Drop a PDF in your `database_dir` → Mendeley auto-imports it → drag it into your `Docent-Queue` collection in Mendeley → run `docent reading sync-from-mendeley`. The category of each entry is automatically detected from Mendeley sub-collections (e.g. a paper in `Docent-Queue/TestCourse701/ParticularTopic` gets `category="TestCourse701/ParticularTopic"`).
+**Workflow:** Drop a PDF in your `database_dir` → Mendeley auto-imports it → drag it into your `Docent-Queue` collection → run `docent reading sync-from-mendeley`. Category is automatically detected from Mendeley sub-collections.
 
 **Queue management**
 
@@ -86,9 +90,9 @@ Manages your academic reading queue and syncs with Mendeley.
 | `docent reading move-down <id>` | Move one position later |
 | `docent reading move-to <id> --position 3` | Move to a specific position |
 
-**Deadlines:** Set via `set-deadline --deadline YYYY-MM-DD`. Docent prints a startup warning for entries due within 3 days or overdue — once per calendar day.
+**Deadlines:** Docent prints a startup warning for entries due within 3 days or overdue — once per calendar day.
 
-**Entry types:** Automatically detected from Mendeley document type on sync (`journal_article` → paper, `book` → book, `book_section` → book chapter). Override with `edit --type book_chapter`.
+**Entry types:** Automatically detected from Mendeley document type on sync. Override with `edit --type book_chapter`.
 
 **Mendeley sync**
 
@@ -112,7 +116,13 @@ Manages your academic reading queue and syncs with Mendeley.
 |---|---|
 | `docent reading queue-clear --yes` | Wipe the entire queue (irreversible) |
 
-## Adding a tool
+## 🔌 MCP — Use Docent from Claude Code
+
+`docent serve` starts an MCP server over stdio, exposing every action as an MCP tool. Claude Code can call your reading queue directly — no terminal needed.
+
+See [`docs/cli.md`](docs/cli.md) for the full setup guide and `.mcp.json` template.
+
+## 🛠 Adding a tool
 
 Single-action tools are the simplest shape:
 
@@ -140,9 +150,9 @@ class Echo(Tool):
 
 Then `docent echo --msg hi --count 3` just works. No CLI edits, no registration code — the decorator is enough.
 
-For tools with several related operations on shared state (a reading queue, a research notebook, a browser session), use the multi-action shape — decorate methods with `@action(...)` instead of overriding `run()`. Each action gets its own Pydantic input schema and becomes `docent <tool> <action> --flag ...`. See `src/docent/tools/reading.py` for the reference implementation.
+For tools with several related operations on shared state, use the multi-action shape — decorate methods with `@action(...)`. See `src/docent/tools/reading.py` for the reference implementation.
 
-## Coming Soon
+## 🚀 Coming Soon
 
 - **`docent research`** — AI-powered research tool: paper search (alphaXiv, Google Scholar), literature review, and multi-source synthesis pipelines. Routes through [Feynman](https://github.com/Kudadjie/feynman) as the primary research agent, with a direct Claude fallback if Feynman isn't available.
 
@@ -150,6 +160,6 @@ For tools with several related operations on shared state (a reading queue, a re
 
 - **Omnibox (natural language interface)** — type what you want in plain English and Docent routes it to the right action: *"what should I read next for CES701?"* or *"sync my Mendeley queue"* — no flags, no subcommands.
 
-## Why
+## 💡 Why
 
 I have a pile of Claude Code skills I actually use (research-to-notebook, paper-pipeline, feynman wrappers, literature-review, etc.) but they only work inside a Claude session. Docent is the terminal-first home for the same workflows — scriptable, pipeable, cron-able, and eventually a dashboard. MCP is not a replacement; Docent can later expose itself *through* MCP, but that's a late-stage adapter, not the core.
