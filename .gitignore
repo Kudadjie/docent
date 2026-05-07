@@ -21,8 +21,6 @@ keystone_project.txt
 readingtool-tweaks.txt
 concerns.txt
 
-# Development context — internal to the developer, not for public consumption
-memory/
+# Development context — tracked on dev, not on main
 CLAUDE.md
 CLAUDE.performance.md
-CONTEXT.md
