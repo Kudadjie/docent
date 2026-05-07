@@ -9,5 +9,4 @@
 
 **Next Steps:**
 1. Bundled release: FastAPI server + `output: 'export'` + `docent ui` command (see memory/project_ui_bundling.md)
-2. Fix publish.yml Action SHA pinning before any push to main
-3. Phase 1.5-C research-to-notebook plugin (plan in memory/project_feynman_port.md)
+2. Phase 1.5-C research-to-notebook plugin (plan in memory/project_feynman_port.md)
