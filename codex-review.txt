@@ -1,0 +1,136 @@
+Findings
+
+
+High: packaged UI calls an endpoint that FastAPI never serves.
+
+settings/page.tsx (line 290) fetches /api/tooling, and the dev-only Next route exists at route.ts (line 74). But build_ui.py (line 7) explicitly removes Next API routes for static export, and ui_server.py (line 56) only implements queue/actions/config/user/version. In installed docent ui, the Tooling update check will 404.
+
+
+
+High: reading edit --status bypasses the status lifecycle.
+
+EditInputs.status (line 110) accepts any string, and edit (line 530) writes it directly. The timestamp semantics live only in _set_status (line 1238). So edit --status done can create a done entry with no finished, and edit --status banana can persist an invisible status.
+
+
+
+High: the dev Next API claims shell-safe args but uses shell: true.
+
+actions/route.ts (line 11) says args avoid shell quoting issues, but line 14 (line 14) uses shell: true; config has the same pattern at config/route.ts (line 25). Since notes/tags/config values are user-controlled, this should be shell: false or removed in favor of one Python backend path.
+
+
+
+Medium: MCP does not expose single-action tools.
+
+mcp_server.py (line 77) only iterates collect_actions(tool_cls), while the CLI has a separate single-action branch at cli.py (line 324). External single-action plugins work in CLI but disappear from MCP.
+
+
+
+Medium: frontend release checks are currently not clean.
+
+npm run lint fails with 8 errors and 2 warnings. npm run build fails in this sandbox because layout.tsx (line 2) uses next/font/google, which fetches Google fonts during build. For a bundled local UI, local fonts or plain CSS fallbacks would make releases more reproducible.
+
+
+
+Medium: user docs are stale enough to cause copy-paste failures.
+
+README shows docent reading next --course-name at README.md (line 81), while the actual input is category at reading init.py (line 97). The UI docs also show --course, --course-name, --date, --clear, and unpaywall_email at docs page (line 264).
+
+
+
+The Good
+
+The core is much healthier than last time. The test suite is real now: 252 passed in 6.32s. The reading queue store is a good deep module: persistence, index recompute, banner state, and atomic writes are concentrated in reading_store.py (line 55). The Mendeley source-of-truth model is clear, and the MCP behavioral contract in AGENTS.md is unusually crisp.
+
+The plugin/tool registry is also a strong foundation. The single-action vs multi-action split is clean, registration catches bad shapes, and output shapes are a nice step toward CLI/UI/MCP sharing.
+
+The Ugly
+
+The main architectural ugliness is duplicated invocation. CLI, MCP, FastAPI, and dev Next routes all know how to call Docent actions in different ways. That is why /api/tooling exists in dev but not production, why some routes shell out, and why docs drift from real schemas. The deepening opportunity is a single invocation module: schema in, Context in, action result out, with adapters for CLI/MCP/FastAPI.
+
+The second ugly bit is rendering leakage. Tool result models implement __rich_console__ and import docent.ui.renderers in reading (line 86) and research (line 220). It works, but it weakens the “tools return typed data; UI renders” seam.
+
+Verification
+
+Passed: uv run pytest, npx tsc --noEmit.
+
+Failed: npm run lint; npm run build due Google font fetches in the offline sandbox.
+
+
+My recommendation is: pause feature work briefly and do a consolidation pass. The repo has crossed from “prototype with tools” into “small platform,” and the main risk now is drift between surfaces.
+
+Priority Order
+
+
+Fix release blockers first
+
+
+Add /api/tooling to ui_server.py, or remove the UI feature until it is served in packaged mode.
+
+Make npm run lint clean.
+
+Make npm run build reproducible without Google font network fetches.
+
+Refresh README/docs from actual schemas.
+
+
+
+
+Create one action invocation module
+
+Right now CLI, MCP, FastAPI, and Next dev routes all invoke tools differently. Create one module, maybe docent.core.invoke, that handles:
+
+
+tool/action lookup
+
+Pydantic validation
+
+context creation or injection
+
+generator progress collection
+
+result serialization
+
+
+Then CLI, MCP, and FastAPI become thin adapters. This is the biggest leverage move.
+
+
+
+Delete or neuter the Next API routes
+
+The packaged UI uses FastAPI, while dev uses Next API routes. That is asking for drift. I’d make local dev run against the same Python FastAPI backend, then remove frontend/src/app/api/*.
+
+
+
+Tighten the reading schemas
+
+Use Literal or enums for status, type, format, and research backend. Route edit --status through _set_status or remove status from edit entirely. That closes a real invariant hole.
+
+
+
+Move Rich rendering out of tool result models
+
+to_shapes() is the right interface. __rich_console__ inside plugin result models is convenient but leaks UI concerns back into tools. CLI should render shapes explicitly.
+
+
+
+Add file locking around reading queue writes
+
+Atomic writes protect against partial files, but not concurrent read-modify-write races. The browser UI can trigger sync, edit, move, and clear actions close together. A small lock in ReadingQueueStore would protect locality.
+
+
+
+Make docs schema-generated where possible
+
+The docs drift is already visible. Generate command tables from registered tool schemas for README fragments and the UI docs page, or at least add a contract test that docs mention only valid flags.
+
+
+
+My concrete sequencing
+
+Release repair: /api/tooling, lint, local fonts, docs flag cleanup.
+Invocation module: one shared tool/action execution path.
+Schema hardening: enums, date validation, status lifecycle fix.
+UI backend simplification: dev UI talks to FastAPI too.
+Rendering cleanup + file locks.
+
+The repo is in a good place, but the next best work is not “more tools.” It is making the existing tool platform impossible to accidentally fork in four directions.

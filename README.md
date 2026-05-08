@@ -78,10 +78,10 @@ Manages your academic reading queue and syncs with Mendeley.
 | Command | Description |
 |---|---|
 | `docent reading next` | Show the next paper to read (lowest order number) |
-| `docent reading next --course-name CES701` | Next paper for a specific course |
+| `docent reading next --category CES701` | Next entry for a category prefix |
 | `docent reading show <id>` | Show full details for one entry |
 | `docent reading search <query>` | Search by title, authors, notes, tags, or id |
-| `docent reading stats` | Counts by status, category, and course |
+| `docent reading stats` | Counts by status and category |
 | `docent reading export` | Export queue as JSON (default) or Markdown table |
 | `docent reading export --format markdown --status queued` | Filtered export, sorted by reading order |
 
@@ -98,8 +98,8 @@ Manages your academic reading queue and syncs with Mendeley.
 | Command | Description |
 |---|---|
 | `docent reading edit <id> --order 1` | Set reading priority (1 = read first) |
-| `docent reading set-deadline <id> --deadline 2026-06-15` | Set a reading deadline |
-| `docent reading set-deadline <id> --deadline ''` | Clear a deadline |
+| `docent reading set-deadline --id <id> --deadline 2026-06-15` | Set a reading deadline |
+| `docent reading set-deadline --id <id> --deadline ''` | Clear a deadline |
 | `docent reading edit <id> --notes "Key paper for lit review"` | Add notes |
 | `docent reading edit <id> --tags tag1 tag2` | Set tags |
 | `docent reading edit <id> --type book_chapter` | Set entry type (paper / book / book_chapter) |
@@ -124,8 +124,8 @@ Manages your academic reading queue and syncs with Mendeley.
 | Command | Description |
 |---|---|
 | `docent reading config-show` | Show current reading settings |
-| `docent reading config-set database_dir ~/path/to/Papers` | Set the PDF database folder |
-| `docent reading config-set queue_collection "Docent-Queue"` | Set the Mendeley collection name |
+| `docent reading config-set --key database_dir --value ~/path/to/Papers` | Set the PDF database folder |
+| `docent reading config-set --key queue_collection --value "Docent-Queue"` | Set the Mendeley collection name |
 
 **Other**
 

@@ -22,7 +22,7 @@ function parseReadingSection(): { database_dir: string | null; queue_collection:
 
 function spawnDocent(args: string[]): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const proc = spawn('docent', args, { shell: true, timeout: 15_000 });
+    const proc = spawn('docent', args, { shell: false, timeout: 15_000 });
     let stdout = '';
     let stderr = '';
     proc.stdout?.on('data', (d: Buffer) => { stdout += d.toString(); });

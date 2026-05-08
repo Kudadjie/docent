@@ -7,9 +7,11 @@ export function useDarkMode(): { dark: boolean; toggleDark: () => void } {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem('docent:dark');
-    if (saved === 'true') setDark(true);
-    setReady(true);
+    queueMicrotask(() => {
+      const saved = localStorage.getItem('docent:dark');
+      if (saved === 'true') setDark(true);
+      setReady(true);
+    });
   }, []);
 
   // Don't touch data-theme until we've read localStorage — avoids overwriting the inline script

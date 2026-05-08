@@ -1,17 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { exec, spawn } from 'child_process';
-import { promisify } from 'util';
-
-const execAsync = promisify(exec);
-
-function safeId(id: string): string {
-  return id.replace(/[^a-zA-Z0-9_\-./]/g, '');
-}
+import { spawn } from 'child_process';
 
 // spawn-based runner: passes args as an array, avoiding shell quoting issues
 function spawnDocent(args: string[], timeoutMs = 30_000): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const proc = spawn('docent', args, { shell: true, timeout: timeoutMs });
+    const proc = spawn('docent', args, { shell: false, timeout: timeoutMs });
     let stdout = '';
     let stderr = '';
     proc.stdout?.on('data', (d: Buffer) => { stdout += d.toString(); });
@@ -50,51 +43,43 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  let cmd: string;
+  let args: string[];
+  let timeoutMs = 30_000;
   switch (action) {
     case 'done':
       if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
-      cmd = `docent reading done --id "${safeId(id)}"`;
+      args = ['reading', 'done', '--id', id];
       break;
     case 'start':
       if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
-      cmd = `docent reading start --id "${safeId(id)}"`;
+      args = ['reading', 'start', '--id', id];
       break;
     case 'remove':
       if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
-      cmd = `docent reading remove --id "${safeId(id)}"`;
+      args = ['reading', 'remove', '--id', id];
       break;
     case 'move-up':
       if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
-      cmd = `docent reading move-up --id "${safeId(id)}"`;
+      args = ['reading', 'move-up', '--id', id];
       break;
     case 'move-down':
       if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
-      cmd = `docent reading move-down --id "${safeId(id)}"`;
+      args = ['reading', 'move-down', '--id', id];
       break;
-    case 'sync': {
+    case 'sync':
       // Sync can take 60-120s: start Mendeley MCP, list folders, list docs, reconcile.
-      // Use spawnDocent (inherits full shell env) with a generous timeout.
-      try {
-        const { stdout, stderr } = await spawnDocent(
-          ['reading', 'sync-from-mendeley'],
-          120_000,
-        );
-        return NextResponse.json({ ok: true, stdout, stderr });
-      } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : String(e);
-        return NextResponse.json({ ok: false, error: msg }, { status: 500 });
-      }
-    }
+      args = ['reading', 'sync-from-mendeley'];
+      timeoutMs = 120_000;
+      break;
     case 'queue-clear':
-      cmd = 'docent reading queue-clear --yes';
+      args = ['reading', 'queue-clear', '--yes'];
       break;
     default:
       return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
   }
 
   try {
-    const { stdout, stderr } = await execAsync(cmd, { timeout: 30_000 });
+    const { stdout, stderr } = await spawnDocent(args, timeoutMs);
     return NextResponse.json({ ok: true, stdout, stderr });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);

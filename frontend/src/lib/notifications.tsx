@@ -49,7 +49,9 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const checkedRef = useRef(false);
 
   useEffect(() => {
-    setNotifications(loadNotifications());
+    queueMicrotask(() => {
+      setNotifications(loadNotifications());
+    });
   }, []);
 
   const addNotification = useCallback((n: Omit<AppNotification, 'id' | 'timestamp' | 'read'>) => {

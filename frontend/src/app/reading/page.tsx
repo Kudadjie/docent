@@ -92,7 +92,7 @@ export default function ReadingPage() {
   const [data, setData] = useState<QueueData | null>(null);
   const [filter, setFilter] = useState<FilterValue>('all');
   const [search, setSearch] = useState('');
-  const [newIds, setNewIds] = useState<Set<string>>(new Set());
+  const [newIds] = useState<Set<string>>(new Set());
   const [showInfo, setShowInfo] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
@@ -123,7 +123,9 @@ export default function ReadingPage() {
   }, []);
 
   useEffect(() => {
-    refresh();
+    queueMicrotask(() => {
+      void refresh();
+    });
   }, [refresh]);
 
   useEffect(() => {
@@ -137,12 +139,14 @@ export default function ReadingPage() {
 
   // Read filter + search from URL on mount
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const f = params.get('filter');
-    if (f && ['all', 'reading', 'queued', 'done'].includes(f)) setFilter(f as FilterValue);
-    const q = params.get('q');
-    if (q) setSearch(q);
-    setUrlReady(true);
+    queueMicrotask(() => {
+      const params = new URLSearchParams(window.location.search);
+      const f = params.get('filter');
+      if (f && ['all', 'reading', 'queued', 'done'].includes(f)) setFilter(f as FilterValue);
+      const q = params.get('q');
+      if (q) setSearch(q);
+      setUrlReady(true);
+    });
   }, []);
 
   // Write filter + search to URL whenever they change (after initial read)
@@ -190,7 +194,8 @@ export default function ReadingPage() {
       .then(r => r.json())
       .then((body: Record<string, string>) => {
         if (body.ok) {
-          setToast({ type: 'success', message: toastSuccess('sync', body.stdout ?? '') });
+          const clean = (body.stdout ?? '').replace(/\x1b\[[0-9;]*m/g, '').trim();
+          setToast({ type: 'success', message: clean.slice(0, 160) || 'Mendeley sync complete.' });
           refresh();
         }
       })
@@ -484,7 +489,7 @@ ${sectionsHtml}
             }}
           >
             <span style={{ fontFamily: 'var(--sans)', fontSize: 12, color: '#D45656' }}>
-              Something doesn't seem right — the server may be unavailable.
+              Something doesn&apos;t seem right - the server may be unavailable.
             </span>
             <button
               onClick={() => { setServerError(false); refresh(); }}

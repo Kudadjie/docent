@@ -17,6 +17,7 @@ Run from any directory unless a test specifies otherwise.
 docent research --help
 ```
 **Expect:** `deep`, `lit`, `review`, `to-notebook`, `usage`, `config-show`, `config-set` all listed.
+**Result (2026-05-08): PASSED**
 
 ---
 
@@ -32,6 +33,7 @@ docent research config-set --key output_dir --value ~/Documents/Docent/research
 docent research config-show
 ```
 **Expect:** `output_dir` updated. Verify persisted in `~/.docent/config.toml` under `[research]`.
+**Result (2026-05-08): PASSED**
 
 ---
 
@@ -42,6 +44,7 @@ docent research usage
 ```
 **Expect:** Today's date, Feynman spend $0.0000, OC spend $0.0000 (both "(no limit)" if budgets unset).
 If a spend file exists from today, spend may be non-zero — that's correct.
+**Result (2026-05-08): FAILED — `ValueError: Tool name 'research' is already registered by research_to_notebook.ResearchTool; cannot re-register from docent.bundled_plugins.research_to_notebook.ResearchTool`. Duplicate tool registration bug.**
 
 ---
 
@@ -60,6 +63,10 @@ docent research deep "storm surge Ghana" --backend docent
 
 **If OpenCode server is unavailable:**
 - Should print an actionable error ("please run `opencode serve --port 4096`"), not a traceback
+
+**Result (2026-05-08): FAILED — `ModuleNotFoundError: No module named 'duckduckgo_search'`. Decision: drop duckduckgo_search entirely; switch web fetch to SerpAPI (Google Search). User has a free-tier SerpAPI account (250 req/month). Also add SerpAPI request count tracking (counts against the 250/month quota).**
+
+**Tests 5–17: not yet run — blocked on fixing #3 and #4 first.**
 
 ---
 

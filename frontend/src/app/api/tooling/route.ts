@@ -12,7 +12,8 @@ interface ToolResult {
 
 function spawnCommand(cmd: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
-    const proc = spawn(cmd, args, { shell: true, timeout: 15_000 });
+    const command = process.platform === 'win32' && cmd === 'npm' ? 'npm.cmd' : cmd;
+    const proc = spawn(command, args, { shell: false, timeout: 15_000 });
     let stdout = '';
     let stderr = '';
     proc.stdout?.on('data', (d: Buffer) => { stdout += d.toString(); });

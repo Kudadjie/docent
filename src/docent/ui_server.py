@@ -39,9 +39,9 @@ def _read_config_reading() -> dict:
         return {}
 
 
-async def _run(args: list[str], timeout: float = 30.0) -> tuple[str, str, int]:
+async def _run_command(cmd: str, args: list[str], timeout: float = 30.0) -> tuple[str, str, int]:
     proc = await asyncio.create_subprocess_exec(
-        "docent", *args,
+        cmd, *args,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -51,6 +51,55 @@ async def _run(args: list[str], timeout: float = 30.0) -> tuple[str, str, int]:
         proc.kill()
         raise
     return stdout_b.decode(), stderr_b.decode(), proc.returncode
+
+
+async def _run(args: list[str], timeout: float = 30.0) -> tuple[str, str, int]:
+    return await _run_command("docent", args, timeout=timeout)
+
+
+def _version_at_least(installed: str, latest: str) -> bool:
+    def to_ints(value: str) -> list[int]:
+        return [int(part) for part in value.removeprefix("v").split(".")]
+
+    try:
+        current = to_ints(installed)
+        target = to_ints(latest)
+    except ValueError:
+        return installed == latest
+
+    length = max(len(current), len(target))
+    current += [0] * (length - len(current))
+    target += [0] * (length - len(target))
+    return current >= target
+
+
+async def _fetch_npm_latest(package: str) -> Optional[str]:
+    try:
+        encoded = package.replace("@", "%40").replace("/", "%2F")
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                f"https://registry.npmjs.org/{encoded}/latest",
+                headers={"Accept": "application/json"},
+            )
+        response.raise_for_status()
+        return response.json().get("version")
+    except Exception:
+        return None
+
+
+async def _get_npm_installed(package: str) -> Optional[str]:
+    try:
+        stdout, _, rc = await _run_command(
+            "npm",
+            ["list", "-g", package, "--json", "--depth=0"],
+            timeout=15.0,
+        )
+        if rc != 0 and not stdout:
+            return None
+        data = json.loads(stdout)
+        return data.get("dependencies", {}).get(package, {}).get("version")
+    except Exception:
+        return None
 
 
 @app.get("/api/queue")
@@ -213,6 +262,33 @@ async def get_version() -> JSONResponse:
         return JSONResponse({"installed": installed, "latest": latest, "up_to_date": up_to_date})
     except Exception as exc:
         return JSONResponse({"installed": None, "latest": None, "up_to_date": None, "error": str(exc)}, status_code=500)
+
+
+TOOLING = [
+    {
+        "name": "@companion-ai/feynman",
+        "label": "Feynman",
+        "upgrade_cmd": "npm install -g @companion-ai/feynman",
+    },
+]
+
+
+@app.get("/api/tooling")
+async def get_tooling() -> JSONResponse:
+    async def _tool_status(tool: dict[str, str]) -> dict[str, str | bool | None]:
+        installed, latest = await asyncio.gather(
+            _get_npm_installed(tool["name"]),
+            _fetch_npm_latest(tool["name"]),
+        )
+        up_to_date = (
+            _version_at_least(installed, latest)
+            if installed is not None and latest is not None
+            else None
+        )
+        return {**tool, "installed": installed, "latest": latest, "up_to_date": up_to_date}
+
+    results = await asyncio.gather(*(_tool_status(tool) for tool in TOOLING))
+    return JSONResponse(list(results))
 
 
 if UI_DIST.is_dir():

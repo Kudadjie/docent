@@ -62,19 +62,19 @@ The reading queue tracks academic papers with status, category, course, and dead
 | Command | What it does |
 |---------|-------------|
 | `docent reading add` | Guidance-only; explains the add-via-Mendeley workflow |
-| `docent reading next [--course-name <name>]` | Show the next entry to read (lowest order, optionally filtered by course) |
+| `docent reading next [--category <name>]` | Show the next entry to read (lowest order, optionally filtered by category prefix) |
 | `docent reading show --id <id>` | Show one entry's full details |
 | `docent reading search --query <q>` | Search title, authors, notes, and tags |
-| `docent reading stats [--course-name <name>]` | Queue statistics by category and status |
-| `docent reading edit --id <id> [--order N] [--status <s>] [--category <c>] [--course-name <n>] [--notes <text>] [--tags <t>] [--type <t>]` | Edit user-settable fields. Mendeley-owned fields (title, authors) are read-only. |
-| `docent reading set-deadline --id <id> [--date YYYY-MM-DD]` | Set or clear a deadline. Omit `--date` to clear. |
+| `docent reading stats` | Queue statistics by category and status |
+| `docent reading edit --id <id> [--order N] [--status <s>] [--category <c>] [--deadline <d>] [--notes <text>] [--tags <t>] [--type <t>]` | Edit user-settable fields. Mendeley-owned fields (title, authors) are read-only. |
+| `docent reading set-deadline --id <id> --deadline YYYY-MM-DD` | Set a deadline. Pass `--deadline ""` to clear. |
 | `docent reading done --id <id>` | Mark as done |
 | `docent reading start --id <id>` | Mark as currently reading |
 | `docent reading remove --id <id>` | Remove from queue |
 | `docent reading move-up --id <id>` | Move one position earlier in reading order |
 | `docent reading move-down --id <id>` | Move one position later |
 | `docent reading move-to --id <id> --position N` | Move to a specific position |
-| `docent reading export [--format json|markdown] [--status <s>] [--course-name <n>]` | Export queue with fresh Mendeley metadata |
+| `docent reading export [--format json|markdown] [--status <s>] [--category <c>]` | Export queue with fresh Mendeley metadata |
 | `docent reading sync-from-mendeley [--dry-run]` | Pull entries from the configured Mendeley collection |
 | `docent reading sync-status` | Show queue vs database stats |
 | `docent reading config-show` | Show current reading settings |

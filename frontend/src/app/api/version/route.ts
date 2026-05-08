@@ -3,7 +3,7 @@ import { spawn } from 'child_process';
 
 function spawnDocent(args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
-    const proc = spawn('docent', args, { shell: true, timeout: 10_000 });
+    const proc = spawn('docent', args, { shell: false, timeout: 10_000 });
     let stdout = '';
     proc.stdout?.on('data', (d: Buffer) => { stdout += d.toString(); });
     proc.on('close', (code) => {

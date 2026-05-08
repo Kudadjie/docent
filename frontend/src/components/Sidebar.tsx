@@ -57,7 +57,9 @@ export default function Sidebar({ active, queueCount, dark: darkProp }: Props) {
 
   useEffect(() => {
     if (darkProp === undefined) {
-      setLocalDark(localStorage.getItem('docent:dark') === 'true');
+      queueMicrotask(() => {
+        setLocalDark(localStorage.getItem('docent:dark') === 'true');
+      });
     }
   }, [darkProp]);
 

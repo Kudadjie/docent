@@ -1,23 +1,7 @@
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
-import { Geist_Mono } from 'next/font/google';
 import './globals.css';
 import ScreenSizeGate from '@/components/ScreenSizeGate';
 import { NotificationProvider } from '@/lib/notifications';
-
-const inter = Inter({
-  subsets: ['latin'],
-  weight: ['400', '500', '600'],
-  variable: '--font-inter',
-  display: 'swap',
-});
-
-const geistMono = Geist_Mono({
-  subsets: ['latin'],
-  weight: ['400', '500', '600'],
-  variable: '--font-geist-mono',
-  display: 'swap',
-});
 
 export const metadata: Metadata = {
   title: 'Docent',
@@ -27,7 +11,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${inter.variable} ${geistMono.variable} h-full`} suppressHydrationWarning>
+    <html lang="en" className="h-full" suppressHydrationWarning>
       <head>
         {/* Runs synchronously before first paint — prevents dark-mode flash */}
         <script
@@ -36,7 +20,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }}
         />
       </head>
-      <body className="h-full antialiased" style={{ fontFamily: 'var(--font-inter, Inter, system-ui, sans-serif)' }}>
+      <body className="h-full antialiased">
         <ScreenSizeGate />
         <NotificationProvider>{children}</NotificationProvider>
       </body>

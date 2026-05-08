@@ -17,9 +17,11 @@ export default function ScreenSizeGate() {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
     const update = () => setCls(classifyScreen(window.innerWidth));
-    update();
+    queueMicrotask(() => {
+      setMounted(true);
+      update();
+    });
     window.addEventListener('resize', update);
     return () => window.removeEventListener('resize', update);
   }, []);

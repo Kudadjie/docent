@@ -261,7 +261,7 @@ docent serve  →  Claude MCP  (or this UI)`}</CodeBlock>
               <SubHeading>Moving through the queue</SubHeading>
               <CommandTable rows={[
                 { cmd: 'docent reading next', desc: 'Show the next entry to read (lowest order, status = queued).' },
-                { cmd: 'docent reading next --course <name>', desc: 'Filter next entry by course name.' },
+                { cmd: 'docent reading next --category <name>', desc: 'Filter next entry by category prefix.' },
                 { cmd: 'docent reading start <id>', desc: 'Mark an entry as currently reading. Stamps started_at timestamp.' },
                 { cmd: 'docent reading done <id>', desc: 'Mark an entry as done. Stamps finished_at timestamp.' },
                 { cmd: 'docent reading show <id>', desc: 'Show full details for an entry.' },
@@ -270,11 +270,10 @@ docent serve  →  Claude MCP  (or this UI)`}</CodeBlock>
               <SubHeading>Editing &amp; organising</SubHeading>
               <CommandTable rows={[
                 { cmd: 'docent reading edit <id> --notes "…"', desc: 'Update notes for an entry.' },
-                { cmd: 'docent reading edit <id> --category thesis', desc: 'Set category: course, thesis, or personal.' },
-                { cmd: 'docent reading edit <id> --course-name "CVEN 601"', desc: 'Tag with a course name.' },
+                { cmd: 'docent reading edit --id <id> --category "CVEN 601"', desc: 'Override the category path for an entry.' },
                 { cmd: 'docent reading edit <id> --type book_chapter', desc: 'Set type: paper, book, or book_chapter.' },
-                { cmd: 'docent reading set-deadline <id> --date 2026-06-01', desc: 'Set a reading deadline. Docent warns at startup when a deadline is approaching.' },
-                { cmd: 'docent reading set-deadline <id> --clear', desc: 'Clear a deadline.' },
+                { cmd: 'docent reading set-deadline --id <id> --deadline 2026-06-01', desc: 'Set a reading deadline. Docent warns at startup when a deadline is approaching.' },
+                { cmd: 'docent reading set-deadline --id <id> --deadline ""', desc: 'Clear a deadline.' },
                 { cmd: 'docent reading move-up <id>', desc: 'Move an entry one position up in the queue.' },
                 { cmd: 'docent reading move-down <id>', desc: 'Move an entry one position down.' },
                 { cmd: 'docent reading move-to <id> --position <n>', desc: 'Move an entry to an absolute queue position.' },
@@ -282,7 +281,7 @@ docent serve  →  Claude MCP  (or this UI)`}</CodeBlock>
 
               <SubHeading>Search &amp; stats</SubHeading>
               <CommandTable rows={[
-                { cmd: 'docent reading search <query>', desc: 'Full-text search across titles, authors, notes, and course names.' },
+                { cmd: 'docent reading search <query>', desc: 'Full-text search across titles, authors, notes, categories, IDs, and tags.' },
                 { cmd: 'docent reading stats', desc: 'Show queue size, status breakdown, category breakdown, and upcoming deadlines.' },
               ]} />
 
@@ -319,7 +318,6 @@ docent serve  →  Claude MCP  (or this UI)`}</CodeBlock>
               <CommandTable rows={[
                 { cmd: 'database_dir', desc: 'Absolute path to the folder where your PDFs are stored.' },
                 { cmd: 'queue_collection', desc: 'Name of the Mendeley collection to sync from. Default: Docent-Queue.' },
-                { cmd: 'unpaywall_email', desc: 'Email for Unpaywall OA PDF lookups.' },
               ]} />
             </Card>
 
@@ -394,7 +392,7 @@ reading__config_set`}</CodeBlock>
               <CodeBlock>{`[reading]
 database_dir = "/Users/you/Documents/Papers"
 queue_collection = "Docent-Queue"
-unpaywall_email = "you@university.edu"`}</CodeBlock>
+`}</CodeBlock>
 
               <SubHeading>Environment variable overrides</SubHeading>
               <Prose>

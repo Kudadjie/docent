@@ -23,8 +23,8 @@
   --error:        #D45656;
   --warning:      #C37D0D;
 
-  --sans: var(--font-inter, 'Inter', system-ui, sans-serif);
-  --mono: var(--font-geist-mono, 'Geist Mono', ui-monospace, monospace);
+  --sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mono: "SFMono-Regular", Consolas, "Liberation Mono", ui-monospace, monospace;
 }
 
 [data-theme="dark"] {
