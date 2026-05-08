@@ -15,3 +15,13 @@ After every Docent build step, prompt the user to manually test the new behavior
 4. If the test surfaces a bug, the step is not done — fix and re-test before checking the box.
 
 Apply this retroactively too: if a recent step shipped without real-data validation, surface that as an open item before moving forward.
+
+**Hard rule (added 2026-05-08): no UI implementation until real-life tests pass.**
+Never open a UI task for a tool that hasn't been real-life tested. The sequence is always: ship CLI → real-life test → implement UI. No exceptions.
+
+**Pending real-life tests (research tool, shipped 2026-05-08):**
+- `docent research deep "<topic>" --backend docent` — full 6-stage Docent pipeline end-to-end
+- `docent research to-notebook` — sources package written, NotebookLM opens in browser
+- `docent research usage` — Feynman + OC daily spend display
+- Feynman update notification visible at startup
+- After all pass → implement research tool into UI
