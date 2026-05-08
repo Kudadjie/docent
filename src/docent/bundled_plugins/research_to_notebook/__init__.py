@@ -1,6 +1,7 @@
 """Research tool: run deep research, literature reviews, and peer reviews via Feynman."""
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import subprocess
@@ -60,6 +61,28 @@ def _run_feynman(
     return result.returncode, str(dest)
 
 
+def _rank_sources(sources: list[dict], max_sources: int) -> list[dict]:
+    """Rank sources: papers first (have abstracts), then web with full_text, then rest."""
+    papers = [s for s in sources if s.get("source_type") == "paper" and s.get("url")]
+    web_with_text = [
+        s for s in sources
+        if s.get("source_type") == "web" and s.get("url") and s.get("full_text")
+    ]
+    web_snippet_only = [
+        s for s in sources
+        if s.get("source_type") == "web" and s.get("url") and not s.get("full_text")
+    ]
+    ranked = papers + web_with_text + web_snippet_only
+    seen: set[str] = set()
+    unique: list[dict] = []
+    for s in ranked:
+        url = s.get("url", "")
+        if url and url not in seen:
+            seen.add(url)
+            unique.append(s)
+    return unique[:max_sources]
+
+
 # ---------------------------------------------------------------------------
 # Input models
 # ---------------------------------------------------------------------------
@@ -86,6 +109,20 @@ class ConfigShowInputs(BaseModel):
 class ConfigSetInputs(BaseModel):
     key: str = Field(..., description="Setting key under [research]: 'output_dir'.")
     value: str = Field(..., description="New value.")
+
+
+class ToNotebookInputs(BaseModel):
+    output_file: str | None = Field(
+        None,
+        description=(
+            "Path to a research output .md file (e.g. 'storm-surge-ghana-deep.md'). "
+            "If omitted, the most recent output in research.output_dir is used."
+        ),
+    )
+    max_sources: int = Field(
+        20,
+        description="Maximum number of sources to include in the notebook package (default 20).",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -144,6 +181,28 @@ class ConfigSetResult(BaseModel):
         return [
             MessageShape(text=self.message, level="success" if self.ok else "error"),
         ]
+
+    def __rich_console__(self, console, options):
+        from docent.ui.renderers import render_shapes
+        render_shapes(self.to_shapes(), console)
+        yield from ()
+
+
+class ToNotebookResult(BaseModel):
+    ok: bool
+    output_file: str | None
+    sources_file: str | None
+    package_dir: str | None
+    sources_count: int
+    message: str
+
+    def to_shapes(self) -> list[Shape]:
+        if not self.ok:
+            return [ErrorShape(reason=self.message)]
+        shapes: list[Shape] = [MessageShape(text=self.message, level="success")]
+        if self.package_dir:
+            shapes.append(LinkShape(url=self.package_dir, label="Notebook package"))
+        return shapes
 
     def __rich_console__(self, console, options):
         from docent.ui.renderers import render_shapes
@@ -234,8 +293,13 @@ class ResearchTool(Tool):
 
             out_file = output_dir / f"{slug}.md"
             review_file = output_dir / f"{slug}-review.md"
+            sources_file = output_dir / f"{slug}-sources.json"
             out_file.write_text(result_data["draft"], encoding="utf-8")
             review_file.write_text(result_data["review"], encoding="utf-8")
+            sources_file.write_text(
+                json.dumps(result_data.get("sources", []), indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
 
             yield ProgressEvent(
                 phase="done", message=f"Output written to {out_file}"
@@ -363,8 +427,13 @@ class ResearchTool(Tool):
 
             out_file = output_dir / f"{slug}.md"
             review_file = output_dir / f"{slug}-review.md"
+            sources_file = output_dir / f"{slug}-sources.json"
             out_file.write_text(result_data["draft"], encoding="utf-8")
             review_file.write_text(result_data["review"], encoding="utf-8")
+            sources_file.write_text(
+                json.dumps(result_data.get("sources", []), indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
 
             yield ProgressEvent(phase="done", message=f"Output written to {out_file}")
 
@@ -546,6 +615,113 @@ class ResearchTool(Tool):
             output_file=output_file,
             returncode=returncode,
             message=f"Review completed for {inputs.artifact!r}.",
+        )
+
+    @action(
+        description=(
+            "Prepare research sources for NotebookLM and open the browser. "
+            "Reads the sources collected by the Docent pipeline (deep or lit) "
+            "and writes a notebook-ready package."
+        ),
+        input_schema=ToNotebookInputs,
+        name="to-notebook",
+    )
+    def to_notebook(self, inputs: ToNotebookInputs, context: Context) -> ToNotebookResult:
+        output_dir = context.settings.research.output_dir.expanduser()
+
+        if inputs.output_file:
+            out_path = Path(inputs.output_file)
+            if not out_path.is_absolute():
+                out_path = output_dir / inputs.output_file
+        else:
+            candidates = [
+                p for p in output_dir.glob("*.md")
+                if not p.name.endswith("-review.md")
+            ] if output_dir.is_dir() else []
+            if not candidates:
+                return ToNotebookResult(
+                    ok=False, output_file=None, sources_file=None,
+                    package_dir=None, sources_count=0,
+                    message=(
+                        f"No research output found in {output_dir}. "
+                        "Run `docent research deep` or `docent research lit` first."
+                    ),
+                )
+            out_path = max(candidates, key=lambda p: p.stat().st_mtime)
+
+        stem = out_path.stem
+        sources_path = out_path.parent / f"{stem}-sources.json"
+
+        if not sources_path.exists():
+            return ToNotebookResult(
+                ok=False, output_file=str(out_path), sources_file=None,
+                package_dir=None, sources_count=0,
+                message=(
+                    f"No sources file found at {sources_path}. "
+                    "Sources are only saved when using backend='docent'. "
+                    "The Feynman backend does not expose individual sources."
+                ),
+            )
+
+        sources: list[dict] = json.loads(sources_path.read_text(encoding="utf-8"))
+        selected = _rank_sources(sources, inputs.max_sources)
+
+        import webbrowser
+
+        package_dir = out_path.parent / f"{stem}-notebook"
+        package_dir.mkdir(parents=True, exist_ok=True)
+
+        urls_file = package_dir / "sources_urls.txt"
+        urls_file.write_text(
+            "\n".join(s["url"] for s in selected if s.get("url")),
+            encoding="utf-8",
+        )
+
+        shutil.copy2(out_path, package_dir / out_path.name)
+
+        guide_lines = [
+            "# NotebookLM Setup Guide",
+            "",
+            f"Research: {out_path.name}",
+            f"Sources: {len(selected)} selected",
+            "",
+            "## Steps",
+            "",
+            "1. Open https://notebooklm.google.com and create a new notebook",
+            f"2. Add the research draft as a source: drag `{out_path.name}` into the Sources panel",
+            "3. Add each URL below as a 'Website' source (copy/paste one at a time):",
+            "",
+        ]
+        for i, s in enumerate(selected, 1):
+            title = s.get("title", "Untitled")[:80]
+            url = s.get("url", "")
+            stype = s.get("source_type", "web")
+            guide_lines.append(f"   [{i}] [{stype}] {title}")
+            guide_lines.append(f"       {url}")
+            guide_lines.append("")
+
+        guide_lines += [
+            "## Tips",
+            "",
+            "- Add the draft first so NotebookLM can cross-reference it with sources",
+            "- Use the 'Notebook guide' feature to get an overview after adding all sources",
+            "- Generate a podcast or study guide once sources are loaded",
+        ]
+        (package_dir / "guide.md").write_text("\n".join(guide_lines), encoding="utf-8")
+
+        webbrowser.open("https://notebooklm.google.com")
+
+        return ToNotebookResult(
+            ok=True,
+            output_file=str(out_path),
+            sources_file=str(sources_path),
+            package_dir=str(package_dir),
+            sources_count=len(selected),
+            message=(
+                f"Notebook package ready: {len(selected)} sources. "
+                f"NotebookLM opened in browser. "
+                f"Follow the guide in {package_dir / 'guide.md'}."
+            ),
         )
 
     @action(

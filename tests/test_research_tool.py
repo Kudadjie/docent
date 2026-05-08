@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import inspect
+import json
+import webbrowser
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -21,8 +23,11 @@ from docent.bundled_plugins.research_to_notebook import (
     ReviewInputs,
     ResearchResult,
     ResearchTool,
+    ToNotebookInputs,
+    ToNotebookResult,
     _slugify,
     _artifact_slug,
+    _rank_sources,
 )
 
 
@@ -381,3 +386,96 @@ class TestReviewDocent:
         assert result.backend == "docent"
         assert result.workflow == "review"
         assert result.output_file is not None
+
+
+SAMPLE_SOURCES = [
+    {"title": "Paper A", "url": "https://arxiv.org/abs/2401.00001", "source_type": "paper", "snippet": "Abstract A"},
+    {"title": "Web B", "url": "https://example.com/b", "source_type": "web", "full_text": "Full text B", "snippet": "Snippet B"},
+    {"title": "Web C", "url": "https://example.com/c", "source_type": "web", "snippet": "Snippet C"},
+    {"title": "Paper D", "url": "https://arxiv.org/abs/2401.00002", "source_type": "paper", "snippet": "Abstract D"},
+]
+
+
+class TestToNotebook:
+    def _write_research_files(self, output_dir: Path, slug: str = "test-deep") -> tuple[Path, Path]:
+        """Helper: write .md + -sources.json in output_dir."""
+        output_dir.mkdir(parents=True, exist_ok=True)
+        md_file = output_dir / f"{slug}.md"
+        sources_file = output_dir / f"{slug}-sources.json"
+        md_file.write_text("# Research Draft\n\nContent here.", encoding="utf-8")
+        sources_file.write_text(json.dumps(SAMPLE_SOURCES), encoding="utf-8")
+        return md_file, sources_file
+
+    def test_to_notebook_no_output_dir(self, tmp_path):
+        tool = ResearchTool()
+        ctx = _mock_context(output_dir=tmp_path / "nonexistent")
+        result = tool.to_notebook(ToNotebookInputs(), ctx)
+        assert result.ok is False
+        assert "No research output found" in result.message
+
+    def test_to_notebook_no_md_files(self, tmp_path):
+        output_dir = tmp_path / "research"
+        output_dir.mkdir()
+        tool = ResearchTool()
+        ctx = _mock_context(output_dir=output_dir)
+        result = tool.to_notebook(ToNotebookInputs(), ctx)
+        assert result.ok is False
+        assert "No research output found" in result.message
+
+    def test_to_notebook_no_sources_json(self, tmp_path):
+        output_dir = tmp_path / "research"
+        output_dir.mkdir()
+        (output_dir / "test-deep.md").write_text("# Draft", encoding="utf-8")
+        tool = ResearchTool()
+        ctx = _mock_context(output_dir=output_dir)
+        result = tool.to_notebook(ToNotebookInputs(), ctx)
+        assert result.ok is False
+        assert "No sources file" in result.message
+
+    def test_to_notebook_happy_path(self, tmp_path):
+        output_dir = tmp_path / "research"
+        md_file, _ = self._write_research_files(output_dir)
+        tool = ResearchTool()
+        ctx = _mock_context(output_dir=output_dir)
+        with patch("webbrowser.open") as mock_browser:
+            result = tool.to_notebook(ToNotebookInputs(), ctx)
+        assert result.ok is True
+        assert result.sources_count == len(SAMPLE_SOURCES)
+        assert result.package_dir is not None
+        pkg = Path(result.package_dir)
+        assert (pkg / "sources_urls.txt").exists()
+        assert (pkg / "guide.md").exists()
+        assert (pkg / md_file.name).exists()
+        mock_browser.assert_called_once_with("https://notebooklm.google.com")
+
+    def test_to_notebook_uses_specified_output_file(self, tmp_path):
+        output_dir = tmp_path / "research"
+        md_file, _ = self._write_research_files(output_dir, slug="climate-lit")
+        tool = ResearchTool()
+        ctx = _mock_context(output_dir=output_dir)
+        with patch("webbrowser.open"):
+            result = tool.to_notebook(ToNotebookInputs(output_file=str(md_file)), ctx)
+        assert result.ok is True
+        assert "climate-lit" in result.output_file
+
+    def test_to_notebook_ranks_papers_first(self, tmp_path):
+        output_dir = tmp_path / "research"
+        self._write_research_files(output_dir)
+        tool = ResearchTool()
+        ctx = _mock_context(output_dir=output_dir)
+        with patch("webbrowser.open"):
+            result = tool.to_notebook(ToNotebookInputs(), ctx)
+        urls_content = (Path(result.package_dir) / "sources_urls.txt").read_text()
+        lines = [l for l in urls_content.strip().splitlines() if l]
+        assert "arxiv.org" in lines[0]
+
+    def test_to_notebook_respects_max_sources(self, tmp_path):
+        output_dir = tmp_path / "research"
+        self._write_research_files(output_dir)
+        tool = ResearchTool()
+        ctx = _mock_context(output_dir=output_dir)
+        with patch("webbrowser.open"):
+            result = tool.to_notebook(ToNotebookInputs(max_sources=2), ctx)
+        assert result.sources_count == 2
+        urls_content = (Path(result.package_dir) / "sources_urls.txt").read_text()
+        assert len(urls_content.strip().splitlines()) == 2
