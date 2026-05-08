@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Callable
 
@@ -33,20 +34,35 @@ def _parse_json(text: str) -> dict:
     return json.loads(text)
 
 
-def run_deep(
+def _fetch_artifact(artifact: str) -> str:
+    """Return text content for an artifact (arXiv ID, URL, or local path)."""
+    artifact = artifact.strip()
+    if re.match(r"^\d{4}\.\d{4,5}(v\d+)?$", artifact):
+        url = f"https://arxiv.org/abs/{artifact}"
+        return fetch_page(url, max_chars=6000)
+    if artifact.startswith("http://") or artifact.startswith("https://"):
+        return fetch_page(artifact, max_chars=6000)
+    path = Path(artifact)
+    if path.exists() and path.suffix == ".pdf":
+        return f"(Local PDF: {artifact} — text extraction not yet supported; reviewer will work from metadata only)"
+    return f"(Could not fetch artifact: {artifact!r})"
+
+
+def _run_pipeline(
     topic: str,
     oc: OcClient,
+    planner_name: str,
+    writer_name: str,
     *,
     on_progress: Callable[[str, str], None] | None = None,
 ) -> dict:
-    """Run the full deep research pipeline. Returns result dict."""
-
+    """Shared search-fetch-write-verify-review pipeline."""
     sources: list[dict] = []
     rounds = 0
 
     # Stage 1: Search planner
     _progress(on_progress, "search_plan", "Generating search strategy...")
-    planner_prompt = _load_prompt("search_planner").replace("{topic}", topic)
+    planner_prompt = _load_prompt(planner_name).replace("{topic}", topic)
     try:
         plan_text = oc.call(planner_prompt, model="glm-5.1")
         plan = _parse_json(plan_text)
@@ -154,7 +170,7 @@ def run_deep(
         for i, s in enumerate(sources)
     )
     writer_prompt = (
-        _load_prompt("writer")
+        _load_prompt(writer_name)
         .replace("{topic}", topic)
         .replace("{source_count}", str(len(sources)))
         .replace("{sources}", sources_text)
@@ -198,6 +214,75 @@ def run_deep(
         "review": review,
         "sources": sources,
         "rounds": rounds,
+        "ok": True,
+        "error": None,
+    }
+
+
+def run_deep(
+    topic: str,
+    oc: OcClient,
+    *,
+    on_progress: Callable[[str, str], None] | None = None,
+) -> dict:
+    """Run the full deep research pipeline. Returns result dict."""
+    return _run_pipeline(topic, oc, "search_planner", "writer", on_progress=on_progress)
+
+
+def run_lit(
+    topic: str,
+    oc: OcClient,
+    *,
+    on_progress: Callable[[str, str], None] | None = None,
+) -> dict:
+    """Run the literature review pipeline. Returns result dict."""
+    return _run_pipeline(topic, oc, "lit_planner", "lit_writer", on_progress=on_progress)
+
+
+def run_review(
+    artifact: str,
+    oc: OcClient,
+    *,
+    on_progress: Callable[[str, str], None] | None = None,
+) -> dict:
+    """Run the peer review pipeline. Returns result dict."""
+    # Stage 1: Fetch artifact content
+    _progress(on_progress, "fetch", f"Fetching artifact: {artifact!r}...")
+    artifact_content = _fetch_artifact(artifact)
+
+    # Stage 2: Researcher
+    _progress(on_progress, "research", "Gathering evidence...")
+    researcher_prompt = (
+        _load_prompt("review_researcher")
+        .replace("{artifact}", artifact)
+        .replace("{artifact_content}", artifact_content)
+    )
+    try:
+        researcher_notes = oc.call(researcher_prompt, model="glm-5.1", timeout=300)
+    except Exception as e:
+        return {
+            "artifact": artifact,
+            "artifact_content": artifact_content,
+            "researcher_notes": "",
+            "review": "",
+            "ok": False,
+            "error": f"Researcher failed: {e}",
+        }
+
+    # Stage 3: Reviewer
+    _progress(on_progress, "review", "Running adversarial review...")
+    combined = f"## Artifact\n\n{artifact_content}\n\n## Researcher Notes\n\n{researcher_notes}"
+    reviewer_prompt = _load_prompt("reviewer").replace("{draft}", combined)
+    try:
+        review = oc.call(reviewer_prompt, model="deepseek-v4-pro", timeout=300)
+    except Exception:
+        review = "(Reviewer unavailable)"
+
+    return {
+        "artifact": artifact,
+        "artifact_content": artifact_content,
+        "researcher_notes": researcher_notes,
+        "review": review,
         "ok": True,
         "error": None,
     }

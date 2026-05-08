@@ -172,7 +172,7 @@ class ResearchTool(Tool):
     )
     def deep(self, inputs: DeepInputs, context: Context):
         if inputs.backend == "docent":
-            from .oc_client import OcClient, OcUnavailableError
+            from .oc_client import OcClient
             from .pipeline import run_deep
 
             oc = OcClient()
@@ -300,18 +300,89 @@ class ResearchTool(Tool):
         description="Literature review on a topic.",
         input_schema=LitInputs,
     )
-    def lit(self, inputs: LitInputs, context: Context) -> ResearchResult:
+    def lit(self, inputs: LitInputs, context: Context):
         if inputs.backend == "docent":
+            from .oc_client import OcClient
+            from .pipeline import run_lit
+
+            oc = OcClient()
+            if not oc.is_available():
+                yield ProgressEvent(
+                    phase="start",
+                    message="OpenCode server is not running. Start it with: opencode serve --port 4096",
+                )
+                return ResearchResult(
+                    ok=False,
+                    backend="docent",
+                    workflow="lit",
+                    topic_or_artifact=inputs.topic,
+                    output_file=None,
+                    returncode=None,
+                    message="OpenCode server is not running. Start it with: opencode serve --port 4096",
+                )
+
+            output_dir = context.settings.research.output_dir.expanduser()
+            output_dir.mkdir(parents=True, exist_ok=True)
+            slug = _slugify(inputs.topic) + "-lit"
+            progress_events: list[tuple[str, str]] = []
+
+            def _capture(phase: str, message: str) -> None:
+                progress_events.append((phase, message))
+
+            yield ProgressEvent(
+                phase="start",
+                message=f"Starting Docent literature review: {inputs.topic!r}",
+            )
+
+            try:
+                result_data = run_lit(inputs.topic, oc, on_progress=_capture)
+            except Exception as e:
+                return ResearchResult(
+                    ok=False,
+                    backend="docent",
+                    workflow="lit",
+                    topic_or_artifact=inputs.topic,
+                    output_file=None,
+                    returncode=None,
+                    message=f"Pipeline error: {e}",
+                )
+
+            for phase, message in progress_events:
+                yield ProgressEvent(phase=phase, message=message)
+
+            if not result_data["ok"]:
+                return ResearchResult(
+                    ok=False,
+                    backend="docent",
+                    workflow="lit",
+                    topic_or_artifact=inputs.topic,
+                    output_file=None,
+                    returncode=None,
+                    message=result_data.get("error") or "Pipeline failed.",
+                )
+
+            out_file = output_dir / f"{slug}.md"
+            review_file = output_dir / f"{slug}-review.md"
+            out_file.write_text(result_data["draft"], encoding="utf-8")
+            review_file.write_text(result_data["review"], encoding="utf-8")
+
+            yield ProgressEvent(phase="done", message=f"Output written to {out_file}")
+
             return ResearchResult(
-                ok=False,
+                ok=True,
                 backend="docent",
                 workflow="lit",
                 topic_or_artifact=inputs.topic,
-                output_file=None,
-                returncode=None,
-                message="Docent pipeline backend is not yet available. Use backend='feynman'.",
+                output_file=str(out_file),
+                returncode=0,
+                message=f"Literature review complete. {result_data['rounds']} search round(s), {len(result_data['sources'])} sources.",
             )
 
+        # Feynman branch
+        yield ProgressEvent(
+            phase="start",
+            message=f"Starting Feynman literature review: {inputs.topic!r}",
+        )
         feynman_cmd = context.settings.research.feynman_command or ["feynman"]
         output_dir = context.settings.research.output_dir.expanduser()
         workspace_dir = output_dir / "workspace"
@@ -356,18 +427,87 @@ class ResearchTool(Tool):
         description="Peer review of an artifact (arXiv ID, PDF path, or URL).",
         input_schema=ReviewInputs,
     )
-    def review(self, inputs: ReviewInputs, context: Context) -> ResearchResult:
+    def review(self, inputs: ReviewInputs, context: Context):
         if inputs.backend == "docent":
+            from .oc_client import OcClient
+            from .pipeline import run_review
+
+            oc = OcClient()
+            if not oc.is_available():
+                yield ProgressEvent(
+                    phase="start",
+                    message="OpenCode server is not running. Start it with: opencode serve --port 4096",
+                )
+                return ResearchResult(
+                    ok=False,
+                    backend="docent",
+                    workflow="review",
+                    topic_or_artifact=inputs.artifact,
+                    output_file=None,
+                    returncode=None,
+                    message="OpenCode server is not running. Start it with: opencode serve --port 4096",
+                )
+
+            output_dir = context.settings.research.output_dir.expanduser()
+            output_dir.mkdir(parents=True, exist_ok=True)
+            slug = _slugify(_artifact_slug(inputs.artifact)) + "-review"
+            progress_events: list[tuple[str, str]] = []
+
+            def _capture(phase: str, message: str) -> None:
+                progress_events.append((phase, message))
+
+            yield ProgressEvent(
+                phase="start",
+                message=f"Starting Docent peer review: {inputs.artifact!r}",
+            )
+
+            try:
+                result_data = run_review(inputs.artifact, oc, on_progress=_capture)
+            except Exception as e:
+                return ResearchResult(
+                    ok=False,
+                    backend="docent",
+                    workflow="review",
+                    topic_or_artifact=inputs.artifact,
+                    output_file=None,
+                    returncode=None,
+                    message=f"Pipeline error: {e}",
+                )
+
+            for phase, message in progress_events:
+                yield ProgressEvent(phase=phase, message=message)
+
+            if not result_data["ok"]:
+                return ResearchResult(
+                    ok=False,
+                    backend="docent",
+                    workflow="review",
+                    topic_or_artifact=inputs.artifact,
+                    output_file=None,
+                    returncode=None,
+                    message=result_data.get("error") or "Review failed.",
+                )
+
+            out_file = output_dir / f"{slug}.md"
+            out_file.write_text(result_data["review"], encoding="utf-8")
+
+            yield ProgressEvent(phase="done", message=f"Review written to {out_file}")
+
             return ResearchResult(
-                ok=False,
+                ok=True,
                 backend="docent",
                 workflow="review",
                 topic_or_artifact=inputs.artifact,
-                output_file=None,
-                returncode=None,
-                message="Docent pipeline backend is not yet available. Use backend='feynman'.",
+                output_file=str(out_file),
+                returncode=0,
+                message=f"Peer review complete for {inputs.artifact!r}.",
             )
 
+        # Feynman branch
+        yield ProgressEvent(
+            phase="start",
+            message=f"Starting Feynman review: {inputs.artifact!r}",
+        )
         feynman_cmd = context.settings.research.feynman_command or ["feynman"]
         output_dir = context.settings.research.output_dir.expanduser()
         workspace_dir = output_dir / "workspace"

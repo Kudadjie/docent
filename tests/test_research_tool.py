@@ -156,7 +156,7 @@ class TestLitFeynman:
             "docent.bundled_plugins.research_to_notebook._run_feynman",
             return_value=(0, fake_output),
         ):
-            result = tool.lit(LitInputs(topic="climate change"), ctx)
+            result = _drain(tool.lit(LitInputs(topic="climate change"), ctx))
 
         assert result.ok is True
         assert result.workflow == "lit"
@@ -176,7 +176,7 @@ class TestReviewFeynman:
             "docent.bundled_plugins.research_to_notebook._run_feynman",
             return_value=(0, fake_output),
         ):
-            result = tool.review(ReviewInputs(artifact="2401.12345"), ctx)
+            result = _drain(tool.review(ReviewInputs(artifact="2401.12345"), ctx))
 
         assert result.ok is True
         assert result.workflow == "review"
@@ -272,3 +272,112 @@ class TestToShapes:
         shapes = result.to_shapes()
         assert any(isinstance(s, MessageShape) for s in shapes)
         assert not any(isinstance(s, LinkShape) for s in shapes)
+
+
+class TestLitDocent:
+    def test_lit_docent_server_unavailable(self, tmp_path):
+        output_dir = tmp_path / "research"
+        tool = ResearchTool()
+        ctx = _mock_context(output_dir=output_dir)
+
+        with patch(
+            "docent.bundled_plugins.research_to_notebook.oc_client.OcClient"
+        ) as MockOc:
+            mock_oc_instance = MagicMock()
+            mock_oc_instance.is_available.return_value = False
+            MockOc.return_value = mock_oc_instance
+
+            result = _drain(
+                tool.lit(LitInputs(topic="test", backend="docent"), ctx)
+            )
+
+        assert isinstance(result, ResearchResult)
+        assert result.ok is False
+        assert result.backend == "docent"
+        assert "not running" in result.message
+
+    @patch("docent.bundled_plugins.research_to_notebook.pipeline.run_lit")
+    def test_lit_docent_happy_path(self, mock_run_lit, tmp_path):
+        output_dir = tmp_path / "research"
+        tool = ResearchTool()
+        ctx = _mock_context(output_dir=output_dir)
+
+        mock_run_lit.return_value = {
+            "ok": True,
+            "topic": "climate change",
+            "draft": "Literature review content",
+            "review": "Review content",
+            "sources": [{"title": "Source 1"}],
+            "rounds": 1,
+            "error": None,
+        }
+
+        with patch(
+            "docent.bundled_plugins.research_to_notebook.oc_client.OcClient"
+        ) as MockOc:
+            mock_oc_instance = MagicMock()
+            mock_oc_instance.is_available.return_value = True
+            MockOc.return_value = mock_oc_instance
+
+            result = _drain(
+                tool.lit(LitInputs(topic="climate change", backend="docent"), ctx)
+            )
+
+        assert result.ok is True
+        assert result.backend == "docent"
+        assert result.workflow == "lit"
+        assert result.output_file is not None
+
+
+class TestReviewDocent:
+    def test_review_docent_server_unavailable(self, tmp_path):
+        output_dir = tmp_path / "research"
+        tool = ResearchTool()
+        ctx = _mock_context(output_dir=output_dir)
+
+        with patch(
+            "docent.bundled_plugins.research_to_notebook.oc_client.OcClient"
+        ) as MockOc:
+            mock_oc_instance = MagicMock()
+            mock_oc_instance.is_available.return_value = False
+            MockOc.return_value = mock_oc_instance
+
+            result = _drain(
+                tool.review(ReviewInputs(artifact="2401.12345", backend="docent"), ctx)
+            )
+
+        assert isinstance(result, ResearchResult)
+        assert result.ok is False
+        assert result.backend == "docent"
+        assert "not running" in result.message
+
+    @patch("docent.bundled_plugins.research_to_notebook.pipeline.run_review")
+    def test_review_docent_happy_path(self, mock_run_review, tmp_path):
+        output_dir = tmp_path / "research"
+        tool = ResearchTool()
+        ctx = _mock_context(output_dir=output_dir)
+
+        mock_run_review.return_value = {
+            "ok": True,
+            "artifact": "2401.12345",
+            "artifact_content": "Paper content",
+            "researcher_notes": "Notes",
+            "review": "Review content",
+            "error": None,
+        }
+
+        with patch(
+            "docent.bundled_plugins.research_to_notebook.oc_client.OcClient"
+        ) as MockOc:
+            mock_oc_instance = MagicMock()
+            mock_oc_instance.is_available.return_value = True
+            MockOc.return_value = mock_oc_instance
+
+            result = _drain(
+                tool.review(ReviewInputs(artifact="2401.12345", backend="docent"), ctx)
+            )
+
+        assert result.ok is True
+        assert result.backend == "docent"
+        assert result.workflow == "review"
+        assert result.output_file is not None

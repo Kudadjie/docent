@@ -8,8 +8,11 @@ import pytest
 
 from docent.bundled_plugins.research_to_notebook.oc_client import OcClient
 from docent.bundled_plugins.research_to_notebook.pipeline import (
+    _fetch_artifact,
     _parse_json,
     run_deep,
+    run_lit,
+    run_review,
 )
 
 
@@ -294,3 +297,205 @@ class TestRunDeep:
         # Round 1 fetched 5 pages. Round 2 encounters the same URLs already in
         # full_text — should add 0 new fetches. Total must remain 5.
         assert mock_fetch.call_count == 5
+
+
+LIT_PLANNER_JSON = """{
+    "web_queries": ["climate change systematic review"],
+    "paper_queries": ["climate change meta-analysis", "global warming literature review"],
+    "domain_queries": []
+}"""
+
+
+class TestRunLit:
+    @patch("docent.bundled_plugins.research_to_notebook.pipeline.web_search")
+    @patch("docent.bundled_plugins.research_to_notebook.pipeline.paper_search")
+    @patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page")
+    def test_run_lit_happy_path(self, mock_fetch, mock_paper, mock_web):
+        mock_web.return_value = [
+            {"title": "Web Result", "url": "https://example.com", "snippet": "A snippet"},
+        ]
+        mock_paper.return_value = [
+            {
+                "title": "Paper Result",
+                "url": "https://arxiv.org/abs/2401.12345",
+                "snippet": "Abstract",
+                "authors": "Smith, J",
+                "year": 2024,
+            },
+        ]
+        mock_fetch.return_value = "Full page content"
+
+        oc = _make_oc_client(
+            {
+                "planner": LIT_PLANNER_JSON,
+                "gap_eval": GAP_SUFFICIENT_JSON,
+                "writer": WRITER_OUTPUT,
+                "verifier": VERIFIER_OUTPUT,
+                "reviewer": REVIEWER_OUTPUT,
+            }
+        )
+
+        result = run_lit("climate change", oc)
+
+        assert result["ok"] is True
+        assert result["topic"] == "climate change"
+        assert result["draft"] == VERIFIER_OUTPUT
+        assert result["review"] == REVIEWER_OUTPUT
+        assert result["error"] is None
+        assert result["rounds"] >= 1
+        assert len(result["sources"]) > 0
+
+    def test_run_lit_planner_failure(self):
+        oc = MagicMock(spec=OcClient)
+        oc.is_available.return_value = True
+        oc.call.side_effect = Exception("LLM down")
+
+        result = run_lit("climate change", oc)
+
+        assert result["ok"] is False
+        assert "Search planner failed" in result["error"]
+
+    @patch("docent.bundled_plugins.research_to_notebook.pipeline.web_search")
+    @patch("docent.bundled_plugins.research_to_notebook.pipeline.paper_search")
+    @patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page")
+    def test_run_lit_uses_lit_prompts(self, mock_fetch, mock_paper, mock_web):
+        mock_web.return_value = []
+        mock_paper.return_value = []
+        mock_fetch.return_value = ""
+
+        oc = _make_oc_client(
+            {
+                "planner": LIT_PLANNER_JSON,
+                "gap_eval": GAP_SUFFICIENT_JSON,
+                "writer": WRITER_OUTPUT,
+                "verifier": VERIFIER_OUTPUT,
+                "reviewer": REVIEWER_OUTPUT,
+            }
+        )
+
+        result = run_lit("climate change", oc)
+        assert result["ok"] is True
+
+        first_call_args = oc.call.call_args_list[0]
+        first_prompt = first_call_args[0][0]
+        assert "climate change" in first_prompt
+        assert "literature review" in first_prompt.lower()
+
+    @patch("docent.bundled_plugins.research_to_notebook.pipeline.web_search")
+    @patch("docent.bundled_plugins.research_to_notebook.pipeline.paper_search")
+    @patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page")
+    def test_run_lit_writer_failure(self, mock_fetch, mock_paper, mock_web):
+        mock_web.return_value = []
+        mock_paper.return_value = []
+        mock_fetch.return_value = ""
+
+        oc = MagicMock(spec=OcClient)
+        oc.is_available.return_value = True
+        oc.call.side_effect = [
+            LIT_PLANNER_JSON,
+            GAP_SUFFICIENT_JSON,
+            Exception("Writer LLM failed"),
+        ]
+
+        result = run_lit("climate change", oc)
+
+        assert result["ok"] is False
+        assert "Writer failed" in result["error"]
+
+
+class TestFetchArtifact:
+    def test_arxiv_id_fetches_url(self):
+        with patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page") as mock_fetch:
+            mock_fetch.return_value = "ArXiv page content"
+            result = _fetch_artifact("2401.12345")
+            mock_fetch.assert_called_with("https://arxiv.org/abs/2401.12345", max_chars=6000)
+            assert result == "ArXiv page content"
+
+    def test_arxiv_id_with_version(self):
+        with patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page") as mock_fetch:
+            mock_fetch.return_value = "Content"
+            result = _fetch_artifact("2401.12345v2")
+            mock_fetch.assert_called_with("https://arxiv.org/abs/2401.12345v2", max_chars=6000)
+
+    def test_url_artifact(self):
+        with patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page") as mock_fetch:
+            mock_fetch.return_value = "Web page content"
+            result = _fetch_artifact("https://example.com/paper")
+            mock_fetch.assert_called_with("https://example.com/paper", max_chars=6000)
+            assert result == "Web page content"
+
+    def test_http_url_artifact(self):
+        with patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page") as mock_fetch:
+            mock_fetch.return_value = "Content"
+            result = _fetch_artifact("http://example.com/paper")
+            mock_fetch.assert_called_with("http://example.com/paper", max_chars=6000)
+
+    def test_unknown_artifact_returns_error_string(self):
+        result = _fetch_artifact("not-a-url-or-arxiv")
+        assert "Could not fetch" in result
+
+
+class TestRunReview:
+    @patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page")
+    def test_run_review_arxiv_id_fetches_url(self, mock_fetch):
+        mock_fetch.return_value = "ArXiv page content"
+        oc = MagicMock(spec=OcClient)
+        oc.is_available.return_value = True
+        oc.call.side_effect = ["Researcher notes", "Review result"]
+
+        result = run_review("2401.12345", oc)
+
+        mock_fetch.assert_any_call("https://arxiv.org/abs/2401.12345", max_chars=6000)
+        assert result["ok"] is True
+
+    @patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page")
+    def test_run_review_url_artifact(self, mock_fetch):
+        mock_fetch.return_value = "Web page content"
+        oc = MagicMock(spec=OcClient)
+        oc.is_available.return_value = True
+        oc.call.side_effect = ["Researcher notes", "Review result"]
+
+        result = run_review("https://example.com/paper", oc)
+
+        mock_fetch.assert_called_with("https://example.com/paper", max_chars=6000)
+        assert result["ok"] is True
+
+    @patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page")
+    def test_run_review_happy_path(self, mock_fetch):
+        mock_fetch.return_value = "Artifact content here"
+        oc = MagicMock(spec=OcClient)
+        oc.is_available.return_value = True
+        oc.call.side_effect = ["Researcher notes output", "Review output"]
+
+        result = run_review("2401.12345", oc)
+
+        assert result["ok"] is True
+        assert result["artifact"] == "2401.12345"
+        assert result["artifact_content"] == "Artifact content here"
+        assert result["researcher_notes"] == "Researcher notes output"
+        assert result["review"] == "Review output"
+        assert result["error"] is None
+
+    @patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page")
+    def test_run_review_researcher_failure(self, mock_fetch):
+        mock_fetch.return_value = "Some content"
+        oc = MagicMock(spec=OcClient)
+        oc.is_available.return_value = True
+        oc.call.side_effect = Exception("Researcher LLM down")
+
+        result = run_review("2401.12345", oc)
+
+        assert result["ok"] is False
+        assert "Researcher failed" in result["error"]
+
+    @patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page")
+    def test_run_review_reviewer_failure_returns_ok(self, mock_fetch):
+        mock_fetch.return_value = "Some content"
+        oc = MagicMock(spec=OcClient)
+        oc.is_available.return_value = True
+        oc.call.side_effect = ["Researcher notes", Exception("Reviewer LLM down")]
+
+        result = run_review("2401.12345", oc)
+
+        assert result["ok"] is True
+        assert result["review"] == "(Reviewer unavailable)"
