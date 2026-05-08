@@ -13,12 +13,15 @@ const LEVELS = ['Undergraduate', 'Masters', 'PhD', 'Postdoc', 'Faculty', 'Other'
 
 interface Props {
   onComplete: (profile: UserProfile) => void;
+  onCancel?: () => void;
+  initialProfile?: UserProfile;
 }
 
-export default function WelcomeModal({ onComplete }: Props) {
-  const [name, setName]       = useState('');
-  const [program, setProgram] = useState('');
-  const [level, setLevel]     = useState('');
+export default function WelcomeModal({ onComplete, onCancel, initialProfile }: Props) {
+  const isEdit = !!initialProfile?.name;
+  const [name, setName]       = useState(initialProfile?.name ?? '');
+  const [program, setProgram] = useState(initialProfile?.program ?? '');
+  const [level, setLevel]     = useState(initialProfile?.level ?? '');
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -71,13 +74,13 @@ export default function WelcomeModal({ onComplete }: Props) {
             fontFamily: 'var(--sans)', fontSize: 18, fontWeight: 700,
             color: 'var(--fg1)', margin: '0 0 6px', letterSpacing: '-0.3px',
           }}>
-            Welcome to Docent
+            {isEdit ? 'Edit profile' : 'Welcome to Docent'}
           </h2>
           <p style={{
             fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--fg3)',
             margin: 0, lineHeight: 1.5,
           }}>
-            Tell us a bit about yourself to personalise your experience.
+            {isEdit ? 'Update your name, program, or level.' : 'Tell us a bit about yourself to personalise your experience.'}
           </p>
         </div>
 
@@ -125,19 +128,33 @@ export default function WelcomeModal({ onComplete }: Props) {
                 padding: '10px 20px', cursor: 'pointer', width: '100%',
               }}
             >
-              Get started
+              {isEdit ? 'Save changes' : 'Get started'}
             </button>
-            <button
-              type="button"
-              onClick={handleSkip}
-              style={{
-                fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 400,
-                color: 'var(--fg4)', background: 'transparent',
-                border: 'none', cursor: 'pointer', padding: '4px 0',
-              }}
-            >
-              Skip for now
-            </button>
+            {isEdit ? (
+              <button
+                type="button"
+                onClick={onCancel}
+                style={{
+                  fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 400,
+                  color: 'var(--fg4)', background: 'transparent',
+                  border: 'none', cursor: 'pointer', padding: '4px 0',
+                }}
+              >
+                Cancel
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleSkip}
+                style={{
+                  fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 400,
+                  color: 'var(--fg4)', background: 'transparent',
+                  border: 'none', cursor: 'pointer', padding: '4px 0',
+                }}
+              >
+                Skip for now
+              </button>
+            )}
           </div>
         </form>
       </div>

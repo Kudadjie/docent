@@ -93,7 +93,13 @@ export default function Sidebar({ active, queueCount, dark: darkProp }: Props) {
 
   return (
     <>
-      {showWelcome && <WelcomeModal onComplete={handleWelcomeComplete} />}
+      {showWelcome && (
+        <WelcomeModal
+          onComplete={handleWelcomeComplete}
+          onCancel={profileSet ? () => setShowWelcome(false) : undefined}
+          initialProfile={profileSet ? user ?? undefined : undefined}
+        />
+      )}
 
       <nav
         aria-label="Main navigation"

@@ -1,7 +1,7 @@
 ---
 name: Research tool — Feynman routing with self-fallback
 description: The research tool routes LLM calls through Feynman first; falls back to Claude itself if Feynman is unavailable
-type: project
+type: feedback
 ---
 
 The `research` tool (planned Phase 1.5) routes through the Feynman agent CLI as primary. If Feynman is unavailable or fails, Docent falls back to calling Claude directly (self-default).

@@ -6,36 +6,26 @@ type: project
 
 Created 2026-05-07 based on user direction.
 
-## Two separate release tracks
+## Single bundled release track (actual model)
 
-### Track 1 — Docent CLI
+The two-track plan (separate CLI and UI tags) was superseded before it was executed. CLI and UI ship together in one PyPI wheel.
 
-**v1.0 milestone:** Step 13 complete (MCP adapter shipped 2026-05-07).
-- Release as GitHub release with tag `v1.0.0`
-- Docs page covering: install, `docent list`, each reading action, `docent serve` + MCP setup
-- Changelog from git history
+### Shipped releases
 
-### Track 2 — Docent UI (Reading Page)
+| Tag | Date | Notes |
+|-----|------|-------|
+| `v1.1.0` | 2026-05-08 | First public release — CLI + bundled UI (FastAPI + Next.js static export) |
+| `v1.1.1` | 2026-05-08 | Wheel-only fix — sdist with `ui_dist/` exceeded PyPI 100 MB limit |
 
-**v1.0 milestone: MET (shipped 2026-05-06).** All Must-do items complete (export, edit modal, error handling, scan/sync toasts). Must-dos, Should-dos, and Nice-to-haves all `[x]` — see archived `memory/archive/ui-todos-v1.0-2026-05.md`.
-- Release as separate GitHub release with tag `ui-v1.0.0`
-- Docs page: how to run the frontend, feature screenshots
+### Distribution model
 
-## UI shipping strategy (decided 2026-05-07)
-
-**Distribution method: bundle into PyPI package, launch via `docent ui`.**
-
-- Frontend stack: Next.js 16 + React 19 + TypeScript + Tailwind CSS v4 + Lucide React (`frontend/package.json`, package name: `docent-ui`)
-- Ship via PyPI alongside CLI — no separate installer. Mirrors how TensorBoard, MLflow, Jupyter do it.
-- `next build` output goes into `src/docent/ui_dist/` as package data.
-- `docent ui` command starts a local server (FastAPI or stdlib) and opens the browser.
-- For now: commit the `ui_dist/` build artifacts to the repo (personal tool, manageable size). Move build step to GitHub Actions CI later.
-- One update path for users: `uv tool upgrade docent-cli` gets both CLI and UI.
-
-**Why not an installer?** Users are grad students comfortable with Python tooling; PyPI keeps distribution unified and eliminates code-signing and platform packaging pain.
+- **PyPI package:** `docent-cli` wheel contains both CLI and `ui_dist/` static files. `docent ui` starts FastAPI on `localhost:7432`.
+- **No sdist:** sdist is skipped in `publish.yml` (size limit). Wheel only.
+- **GitHub Releases:** auto-created on tag push via `publish.yml` workflow (added `aeb62f1`). v1.1.0 was created manually; v1.1.1+ are automatic.
+- Architecture details (FastAPI endpoints, two-file sync cost) → `project_ui_bundling.md`.
 
 ## How to apply
 
-- Treat CLI and UI as independent. A new CLI action doesn't need to wait for UI work to ship, and vice versa.
-- Each track gets its own GitHub release; the main README links to both.
-- Future versions: `v1.1.0` for CLI when new tools land; `ui-v1.1.0` when significant UI features land.
+- CLI and UI ship together; bump the version once for both.
+- Next version: `v1.2.0` when the next significant feature (skill ports / Phase 1.5-C) lands.
+- Before each PyPI push: confirm `publish.yml` uses pinned SHA for `actions/setup-node` (flagged in CSO audit — still unpinned as of v1.1.1).

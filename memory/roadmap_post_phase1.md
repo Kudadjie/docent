@@ -65,10 +65,10 @@ Per `Interesting stuff.txt`: CLI stays the source of truth; UI is a "visual skin
 [done]    Reading page frontend (Next.js — built ahead of plan, shipped 2026-05-06)
 [done]    Output Shapes vocabulary + ui/renderers.py     }  Phase 1.5
 [done]    Tests + AGENTS.md                             }
-[next]    Skill ports (research-to-notebook first)      }
-[then]    FastAPI layer + JSON wire format               }  Phase 2
-          UI polish + schema-driven forms                }  (base app exists)
-          Omnibox (NL → action mode only)                }
+[done]    FastAPI layer + bundled UI (v1.1.0, 2026-05-08 — shipped early, not Phase 2)
+[next]    Skill ports (research-to-notebook first)      }  Phase 1.5 cont.
+[then]    UI polish + schema-driven forms                }  Phase 2
+          Omnibox (NL → action mode only)                }  (base app exists)
 ```
 
 ## When this file is wrong

@@ -44,4 +44,4 @@ No silent background daemon. Stop = Ctrl+C.
 ### Ongoing maintenance cost (per new API endpoint)
 Add it in **two places**: `frontend/src/app/api/<name>/route.ts` (Next.js, for local dev) AND `src/docent/ui_server.py` (FastAPI, for bundled release). Same logic, copy-paste job. Keep them in sync or local dev diverges from the release build.
 
-**Why:** Confirmed by user on 2026-05-07. Deferred to next release milestone after current UI polish sprint.
+**Why:** Confirmed by user on 2026-05-07. **Shipped as v1.1.0 (2026-05-08)** — commit `efe9686`. FastAPI server, `docent ui` command, `build_ui.py`, and `ui_dist/` packaging are all live. The two-file sync cost (Next.js dev route + FastAPI endpoint) is the ongoing maintenance model going forward.

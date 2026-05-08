@@ -8,6 +8,7 @@
 - [Harness engineering principles](harness_principles.md) — reference for when Docent gets sophisticated; eval-harness deferred to first real LLM-call tool
 - [Narrate architecture decisions on Docent](feedback_narrate_steps.md) — user wants each build step explained before coding, recapped after
 - [Real-data testing after each step](feedback_real_data_testing.md) — insist on manual testing with real Mendeley/reading data before marking a build step done; programmatic smoke tests are not enough
+- [Two-file API sync](feedback_two_file_api_sync.md) — every new API route needs both a Next.js dev route AND a FastAPI endpoint; flag immediately when adding one
 - [Keep Docent memory in the repo](feedback_memory_location.md) — save memory files to `memory/` in the repo, not to `~/.claude/projects/…/memory/`
 - [User runs global `docent`, not `uv run docent`](feedback_global_docent_install.md) — installed editable 2026-05-02; remind to reinstall after every new dep
 - [Multi-model workflow design](multimodel_workflow.md) — OpenCode (Go sub) as bounded implementer via REST API; glm-5.1 is default implement model
