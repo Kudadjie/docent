@@ -170,6 +170,15 @@ interface VersionInfo {
   error?: string;
 }
 
+interface ToolInfo {
+  name: string;
+  label: string;
+  installed: string | null;
+  latest: string | null;
+  up_to_date: boolean | null;
+  upgrade_cmd: string;
+}
+
 export default function SettingsPage() {
   const { dark, toggleDark } = useDarkMode();
   const { addNotification } = useNotifications();
@@ -179,6 +188,8 @@ export default function SettingsPage() {
   const [clearing, setClearing] = useState(false);
   const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
   const [checkingVersion, setCheckingVersion] = useState(false);
+  const [toolingInfo, setToolingInfo] = useState<ToolInfo[] | null>(null);
+  const [checkingTooling, setCheckingTooling] = useState(false);
   const [dotState, setDotState] = useState<DotState>('idle');
   const dotResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -269,6 +280,32 @@ export default function SettingsPage() {
       signalDot('error');
     } finally {
       setCheckingVersion(false);
+    }
+  }
+
+  async function checkForToolingUpdates() {
+    setCheckingTooling(true);
+    signalDot('working');
+    try {
+      const res = await fetch('/api/tooling');
+      const data = await res.json() as ToolInfo[];
+      setToolingInfo(data);
+      signalDot('done');
+      const outdated = data.filter(t => t.up_to_date === false);
+      if (outdated.length > 0) {
+        outdated.forEach(t => {
+          addNotification({
+            type: 'update',
+            title: `${t.label} update available`,
+            body: `v${t.latest} is out (you have v${t.installed ?? '?'}). Run \`${t.upgrade_cmd}\`.`,
+          });
+        });
+      }
+    } catch {
+      setToolingInfo([]);
+      signalDot('error');
+    } finally {
+      setCheckingTooling(false);
     }
   }
 
@@ -414,6 +451,124 @@ export default function SettingsPage() {
                   >
                     <RefreshCw size={13} strokeWidth={1.5} style={{ animation: checkingVersion ? 'spin 1s linear infinite' : 'none' }} />
                     {checkingVersion ? 'Checking…' : 'Check for updates'}
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            {/* Tooling updates */}
+            <section style={{ marginBottom: 48 }}>
+              <h2 style={{
+                fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600,
+                color: 'var(--fg4)', letterSpacing: '0.5px', textTransform: 'uppercase',
+                margin: '0 0 16px',
+              }}>
+                Tooling
+              </h2>
+
+              <div style={{
+                border: '1px solid var(--border)',
+                borderRadius: 10,
+                padding: '20px 24px',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 24 }}>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{
+                      fontFamily: 'var(--sans)', fontSize: 14, fontWeight: 500,
+                      color: 'var(--fg1)', marginBottom: 4,
+                    }}>
+                      Research tooling
+                    </div>
+                    <div style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg4)', marginBottom: 10 }}>
+                      External tools Docent uses for research workflows.
+                    </div>
+
+                    {toolingInfo ? (
+                      toolingInfo.length === 0 ? (
+                        <span style={{ fontFamily: 'var(--sans)', fontSize: 12, color: '#D45656' }}>
+                          Could not fetch tooling versions.
+                        </span>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                          {toolingInfo.map(t => (
+                            <div key={t.name} style={{
+                              display: 'flex', alignItems: 'center', gap: 10,
+                              padding: '10px 14px', borderRadius: 8,
+                              background: 'var(--bg-subtle)',
+                              border: '1px solid var(--border)',
+                            }}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <span style={{
+                                  fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 600,
+                                  color: 'var(--fg1)',
+                                }}>
+                                  {t.label}
+                                </span>
+                                <span style={{
+                                  fontFamily: 'var(--mono)', fontSize: 10,
+                                  color: 'var(--fg4)', marginLeft: 8,
+                                }}>
+                                  {t.name}
+                                </span>
+                              </div>
+                              <div style={{ fontFamily: 'var(--sans)', fontSize: 12 }}>
+                                {t.up_to_date === null ? (
+                                  <span style={{ color: 'var(--fg4)' }}>
+                                    {t.installed ? `v${t.installed}` : 'not installed'}
+                                  </span>
+                                ) : t.up_to_date ? (
+                                  <span style={{ color: '#0fa76e' }}>v{t.installed} — up to date</span>
+                                ) : (
+                                  <span style={{ color: '#C97B00' }}>
+                                    v{t.installed} → <strong>v{t.latest}</strong> available
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                          {toolingInfo.some(t => t.up_to_date === false) && (
+                            <div style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg3)', marginTop: 4 }}>
+                              Run{' '}
+                              {toolingInfo.filter(t => t.up_to_date === false).map((t, i, arr) => (
+                                <span key={t.name}>
+                                  <span style={{
+                                    fontFamily: 'var(--mono)', fontSize: 11,
+                                    background: 'var(--gray100)', padding: '1px 6px',
+                                    borderRadius: 4, border: '1px solid var(--border)',
+                                    color: 'var(--fg1)',
+                                  }}>
+                                    {t.upgrade_cmd}
+                                  </span>
+                                  {i < arr.length - 1 ? ', ' : ''}
+                                </span>
+                              ))}{' '}
+                              in your terminal.
+                            </div>
+                          )}
+                        </div>
+                      )
+                    ) : (
+                      <div style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg4)' }}>
+                        Click to check for tooling updates.
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    onClick={checkForToolingUpdates}
+                    disabled={checkingTooling}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                      padding: '6px 14px', borderRadius: 7,
+                      border: '1px solid var(--border-md)',
+                      background: 'transparent', color: 'var(--fg3)',
+                      fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500,
+                      cursor: checkingTooling ? 'default' : 'pointer',
+                      opacity: checkingTooling ? 0.6 : 1, flexShrink: 0,
+                    }}
+                  >
+                    <RefreshCw size={13} strokeWidth={1.5} style={{ animation: checkingTooling ? 'spin 1s linear infinite' : 'none' }} />
+                    {checkingTooling ? 'Checking…' : 'Check now'}
                   </button>
                 </div>
               </div>
