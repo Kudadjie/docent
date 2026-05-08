@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { LayoutDashboard, BookOpen } from 'lucide-react';
+import { LayoutDashboard, BookOpen, BookText, Settings } from 'lucide-react';
 import WelcomeModal, { type UserProfile } from './WelcomeModal';
 
 interface NavItem {
@@ -13,7 +13,7 @@ interface NavItem {
   icon: React.ReactNode;
 }
 
-const NAV: NavItem[] = [
+const PLUGIN_NAV: NavItem[] = [
   {
     id: 'dashboard',
     href: '/dashboard',
@@ -25,6 +25,21 @@ const NAV: NavItem[] = [
     href: '/reading',
     label: 'Reading',
     icon: <BookOpen size={16} strokeWidth={1.5} />,
+  },
+];
+
+const UTILITY_NAV: NavItem[] = [
+  {
+    id: 'docs',
+    href: '/docs',
+    label: 'Docs',
+    icon: <BookText size={15} strokeWidth={1.5} />,
+  },
+  {
+    id: 'settings',
+    href: '/settings',
+    label: 'Settings',
+    icon: <Settings size={15} strokeWidth={1.5} />,
   },
 ];
 
@@ -112,7 +127,7 @@ export default function Sidebar({ active, queueCount, dark: darkProp }: Props) {
           />
         </div>
 
-        {/* Nav items */}
+        {/* Plugin nav items */}
         <div
           style={{
             flex: 1,
@@ -122,7 +137,7 @@ export default function Sidebar({ active, queueCount, dark: darkProp }: Props) {
             gap: 2,
           }}
         >
-          {NAV.map((item) => {
+          {PLUGIN_NAV.map((item) => {
             const isActive = item.id === active;
             return (
               <Link
@@ -151,7 +166,7 @@ export default function Sidebar({ active, queueCount, dark: darkProp }: Props) {
                   {item.icon}
                 </span>
                 <span>{item.label}</span>
-                {isActive && (
+                {item.id === 'reading' && isActive && (
                   <span
                     style={{
                       marginLeft: 'auto',
@@ -174,15 +189,62 @@ export default function Sidebar({ active, queueCount, dark: darkProp }: Props) {
           })}
         </div>
 
+        {/* Utility nav (Docs + Settings) — pinned above user footer */}
+        <div
+          style={{
+            padding: '8px 8px',
+            borderTop: '1px solid var(--border)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 1,
+          }}
+        >
+          {UTILITY_NAV.map((item) => {
+            const isActive = item.id === active;
+            return (
+              <Link
+                key={item.id}
+                href={item.href}
+                aria-current={isActive ? 'page' : undefined}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  width: '100%',
+                  padding: '5px 10px',
+                  borderRadius: 6,
+                  border: 'none',
+                  textDecoration: 'none',
+                  background: 'transparent',
+                  color: isActive ? 'var(--fg1)' : 'var(--fg4)',
+                  fontFamily: 'var(--sans)',
+                  fontSize: 12,
+                  fontWeight: isActive ? 500 : 400,
+                  transition: 'color 0.1s',
+                }}
+              >
+                <span style={{ display: 'flex', color: isActive ? 'var(--fg2)' : 'var(--fg4)' }}>
+                  {item.icon}
+                </span>
+                <span>{item.label}</span>
+              </Link>
+            );
+          })}
+        </div>
+
         {/* User footer */}
         {profileSet ? (
-          <div
+          <button
+            onClick={() => setShowWelcome(true)}
+            title="Edit profile"
             style={{
+              width: '100%',
               padding: '12px 18px',
               borderTop: '1px solid var(--border)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
+              borderLeft: 'none', borderRight: 'none', borderBottom: 'none',
+              background: 'transparent',
+              display: 'flex', alignItems: 'center', gap: 8,
+              cursor: 'pointer', textAlign: 'left',
             }}
           >
             <div style={{
@@ -207,7 +269,7 @@ export default function Sidebar({ active, queueCount, dark: darkProp }: Props) {
                 {displayRole}
               </div>
             </div>
-          </div>
+          </button>
         ) : (
           <button
             onClick={() => setShowWelcome(true)}

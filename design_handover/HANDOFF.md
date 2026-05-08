@@ -49,9 +49,16 @@ design_handoff_reading/
 │       ├── DocumentPanel.jsx               ← reference doc panel
 │       └── app-index.html                  ← reference app shell
 └── assets/
-    ├── logo.svg
+    ├── logo.svg                            ← dark mark/wordmark, for light backgrounds
+    ├── logo-light.svg                      ← white mark/wordmark, for dark backgrounds
+    ├── status-idle.svg                     ← status pill, idle (green dot, static)
+    ├── status-working.svg                  ← status pill, syncing (amber dot, animated blink)
+    ├── status-error.svg                    ← status pill, error (red dot, animated blink)
+    ├── status-done.svg                     ← status pill, done (green dot, static)
     └── favicon.svg
 ```
+
+**Logo usage:** the green accent square (`#18E299`) is preserved across both versions so brand recognition stays consistent — only the mark container and wordmark color flip. Pick `logo.svg` on light surfaces and `logo-light.svg` on dark surfaces; do not invert with CSS filters.
 
 **Open `designs/Reading.html` in a browser** to see the working prototype. Toggle the Tweaks panel (top-right toolbar in the host environment) to explore variants — these are exploratory only.
 
@@ -75,9 +82,10 @@ Vertical column, `background: #ffffff` (light) / `#0d0d0d` (dark).
 Three stacked sections separated by 1px borders:
 
 1. **Logo header** — height **56px**, padding `0 18px`.
-   - Pill-shaped logo: 28px tall, `border: 1.5px solid #0d0d0d` (light) / `rgba(255,255,255,0.22)` (dark), `border-radius: 9999px`, padding `0 11px`, gap 7px.
-   - Inside: 7px status dot (default `#18E299`) + the wordmark `docent` (Inter 600, 13.5px, letter-spacing -0.2px).
-   - Status dot has 4 states (`idle` / `working` / `error` / `done`) — see the Logo Dot section in the design system. Drive from real app state (`idle` when at rest, `working` while syncing, etc.).
+   - Wordmark logo: render `assets/logo.svg` (light mode) / `assets/logo-light.svg` (dark mode) at 24px tall, auto width.
+   - Mark: 28×32 rounded square (radius 6), filled `#0d0d0d` (light) / `#ffffff` (dark), with an inner `#18E299` accent rect.
+   - Wordmark `docent` (Inter 600, 22px, letter-spacing -0.5) sits to the right of the mark in primary fg.
+   - Status moved out of the logo — it now lives in the top-right of the status banner (see 1b).
 
 2. **Nav** — `flex: 1`, padding `10px 8px`, `gap: 2px`, vertical column.
    - Two items, in this order:
@@ -106,7 +114,12 @@ Three stat pills (left), one synced indicator (right), with a dark-mode toggle i
   - 7px gap between label and value.
 - `flex: 1` spacer pushes the rest right.
 - **Dark-mode toggle** (only if your app exposes it here; otherwise omit and put it in user settings): pill button, padding `3px 10px`, `border: 1px solid border-medium`, border-radius 9999, transparent background. Sun/moon icon (12px, stroke 2) + label `Light` / `Dark` (Geist Mono 10px, uppercase, letter-spacing 0.5px, color tertiary fg). Gap 5px.
-- **Synced indicator:** 6px brand-green dot + `SYNCED 2M AGO` (Geist Mono 10px, uppercase, color muted, letter-spacing 0.5px).
+- **Synced indicator (right):** flex row, gap 8px.
+  - Sync label: `SYNCED 2M AGO` / `SYNCING…` / `SYNC ERROR` (Geist Mono 10px, uppercase, color muted, letter-spacing 0.5px) — text reflects current `dotState`.
+  - **Status pill:** 24px tall, `border: 1.5px solid #0d0d0d` (light) / `rgba(255,255,255,0.22)` (dark), `border-radius: 9999px`, padding `0 9px`, gap 6px.
+    - Inside: 6px status dot + the wordmark `docent` (Inter 600, 11.5px, letter-spacing -0.2px).
+    - Dot has 4 states (`idle` / `working` / `error` / `done`) — colors `#18E299` / `#F5A623` / `#E53535` / `#18E299`. Drive from real app state.
+    - Standalone SVG variants are available in `assets/status-{idle,working,error,done}.svg` if you need a static drop-in (working & error use SMIL `<animate>` for the blink).
 
 #### 1c. Page header
 
@@ -220,8 +233,8 @@ Card: width 480, border-radius 16, `border: 1px solid border-subtle`, `box-shado
 - Action button reveal: `opacity 0.12s`.
 - Row enter: `fadeInUp 0.18s ease`.
 - High priority dot: `pulse-high 2s ease infinite`.
-- Logo dot working: `logo-dot-blink 1s step-end infinite`.
-- Logo dot done: `logo-dot-done 0.5s ease-in-out 3` (then back to idle).
+- Status dot working: `logo-dot-blink 1s step-end infinite`.
+- Status dot done: `logo-dot-done 0.5s ease-in-out 3` (then back to idle).
 
 No springs, no scroll-triggered effects. Keep it restrained.
 

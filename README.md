@@ -1,6 +1,6 @@
 <div align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="design_handover/assets/logo-light.svg">
+    <source media="(prefers-color-scheme: dark)" srcset="design_handover/assets/logo-dark.svg">
     <img src="design_handover/assets/logo.svg" alt="Docent" width="200" />
   </picture>
   <br /><br />
@@ -28,6 +28,7 @@
 - **`reading` tool** — reading queue CRUD (`next / show / search / stats / remove / edit / done / start / export`); Mendeley-backed ingestion; deadline notifications at startup; `move-up / move-down / move-to`; MCP-exposed so Claude Code can call it directly.
 - **`MendeleyCache`** — read-through file-backed cache (5-min TTL) for fresh metadata on every `next / show / search`. Degrades gracefully to queue snapshot on auth failure.
 - **Plugin system** — drop a `.py` file into `~/.docent/plugins/` and Docent auto-discovers it on next run.
+- **`docent ui`** — starts a local web dashboard at `http://localhost:7432`. Browse and manage your reading queue, sync with Mendeley, edit settings, and check for updates — all from the browser. The UI is bundled inside the package; no separate install needed.
 
 ## 📦 Install
 
@@ -48,6 +49,11 @@ docent --version
 **Updates:**
 ```bash
 uv tool upgrade docent-cli
+```
+
+Or from the CLI:
+```bash
+docent update
 ```
 
 ## 🏗 Architecture
@@ -163,11 +169,74 @@ Then `docent echo --msg hi --count 3` just works. No CLI edits, no registration 
 
 For tools with several related operations on shared state, use the multi-action shape — decorate methods with `@action(...)`. See `src/docent/tools/reading.py` for the reference implementation.
 
+## 🧑‍💻 Development
+
+### Prerequisites
+
+- Python ≥ 3.11
+- [uv](https://docs.astral.sh/uv/) — `pip install uv`
+- Node.js ≥ 20 (only needed for the frontend UI)
+
+### Setup
+
+```bash
+git clone https://github.com/Kudadjie/docent.git
+cd docent
+
+# Install in editable mode (all dev deps)
+uv sync --all-extras
+
+# Make the `docent` command available globally
+uv tool install --editable .
+```
+
+### Running tests
+
+```bash
+uv run pytest          # full suite (~160 tests, ~4s)
+uv run pytest -x -q    # stop on first failure, quiet output
+```
+
+### Running the frontend
+
+```bash
+cd frontend
+npm install
+npm run dev            # starts at http://localhost:3000
+```
+
+The frontend talks to a running `docent` install for API calls. Make sure the editable install is active before starting the dev server.
+
+### Project layout
+
+```
+src/docent/
+  cli.py                 # Typer app + command wiring
+  core.py                # Tool base class, registry, @action decorator
+  config.py              # Settings (Pydantic + TOML + env)
+  mcp_server.py          # MCP stdio adapter
+  bundled_plugins/
+    reading/             # Reading queue tool (the reference implementation)
+  tools/                 # Auto-discovered on startup
+tests/                   # pytest suite
+src/docent/ui_server.py  # FastAPI backend for the web UI
+frontend/                # Next.js source (built by scripts/build_ui.py)
+```
+
+### Updating the version
+
+Version is driven by git tags via `hatch-vcs` — no files to edit.
+
+```bash
+git tag v1.2.0
+git push --tags
+```
+
+GitHub Actions builds the wheel, publishes to PyPI, and creates a GitHub release automatically.
+
 ## 🚀 Coming Soon
 
 - **`docent research`** — AI-powered research tool: paper search (alphaXiv, Google Scholar), literature review, and multi-source synthesis pipelines. Routes through [Feynman](https://www.feynman.is/) as the primary research agent, with a direct Claude fallback if Feynman isn't available.
-
-- **Web dashboard** — a visual interface over the same tool registry. Browse your reading queue, run actions, and view stats from a browser — no terminal required. UI is designed with [Claude](https://claude.ai) and inspired by the [Mintlify design system](https://getdesign.md/mintlify/design-md) — clean aesthetics, green accents, reading-optimized layouts.
 
 - **Omnibox (natural language interface)** — type what you want in plain English and Docent routes it to the right action: *"what should I read next for CES701?"* or *"sync my Mendeley queue"* — no flags, no subcommands.
 

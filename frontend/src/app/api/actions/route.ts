@@ -9,9 +9,9 @@ function safeId(id: string): string {
 }
 
 // spawn-based runner: passes args as an array, avoiding shell quoting issues
-function spawnDocent(args: string[]): Promise<{ stdout: string; stderr: string }> {
+function spawnDocent(args: string[], timeoutMs = 30_000): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const proc = spawn('docent', args, { shell: true, timeout: 30_000 });
+    const proc = spawn('docent', args, { shell: true, timeout: timeoutMs });
     let stdout = '';
     let stderr = '';
     proc.stdout?.on('data', (d: Buffer) => { stdout += d.toString(); });
@@ -72,8 +72,22 @@ export async function POST(req: NextRequest) {
       if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
       cmd = `docent reading move-down --id "${safeId(id)}"`;
       break;
-    case 'sync':
-      cmd = 'docent reading sync-from-mendeley';
+    case 'sync': {
+      // Sync can take 60-120s: start Mendeley MCP, list folders, list docs, reconcile.
+      // Use spawnDocent (inherits full shell env) with a generous timeout.
+      try {
+        const { stdout, stderr } = await spawnDocent(
+          ['reading', 'sync-from-mendeley'],
+          120_000,
+        );
+        return NextResponse.json({ ok: true, stdout, stderr });
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+      }
+    }
+    case 'queue-clear':
+      cmd = 'docent reading queue-clear --yes';
       break;
     default:
       return NextResponse.json({ error: 'Unknown action' }, { status: 400 });

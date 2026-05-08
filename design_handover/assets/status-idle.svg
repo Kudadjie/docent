@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 110 28" fill="none">
+  <rect x="0.75" y="0.75" width="108.5" height="26.5" rx="13.25" stroke="currentColor" stroke-width="1.5" fill="transparent"></rect>
+  <circle cx="14" cy="14" r="3.5" fill="#18E299"></circle>
+  <text x="24" y="19" font-family="Inter, system-ui, sans-serif" font-size="13.5" font-weight="600" letter-spacing="-0.2" fill="currentColor">docent</text>
+</svg>

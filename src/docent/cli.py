@@ -347,6 +347,52 @@ for _tool_cls in all_tools().values():
     _register_tool_in_app(_tool_cls)
 
 
+@app.command("update", help="Upgrade Docent to the latest version on PyPI.")
+def update_command() -> None:
+    """Upgrade the installed docent-cli package via uv tool upgrade."""
+    import subprocess
+
+    console = get_console()
+    console.print(f"[dim]Installed version:[/] {__version__}")
+    console.print("[dim]Running:[/] uv tool upgrade docent-cli\n")
+    result = subprocess.run(["uv", "tool", "upgrade", "docent-cli"])
+    if result.returncode != 0:
+        console.print("\n[red]Upgrade failed.[/] Check the output above.")
+        raise typer.Exit(1)
+    console.print("\n[green]Upgraded successfully.[/]")
+    console.print(
+        "[dim]If you use Docent via MCP, restart Claude to load the new version.[/]"
+    )
+
+
+@app.command("ui", help="Start the Docent web UI on localhost.")
+def ui_command(
+    port: int = typer.Option(7432, "--port", help="Port to listen on."),
+    no_browser: bool = typer.Option(False, "--no-browser", help="Skip opening the browser."),
+) -> None:
+    """Serve the Docent web UI via FastAPI + the pre-built Next.js static export.
+
+    Build the UI first with:  python scripts/build_ui.py
+    """
+    from docent.ui_server import UI_DIST, run_server
+
+    if not UI_DIST.is_dir():
+        get_console().print(
+            "[red]UI not built.[/] Run [cyan]python scripts/build_ui.py[/] first.\n"
+            "[dim](When installed from PyPI the UI is included automatically.)[/]"
+        )
+        raise typer.Exit(1)
+
+    import webbrowser
+
+    url = f"http://127.0.0.1:{port}"
+    get_console().print(f"[bold]Docent UI[/]  [cyan]{url}[/]")
+    get_console().print("[dim]Press Ctrl+C to stop.[/]\n")
+    if not no_browser:
+        webbrowser.open(url)
+    run_server(port=port)
+
+
 @app.command("serve", help="Start the Docent MCP server (stdio transport).")
 def serve_command() -> None:
     """Expose all registered Docent actions as MCP tools over stdio.
