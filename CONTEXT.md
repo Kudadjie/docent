@@ -1,12 +1,13 @@
 # CONTEXT — resume hint for next session
 
-**Current Task:** UI polish + versioning session complete (commit ae0eda9 on dev). Next milestone is bundled release (docent-ui inside docent-cli).
+**Current Task:** Bundled release shipped (v1.1.0, dev branch). `docent ui` now works out of the box after `pip install docent-cli`.
 
 **Key Decisions:**
-- hatch-vcs replaces uv_build; release = `git tag vX.Y.Z && git push --tags`, no files to edit
-- Sidebar split into PLUGIN_NAV (tools) and UTILITY_NAV (Docs, Settings) pinned at bottom
-- Version check in UI is check-only — shows `docent update` command, no self-upgrade
+- One package, no install-mode split — fastapi/uvicorn bundled unconditionally
+- Tag on dev (not main) is fine — git tags are branch-independent, CI triggers regardless
+- `memory/` stays on dev; cherry-pick feature commits to main when ready for clean public branch
 
 **Next Steps:**
-1. Bundled release: FastAPI server + `output: 'export'` + `docent ui` command (see memory/project_ui_bundling.md)
-2. Phase 1.5-C research-to-notebook plugin (plan in memory/project_feynman_port.md)
+1. Confirm v1.1.0 published successfully on PyPI (check Actions tab in GitHub)
+2. Phase 1.5-C skill ports — `research-to-notebook` first (plan in memory/project_feynman_port.md)
+3. Cherry-pick feature commits to main (skip chore(memory) commits) when ready

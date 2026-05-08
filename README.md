@@ -28,6 +28,7 @@
 - **`reading` tool** — reading queue CRUD (`next / show / search / stats / remove / edit / done / start / export`); Mendeley-backed ingestion; deadline notifications at startup; `move-up / move-down / move-to`; MCP-exposed so Claude Code can call it directly.
 - **`MendeleyCache`** — read-through file-backed cache (5-min TTL) for fresh metadata on every `next / show / search`. Degrades gracefully to queue snapshot on auth failure.
 - **Plugin system** — drop a `.py` file into `~/.docent/plugins/` and Docent auto-discovers it on next run.
+- **`docent ui`** — starts a local web dashboard at `http://localhost:7432`. Browse and manage your reading queue, sync with Mendeley, edit settings, and check for updates — all from the browser. The UI is bundled inside the package; no separate install needed.
 
 ## 📦 Install
 
@@ -48,6 +49,11 @@ docent --version
 **Updates:**
 ```bash
 uv tool upgrade docent-cli
+```
+
+Or from the CLI:
+```bash
+docent update
 ```
 
 ## 🏗 Architecture
@@ -213,23 +219,24 @@ src/docent/
     reading/             # Reading queue tool (the reference implementation)
   tools/                 # Auto-discovered on startup
 tests/                   # pytest suite
-frontend/                # Next.js UI (dev only — bundled release TBD)
+src/docent/ui_server.py  # FastAPI backend for the web UI
+frontend/                # Next.js source (built by scripts/build_ui.py)
 ```
 
 ### Updating the version
 
-Version is declared in **two places** that must stay in sync:
+Version is driven by git tags via `hatch-vcs` — no files to edit.
 
-- `pyproject.toml` → `version = "x.y.z"` (the published package version)
-- `src/docent/__init__.py` → `__version__ = "x.y.z"` (what `docent --version` prints)
+```bash
+git tag v1.2.0
+git push --tags
+```
 
-Update both before tagging a release.
+GitHub Actions builds the wheel, publishes to PyPI, and creates a GitHub release automatically.
 
 ## 🚀 Coming Soon
 
 - **`docent research`** — AI-powered research tool: paper search (alphaXiv, Google Scholar), literature review, and multi-source synthesis pipelines. Routes through [Feynman](https://www.feynman.is/) as the primary research agent, with a direct Claude fallback if Feynman isn't available.
-
-- **Web dashboard** — a visual interface over the same tool registry. Browse your reading queue, run actions, and view stats from a browser — no terminal required. UI is designed with [Claude](https://claude.ai) and inspired by the [Mintlify design system](https://getdesign.md/mintlify/design-md) — clean aesthetics, green accents, reading-optimized layouts.
 
 - **Omnibox (natural language interface)** — type what you want in plain English and Docent routes it to the right action: *"what should I read next for CES701?"* or *"sync my Mendeley queue"* — no flags, no subcommands.
 
