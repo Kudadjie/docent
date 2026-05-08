@@ -53,6 +53,7 @@ export default function Sidebar({ active, queueCount, dark: darkProp }: Props) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
   const [localDark, setLocalDark] = useState(false);
+  const [savedDatabaseDir, setSavedDatabaseDir] = useState<string>('');
 
   useEffect(() => {
     if (darkProp === undefined) {
@@ -70,9 +71,16 @@ export default function Sidebar({ active, queueCount, dark: darkProp }: Props) {
         if (!data.name) setShowWelcome(true);
       })
       .catch(() => {});
+
+    fetch('/api/config')
+      .then(r => r.json())
+      .then((d: { reading: { database_dir: string | null } }) => {
+        setSavedDatabaseDir(d.reading?.database_dir ?? '');
+      })
+      .catch(() => {});
   }, []);
 
-  async function handleWelcomeComplete(profile: UserProfile) {
+  async function handleWelcomeComplete(profile: UserProfile, databaseDir?: string) {
     setShowWelcome(false);
     setUser(profile);
     try {
@@ -82,6 +90,17 @@ export default function Sidebar({ active, queueCount, dark: darkProp }: Props) {
         body: JSON.stringify(profile),
       });
     } catch { /* ignore */ }
+
+    if (databaseDir) {
+      try {
+        await fetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ section: 'reading', key: 'database_dir', value: databaseDir }),
+        });
+        setSavedDatabaseDir(databaseDir);
+      } catch { /* ignore */ }
+    }
   }
 
   const profileSet = !!user?.name;
@@ -98,6 +117,7 @@ export default function Sidebar({ active, queueCount, dark: darkProp }: Props) {
           onComplete={handleWelcomeComplete}
           onCancel={profileSet ? () => setShowWelcome(false) : undefined}
           initialProfile={profileSet ? user ?? undefined : undefined}
+          initialDatabaseDir={savedDatabaseDir}
         />
       )}
 
@@ -109,7 +129,7 @@ export default function Sidebar({ active, queueCount, dark: darkProp }: Props) {
           height: '100%',
           display: 'flex',
           flexDirection: 'column',
-          background: 'var(--bg)',
+          background: 'var(--bg-subtle)',
           borderRight: '1px solid var(--border)',
         }}
       >

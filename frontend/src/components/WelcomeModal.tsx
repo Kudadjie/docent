@@ -12,16 +12,18 @@ export interface UserProfile {
 const LEVELS = ['Undergraduate', 'Masters', 'PhD', 'Postdoc', 'Faculty', 'Other'];
 
 interface Props {
-  onComplete: (profile: UserProfile) => void;
+  onComplete: (profile: UserProfile, databaseDir?: string) => void;
   onCancel?: () => void;
   initialProfile?: UserProfile;
+  initialDatabaseDir?: string;
 }
 
-export default function WelcomeModal({ onComplete, onCancel, initialProfile }: Props) {
+export default function WelcomeModal({ onComplete, onCancel, initialProfile, initialDatabaseDir }: Props) {
   const isEdit = !!initialProfile?.name;
-  const [name, setName]       = useState(initialProfile?.name ?? '');
-  const [program, setProgram] = useState(initialProfile?.program ?? '');
-  const [level, setLevel]     = useState(initialProfile?.level ?? '');
+  const [name, setName]           = useState(initialProfile?.name ?? '');
+  const [program, setProgram]     = useState(initialProfile?.program ?? '');
+  const [level, setLevel]         = useState(initialProfile?.level ?? '');
+  const [databaseDir, setDatabaseDir] = useState(initialDatabaseDir ?? '');
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -30,7 +32,10 @@ export default function WelcomeModal({ onComplete, onCancel, initialProfile }: P
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    onComplete({ name: name.trim() || 'You', program: program.trim(), level });
+    onComplete(
+      { name: name.trim() || 'You', program: program.trim(), level },
+      databaseDir.trim() || undefined,
+    );
   }
 
   function handleSkip() {
@@ -50,10 +55,10 @@ export default function WelcomeModal({ onComplete, onCancel, initialProfile }: P
       }}
     >
       <div style={{
-        background: 'var(--bg)',
+        background: 'var(--bg-card)',
         border: '1px solid var(--border-md)',
         borderRadius: 16,
-        width: '100%', maxWidth: 420,
+        width: '100%', maxWidth: 440,
         boxShadow: '0 12px 48px rgba(0,0,0,0.24)',
         overflow: 'hidden',
       }}>
@@ -80,7 +85,7 @@ export default function WelcomeModal({ onComplete, onCancel, initialProfile }: P
             fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--fg3)',
             margin: 0, lineHeight: 1.5,
           }}>
-            {isEdit ? 'Update your name, program, or level.' : 'Tell us a bit about yourself to personalise your experience.'}
+            {isEdit ? 'Update your name, program, or level.' : 'Tell us a bit about yourself to get started.'}
           </p>
         </div>
 
@@ -116,6 +121,22 @@ export default function WelcomeModal({ onComplete, onCancel, initialProfile }: P
               <option value="">Select…</option>
               {LEVELS.map(l => <option key={l} value={l}>{l}</option>)}
             </select>
+          </FormField>
+
+          <FormField label="Papers folder (optional)">
+            <input
+              type="text"
+              value={databaseDir}
+              onChange={e => setDatabaseDir(e.target.value)}
+              placeholder="e.g. ~/Documents/Papers"
+              style={inputStyle}
+            />
+            <span style={{
+              fontFamily: 'var(--sans)', fontSize: 11, color: 'var(--fg4)',
+              lineHeight: 1.4, marginTop: 3,
+            }}>
+              Local folder where your PDFs are stored. Can be changed later in Settings.
+            </span>
           </FormField>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>

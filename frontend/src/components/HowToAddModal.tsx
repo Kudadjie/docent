@@ -5,28 +5,29 @@ import { X, FolderOpen, RefreshCw, BookOpen } from 'lucide-react';
 
 interface Props {
   onClose: () => void;
+  collectionName?: string;
 }
 
-const STEPS = [
-  {
-    icon: <FolderOpen size={15} strokeWidth={1.5} />,
-    label: 'Drop the PDF',
-    detail: 'Place the PDF into your database folder (your Mendeley auto-import folder).',
-  },
-  {
-    icon: <BookOpen size={15} strokeWidth={1.5} />,
-    label: 'Add to Mendeley',
-    detail: 'In Mendeley Desktop, drag the document into your Docent-Queue collection.',
-  },
-  {
-    icon: <RefreshCw size={15} strokeWidth={1.5} />,
-    label: 'Sync',
-    detail: 'Click "Sync Mendeley" in the toolbar — Docent will pull the new entry into your queue.',
-  },
-];
-
-export default function HowToAddModal({ onClose }: Props) {
+export default function HowToAddModal({ onClose, collectionName = 'Docent-Queue' }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const STEPS = [
+    {
+      icon: <FolderOpen size={15} strokeWidth={1.5} />,
+      label: 'Drop the document',
+      detail: 'Place the document (preferably PDF) into your database folder (your Mendeley auto-import folder).',
+    },
+    {
+      icon: <BookOpen size={15} strokeWidth={1.5} />,
+      label: 'Add to Mendeley',
+      detail: `In Mendeley Desktop, drag the document into your "${collectionName}" collection.`,
+    },
+    {
+      icon: <RefreshCw size={15} strokeWidth={1.5} />,
+      label: 'Sync',
+      detail: 'Click "Sync Mendeley" in the toolbar — Docent will pull the new entry into your queue.',
+    },
+  ];
 
   useEffect(() => {
     const container = containerRef.current;
@@ -57,7 +58,7 @@ export default function HowToAddModal({ onClose }: Props) {
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="How to add papers"
+      aria-label="How to add documents"
       style={{
         position: 'fixed',
         inset: 0,
@@ -100,7 +101,7 @@ export default function HowToAddModal({ onClose }: Props) {
                 color: 'var(--fg1)',
               }}
             >
-              How to add papers
+              How to add documents
             </div>
             <div
               style={{
@@ -110,7 +111,7 @@ export default function HowToAddModal({ onClose }: Props) {
                 marginTop: 2,
               }}
             >
-              Papers enter via Mendeley — not manually.
+              Documents enter via Mendeley — not manually.
             </div>
           </div>
           <button

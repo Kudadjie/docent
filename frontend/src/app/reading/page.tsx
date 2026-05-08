@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useDarkMode } from '@/hooks/useDarkMode';
 import { RefreshCw, Download, Printer, Search, Filter, HelpCircle, BookOpen, ArrowRight, BarChart2 } from 'lucide-react';
 
 import Sidebar from '@/components/Sidebar';
@@ -87,12 +88,12 @@ function GhostBtn({
 
 // ── Page ──────────────────────────────────────────────────────────
 export default function ReadingPage() {
+  const { dark, toggleDark } = useDarkMode();
   const [data, setData] = useState<QueueData | null>(null);
   const [filter, setFilter] = useState<FilterValue>('all');
   const [search, setSearch] = useState('');
   const [newIds, setNewIds] = useState<Set<string>>(new Set());
   const [showInfo, setShowInfo] = useState(false);
-  const [dark, setDark] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
   const [editEntry, setEditEntry] = useState<QueueEntry | null>(null);
@@ -101,33 +102,38 @@ export default function ReadingPage() {
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const [urlReady, setUrlReady] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
+  const [serverError, setServerError] = useState(false);
+  const [queueCollection, setQueueCollection] = useState<string>('Docent-Queue');
   const filterRef = useRef<HTMLDivElement>(null);
   const autoSyncedRef = useRef(false);
-
-  // Dark mode: persist to localStorage, apply data-theme attribute
-  useEffect(() => {
-    const saved = localStorage.getItem('docent:dark');
-    if (saved === 'true') setDark(true);
-  }, []);
-
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', dark ? 'dark' : '');
-    localStorage.setItem('docent:dark', dark ? 'true' : 'false');
-  }, [dark]);
 
   // Fetch queue
   const refresh = useCallback(async () => {
     try {
       const res = await fetch('/api/queue');
-      if (res.ok) setData(await res.json());
+      if (res.ok) {
+        setData(await res.json());
+        setServerError(false);
+      } else {
+        setServerError(true);
+      }
     } catch {
-      /* silent — stale data stays visible */
+      setServerError(true);
     }
   }, []);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    fetch('/api/config')
+      .then(r => r.json())
+      .then((d: { reading: { queue_collection: string } }) => {
+        if (d.reading?.queue_collection) setQueueCollection(d.reading.queue_collection);
+      })
+      .catch(() => {});
+  }, []);
 
   // Read filter + search from URL on mount
   useEffect(() => {
@@ -296,7 +302,7 @@ export default function ReadingPage() {
       .filter(e => e.status === 'queued')
       .sort((a, b) => a.order - b.order);
     if (queued.length === 0) {
-      setToast({ type: 'error', message: 'No queued papers.' });
+      setToast({ type: 'error', message: 'No queued entries.' });
       return;
     }
     const next = queued[0];
@@ -463,14 +469,44 @@ ${sectionsHtml}
           overflow: 'hidden',
         }}
       >
+        {/* Server error notice */}
+        {serverError && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 12,
+              padding: '9px 20px',
+              background: 'rgba(212,86,86,0.08)',
+              borderBottom: '1px solid rgba(212,86,86,0.2)',
+              flexShrink: 0,
+            }}
+          >
+            <span style={{ fontFamily: 'var(--sans)', fontSize: 12, color: '#D45656' }}>
+              Something doesn't seem right — the server may be unavailable.
+            </span>
+            <button
+              onClick={() => { setServerError(false); refresh(); }}
+              style={{
+                fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500,
+                color: '#D45656', background: 'transparent', border: '1px solid rgba(212,86,86,0.35)',
+                borderRadius: 6, padding: '3px 10px', cursor: 'pointer', whiteSpace: 'nowrap',
+              }}
+            >
+              Try refreshing
+            </button>
+          </div>
+        )}
+
         {/* Status banner */}
         <StatusBanner
+          dark={dark}
+          onToggleDark={toggleDark}
+          dotState={busy === 'sync' || busy === 'refresh' ? 'working' : 'idle'}
           banner={banner}
           lastUpdated={data?.last_updated ?? null}
           databaseCount={data?.database_count ?? null}
-          dark={dark}
-          onToggleDark={() => setDark((d) => !d)}
-          dotState={busy === 'sync' || busy === 'refresh' ? 'working' : 'idle'}
         />
 
         {/* Page header */}
@@ -562,7 +598,7 @@ ${sectionsHtml}
                 {busy === 'sync' ? 'Syncing…' : 'Sync Mendeley'}
               </GhostBtn>
               <GhostBtn icon={<Printer size={14} strokeWidth={1.5} />} onClick={handleExport}>
-                Export PDF
+                Export Documents
               </GhostBtn>
               <GhostBtn icon={<ArrowRight size={14} strokeWidth={1.5} />} onClick={handleNext}>
                 Next
@@ -602,7 +638,7 @@ ${sectionsHtml}
                     fontFamily: 'var(--sans)',
                     fontSize: 12,
                     color: 'var(--fg1)',
-                    background: 'var(--bg)',
+                    background: 'var(--bg-card)',
                     outline: 'none',
                   }}
                 />
@@ -728,7 +764,7 @@ ${sectionsHtml}
       </main>
 
       {/* Info modal */}
-      {showInfo && <HowToAddModal onClose={() => setShowInfo(false)} />}
+      {showInfo && <HowToAddModal onClose={() => setShowInfo(false)} collectionName={queueCollection} />}
 
       {/* Edit modal */}
       {editEntry && (

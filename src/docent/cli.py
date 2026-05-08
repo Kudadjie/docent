@@ -21,7 +21,7 @@ from rich.progress import (
 from rich.table import Table
 
 from docent import __version__
-from docent.config import load_settings
+from docent.config import load_settings, write_setting
 from docent.core import (
     Context,
     ProgressEvent,
@@ -85,9 +85,20 @@ def _run_onboarding() -> None:
         else:
             console.print(f"[yellow]Not recognised. Choose a number 1–{len(_LEVEL_CHOICES)} or type the level.[/]")
 
+    # Optional: database folder
+    console.print("\n[dim]Where do you keep your PDFs? (press Enter to skip)[/]")
+    db_dir_raw = typer.prompt("Papers folder", default="", show_default=False).strip()
+
     _DOCENT_DIR.mkdir(parents=True, exist_ok=True)
     profile = {"name": name, "program": program, "level": level}
     _USER_FILE.write_text(json.dumps(profile, indent=2), encoding="utf-8")
+
+    if db_dir_raw:
+        try:
+            write_setting("reading.database_dir", db_dir_raw)
+            console.print(f"[dim]Database folder set to [cyan]{db_dir_raw}[/].[/]")
+        except Exception:
+            console.print("[yellow]Could not save database folder — set it later with: docent reading config-set --key database_dir --value <path>[/]")
 
     console.print(
         f"\n[bold green]All set, {name}![/] Your profile has been saved. "

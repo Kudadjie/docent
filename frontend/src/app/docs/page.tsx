@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
+import StatusBanner from '@/components/StatusBanner';
+import { useDarkMode } from '@/hooks/useDarkMode';
 
 type Section = {
   id: string;
@@ -145,7 +146,7 @@ function CommandTable({ rows }: { rows: { cmd: string; desc: string }[] }) {
 function Card({ children }: { children: React.ReactNode }) {
   return (
     <div style={{
-      background: 'var(--bg)',
+      background: 'var(--bg-card)',
       border: '1px solid var(--border)',
       borderRadius: 10,
       padding: '24px 28px',
@@ -157,11 +158,7 @@ function Card({ children }: { children: React.ReactNode }) {
 }
 
 export default function DocsPage() {
-  const [dark, setDark] = useState(false);
-
-  useEffect(() => {
-    setDark(localStorage.getItem('docent:dark') === 'true');
-  }, []);
+  const { dark, toggleDark } = useDarkMode();
 
   function scrollTo(id: string) {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -171,24 +168,8 @@ export default function DocsPage() {
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
       <Sidebar active="docs" queueCount={0} dark={dark} />
 
-      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'auto' }}>
-        {/* Header */}
-        <div style={{
-          height: 56,
-          display: 'flex',
-          alignItems: 'center',
-          padding: '0 28px',
-          borderBottom: '1px solid var(--border)',
-          flexShrink: 0,
-          gap: 12,
-        }}>
-          <span style={{ fontFamily: 'var(--sans)', fontWeight: 600, fontSize: 14, color: 'var(--fg1)' }}>
-            Documentation
-          </span>
-          <span style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg4)' }}>
-            Docent reference
-          </span>
-        </div>
+      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
+        <StatusBanner dark={dark} onToggleDark={toggleDark} />
 
         {/* Body — two-column: TOC left, content right */}
         <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>

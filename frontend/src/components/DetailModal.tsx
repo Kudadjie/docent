@@ -52,7 +52,7 @@ export default function DetailModal({ entry, dark, onClose }: Props) {
       }}
     >
       <div style={{
-        background: 'var(--bg)',
+        background: 'var(--bg-card)',
         border: '1px solid var(--border-md)',
         borderRadius: 12,
         width: '100%', maxWidth: 520,
@@ -62,7 +62,7 @@ export default function DetailModal({ entry, dark, onClose }: Props) {
         {/* Header */}
         <div style={{
           position: 'sticky', top: 0, zIndex: 1,
-          background: 'var(--bg)',
+          background: 'var(--bg-card)',
           display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
           padding: '16px 20px', borderBottom: '1px solid var(--border)',
         }}>
