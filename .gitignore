@@ -48,4 +48,4 @@ Desktop.ini
 *.sqlite
 
 # Local gstack security reports and session data
-.gstack/
+.gstack/src/docent/_version.py
