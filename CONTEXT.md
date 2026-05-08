@@ -1,13 +1,13 @@
 # CONTEXT — resume hint for next session
 
-**Current Task:** Bundled release shipped (v1.1.0, dev branch). `docent ui` now works out of the box after `pip install docent-cli`.
+**Current Task:** v1.1.1 shipped to PyPI (bundled UI). Main merged from dev. Repo is clean.
 
 **Key Decisions:**
-- One package, no install-mode split — fastapi/uvicorn bundled unconditionally
-- Tag on dev (not main) is fine — git tags are branch-independent, CI triggers regardless
-- `memory/` stays on dev; cherry-pick feature commits to main when ready for clean public branch
+- Wheel-only publish (no sdist) — sdist with ui_dist exceeded PyPI 100MB limit
+- memory/ and CONTEXT.md excluded from main via .gitignore; tracked only on dev
+- GitHub Release created manually for v1.1.1; future tags auto-create via workflow
 
 **Next Steps:**
-1. Confirm v1.1.0 published successfully on PyPI (check Actions tab in GitHub)
-2. Phase 1.5-C skill ports — `research-to-notebook` first (plan in memory/project_feynman_port.md)
-3. Cherry-pick feature commits to main (skip chore(memory) commits) when ready
+1. Phase 1.5-C skill ports — `research-to-notebook` first (plan in memory/project_feynman_port.md)
+2. Cherry-pick _version.py gitignore fix to main (or let it ride until next merge)
+3. Pin actions/setup-node to a real SHA in publish.yml before next CSO audit
