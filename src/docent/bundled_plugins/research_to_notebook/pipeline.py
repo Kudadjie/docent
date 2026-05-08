@@ -55,6 +55,10 @@ def _run_pipeline(
     writer_name: str,
     *,
     on_progress: Callable[[str, str], None] | None = None,
+    model_planner: str = "glm-5.1",
+    model_writer: str = "minimax-m2.7",
+    model_verifier: str = "glm-5.1",
+    model_reviewer: str = "deepseek-v4-pro",
 ) -> dict:
     """Shared search-fetch-write-verify-review pipeline."""
     sources: list[dict] = []
@@ -64,7 +68,7 @@ def _run_pipeline(
     _progress(on_progress, "search_plan", "Generating search strategy...")
     planner_prompt = _load_prompt(planner_name).replace("{topic}", topic)
     try:
-        plan_text = oc.call(planner_prompt, model="glm-5.1")
+        plan_text = oc.call(planner_prompt, model=model_planner)
         plan = _parse_json(plan_text)
     except Exception as e:
         return {
@@ -136,7 +140,7 @@ def _run_pipeline(
             .replace("{snippets_summary}", snippets_summary)
         )
         try:
-            gap_text = oc.call(gap_prompt, model="glm-5.1")
+            gap_text = oc.call(gap_prompt, model=model_planner)
             gap = _parse_json(gap_text)
         except Exception:
             break
@@ -176,7 +180,7 @@ def _run_pipeline(
         .replace("{sources}", sources_text)
     )
     try:
-        draft = oc.call(writer_prompt, model="minimax-m2.7", timeout=600)
+        draft = oc.call(writer_prompt, model=model_writer, timeout=600)
     except Exception as e:
         return {
             "topic": topic,
@@ -196,7 +200,7 @@ def _run_pipeline(
         .replace("{sources}", sources_text)
     )
     try:
-        verified_draft = oc.call(verifier_prompt, model="glm-5.1", timeout=300)
+        verified_draft = oc.call(verifier_prompt, model=model_verifier, timeout=300)
     except Exception:
         verified_draft = draft
 
@@ -204,7 +208,7 @@ def _run_pipeline(
     _progress(on_progress, "review", "Running adversarial review...")
     reviewer_prompt = _load_prompt("reviewer").replace("{draft}", verified_draft)
     try:
-        review = oc.call(reviewer_prompt, model="deepseek-v4-pro", timeout=300)
+        review = oc.call(reviewer_prompt, model=model_reviewer, timeout=300)
     except Exception:
         review = "(Reviewer unavailable)"
 
@@ -224,9 +228,18 @@ def run_deep(
     oc: OcClient,
     *,
     on_progress: Callable[[str, str], None] | None = None,
+    model_planner: str = "glm-5.1",
+    model_writer: str = "minimax-m2.7",
+    model_verifier: str = "glm-5.1",
+    model_reviewer: str = "deepseek-v4-pro",
 ) -> dict:
     """Run the full deep research pipeline. Returns result dict."""
-    return _run_pipeline(topic, oc, "search_planner", "writer", on_progress=on_progress)
+    return _run_pipeline(
+        topic, oc, "search_planner", "writer",
+        on_progress=on_progress,
+        model_planner=model_planner, model_writer=model_writer,
+        model_verifier=model_verifier, model_reviewer=model_reviewer,
+    )
 
 
 def run_lit(
@@ -234,9 +247,18 @@ def run_lit(
     oc: OcClient,
     *,
     on_progress: Callable[[str, str], None] | None = None,
+    model_planner: str = "glm-5.1",
+    model_writer: str = "minimax-m2.7",
+    model_verifier: str = "glm-5.1",
+    model_reviewer: str = "deepseek-v4-pro",
 ) -> dict:
     """Run the literature review pipeline. Returns result dict."""
-    return _run_pipeline(topic, oc, "lit_planner", "lit_writer", on_progress=on_progress)
+    return _run_pipeline(
+        topic, oc, "lit_planner", "lit_writer",
+        on_progress=on_progress,
+        model_planner=model_planner, model_writer=model_writer,
+        model_verifier=model_verifier, model_reviewer=model_reviewer,
+    )
 
 
 def run_review(
@@ -244,6 +266,8 @@ def run_review(
     oc: OcClient,
     *,
     on_progress: Callable[[str, str], None] | None = None,
+    model_researcher: str = "glm-5.1",
+    model_reviewer: str = "deepseek-v4-pro",
 ) -> dict:
     """Run the peer review pipeline. Returns result dict."""
     # Stage 1: Fetch artifact content
@@ -258,7 +282,7 @@ def run_review(
         .replace("{artifact_content}", artifact_content)
     )
     try:
-        researcher_notes = oc.call(researcher_prompt, model="glm-5.1", timeout=300)
+        researcher_notes = oc.call(researcher_prompt, model=model_researcher, timeout=300)
     except Exception as e:
         return {
             "artifact": artifact,
@@ -274,7 +298,7 @@ def run_review(
     combined = f"## Artifact\n\n{artifact_content}\n\n## Researcher Notes\n\n{researcher_notes}"
     reviewer_prompt = _load_prompt("reviewer").replace("{draft}", combined)
     try:
-        review = oc.call(reviewer_prompt, model="deepseek-v4-pro", timeout=300)
+        review = oc.call(reviewer_prompt, model=model_reviewer, timeout=300)
     except Exception:
         review = "(Reviewer unavailable)"
 

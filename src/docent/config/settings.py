@@ -18,6 +18,13 @@ class ResearchSettings(BaseModel):
     output_dir: Path = Field(default_factory=lambda: Path("~/Documents/Docent/research"))
     feynman_command: list[str] | None = None
     feynman_budget_usd: float = 0.0  # 0.0 = no limit (default). Set to e.g. 2.00 to cap Feynman spend at $2 per session.
+    oc_provider: str = "opencode-go"
+    oc_model_planner: str = "glm-5.1"
+    oc_model_writer: str = "minimax-m2.7"
+    oc_model_verifier: str = "glm-5.1"
+    oc_model_reviewer: str = "deepseek-v4-pro"
+    oc_model_researcher: str = "glm-5.1"
+    oc_budget_usd: float = 0.0
 
 
 class ReadingSettings(BaseModel):

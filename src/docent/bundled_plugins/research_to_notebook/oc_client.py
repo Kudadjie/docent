@@ -1,12 +1,39 @@
 """Thin OpenCode REST API client for in-process LLM calls."""
 from __future__ import annotations
 
+import datetime
 import json
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 _BASE_URL = "http://127.0.0.1:4096"
 _DEFAULT_PROVIDER = "opencode-go"
+
+
+def _oc_spend_file() -> Path:
+    from docent.utils.paths import cache_dir
+    return cache_dir() / "research" / "oc_spend.json"
+
+
+def _read_oc_daily_spend() -> float:
+    today = datetime.date.today().isoformat()
+    try:
+        data = json.loads(_oc_spend_file().read_text(encoding="utf-8"))
+        if data.get("date") == today:
+            return float(data.get("spend_usd", 0.0))
+    except Exception:
+        pass
+    return 0.0
+
+
+def _write_oc_daily_spend(spend: float) -> None:
+    p = _oc_spend_file()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(
+        json.dumps({"date": datetime.date.today().isoformat(), "spend_usd": round(spend, 6)}),
+        encoding="utf-8",
+    )
 
 
 class OcUnavailableError(RuntimeError):
@@ -45,6 +72,14 @@ class OcClient:
             },
             timeout=timeout,
         )
+
+        try:
+            cost = float((response.get("info") or {}).get("cost") or 0.0)
+            if cost > 0:
+                _write_oc_daily_spend(_read_oc_daily_spend() + cost)
+        except Exception:
+            pass
+
         return "\n".join(
             p["text"] for p in response.get("parts", []) if p.get("type") == "text"
         )

@@ -227,12 +227,26 @@ class ConfigShowResult(BaseModel):
     config_path: str
     output_dir: str
     feynman_command: list[str]
+    oc_provider: str
+    oc_model_planner: str
+    oc_model_writer: str
+    oc_model_verifier: str
+    oc_model_reviewer: str
+    oc_model_researcher: str
+    oc_budget_usd: float
 
     def to_shapes(self) -> list[Shape]:
         return [
             MetricShape(label="Config", value=self.config_path),
             MetricShape(label="output_dir", value=self.output_dir),
             MetricShape(label="feynman_command", value=" ".join(self.feynman_command)),
+            MetricShape(label="oc_provider", value=self.oc_provider),
+            MetricShape(label="oc_model_planner", value=self.oc_model_planner),
+            MetricShape(label="oc_model_writer", value=self.oc_model_writer),
+            MetricShape(label="oc_model_verifier", value=self.oc_model_verifier),
+            MetricShape(label="oc_model_reviewer", value=self.oc_model_reviewer),
+            MetricShape(label="oc_model_researcher", value=self.oc_model_researcher),
+            MetricShape(label="oc_budget_usd", value=str(self.oc_budget_usd)),
         ]
 
     def __rich_console__(self, console, options):
@@ -281,11 +295,49 @@ class ToNotebookResult(BaseModel):
         yield from ()
 
 
+class UsageInputs(BaseModel):
+    pass
+
+
+class UsageResult(BaseModel):
+    feynman_spend_usd: float
+    oc_spend_usd: float
+    feynman_budget_usd: float
+    oc_budget_usd: float
+    date: str
+    message: str
+
+    def to_shapes(self) -> list[Shape]:
+        shapes: list[Shape] = [
+            MetricShape(label="Date", value=self.date),
+            MetricShape(label="Feynman spend today", value=f"${self.feynman_spend_usd:.4f}",
+                       unit=f"/ ${self.feynman_budget_usd:.2f} budget" if self.feynman_budget_usd > 0 else "(no limit)"),
+            MetricShape(label="OpenCode spend today", value=f"${self.oc_spend_usd:.4f}",
+                       unit=f"/ ${self.oc_budget_usd:.2f} budget" if self.oc_budget_usd > 0 else "(no limit)"),
+        ]
+        return shapes
+
+    def __rich_console__(self, console, options):
+        from docent.ui.renderers import render_shapes
+        render_shapes(self.to_shapes(), console)
+        yield from ()
+
+
 # ---------------------------------------------------------------------------
 # Tool
 # ---------------------------------------------------------------------------
 
-_KNOWN_RESEARCH_KEYS = {"output_dir", "feynman_budget_usd"}
+_KNOWN_RESEARCH_KEYS = {
+    "output_dir",
+    "feynman_budget_usd",
+    "oc_provider",
+    "oc_model_planner",
+    "oc_model_writer",
+    "oc_model_verifier",
+    "oc_model_reviewer",
+    "oc_model_researcher",
+    "oc_budget_usd",
+}
 
 
 @register_tool
@@ -305,7 +357,7 @@ class ResearchTool(Tool):
             from .oc_client import OcClient
             from .pipeline import run_deep
 
-            oc = OcClient()
+            oc = OcClient(provider=context.settings.research.oc_provider)
             if not oc.is_available():
                 yield ProgressEvent(
                     phase="start",
@@ -336,7 +388,14 @@ class ResearchTool(Tool):
             )
 
             try:
-                result_data = run_deep(inputs.topic, oc, on_progress=_capture_progress)
+                result_data = run_deep(
+                    inputs.topic, oc,
+                    on_progress=_capture_progress,
+                    model_planner=context.settings.research.oc_model_planner,
+                    model_writer=context.settings.research.oc_model_writer,
+                    model_verifier=context.settings.research.oc_model_verifier,
+                    model_reviewer=context.settings.research.oc_model_reviewer,
+                )
             except Exception as e:
                 return ResearchResult(
                     ok=False,
@@ -450,7 +509,7 @@ class ResearchTool(Tool):
             from .oc_client import OcClient
             from .pipeline import run_lit
 
-            oc = OcClient()
+            oc = OcClient(provider=context.settings.research.oc_provider)
             if not oc.is_available():
                 yield ProgressEvent(
                     phase="start",
@@ -480,7 +539,14 @@ class ResearchTool(Tool):
             )
 
             try:
-                result_data = run_lit(inputs.topic, oc, on_progress=_capture)
+                result_data = run_lit(
+                    inputs.topic, oc,
+                    on_progress=_capture,
+                    model_planner=context.settings.research.oc_model_planner,
+                    model_writer=context.settings.research.oc_model_writer,
+                    model_verifier=context.settings.research.oc_model_verifier,
+                    model_reviewer=context.settings.research.oc_model_reviewer,
+                )
             except Exception as e:
                 return ResearchResult(
                     ok=False,
@@ -592,7 +658,7 @@ class ResearchTool(Tool):
             from .oc_client import OcClient
             from .pipeline import run_review
 
-            oc = OcClient()
+            oc = OcClient(provider=context.settings.research.oc_provider)
             if not oc.is_available():
                 yield ProgressEvent(
                     phase="start",
@@ -622,7 +688,12 @@ class ResearchTool(Tool):
             )
 
             try:
-                result_data = run_review(inputs.artifact, oc, on_progress=_capture)
+                result_data = run_review(
+                    inputs.artifact, oc,
+                    on_progress=_capture,
+                    model_researcher=context.settings.research.oc_model_researcher,
+                    model_reviewer=context.settings.research.oc_model_reviewer,
+                )
             except Exception as e:
                 return ResearchResult(
                     ok=False,
@@ -837,6 +908,13 @@ class ResearchTool(Tool):
             config_path=str(config_file()),
             output_dir=str(rs.output_dir),
             feynman_command=rs.feynman_command or ["feynman"],
+            oc_provider=rs.oc_provider,
+            oc_model_planner=rs.oc_model_planner,
+            oc_model_writer=rs.oc_model_writer,
+            oc_model_verifier=rs.oc_model_verifier,
+            oc_model_reviewer=rs.oc_model_reviewer,
+            oc_model_researcher=rs.oc_model_researcher,
+            oc_budget_usd=rs.oc_budget_usd,
         )
 
     @action(
@@ -861,6 +939,49 @@ class ResearchTool(Tool):
             value=inputs.value,
             config_path=str(path),
             message=f"Set research.{inputs.key} = {inputs.value!r} in {path}.",
+        )
+
+    @action(
+        description="Show today's Feynman and OpenCode spend against configured budgets.",
+        input_schema=UsageInputs,
+    )
+    def usage(self, inputs: UsageInputs, context: Context) -> UsageResult:
+        import datetime
+        from docent.bundled_plugins.research_to_notebook.oc_client import (
+            _read_oc_daily_spend,
+        )
+        feynman_spend = _read_daily_spend()
+        oc_spend = _read_oc_daily_spend()
+        rs = context.settings.research
+        today = datetime.date.today().isoformat()
+        return UsageResult(
+            feynman_spend_usd=feynman_spend,
+            oc_spend_usd=oc_spend,
+            feynman_budget_usd=rs.feynman_budget_usd,
+            oc_budget_usd=rs.oc_budget_usd,
+            date=today,
+            message=(
+                f"Today ({today}): Feynman ${feynman_spend:.4f}"
+                + (f" / ${rs.feynman_budget_usd:.2f}" if rs.feynman_budget_usd > 0 else "")
+                + f", OpenCode ${oc_spend:.4f}"
+                + (f" / ${rs.oc_budget_usd:.2f}" if rs.oc_budget_usd > 0 else "")
+            ),
+        )
+
+
+def on_startup(context) -> None:  # noqa: ARG001
+    """Check for Feynman updates once per day and notify the user."""
+    from docent.utils.update_check import check_npm
+    from docent.ui import get_console
+
+    info = check_npm(
+        "feynman",
+        upgrade_cmd="npm install -g feynman",
+    )
+    if info:
+        get_console().print(
+            f"[yellow]UPDATE AVAILABLE:[/] feynman {info.latest} is available "
+            f"(run: {info.upgrade_cmd})"
         )
 
 

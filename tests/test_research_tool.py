@@ -25,6 +25,8 @@ from docent.bundled_plugins.research_to_notebook import (
     ResearchTool,
     ToNotebookInputs,
     ToNotebookResult,
+    UsageInputs,
+    UsageResult,
     _slugify,
     _artifact_slug,
     _rank_sources,
@@ -479,3 +481,31 @@ class TestToNotebook:
         assert result.sources_count == 2
         urls_content = (Path(result.package_dir) / "sources_urls.txt").read_text()
         assert len(urls_content.strip().splitlines()) == 2
+
+
+class TestUsageAction:
+    def test_usage_zero_spend(self, tmp_path, monkeypatch):
+        import docent.bundled_plugins.research_to_notebook as mod
+        import docent.bundled_plugins.research_to_notebook.oc_client as oc_mod
+        monkeypatch.setattr(mod, "_read_daily_spend", lambda: 0.0)
+        monkeypatch.setattr(oc_mod, "_read_oc_daily_spend", lambda: 0.0)
+
+        tool = ResearchTool()
+        ctx = _mock_context()
+        result = tool.usage(UsageInputs(), ctx)
+        assert isinstance(result, UsageResult)
+        assert result.feynman_spend_usd == 0.0
+        assert result.oc_spend_usd == 0.0
+
+    def test_usage_shows_correct_spend(self, tmp_path, monkeypatch):
+        import docent.bundled_plugins.research_to_notebook as mod
+        import docent.bundled_plugins.research_to_notebook.oc_client as oc_mod
+        monkeypatch.setattr(mod, "_read_daily_spend", lambda: 1.23)
+        monkeypatch.setattr(oc_mod, "_read_oc_daily_spend", lambda: 0.45)
+
+        tool = ResearchTool()
+        ctx = _mock_context()
+        result = tool.usage(UsageInputs(), ctx)
+        assert isinstance(result, UsageResult)
+        assert result.feynman_spend_usd == pytest.approx(1.23)
+        assert result.oc_spend_usd == pytest.approx(0.45)
