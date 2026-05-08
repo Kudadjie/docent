@@ -17,6 +17,7 @@ class ResearchSettings(BaseModel):
 
     output_dir: Path = Field(default_factory=lambda: Path("~/Documents/Docent/research"))
     feynman_command: list[str] | None = None
+    feynman_budget_usd: float = 0.0  # 0.0 = no limit (default). Set to e.g. 2.00 to cap Feynman spend at $2 per session.
 
 
 class ReadingSettings(BaseModel):

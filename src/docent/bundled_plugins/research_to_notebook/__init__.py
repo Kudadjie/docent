@@ -21,6 +21,49 @@ from docent.core.shapes import (
 )
 
 
+def _spend_file() -> Path:
+    from docent.utils.paths import cache_dir
+    return cache_dir() / "research" / "feynman_spend.json"
+
+
+def _read_daily_spend() -> float:
+    """Return today's accumulated Feynman spend in USD. Resets automatically at midnight."""
+    import datetime
+    today = datetime.date.today().isoformat()
+    try:
+        data = json.loads(_spend_file().read_text(encoding="utf-8"))
+        if data.get("date") == today:
+            return float(data.get("spend_usd", 0.0))
+    except Exception:
+        pass
+    return 0.0
+
+
+def _write_daily_spend(spend: float) -> None:
+    """Persist today's accumulated Feynman spend to disk."""
+    import datetime
+    p = _spend_file()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(
+        json.dumps({"date": datetime.date.today().isoformat(), "spend_usd": round(spend, 6)}),
+        encoding="utf-8",
+    )
+
+
+class FeynmanBudgetExceededError(RuntimeError):
+    """Raised when Feynman session spend reaches 90% of the configured budget."""
+
+
+def _extract_feynman_cost(output: str) -> float:
+    """Parse Feynman's stdout/stderr for a cost line. Returns 0.0 if not found.
+
+    Feynman prints lines like: 'Cost: $0.43' or 'Total cost: $1.23'
+    Uses a lenient regex — format may change across Feynman versions.
+    """
+    match = re.search(r'\$(\d+(?:\.\d+)?)', output)
+    return float(match.group(1)) if match else 0.0
+
+
 def _slugify(text: str) -> str:
     """Lowercase, replace non-alphanumeric with hyphens, collapse runs."""
     s = re.sub(r"[^a-z0-9]+", "-", text.lower().strip())
@@ -40,14 +83,42 @@ def _run_feynman(
     workspace_dir: Path,
     output_dir: Path,
     slug: str,
+    *,
+    budget_usd: float = 0.0,
 ) -> tuple[int, str | None]:
     """Run feynman and return (returncode, output_file_path | None)."""
+    # Pre-run guard
+    if budget_usd > 0:
+        current_spend = _read_daily_spend()
+        if current_spend >= budget_usd * 0.9:
+            raise FeynmanBudgetExceededError(
+                f"Feynman daily budget nearly exhausted "
+                f"(${current_spend:.2f} of ${budget_usd:.2f} today). "
+                f"Increase with `docent research config-set feynman_budget_usd <amount>` "
+                f"or use backend='docent'."
+            )
+
     workspace_dir.mkdir(parents=True, exist_ok=True)
     outputs_dir = workspace_dir / "outputs"
 
     before: set[Path] = set(outputs_dir.glob("*.md")) if outputs_dir.is_dir() else set()
 
-    result = subprocess.run(cmd, cwd=workspace_dir)
+    result = subprocess.run(cmd, cwd=workspace_dir, capture_output=True, text=True)
+
+    # Post-run cost capture — persist to daily store
+    if budget_usd > 0:
+        combined_output = (result.stdout or "") + (result.stderr or "")
+        cost = _extract_feynman_cost(combined_output)
+        if cost > 0:
+            _write_daily_spend(_read_daily_spend() + cost)
+
+    # Print Feynman's output to terminal so user sees it
+    if result.stdout:
+        import sys
+        sys.stdout.write(result.stdout)
+    if result.stderr:
+        import sys
+        sys.stderr.write(result.stderr)
 
     after: set[Path] = set(outputs_dir.glob("*.md")) if outputs_dir.is_dir() else set()
     new_files = sorted(after - before, key=lambda p: p.stat().st_mtime, reverse=True)
@@ -214,7 +285,7 @@ class ToNotebookResult(BaseModel):
 # Tool
 # ---------------------------------------------------------------------------
 
-_KNOWN_RESEARCH_KEYS = {"output_dir"}
+_KNOWN_RESEARCH_KEYS = {"output_dir", "feynman_budget_usd"}
 
 
 @register_tool
@@ -326,7 +397,17 @@ class ResearchTool(Tool):
         slug = _slugify(inputs.topic) + "-deep"
         cmd = [*feynman_cmd, "deepresearch", inputs.topic]
 
-        returncode, output_file = _run_feynman(cmd, workspace_dir, output_dir, slug)
+        try:
+            returncode, output_file = _run_feynman(
+                cmd, workspace_dir, output_dir, slug,
+                budget_usd=context.settings.research.feynman_budget_usd,
+            )
+        except FeynmanBudgetExceededError as e:
+            return ResearchResult(
+                ok=False, backend="feynman", workflow="deep",
+                topic_or_artifact=inputs.topic, output_file=None, returncode=None,
+                message=str(e),
+            )
 
         if returncode != 0:
             return ResearchResult(
@@ -458,7 +539,17 @@ class ResearchTool(Tool):
         slug = _slugify(inputs.topic) + "-lit"
         cmd = [*feynman_cmd, "lit", inputs.topic]
 
-        returncode, output_file = _run_feynman(cmd, workspace_dir, output_dir, slug)
+        try:
+            returncode, output_file = _run_feynman(
+                cmd, workspace_dir, output_dir, slug,
+                budget_usd=context.settings.research.feynman_budget_usd,
+            )
+        except FeynmanBudgetExceededError as e:
+            return ResearchResult(
+                ok=False, backend="feynman", workflow="lit",
+                topic_or_artifact=inputs.topic, output_file=None, returncode=None,
+                message=str(e),
+            )
 
         if returncode != 0:
             return ResearchResult(
@@ -583,7 +674,17 @@ class ResearchTool(Tool):
         slug = _slugify(_artifact_slug(inputs.artifact)) + "-review"
         cmd = [*feynman_cmd, "review", inputs.artifact]
 
-        returncode, output_file = _run_feynman(cmd, workspace_dir, output_dir, slug)
+        try:
+            returncode, output_file = _run_feynman(
+                cmd, workspace_dir, output_dir, slug,
+                budget_usd=context.settings.research.feynman_budget_usd,
+            )
+        except FeynmanBudgetExceededError as e:
+            return ResearchResult(
+                ok=False, backend="feynman", workflow="review",
+                topic_or_artifact=inputs.artifact, output_file=None, returncode=None,
+                message=str(e),
+            )
 
         if returncode != 0:
             return ResearchResult(
