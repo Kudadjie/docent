@@ -6,6 +6,7 @@ import Sidebar from '@/components/Sidebar';
 import StatusBanner, { type DotState } from '@/components/StatusBanner';
 import Toast, { type ToastData } from '@/components/Toast';
 import { useDarkMode } from '@/hooks/useDarkMode';
+import { useNotifications } from '@/lib/notifications';
 
 interface ReadingConfig {
   database_dir: string | null;
@@ -171,6 +172,7 @@ interface VersionInfo {
 
 export default function SettingsPage() {
   const { dark, toggleDark } = useDarkMode();
+  const { addNotification } = useNotifications();
   const [config, setConfig] = useState<ConfigData | null>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
@@ -255,6 +257,13 @@ export default function SettingsPage() {
       const data = await res.json() as VersionInfo;
       setVersionInfo(data);
       signalDot('done');
+      if (data.up_to_date === false && data.latest) {
+        addNotification({
+          type: 'update',
+          title: 'Docent update available',
+          body: `v${data.latest} is out (you have v${data.installed ?? '?'}). Run \`pip install -U docent-cli\` to update.`,
+        });
+      }
     } catch {
       setVersionInfo({ installed: null, latest: null, up_to_date: null, error: 'Network error' });
       signalDot('error');

@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google';
 import { Geist_Mono } from 'next/font/google';
 import './globals.css';
 import ScreenSizeGate from '@/components/ScreenSizeGate';
+import { NotificationProvider } from '@/lib/notifications';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -37,7 +38,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="h-full antialiased" style={{ fontFamily: 'var(--font-inter, Inter, system-ui, sans-serif)' }}>
         <ScreenSizeGate />
-        {children}
+        <NotificationProvider>{children}</NotificationProvider>
       </body>
     </html>
   );
