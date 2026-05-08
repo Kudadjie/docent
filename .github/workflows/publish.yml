@@ -38,7 +38,7 @@ jobs:
         run: uv run pip-audit --ignore-vuln CVE-2026-42203 --ignore-vuln CVE-2026-42208 --ignore-vuln CVE-2026-42271
 
       - name: Build package
-        run: uv build
+        run: uv build --wheel
 
       - name: Publish to PyPI
         run: uv publish
