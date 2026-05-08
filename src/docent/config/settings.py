@@ -7,6 +7,18 @@ from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
 
+class ResearchSettings(BaseModel):
+    """First-party `research` tool settings. Stored under `[research]` in config.toml.
+
+    Env-overridable as `DOCENT_RESEARCH__<FIELD>` (double underscore for nesting).
+    `output_dir` is where research output files are written.
+    `feynman_command` defaults to `["feynman"]`; override if feynman is not on PATH.
+    """
+
+    output_dir: Path = Field(default_factory=lambda: Path("~/Documents/Docent/research"))
+    feynman_command: list[str] | None = None
+
+
 class ReadingSettings(BaseModel):
     """First-party `reading` tool settings. Stored under `[reading]` in config.toml.
 
@@ -36,6 +48,7 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
 
     reading: ReadingSettings = Field(default_factory=ReadingSettings)
+    research: ResearchSettings = Field(default_factory=ResearchSettings)
 
     tools: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
