@@ -19,12 +19,15 @@ classifiers = [
 ]
 requires-python = ">=3.11"
 dependencies = [
+    "fastapi>=0.115.0",
+    "httpx>=0.27.0",
     "litellm>=1.83.0",
     "mcp>=1.0,<2",
     "pydantic-settings>=2.14.0",
     "rich>=15.0.0",
     "tomli-w>=1.2.0",
     "typer>=0.24.2",
+    "uvicorn[standard]>=0.30.0",
 ]
 
 [project.urls]
@@ -47,6 +50,7 @@ version-file = "src/docent/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/docent"]
+artifacts = ["src/docent/ui_dist/**"]
 
 [dependency-groups]
 dev = ["pytest>=8.0", "pip-audit>=2.7"]
