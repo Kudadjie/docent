@@ -19,3 +19,5 @@
 - [Release plan](release_plan.md) — two independent release tracks: CLI (v1.0 = Step 13 done) and UI (v1.0 = reading page Must-do complete)
 - [UI bundling strategy](project_ui_bundling.md) — decided: FastAPI + Next.js static export; `docent ui` command; two-file sync cost per new endpoint; deferred to next release
 - [Feynman port plan](project_feynman_port.md) — full plan to port Feynman's research suite into Docent (zero API cost via OpenCode); architecture, phases, risks
+- [Feynman + OC budget guard](project_feynman_budget_guard.md) — design for daily file-backed spend tracking; both Feynman (regex cost parse) and OcClient (response cost field) guards now shipped
+- [OpenCode parallel brief conflict](gotchas.md) — running two OpenCode briefs in parallel that touch the same file causes merge corruption; split briefs to non-overlapping files
