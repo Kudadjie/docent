@@ -357,7 +357,10 @@ class ResearchTool(Tool):
             from .oc_client import OcClient
             from .pipeline import run_deep
 
-            oc = OcClient(provider=context.settings.research.oc_provider)
+            oc = OcClient(
+                provider=context.settings.research.oc_provider,
+                budget_usd=context.settings.research.oc_budget_usd,
+            )
             if not oc.is_available():
                 yield ProgressEvent(
                     phase="start",
@@ -509,7 +512,10 @@ class ResearchTool(Tool):
             from .oc_client import OcClient
             from .pipeline import run_lit
 
-            oc = OcClient(provider=context.settings.research.oc_provider)
+            oc = OcClient(
+                provider=context.settings.research.oc_provider,
+                budget_usd=context.settings.research.oc_budget_usd,
+            )
             if not oc.is_available():
                 yield ProgressEvent(
                     phase="start",
@@ -658,7 +664,10 @@ class ResearchTool(Tool):
             from .oc_client import OcClient
             from .pipeline import run_review
 
-            oc = OcClient(provider=context.settings.research.oc_provider)
+            oc = OcClient(
+                provider=context.settings.research.oc_provider,
+                budget_usd=context.settings.research.oc_budget_usd,
+            )
             if not oc.is_available():
                 yield ProgressEvent(
                     phase="start",

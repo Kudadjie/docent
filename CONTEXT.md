@@ -1,13 +1,13 @@
 # CONTEXT — resume hint for next session
 
-**Current Task:** v1.1.1 shipped to PyPI (bundled UI). Main merged from dev. Repo is clean.
+**Current Task:** research-to-notebook tool fully shipped (Phases A–F + budget stubs complete).
 
 **Key Decisions:**
-- Wheel-only publish (no sdist) — sdist with ui_dist exceeded PyPI 100MB limit
-- memory/ and CONTEXT.md excluded from main via .gitignore; tracked only on dev
-- GitHub Release created manually for v1.1.1; future tags auto-create via workflow
+- Docent pipeline: 6-stage (planner→fetch→gap→writer→verifier→reviewer); all model/provider settings BYOK-configurable
+- Budget guards: Feynman (daily file-backed, 90% threshold) + OcClient (same pattern, oc_budget_usd)
+- update_check.py: generic npm/GitHub checker, 24h cache; research on_startup checks Feynman
 
 **Next Steps:**
-1. Phase 1.5-C skill ports — `research-to-notebook` first (plan in memory/project_feynman_port.md)
-2. Cherry-pick _version.py gitignore fix to main (or let it ride until next merge)
-3. Pin actions/setup-node to a real SHA in publish.yml before next CSO audit
+1. REAL-LIFE TESTS — run `docent research deep "storm surge Ghana" --backend docent` and verify full pipeline end-to-end; test `to-notebook`, `usage`, Feynman update notification
+2. v1.2.0 release — merge dev → main, tag, publish
+3. Phase B-hardening (thoughts_review §4/9/10): CLI robustness, state resilience, docent doctor

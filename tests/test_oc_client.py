@@ -6,6 +6,7 @@ import pytest
 
 import docent.bundled_plugins.research_to_notebook.oc_client as oc_mod
 from docent.bundled_plugins.research_to_notebook.oc_client import (
+    OcBudgetExceededError,
     OcClient,
     _read_oc_daily_spend,
     _write_oc_daily_spend,
@@ -69,3 +70,33 @@ def test_call_silent_on_missing_cost():
         result = client.call("test prompt", model="glm-5.1")
     assert result == "hello"
     assert _read_oc_daily_spend() == 0.0
+
+
+def test_budget_zero_never_blocks():
+    """budget_usd=0.0 means no limit — even with huge spend, no error raised."""
+    _write_oc_daily_spend(9999.0)
+    client = OcClient(budget_usd=0.0)
+    mock_response = {"parts": [{"type": "text", "text": "ok"}]}
+    with patch.object(client, "_api") as mock_api:
+        mock_api.side_effect = [{"id": "s"}, mock_response]
+        result = client.call("hi")
+    assert result == "ok"
+
+
+def test_budget_90_percent_blocks():
+    """Spend at 90% of budget raises OcBudgetExceededError before making the API call."""
+    _write_oc_daily_spend(0.90)  # 90% of $1.00
+    client = OcClient(budget_usd=1.0)
+    with pytest.raises(OcBudgetExceededError, match="daily budget nearly exhausted"):
+        client.call("test")
+
+
+def test_budget_under_90_proceeds():
+    """Spend under 90% proceeds normally."""
+    _write_oc_daily_spend(0.50)  # 50% of $2.00 — under threshold
+    client = OcClient(budget_usd=2.0)
+    mock_response = {"parts": [{"type": "text", "text": "ok"}]}
+    with patch.object(client, "_api") as mock_api:
+        mock_api.side_effect = [{"id": "s"}, mock_response]
+        result = client.call("hi")
+    assert result == "ok"

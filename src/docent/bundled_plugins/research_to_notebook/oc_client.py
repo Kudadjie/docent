@@ -40,6 +40,10 @@ class OcUnavailableError(RuntimeError):
     """Raised when OpenCode server is not reachable."""
 
 
+class OcBudgetExceededError(RuntimeError):
+    """Raised when daily OC spend reaches 90% of the configured budget."""
+
+
 class OcClient:
     """Send a prompt to the OpenCode REST API and return the response text.
 
@@ -48,9 +52,15 @@ class OcClient:
         text = client.call("Summarise X", model="glm-5.1")
     """
 
-    def __init__(self, base_url: str = _BASE_URL, provider: str = _DEFAULT_PROVIDER) -> None:
+    def __init__(
+        self,
+        base_url: str = _BASE_URL,
+        provider: str = _DEFAULT_PROVIDER,
+        budget_usd: float = 0.0,
+    ) -> None:
         self.base_url = base_url
         self.provider = provider
+        self.budget_usd = budget_usd
 
     def is_available(self) -> bool:
         try:
@@ -61,6 +71,16 @@ class OcClient:
 
     def call(self, prompt: str, model: str = "glm-5.1", timeout: int = 300) -> str:
         """Create a session, send the prompt, return the text response."""
+        if self.budget_usd > 0:
+            current = _read_oc_daily_spend()
+            if current >= self.budget_usd * 0.9:
+                raise OcBudgetExceededError(
+                    f"OpenCode daily budget nearly exhausted "
+                    f"(${current:.2f} of ${self.budget_usd:.2f} today). "
+                    f"Increase with `docent research config-set oc_budget_usd <amount>` "
+                    f"or set oc_budget_usd=0 to remove the limit."
+                )
+
         session_id = self._api("POST", "/session", {})["id"]
         response = self._api(
             "POST",
