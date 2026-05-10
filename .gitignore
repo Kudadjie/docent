@@ -20,9 +20,7 @@ claudemap-*.json
 
 skills/*
 
-keystone_project.txt
-readingtool-tweaks.txt
-concerns.txt
+txt/*
 
 # Development context — tracked on dev, not on main
 CLAUDE.md
@@ -50,4 +48,3 @@ Desktop.ini
 # Local gstack security reports and session data
 .gstack/src/docent/_version.py
 
-research-to-notebook tests feedback.txt

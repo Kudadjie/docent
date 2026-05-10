@@ -1,0 +1,7 @@
+{"ts":"2026-05-07T23:20:09.105Z","cmd":"goto","args":"http://localhost:3000/reading","origin":"http://localhost:3000/reading","durationMs":295,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-05-07T23:20:17.325Z","cmd":"screenshot","args":"C:\\Users\\DELL\\Desktop\\sidebar-check.png","origin":"http://localhost:3000/reading","durationMs":5,"status":"error","hasCookies":false,"mode":"launched","error":"Path must be within: C:\\Users\\DELL\\AppData\\Local\\Temp, C:\\Users\\DELL\\Desktop\\Docent"}
+{"ts":"2026-05-07T23:20:34.133Z","cmd":"screenshot","args":"C:\\Users\\DELL\\Desktop\\Docent\\sidebar-check.png","origin":"http://localhost:3000/reading","durationMs":234,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-05-07T23:20:50.643Z","cmd":"goto","args":"http://localhost:3000/docs","origin":"http://localhost:3000/docs","durationMs":530,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-05-07T23:20:51.822Z","cmd":"screenshot","args":"C:\\Users\\DELL\\Desktop\\Docent\\docs-check.png","origin":"http://localhost:3000/docs","durationMs":211,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-05-07T23:32:06.551Z","cmd":"goto","args":"http://localhost:3000/settings","origin":"http://localhost:3000/settings","durationMs":656,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-05-07T23:32:08.045Z","cmd":"screenshot","args":"C:\\Users\\DELL\\Desktop\\Docent\\settings-check.png","origin":"http://localhost:3000/settings","durationMs":214,"status":"ok","hasCookies":false,"mode":"launched"}

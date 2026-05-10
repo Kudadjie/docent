@@ -1,0 +1,28 @@
+{
+  "version": "2.0.0",
+  "date": "2026-05-07T00:00:00Z",
+  "mode": "daily",
+  "scope": "full",
+  "diff_mode": false,
+  "findings": [
+    {
+      "id": 1,
+      "severity": "MEDIUM",
+      "confidence": 8,
+      "status": "VERIFIED",
+      "phase": 4,
+      "phase_name": "CI/CD Pipeline Security",
+      "category": "CI/CD",
+      "fingerprint": "cicd-unpinned-actions-publish-yml",
+      "title": "Unpinned third-party GitHub Actions in publish workflow",
+      "file": ".github/workflows/publish.yml",
+      "line": 16,
+      "description": "actions/checkout@v4 and astral-sh/setup-uv@v5 use mutable version tags instead of immutable commit SHAs",
+      "exploit_scenario": "Attacker compromises the action repo, pushes malicious code under the existing tag; next publish CI run executes attacker code with id-token:write permissions",
+      "impact": "PyPI supply chain compromise — attacker can publish malicious package versions",
+      "recommendation": "Pin to full commit SHA for both actions"
+    }
+  ],
+  "totals": { "critical": 0, "high": 0, "medium": 1, "tentative": 0 },
+  "trend": { "prior_report_date": null, "resolved": 0, "persistent": 0, "new": 1, "direction": "first_run" }
+}

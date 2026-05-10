@@ -1,11 +1,11 @@
 # CONTEXT - resume hint for next session
 
-**Current Task:** Research tool real-life testing started; blocked on 2 bugs before tests 3–17 can run.
+**Current Task:** Pre-v1.2.0 bugs unresolved; 2 blockers remain before research tool real-life tests 3–17 can run.
 
 **Key Decisions:**
-- All 5 pre-v1.2.0 Codex blockers are DONE (Codex completed this pass).
-- Drop `duckduckgo_search`; switch to Tavily (1,000 req/month free, purpose-built for agentic pipelines).
-- Medium debt items 6 & 7 can be done before real-life testing — no reason to wait.
+- Model stack confirmed: GLM-5.1 for OpenCode delegation, Sonnet for Claude orchestration, Opus reserved for heavy reasoning only.
+- Drop `duckduckgo_search`; switch to Tavily (1,000 req/month free).
+- Both Kimi-2.6 and GLM-5.1 reviews saved; top priorities: UI server direct-invocation, reading monolith split, research tool DRY-up.
 
 **Next Steps:**
 1. Fix Bug 1: duplicate tool registration (`ValueError` on `docent research usage`).

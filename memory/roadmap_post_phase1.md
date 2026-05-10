@@ -55,6 +55,32 @@ Per `Interesting stuff.txt`: CLI stays the source of truth; UI is a "visual skin
 - Multi-user / auth — Docent is a single-user personal tool.
 - Sharing / sync between machines — out of scope until the user actually has two machines they want synced.
 
+## Post-v1.2.0 Hardening Sprint
+
+Two independent model reviews (GLM-5.1 and Kimi-2.6) converged on the same three items unprompted. That's the signal. Do these before Phase 2 UI work.
+
+**1. UI server direct invocation** *(highest priority — has a real user-visible bug)*
+`ui_server.py` shells out to the CLI subprocess for every mutation. This causes:
+- Stale titles in the web UI (reads raw `queue.json`, doesn't apply Mendeley overlay — CLI shows fresh data, web UI shows old titles)
+- ~100ms process spawn overhead per action
+- Brittle stdout/ANSI parsing for error detection
+
+Fix: `invoke_action()` already exists in `mcp_server.py`. Wire `ui_server.py` endpoints to call it directly instead of spawning subprocesses. The function is already there — this is plumbing, not design.
+
+**2. Reading monolith split** *(high — compounds with every new action)*
+`bundled_plugins/reading/__init__.py` is ~1,215 lines mixing result models, action methods, Mendeley sync, reordering logic, and renderers. Target structure:
+- `models.py` — QueueEntry + all input/output schemas
+- `sync.py` — `_sync_from_mendeley_run` generator + helpers
+- `ordering.py` — `_reorder_move_to`, move_up/down/to
+- `renderers.py` — `to_shapes()` + `__rich_console__` for result classes
+- `tool.py` — ReadingQueue action methods only (~400 lines)
+- `__init__.py` — re-exports only (~20 lines)
+
+**3. Research tool DRY-up** *(high — ~400 lines of duplication)*
+`deep()`, `lit()`, `review()` in `research_to_notebook/__init__.py` are ~150 lines each with only 3–4 meaningful differences. Extract a shared `_run_pipeline()` helper. Each action collapses to ~15 lines.
+
+---
+
 ## Sequencing summary
 
 ```
@@ -66,7 +92,9 @@ Per `Interesting stuff.txt`: CLI stays the source of truth; UI is a "visual skin
 [done]    Output Shapes vocabulary + ui/renderers.py     }  Phase 1.5
 [done]    Tests + AGENTS.md                             }
 [done]    FastAPI layer + bundled UI (v1.1.0, 2026-05-08 — shipped early, not Phase 2)
-[next]    Skill ports (research-to-notebook first)      }  Phase 1.5 cont.
+[done]    Research tool (v1.2.0 pending — 2 bugs to fix)  }  Phase 1.5 cont.
+[next]    Hardening sprint (UI server, reading split,    }
+          research DRY-up) — post-v1.2.0                }
 [then]    UI polish + schema-driven forms                }  Phase 2
           Omnibox (NL → action mode only)                }  (base app exists)
 ```
