@@ -1,5 +1,7 @@
 # Docent - Memory Index
 
+- [AI_CONTEXT.md](../AI_CONTEXT.md) — **POINT ANY AI HERE FIRST.** Full project onboarding: architecture, file navigation map, current bugs, rules, what not to do.
+
 - [Build progress](build_progress.md) - current step + checklist; read first every session
 - [Decisions log](decisions.md) - architectural decision record; read when "why did we pick X?" or making a new call. Older entries in archive/
 - [Gotchas](gotchas.md) - landmines we've hit (Rich markup, Windows unicode, litellm lazy-import, pydantic v2, etc.); scan before shipping anything CLI-facing
@@ -18,13 +20,14 @@
 - [Delegate proactively](feedback_delegate_proactively.md) - delegate grep/mechanical/boilerplate tasks to OpenCode without being asked; only keep arch/memory/irreversible work in main session
 - [Research tool routing](feedback_research_tool_routing.md) - routes through Feynman first; falls back to Claude (litellm) if Feynman unavailable
 - [OpenCode for Docent agentic tools](feedback_opencode_for_agentic_tools.md) - route LLM calls in Docent's agentic tools through OpenCode (not Anthropic API); design as single-shot briefs
-- [Release plan](release_plan.md) - two independent release tracks: CLI (v1.0 = Step 13 done) and UI (v1.0 = reading page Must-do complete)
+- [Release plan](release_plan.md) - single bundled track (CLI + UI ship together); v1.1.0 shipped 2026-05-08; v1.2.0 pending research bug fixes
 - [UI bundling strategy](project_ui_bundling.md) - decided: FastAPI + Next.js static export; `docent ui` command; two-file sync cost per new endpoint; deferred to next release
 - [Feynman port plan](project_feynman_port.md) - full plan to port Feynman's research suite into Docent (zero API cost via OpenCode); architecture, phases, risks
 - [Feynman + OC budget guard](project_feynman_budget_guard.md) - design for daily file-backed spend tracking; both Feynman (regex cost parse) and OcClient (response cost field) guards now shipped
 - [OpenCode parallel brief conflict](gotchas.md) - running two OpenCode briefs in parallel that touch the same file causes merge corruption; split briefs to non-overlapping files
 - [Research tool real-life tests](tasks/research_tool_real_life_tests.md) - 17-item manual test checklist for the research-to-notebook tool (deep/lit/review/to-notebook/usage/budget/MCP); priority order included
-- [Codex review blockers](project_codex_review_blockers.md) - ordered pre-v1.2.0 release blockers + architectural debt from 2026-05-08 Codex review; fix release blockers (1-5) before any new feature work or v1.2.0 tag
+- [Master todo list](project_todos.md) - comprehensive ordered todos across all tracks: v1.2.0 blockers → hardening sprint → skill ports → Phase 2 UI → infrastructure; update each session
+- [Codex review blockers](project_codex_review_blockers.md) - ordered pre-v1.2.0 release blockers (1-5 ALL DONE 2026-05-08) + medium/architectural debt (6-12); consulted for debt items
 - [Research test blockers](project_research_test_blockers.md) - 2 bugs blocking real-life tests 3-17: duplicate tool registration (usage cmd) + duckduckgo replaced by Tavily (1000 req/month; add request count tracking to usage)
 - [Zotero integration design](project_zotero_integration.md) - ReferenceManagerClient protocol, Mendeley OR Zotero toggle (not both), pyzotero vs zotero-mcp open question; v1.3+ work
 - [Obsidian integration design](project_obsidian_integration.md) - to-vault output, literature notes on done, Dataview-compatible frontmatter, daily notes, Templater; v1.4+ work
