@@ -71,7 +71,8 @@ def test_missing_input_schema_rejected(isolated_registry):
                 return None
 
 
-def test_double_registration_rejected(isolated_registry):
+def test_double_registration_warns_and_skips(isolated_registry, capsys):
+    """v1.2.0: duplicate registration prints a warning and skips instead of raising."""
     @register_tool
     class _OneTool(Tool):
         name = "test-dup-xyz"
@@ -81,15 +82,26 @@ def test_double_registration_rejected(isolated_registry):
         def run(self, inputs, context):
             return None
 
-    with pytest.raises(ValueError, match="already registered"):
-        @register_tool
-        class _TwoTool(Tool):
-            name = "test-dup-xyz"
-            description = "Second."
-            input_schema = _Inputs
+    # Second registration with the same name should NOT raise — it warns and skips.
+    @register_tool
+    class _TwoTool(Tool):
+        name = "test-dup-xyz"
+        description = "Second."
+        input_schema = _Inputs
 
-            def run(self, inputs, context):
-                return None
+        def run(self, inputs, context):
+            return None
+
+    # The first tool stays registered
+    assert get_tool("test-dup-xyz") is _OneTool
+    # Only one entry in the registry
+    assert len(all_tools()) >= 1
+
+    # Warning should have been printed to stderr
+    captured = capsys.readouterr()
+    assert "Warning" in captured.err
+    assert "already registered" in captured.err
+    assert "test-dup-xyz" in captured.err
 
 
 def test_litellm_lazy_import_invariant():

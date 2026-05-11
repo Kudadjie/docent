@@ -48,10 +48,12 @@ def _mock_context(
     *,
     output_dir: Path | None = None,
     feynman_command: list[str] | None = None,
+    tavily_api_key: str | None = None,
 ) -> Context:
     research = ResearchSettings(
         output_dir=output_dir or Path("/tmp/docent-test-research"),
         feynman_command=feynman_command,
+        tavily_api_key=tavily_api_key,
     )
     settings = MagicMock(spec=Settings)
     settings.research = research
@@ -307,7 +309,7 @@ class TestLitDocent:
     def test_lit_docent_happy_path(self, mock_run_lit, tmp_path):
         output_dir = tmp_path / "research"
         tool = ResearchTool()
-        ctx = _mock_context(output_dir=output_dir)
+        ctx = _mock_context(output_dir=output_dir, tavily_api_key="test-key")
 
         mock_run_lit.return_value = {
             "ok": True,

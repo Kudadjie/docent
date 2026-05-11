@@ -178,8 +178,8 @@ class TestPluginLoader:
         _write_flat_plugin(plugin_dirs["user"], "conflict", CONFLICT_PLUGIN)
         load_plugins()
         captured = capsys.readouterr()
-        assert "failed to load plugin 'conflict'" in captured.err
         assert "already registered" in captured.err
+        assert "conflict-tool" in captured.err
 
     def test_on_startup_hook_collected(self, plugin_dirs):
         _write_flat_plugin(plugin_dirs["user"], "startup", STARTUP_HOOK_PLUGIN)
