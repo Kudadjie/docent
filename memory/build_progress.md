@@ -6,7 +6,7 @@ type: project
 
 Docent is a Python CLI "control center" for grad-school workflows. Design lives in `Docent_Architecture.md` (committed to repo). Build order is strict — do not reorder.
 
-## Status as of 2026-05-11 (v1.2.0 + Tavily Research API integration)
+## Status as of 2026-05-12 (v1.2.0 pre-release — references + quota handling)
 
 - [x] v1.2.0: Bug 1 — duplicate registration (relative import + registry guard)
 - [x] v1.2.0: Bug 2 — DDG → Tavily (search.py, pipeline.py, settings, onboarding UX, docs)
@@ -23,6 +23,10 @@ Docent is a Python CLI "control center" for grad-school workflows. Design lives 
 - [x] Verifier quality guard (<30% of original → fallback to original)
 - [x] Refiner stage: review feedback fed back into draft via refiner.md prompt
 - [x] End-to-end deep research verified — produces full refined draft + review
+- [x] Real-life tests #1–#8 PASSED
+- [x] References section appended to markdown output (`## References` with numbered URLs)
+- [x] Tavily quota exhaustion: specific `UsageLimitExceededError` catch, clear message, skips manual fallback
+- [ ] Real-life tests #9–#19 (lit review, references verification, quota test, Feynman, MCP, UI)
 - [ ] Next: plan D — `docent doctor` + extended onboarding + `docent setup`
 - [ ] Next: Tag v1.2.0 release
 

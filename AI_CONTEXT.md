@@ -21,7 +21,7 @@ Python engine:
 | **Web UI** | `docent ui` | `http://localhost:7432` |
 | **MCP server** | `docent serve` | stdio (MCP protocol) |
 
-Current published version: **v1.1.0** (2026-05-08). Next: **v1.2.0** (Tavily Research API + pipeline fixes + preflight + refiner stage — 280 tests green, e2e verified). See [`memory/build_progress.md`](memory/build_progress.md) for changelog.
+Current published version: **v1.1.0** (2026-05-08). Next: **v1.2.0** — Tavily Research API + pipeline fixes + preflight + refiner + references in markdown + quota exhaustion handling. 280 tests green, e2e tests 1-8 passed. See [`memory/build_progress.md`](memory/build_progress.md) for changelog.
 
 ---
 
@@ -251,7 +251,8 @@ Two backends, tried in order:
 - `tavily_research()` in `search.py` calls `TavilyClient.research()` → polls `get_research()` until completed
 - Returns a fully cited report, replacing stages 1-5 (search planner → fetch → gap eval → writer → verifier)
 - OpenCode reviewer (stage 6) still runs for adversarial quality control
-- Falls back to manual pipeline on any Tavily error, with a warning event
+- Falls back to manual pipeline on Tavily error (except quota exhaustion — skips fallback since manual also uses Tavily)
+- `UsageLimitExceededError` caught with friendly message: "monthly free tier exceeded, upgrade or use backend='feynman'"
 
 **Manual 6-stage pipeline** (fallback, in [`pipeline.py`](src/docent/bundled_plugins/research_to_notebook/pipeline.py)):
 
@@ -280,6 +281,11 @@ All model names are configurable in `[research]` config section.
 | `config-set --key K --value V` | Set a research config value |
 
 Output written to `~/.docent/research/<topic-slug>/report.md`.
+
+**Output files** (for `deep` and `lit` with `--backend docent`):
+- `{slug}.md` — the research draft **with `## References` section appended** (numbered entries: title, URL, source type)
+- `{slug}-review.md` — adversarial review
+- `{slug}-sources.json` — full source metadata (same data as references, in JSON)
 
 Spend tracking: `~/.docent/cache/research/feynman_spend.json` (date-keyed, resets daily).
 Budget guard: if `feynman_budget_usd > 0`, stops at 90% of budget.
@@ -365,24 +371,25 @@ tools (those using `run()` instead of `@action`) are never exposed over MCP.
 
 ---
 
-## 8. v1.2.0 blockers — ALL FIXED 2026-05-11
+## 8. v1.2.0 status — tests 1-8 passed, tests 9-19 remaining
 
-Both original blockers resolved. 280/280 tests green.
+Both original blockers fixed. 280/280 tests green. Real-life tests #1–#8 PASSED (2026-05-12).
 
-**Bug 1 — Duplicate registration:** Absolute import caused double-import. Fixed: relative import. Registry now warns+skips on duplicates.
+**Code changes this session (2026-05-12):**
+- References section in markdown output — `_build_references_section()` appends `## References` with numbered entries (title, URL, type) to `.md` files for both `deep` and `lit`
+- Tavily quota exhaustion — `UsageLimitExceededError` caught specifically with clear message; quota errors skip manual-pipeline fallback (which would also fail)
+- Real-life test checklist updated: tests 1-8 passed, new tests 18 (quota exhaustion) and 19 (references section) added
 
-**Bug 2 — DDG → Tavily:** Replaced DuckDuckGo with Tavily across all files.
-
-**New in this session (2026-05-11):**
-- Tavily Research API integration — `tavily_research()` in `search.py` is now the primary path, replacing stages 1-5
-- `web_search()` error propagation fix — re-raises auth/rate-limit errors, logs others, `search_depth="advanced"`
+**Previous session (2026-05-11):**
+- Tavily Research API integration — `tavily_research()` is primary path, replacing stages 1-5
+- `web_search()` error propagation fix — re-raises auth/rate-limit errors, logs others
 - Zero-source abort guard — clear error message instead of garbage LLM output
 - Preflight mechanism for `@action` — interactive prompts run before Rich Progress
 - WSL2 auto-detect in `OcClient`
-- `tavily-python>=0.7.0` pinned in `pyproject.toml`
-- Windows `.venv` recreated (was broken — no `pyvenv.cfg`)
+- Verifier quality guard + Refiner stage
+- Bug 1 (duplicate registration) + Bug 2 (DDG→Tavily) fixed
 
-**Remaining before release:** End-to-end verification with real Tavily key; tag v1.2.0.
+**Remaining before release:** Complete real-life tests #9–#19.
 
 ---
 
@@ -449,7 +456,7 @@ in the same commit. Do not open a PR with stale docs.
   Do not use `tool.add()` as a fixture builder — `add` is guidance-only.
 - Real-data validation is required before marking a build step done. Run against real
   Mendeley data, not just the test suite.
-- ~160 tests, ~3-4s. All must be green before any commit.
+- ~280 tests, ~3-4s. All must be green before any commit.
 
 ### Docs update rule (mandatory)
 

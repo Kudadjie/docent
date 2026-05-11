@@ -1,6 +1,6 @@
 ---
 name: Research tool real-life tests
-description: Full checklist of manual real-life tests to run on the research-to-notebook tool before marking v1.2.0 ready
+description: Full checklist of manual real-life tests to run on the research-to-notebook tool. Tests 1-8 passing as of 2026-05-12.
 type: project
 ---
 
@@ -44,7 +44,7 @@ docent research usage
 ```
 **Expect:** Today's date, Feynman spend $0.0000, OC spend $0.0000 (both "(no limit)" if budgets unset).
 If a spend file exists from today, spend may be non-zero — that's correct.
-**Result (2026-05-08): FAILED — `ValueError: Tool name 'research' is already registered by research_to_notebook.ResearchTool; cannot re-register from docent.bundled_plugins.research_to_notebook.ResearchTool`. Duplicate tool registration bug.**
+**Result (2026-05-12): PASSED**
 
 ---
 
@@ -54,19 +54,18 @@ If a spend file exists from today, spend may be non-zero — that's correct.
 docent research deep "storm surge Ghana" --backend docent
 ```
 **Expect (watch terminal):**
-- Progress events for all 6 stages: `planner → fetch → gap → writer → verifier → reviewer`
-- No crash; may take 3–10 minutes depending on OpenCode server speed
+- Progress events for pipeline stages: `research → review → refine` (Tavily path) or `planner → fetch → gap → writer → verifier → reviewer → refiner` (manual fallback)
+- No crash; may take 3–10 minutes depending on Tavily + OpenCode server speed
 - Output: `<output_dir>/storm-surge-ghana-deep.md` created
 - Review file: `<output_dir>/storm-surge-ghana-deep-review.md` created
 - Sources file: `<output_dir>/storm-surge-ghana-deep-sources.json` created
+- **References in markdown:** `storm-surge-ghana-deep.md` should end with a `## References` section listing numbered entries with title, URL, and source type for each source
 - Check sources JSON: `cat ~/Documents/Docent/research/storm-surge-ghana-deep-sources.json` — should be a list of dicts with `title`, `url`, `source_type`
 
 **If OpenCode server is unavailable:**
 - Should print an actionable error ("please run `opencode serve --port 4096`"), not a traceback
 
-**Result (2026-05-08): FAILED — `ModuleNotFoundError: No module named 'duckduckgo_search'`. Decision: drop duckduckgo_search entirely; switch web fetch to SerpAPI (Google Search). User has a free-tier SerpAPI account (250 req/month). Also add SerpAPI request count tracking (counts against the 250/month quota).**
-
-**Tests 5–17: not yet run — blocked on fixing #3 and #4 first.**
+**Result (2026-05-12): PASSED**
 
 ---
 
@@ -85,6 +84,8 @@ docent research to-notebook
 
 **Edge case:** run again immediately — should succeed (overwrites existing notebook dir)
 
+**Result (2026-05-12): PASSED**
+
 ---
 
 ## 6. `to-notebook` — with explicit file
@@ -93,6 +94,7 @@ docent research to-notebook
 docent research to-notebook --output-file storm-surge-ghana-deep.md
 ```
 **Expect:** Same result as #5 but using the explicit path.
+**Result (2026-05-12): PASSED**
 
 ---
 
@@ -104,6 +106,7 @@ touch ~/Documents/Docent/research/orphan-test.md
 docent research to-notebook --output-file orphan-test.md
 ```
 **Expect:** `ok=False`, message says "No sources file found… Sources are only saved when using backend='docent'. The Feynman backend does not expose individual sources."
+**Result (2026-05-12): PASSED**
 
 ---
 
@@ -115,6 +118,7 @@ docent research to-notebook
 ```
 **Expect:** `ok=False`, message says "No research output found… Run `docent research deep` or `docent research lit` first."
 (Reset output_dir to your real path afterward.)
+**Result (2026-05-12): PASSED**
 
 ---
 
@@ -124,9 +128,11 @@ docent research to-notebook
 docent research lit "coastal erosion West Africa" --backend docent
 ```
 **Expect:**
-- Same 6-stage pipeline but planner biases toward paper search (Semantic Scholar queries)
+- Same pipeline stages but with lit-specific planner/writer prompts
 - Output: `<output_dir>/coastal-erosion-west-africa-lit.md`
+- Review file: `<output_dir>/coastal-erosion-west-africa-lit-review.md`
 - Sources file: `…-lit-sources.json`
+- **References in markdown:** `.md` file should end with `## References` section
 - Sources list should contain more Semantic Scholar / arXiv entries than web snippets
 
 ---
@@ -235,19 +241,57 @@ Check that the research tool actions work via the MCP sidebar in Claude Desktop 
 
 ---
 
+## 18. Tavily quota exhaustion — graceful failure
+
+When the Tavily monthly free tier (1,000 calls) is exhausted, the pipeline should fail with a clear message rather than silently falling back to a path that also uses Tavily.
+
+To test without actually burning quota, temporarily set an invalid Tavily key:
+```
+docent research config-set --key tavily_api_key --value tvly-invalid-key-for-testing
+docent research deep "test topic" --backend docent
+```
+**Expect:** An error message about invalid API key (not a silent fallthrough). The error should mention "Tavily" and suggest checking the key.
+
+For quota-specific testing (only possible when quota is actually exhausted):
+- Should return: "Tavily monthly free tier (1,000 calls) has been exceeded. Wait for the next billing cycle, upgrade your Tavily plan, or use backend='feynman' which does not require Tavily."
+- Should NOT fall back to manual pipeline (which would also fail with Tavily)
+- `backend='feynman'` should still work normally
+
+(Reset key to real value afterward: `docent research config-set --key tavily_api_key --value <real_key>`)
+
+---
+
+## 19. References section in output markdown
+
+After running test #4 or #9, inspect the output `.md` file:
+```
+cat ~/Documents/Docent/research/storm-surge-ghana-deep.md | tail -30
+```
+**Expect:**
+- The markdown file ends with a `## References` section
+- Each entry is numbered (1., 2., 3., …)
+- Each entry includes: title (bold), optional authors, URL, and source type in brackets
+- Example: `1. **Climate Change in Ghana** — https://example.com/climate [web]`
+- Sources without a URL are skipped
+- The `*-sources.json` file is still present alongside the `.md` file (both exist)
+
+---
+
 ## Priority order for testing
 
 Given time constraints, run in this order:
 
-1. **#1** — smoke (confirms CLI surface is intact)
-2. **#2** — config-show/set (confirms settings layer works)
-3. **#4** — docent deep research (core happy path — the longest but most important)
-4. **#5** — to-notebook (primary deliverable of the whole tool)
-5. **#3 + #13** — usage before and after #4 (confirms spend tracking)
-6. **#7 + #8** — to-notebook error cases (robustness)
+1. **#1** — smoke (confirms CLI surface is intact) ✅
+2. **#2** — config-show/set (confirms settings layer works) ✅
+3. **#4** — docent deep research (core happy path — the longest but most important) ✅
+4. **#5** — to-notebook (primary deliverable of the whole tool) ✅
+5. **#3 + #13** — usage before and after #4 (confirms spend tracking) ✅
+6. **#7 + #8** — to-notebook error cases (robustness) ✅
 7. **#9** — lit review (secondary happy path)
-8. **#10** — Feynman backend (if Feynman is installed)
-9. **#11** — budget guard (if you have time)
-10. **#12** — update notification (check cache file)
+8. **#19** — verify references section in output markdown
+9. **#18** — Tavily quota exhaustion (use invalid key test)
+10. **#10** — Feynman backend (if Feynman is installed)
+11. **#11** — budget guard (if you have time)
+12. **#12** — update notification (check cache file)
 
-**Why:** #4 → #5 → #13 is the core pipeline and validates the most shipped code. Error cases (#7, #8) are quick and confirm graceful failure paths.
+**Why:** #4 → #5 → #13 is the core pipeline and validates the most shipped code. Error cases (#7, #8) are quick and confirm graceful failure paths. New #18 and #19 validate the latest changes (quota handling + references in markdown).

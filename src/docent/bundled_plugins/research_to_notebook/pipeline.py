@@ -12,6 +12,11 @@ from docent.core import ProgressEvent
 from .oc_client import OcClient
 from .search import fetch_page, paper_search, web_search, tavily_research
 
+try:
+    from tavily.errors import UsageLimitExceededError
+except ImportError:
+    UsageLimitExceededError = RuntimeError  # type: ignore[misc,assignment]
+
 _AGENTS_DIR = Path(__file__).parent / "agents"
 
 logger = logging.getLogger(__name__)
@@ -75,6 +80,20 @@ def _run_tavily_pipeline(
             research_input, tavily_api_key, model=tavily_model,
             timeout=tavily_research_timeout,
         )
+    except UsageLimitExceededError:
+        return {
+            "topic": topic,
+            "draft": "",
+            "review": "",
+            "sources": [],
+            "rounds": 0,
+            "ok": False,
+            "error": (
+                "Tavily monthly free tier (1,000 calls) has been exceeded. "
+                "Wait for the next billing cycle, upgrade your Tavily plan, "
+                "or use backend='feynman' which does not require Tavily."
+            ),
+        }
     except Exception as e:
         return {
             "topic": topic,
@@ -442,25 +461,28 @@ def run_deep(
             research_prefix="Deep research: ",
             tavily_research_timeout=tavily_research_timeout,
         )
-        if result.get("ok") or result.get("error", "").startswith("Tavily research failed"):
-            # If Tavily research failed hard, try manual fallback
-            if not result.get("ok"):
-                logger.warning(
-                    "Tavily research failed (%s), falling back to manual pipeline",
-                    result.get("error"),
-                )
-                yield ProgressEvent(
-                    phase="warning",
-                    message=f"Tavily research failed, falling back to manual search...",
-                )
-                result = yield from _run_pipeline(
-                    topic, oc, "search_planner", "writer",
-                    model_planner=model_planner, model_writer=model_writer,
-                    model_verifier=model_verifier, model_reviewer=model_reviewer,
-                    tavily_api_key=tavily_api_key,
-                    semantic_scholar_api_key=semantic_scholar_api_key,
-                )
+        if result.get("ok"):
             return result
+        # Quota exhaustion — fallback won't help either (also uses Tavily)
+        if "monthly free tier" in (result.get("error") or ""):
+            return result
+        # Other Tavily failures — try manual fallback
+        if result.get("error", "").startswith("Tavily research failed"):
+            logger.warning(
+                "Tavily research failed (%s), falling back to manual pipeline",
+                result.get("error"),
+            )
+            yield ProgressEvent(
+                phase="warning",
+                message=f"Tavily research failed, falling back to manual search...",
+            )
+            result = yield from _run_pipeline(
+                topic, oc, "search_planner", "writer",
+                model_planner=model_planner, model_writer=model_writer,
+                model_verifier=model_verifier, model_reviewer=model_reviewer,
+                tavily_api_key=tavily_api_key,
+                semantic_scholar_api_key=semantic_scholar_api_key,
+            )
         return result
 
     # Fallback: manual pipeline (no Tavily key)
@@ -497,24 +519,28 @@ def run_lit(
             research_prefix="Literature review: ",
             tavily_research_timeout=tavily_research_timeout,
         )
-        if result.get("ok") or result.get("error", "").startswith("Tavily research failed"):
-            if not result.get("ok"):
-                logger.warning(
-                    "Tavily research failed (%s), falling back to manual pipeline",
-                    result.get("error"),
-                )
-                yield ProgressEvent(
-                    phase="warning",
-                    message=f"Tavily research failed, falling back to manual search...",
-                )
-                result = yield from _run_pipeline(
-                    topic, oc, "lit_planner", "lit_writer",
-                    model_planner=model_planner, model_writer=model_writer,
-                    model_verifier=model_verifier, model_reviewer=model_reviewer,
-                    tavily_api_key=tavily_api_key,
-                    semantic_scholar_api_key=semantic_scholar_api_key,
-                )
+        if result.get("ok"):
             return result
+        # Quota exhaustion — fallback won't help either (also uses Tavily)
+        if "monthly free tier" in (result.get("error") or ""):
+            return result
+        # Other Tavily failures — try manual fallback
+        if result.get("error", "").startswith("Tavily research failed"):
+            logger.warning(
+                "Tavily research failed (%s), falling back to manual pipeline",
+                result.get("error"),
+            )
+            yield ProgressEvent(
+                phase="warning",
+                message=f"Tavily research failed, falling back to manual search...",
+            )
+            result = yield from _run_pipeline(
+                topic, oc, "lit_planner", "lit_writer",
+                model_planner=model_planner, model_writer=model_writer,
+                model_verifier=model_verifier, model_reviewer=model_reviewer,
+                tavily_api_key=tavily_api_key,
+                semantic_scholar_api_key=semantic_scholar_api_key,
+            )
         return result
 
     # Fallback: manual pipeline (no Tavily key)

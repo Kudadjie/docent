@@ -189,6 +189,29 @@ def _rank_sources(sources: list[dict], max_sources: int) -> list[dict]:
     return unique[:max_sources]
 
 
+def _build_references_section(sources: list[dict]) -> str:
+    """Build a markdown References section from source dicts.
+
+    Each source gets a numbered entry with title, URL, and source type.
+    Skips sources without a URL.
+    """
+    lines = ["\n\n## References\n"]
+    idx = 0
+    for s in sources:
+        url = s.get("url", "")
+        if not url:
+            continue
+        idx += 1
+        title = s.get("title", "Untitled")
+        stype = s.get("source_type", "web")
+        authors = s.get("authors", "")
+        author_tag = f" — {authors}" if authors else ""
+        lines.append(f"{idx}. **{title}**{author_tag} — {url} [{stype}]")
+    if idx == 0:
+        return ""
+    return "\n".join(lines) + "\n"
+
+
 # ---------------------------------------------------------------------------
 # Input models
 # ---------------------------------------------------------------------------
@@ -518,7 +541,12 @@ class ResearchTool(Tool):
             out_file = output_dir / f"{slug}.md"
             review_file = output_dir / f"{slug}-review.md"
             sources_file = output_dir / f"{slug}-sources.json"
-            out_file.write_text(result_data["draft"], encoding="utf-8")
+
+            # Append references section to the markdown draft
+            draft_with_refs = result_data["draft"] + _build_references_section(
+                result_data.get("sources", [])
+            )
+            out_file.write_text(draft_with_refs, encoding="utf-8")
             review_file.write_text(result_data["review"], encoding="utf-8")
             sources_file.write_text(
                 json.dumps(result_data.get("sources", []), indent=2, ensure_ascii=False),
@@ -652,7 +680,12 @@ class ResearchTool(Tool):
             out_file = output_dir / f"{slug}.md"
             review_file = output_dir / f"{slug}-review.md"
             sources_file = output_dir / f"{slug}-sources.json"
-            out_file.write_text(result_data["draft"], encoding="utf-8")
+
+            # Append references section to the markdown draft
+            draft_with_refs = result_data["draft"] + _build_references_section(
+                result_data.get("sources", [])
+            )
+            out_file.write_text(draft_with_refs, encoding="utf-8")
             review_file.write_text(result_data["review"], encoding="utf-8")
             sources_file.write_text(
                 json.dumps(result_data.get("sources", []), indent=2, ensure_ascii=False),
