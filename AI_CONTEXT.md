@@ -21,7 +21,7 @@ Python engine:
 | **Web UI** | `docent ui` | `http://localhost:7432` |
 | **MCP server** | `docent serve` | stdio (MCP protocol) |
 
-Current published version: **v1.1.0** (2026-05-08). Next: **v1.2.0** (blocked — see §8).
+Current published version: **v1.1.0** (2026-05-08). Next: **v1.2.0** (bugs fixed 2026-05-11 by Hermes — ready to tag). See [`memory/build_progress.md`](memory/build_progress.md) for changelog.
 
 ---
 
@@ -359,55 +359,15 @@ tools (those using `run()` instead of `@action`) are never exposed over MCP.
 
 ---
 
-## 8. What is broken right now (v1.2.0 blockers)
+## 8. v1.2.0 blockers — FIXED 2026-05-11 (Hermes session)
 
-Fix these before any other work. Details in
-[`memory/project_research_test_blockers.md`](memory/project_research_test_blockers.md).
+Both blockers resolved. 263/263 tests green. See [`memory/build_progress.md`](memory/build_progress.md) for changelog, [`memory/project_research_test_blockers.md`](memory/project_research_test_blockers.md) for post-mortem.
 
-### Bug 1 — Duplicate tool registration
+**Bug 1 — Duplicate registration:** Absolute import `from docent.bundled_plugins.research_to_notebook.oc_client` in `usage()` caused double-import. Fixed: relative import `from .oc_client import`. Registry now warns+skips on duplicates instead of raising.
 
-**Symptom:** `docent research usage` raises:
-```
-ValueError: Tool name 'research' is already registered by
-research_to_notebook.ResearchTool; cannot re-register from
-docent.bundled_plugins.research_to_notebook.ResearchTool
-```
+**Bug 2 — DDG → Tavily:** Replaced across `pyproject.toml`, `settings.py`, `search.py`, `__init__.py`, `pipeline.py`, `docs/cli.md`, `README.md`. Added interactive Tavily API key onboarding (`_resolve_tavily_key`) — prompts on first use, saves to `~/.docent/config.toml`, skips in non-TTY (tests/MCP/cron). WSL-native `.venv-wsl` ready (Windows `.venv` deleted — cross-filesystem incompatible).
 
-**Root cause:** the research plugin is imported twice — once directly by some import path,
-once through the plugin loader. The registry (`src/docent/core/registry.py:77`) raises on
-the second registration.
-
-**Where to look:**
-- [`src/docent/core/plugin_loader.py`](src/docent/core/plugin_loader.py) — `load_plugins()` scan logic
-- [`src/docent/core/registry.py`](src/docent/core/registry.py) — registration check (line 77)
-- [`src/docent/bundled_plugins/research_to_notebook/__init__.py`](src/docent/bundled_plugins/research_to_notebook/__init__.py) — the plugin itself
-
-**Fix:** add a "name already registered, skip gracefully" guard in the plugin loader, or
-trace and eliminate the double import path. The registry already has the error text you need
-to grep for.
-
-### Bug 2 — Missing `duckduckgo_search` module
-
-**Symptom:** `docent research deep "any topic"` raises:
-```
-ModuleNotFoundError: No module named 'duckduckgo_search'
-```
-
-**Decision already made:** drop `duckduckgo-search` entirely; replace with **Tavily**.
-
-**What needs to change:**
-1. `pyproject.toml` — remove `duckduckgo-search>=6.0`; add `tavily-python`
-2. `src/docent/config/settings.py` — add `tavily_api_key: str | None = None` to
-   `ResearchSettings` (env: `DOCENT_RESEARCH__TAVILY_API_KEY`)
-3. `src/docent/bundled_plugins/research_to_notebook/search.py` — replace `_web_search()`
-   implementation. Tavily API: `from tavily import TavilyClient; client.search(query)`
-4. `src/docent/bundled_plugins/research_to_notebook/__init__.py` — add `tavily_requests`
-   counter to the spend file (`~/.docent/cache/research/feynman_spend.json`), show it in
-   the `usage` action output
-5. `docs/cli.md` and `README.md` — document `tavily_api_key` config key
-6. After adding dep: `uv tool install --reinstall --editable .`
-
-**After both bugs are fixed:** re-run real-life research tests 3–17. If all pass, tag v1.2.0.
+**Remaining:** Tag v1.2.0. Re-run real-life research tests 3–17 with valid Tavily API key.
 
 ---
 
@@ -508,7 +468,7 @@ keep those in the orchestrating session.
 | Write to config before validating | Persists corrupt values, breaks all future runs |
 | Touch `memory/` or `AI_CONTEXT.md` from a delegated model | Memory requires orchestrator judgment |
 | Commit code without updating docs | Stale docs block releases |
-| Register a tool name already in the registry | `ValueError` is raised; trace the double-import |
+| Register a tool name already in the registry | Warning printed, second registration skipped (v1.2.0) |
 
 ---
 

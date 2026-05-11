@@ -4,15 +4,15 @@ description: Comprehensive ordered todo list across all active tracks; update af
 type: project
 ---
 
-Last updated: 2026-05-11
+Last updated: 2026-05-11 (Hermes session — Claude Code usage limit)
 
 ---
 
 ## IMMEDIATE — v1.2.0 blockers
 
-1. **Bug 1: Duplicate tool registration** — `ValueError: Tool name 'research' is already registered` on `docent research usage`. Double-import or double-registration path in plugin loader. Fix: add a name-already-registered guard or consolidate import path. (`src/docent/mcp_server.py` / `bundled_plugins/`)
-2. **Bug 2: Replace `duckduckgo_search` with Tavily** — `ModuleNotFoundError: No module named 'duckduckgo_search'`. Drop DDG entirely; wire Tavily as web search backend. Store `tavily_api_key` in `~/.docent/config.toml` under `[research]`. Add Tavily request counter to `~/.docent/cache/research/`; expose in `docent research usage` alongside Feynman/OC spend.
-3. **Re-run real-life research tests #3–17** after both bugs fixed → tag v1.2.0.
+1. ~~**Bug 1: Duplicate tool registration**~~ — FIXED 2026-05-11. Root cause: absolute import `from docent.bundled_plugins.research_to_notebook.oc_client` in `usage()` caused `__init__.py` to execute under a different `sys.modules` key. Fix A: changed to relative `from .oc_client import`. Fix B: registry duplicate check now warns + skips instead of raising.
+2. ~~**Bug 2: Replace `duckduckgo_search` with Tavily**~~ — FIXED 2026-05-11. Replaced across `pyproject.toml`, `settings.py`, `search.py`, `__init__.py`, `pipeline.py`. Added Tavily request counter (`tavily_spend.json`). Updated `docs/cli.md` + `README.md`.
+3. **Re-run real-life research tests #3–17** after both bugs fixed → tag v1.2.0. (PENDING — needs WSL venv ready + Tavily API key in config)
 
 ---
 

@@ -13,7 +13,10 @@ uv run docent <tool> <action> --help   # action-level smoke test
 ```
 
 ## Hard rules
-- **Never modify** `memory/`, `decisions.md`, or `CLAUDE.md` — Claude owns these.
+- **Memory ownership depends on who is driving:**
+  - **Claude Code is the primary driver** and owns `memory/`, `decisions.md`, and `CLAUDE.md`.
+  - **When Claude Code's usage limit is hit**, Hermes becomes the main driver and **may** read, update, and maintain memory files (including `AI_CONTEXT.md`). Act as the primary agent — follow the AI_CONTEXT.md navigation and rules fully.
+  - **When Claude Code returns**, it resumes ownership. Hermes should note any memory changes made so Claude can review them.
 - No new dependencies without explicit instruction in the brief.
 - Follow existing patterns (action decorator, Pydantic result models, no `asyncio.run` at top level).
 - Run `uv run pytest` as the final verification step. Do not declare success until it is green.

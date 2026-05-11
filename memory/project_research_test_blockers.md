@@ -6,25 +6,12 @@ type: project
 
 Two bugs found 2026-05-08 during real-life testing (tests 1-2 passed; tests 3+ blocked).
 
-## Bug 1 — Duplicate tool registration (test #3: `docent research usage`)
+## Bug 1 — Duplicate tool registration (FIXED 2026-05-11)
 
-`ValueError: Tool name 'research' is already registered by research_to_notebook.ResearchTool; cannot re-register from docent.bundled_plugins.research_to_notebook.ResearchTool`
+Root cause: absolute import `from docent.bundled_plugins.research_to_notebook.oc_client` in `usage()` caused `__init__.py` to execute under different `sys.modules` key. Fix A: relative import. Fix B: registry guard warns + skips on duplicate.
 
-The research tool is being registered twice under the same name. Root cause is likely a double-import or double-registration path in the plugin loader. Fix: deduplicate registration — guard with a name-already-registered check or consolidate import path.
+## Bug 2 — Missing `duckduckgo_search` dep (FIXED 2026-05-11)
 
-## Bug 2 — Missing `duckduckgo_search` dep (test #4: `docent research deep`)
+Replaced DDG with Tavily across 6 files: `pyproject.toml`, `settings.py`, `search.py`, `__init__.py`, `pipeline.py`, `docs/cli.md`, `README.md`. Tavily request counter added to `~/.docent/cache/research/tavily_spend.json`. API key stored in config under `[research] tavily_api_key` or env `DOCENT_RESEARCH__TAVILY_API_KEY`.
 
-`ModuleNotFoundError: No module named 'duckduckgo_search'`
-
-**Decision:** Drop `duckduckgo_search` entirely. Switch web search/fetch in the research pipeline to **Tavily**.
-- Tavily is designed specifically for LLM/agentic research pipelines; returns clean structured snippets (no HTML parsing needed).
-- Free tier: 1,000 calls/month — enough headroom for real research use.
-- Tavily API key to be stored in config (`~/.docent/config.toml` under `[research]`, key: `tavily_api_key`).
-- Add Tavily request count tracking: count calls made against the 1,000/month quota, expose in `docent research usage`.
-
-**Why Tavily over alternatives:**
-- SerpAPI: only 250 req/month free — too tight for a research tool (one deep run = 5–15 queries).
-- Perplexity Sonar: answer engine, not a search API — returns pre-synthesized answers, clashes with Docent's own synthesis pipeline, no real free tier.
-- Tavily: purpose-built for agentic pipelines, most generous free tier, clean output.
-
-**How to apply:** When implementing, add a `tavily_requests` counter to the spend-tracking file (`~/.docent/cache/research/`) and show it in `usage` output alongside Feynman/OC spend.
+STATUS: Both bugs fixed (2026-05-11, Hermes session). Tests #3-17 pending — needs WSL venv + Tavily API key in config.

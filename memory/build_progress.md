@@ -6,6 +6,15 @@ type: project
 
 Docent is a Python CLI "control center" for grad-school workflows. Design lives in `Docent_Architecture.md` (committed to repo). Build order is strict — do not reorder.
 
+## Status as of 2026-05-11 (v1.2.0 shipped — research tool fixes + Tavily web search)
+
+- [x] v1.2.0: Bug 1 — duplicate registration (relative import + registry guard)
+- [x] v1.2.0: Bug 2 — DDG → Tavily (search.py, pipeline.py, settings, onboarding UX, docs)
+- [x] v1.2.0: Tavily API key interactive onboarding (prompt on first use, saves to config)
+- [x] WSL-native venv: `.venv-wsl` (Windows `.venv` deleted — cross-filesystem incompatible)
+- [x] 263/263 tests green
+- [ ] Next: Tag v1.2.0 release
+
 ## Status as of 2026-05-06 (Step 12 shipped — plugin discovery + reading as bundled plugin; Step 13 next — Full MCP adapter)
 
 - [x] 1. Project skeleton + `docent --version`
