@@ -4,8 +4,8 @@ description: The research tool routes LLM calls through Feynman first; falls bac
 type: feedback
 ---
 
-The `research` tool (planned Phase 1.5) routes through the Feynman agent CLI as primary. If Feynman is unavailable or fails, Docent falls back to calling Claude directly (self-default).
+The `research` tool routes through the Feynman agent CLI as primary (`--backend feynman`, the default). The explicit alternate backend is `--backend docent` — the Docent-native 6-stage pipeline (search-planner → fetch → gap-eval → writer → verifier → reviewer) via OpenCode/OcClient. There is no automatic litellm/Claude fallback.
 
-**Why:** Feynman is the preferred research agent (deeper, citation-aware), but the tool should still work without it installed.
+**Why:** Feynman is the preferred research agent (deeper, citation-aware). The docent-native backend uses OpenCode Go models (zero Anthropic API cost) and is selected explicitly, not silently on failure. The original plan called for a litellm fallback but was never implemented — the shipped design uses two explicit user-selectable backends.
 
-**How to apply:** When designing the research tool's LLM call layer, implement Feynman as the primary executor and wrap it in a try/fallback that routes to Claude via litellm on failure. Don't hard-require Feynman as a dependency.
+**How to apply:** When the user calls `docent research deep/lit`, backend defaults to `feynman`. If they want the native pipeline (or Feynman is not installed), they pass `--backend docent`. Do not design for an automatic litellm fallback — it does not exist.

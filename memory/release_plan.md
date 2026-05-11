@@ -1,6 +1,6 @@
 ---
 name: Docent release plan
-description: Two separate release tracks — CLI releases and UI releases. Each has its own versioning and docs.
+description: Single bundled release track; v1.1.0 shipped 2026-05-08; next: v1.2.0 on research bug fixes + Tavily
 type: project
 ---
 
@@ -27,5 +27,5 @@ The two-track plan (separate CLI and UI tags) was superseded before it was execu
 ## How to apply
 
 - CLI and UI ship together; bump the version once for both.
-- Next version: `v1.2.0` when the next significant feature (skill ports / Phase 1.5-C) lands.
-- Before each PyPI push: confirm `publish.yml` uses pinned SHA for `actions/setup-node` (flagged in CSO audit — still unpinned as of v1.1.1).
+- Next version: `v1.2.0` — research bug fixes (DDG→Tavily, registry warn+skip, Tavily key onboarding). Ready to tag.
+- `actions/setup-node` SHA-pinned 2026-05-07 (Phase A CSO fix): `@49933ea5288caeca8642d1e84afbd3f7d6820020`

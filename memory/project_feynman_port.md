@@ -1,8 +1,10 @@
 ---
-name: Feynman Port — Docent Research Tool Suite
-description: Plan to port Feynman's research agent architecture into Docent as a native tool, using OpenCode (Go sub) for zero Anthropic API cost.
+name: Feynman Port — Docent Research Tool Suite (ARCHIVED)
+description: ARCHIVED 2026-05-11 — feature shipped. See archive/project_feynman_port-shipped-2026-05-08.md
 type: project
 ---
+
+**ARCHIVED.** Research tool shipped 2026-05-08. Key deviations from plan: Feynman is now the default backend (not a runtime prompt); Tavily replaced duckduckgo-search (v1.2.0). Full record at `archive/project_feynman_port-shipped-2026-05-08.md`.
 
 ## Decision
 

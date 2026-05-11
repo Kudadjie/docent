@@ -1,8 +1,10 @@
 ---
-name: Research tool — Feynman budget guard
-description: Plan to add a spend-aware guard before Feynman CLI calls (Phase E of research tool). Read before implementing the budget feature.
+name: Research tool — Feynman budget guard (ARCHIVED)
+description: ARCHIVED 2026-05-11 — feature shipped. See archive/project_feynman_budget_guard-shipped-2026-05-08.md
 type: project
 ---
+
+**ARCHIVED.** Feature shipped 2026-05-08. Full design record at `archive/project_feynman_budget_guard-shipped-2026-05-08.md`.
 
 ## Decision
 

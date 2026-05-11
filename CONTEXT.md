@@ -1,15 +1,12 @@
 # CONTEXT - resume hint for next session
 
-**Current Task:** v1.2.0 blockers fixed (Hermes session 2026-05-11). Ready to tag release.
+**Current Task:** v1.2.0 commits landed + memory-cleanup complete (2026-05-11). Ready to tag.
 
 **Key Changes (2026-05-11):**
-- Bug 1 fixed: duplicate registration (relative import + registry warns/skips)
-- Bug 2 fixed: DDG replaced with Tavily across 6 files + docs
-- Tavily API key onboarding: interactive prompt on first use, saves to `~/.docent/config.toml`, skips in non-TTY
-- WSL-native venv: `.venv-wsl` ready (Windows `.venv` deleted)
-- 263/263 tests green
+- v1.2.0: DDG→Tavily, registry warn+skip, Tavily key onboarding; 3 commits on dev branch
+- memory-cleanup: decisions.md archived Steps 10-11 (55KB→~25KB); feynman_port + feynman_budget_guard archived; feedback_research_tool_routing corrected; MEMORY.md deduped
 
 **Next Steps:**
-1. Add Tavily API key to `~/.docent/config.toml` under `[research]` as `tavily_api_key = "tvly-..."`
-2. Re-run real-life research tests 3–17 to verify
+1. Add Tavily API key: `~/.docent/config.toml` → `[research]` → `tavily_api_key = "tvly-..."`
+2. Re-run real-life research tests 3–17 (WSL venv `.venv-wsl` ready)
 3. Tag v1.2.0 release
