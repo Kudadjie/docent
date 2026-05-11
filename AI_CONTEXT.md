@@ -21,7 +21,7 @@ Python engine:
 | **Web UI** | `docent ui` | `http://localhost:7432` |
 | **MCP server** | `docent serve` | stdio (MCP protocol) |
 
-Current published version: **v1.1.0** (2026-05-08). Next: **v1.2.0** (bugs fixed 2026-05-11 by Hermes — ready to tag). See [`memory/build_progress.md`](memory/build_progress.md) for changelog.
+Current published version: **v1.1.0** (2026-05-08). Next: **v1.2.0** (Tavily Research API + pipeline fixes + preflight + refiner stage — 280 tests green, e2e verified). See [`memory/build_progress.md`](memory/build_progress.md) for changelog.
 
 ---
 
@@ -243,13 +243,17 @@ The store is in [`reading_store.py`](src/docent/bundled_plugins/reading/reading_
 
 **Source:** [`src/docent/bundled_plugins/research_to_notebook/__init__.py`](src/docent/bundled_plugins/research_to_notebook/__init__.py)
 
-**STATUS: has two known bugs — see §8 before touching this tool.**
-
 Two backends, tried in order:
 1. **Feynman CLI** — if `feynman` is on PATH, delegates to it
-2. **Docent-native 6-stage pipeline** — runs entirely offline via OpenCode REST calls
+2. **Docent-native pipeline** — Tavily Research API (primary) or 6-stage manual pipeline (fallback)
 
-**6-stage pipeline** (in [`pipeline.py`](src/docent/bundled_plugins/research_to_notebook/pipeline.py)):
+**Tavily Research API path** (primary when `tavily_api_key` available):
+- `tavily_research()` in `search.py` calls `TavilyClient.research()` → polls `get_research()` until completed
+- Returns a fully cited report, replacing stages 1-5 (search planner → fetch → gap eval → writer → verifier)
+- OpenCode reviewer (stage 6) still runs for adversarial quality control
+- Falls back to manual pipeline on any Tavily error, with a warning event
+
+**Manual 6-stage pipeline** (fallback, in [`pipeline.py`](src/docent/bundled_plugins/research_to_notebook/pipeline.py)):
 
 | Stage | Model | Purpose |
 |-------|-------|---------|
@@ -259,6 +263,8 @@ Two backends, tried in order:
 | Writer | `minimax-m2.7` | Synthesizes the research report |
 | Verifier | `glm-5.1` | Checks claims against sources |
 | Reviewer | `deepseek-v4-pro` | Final quality review |
+
+**Zero-source abort**: if manual pipeline collects 0 sources, returns error immediately (no garbage LLM output).
 
 All model names are configurable in `[research]` config section.
 
@@ -359,15 +365,24 @@ tools (those using `run()` instead of `@action`) are never exposed over MCP.
 
 ---
 
-## 8. v1.2.0 blockers — FIXED 2026-05-11 (Hermes session)
+## 8. v1.2.0 blockers — ALL FIXED 2026-05-11
 
-Both blockers resolved. 263/263 tests green. See [`memory/build_progress.md`](memory/build_progress.md) for changelog, [`memory/project_research_test_blockers.md`](memory/project_research_test_blockers.md) for post-mortem.
+Both original blockers resolved. 280/280 tests green.
 
-**Bug 1 — Duplicate registration:** Absolute import `from docent.bundled_plugins.research_to_notebook.oc_client` in `usage()` caused double-import. Fixed: relative import `from .oc_client import`. Registry now warns+skips on duplicates instead of raising.
+**Bug 1 — Duplicate registration:** Absolute import caused double-import. Fixed: relative import. Registry now warns+skips on duplicates.
 
-**Bug 2 — DDG → Tavily:** Replaced across `pyproject.toml`, `settings.py`, `search.py`, `__init__.py`, `pipeline.py`, `docs/cli.md`, `README.md`. Added interactive Tavily API key onboarding (`_resolve_tavily_key`) — prompts on first use, saves to `~/.docent/config.toml`, skips in non-TTY (tests/MCP/cron). WSL-native `.venv-wsl` ready (Windows `.venv` deleted — cross-filesystem incompatible).
+**Bug 2 — DDG → Tavily:** Replaced DuckDuckGo with Tavily across all files.
 
-**Remaining:** Tag v1.2.0. Re-run real-life research tests 3–17 with valid Tavily API key.
+**New in this session (2026-05-11):**
+- Tavily Research API integration — `tavily_research()` in `search.py` is now the primary path, replacing stages 1-5
+- `web_search()` error propagation fix — re-raises auth/rate-limit errors, logs others, `search_depth="advanced"`
+- Zero-source abort guard — clear error message instead of garbage LLM output
+- Preflight mechanism for `@action` — interactive prompts run before Rich Progress
+- WSL2 auto-detect in `OcClient`
+- `tavily-python>=0.7.0` pinned in `pyproject.toml`
+- Windows `.venv` recreated (was broken — no `pyvenv.cfg`)
+
+**Remaining before release:** End-to-end verification with real Tavily key; tag v1.2.0.
 
 ---
 
@@ -507,10 +522,10 @@ docent/
 │   │   │   ├── mendeley_cache.py        ← File-backed TTL cache
 │   │   │   └── reading_notify.py        ← Deadline startup check
 │   │   └── research_to_notebook/
-│   │       ├── __init__.py              ← ResearchTool (all actions) [BUG: dupe registration]
-│   │       ├── pipeline.py              ← 6-stage research pipeline [BUG: DDG missing]
-│   │       ├── search.py                ← Web + paper search helpers
-│   │       └── oc_client.py             ← OpenCode REST client
+│   │       ├── __init__.py              ← ResearchTool (all actions) + preflight functions
+│   │       ├── pipeline.py              ← Tavily Research + 6-stage manual pipeline
+│   │       ├── search.py                ← web_search, paper_search, tavily_research, fetch_page
+│   │       └── oc_client.py             ← OpenCode REST client (WSL2 auto-detect)
 │   ├── llm/client.py                    ← LLMClient (lazy litellm)
 │   ├── execution/executor.py            ← Subprocess executor
 │   ├── learning/run_log.py              ← Per-namespace JSONL run-log
