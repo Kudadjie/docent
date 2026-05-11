@@ -99,6 +99,38 @@ Fix: `invoke_action()` already exists in `mcp_server.py`. Wire `ui_server.py` en
           Omnibox (NL → action mode only)                }  (base app exists)
 ```
 
+## v1.3 scope (from More Thoughts, 2026-05-11)
+
+**Zotero integration** — See `project_zotero_integration.md`. Single `sync_source` toggle (Mendeley OR Zotero). Bundled install. Resolve pyzotero vs zotero-mcp before touching queue code.
+
+**`docent doctor` / onboarding command** — Check tooling (feynman, mendeley-mcp / zotero-mcp, PATH), auth status, and guide user through setup interactively. Docent should bundle MCP installs rather than leaving them to the user. Also: warn when feynman is installed via binary instead of npm (binary path causes silent update confusion — recommend npm install).
+
+**Hermes stream view** — Add live stream output to `hermes_delegate.py` matching OpenCode's stream UX. Currently a silent subprocess.
+
+**Studio plugin** (restructures `research-to-notebook`):
+- Sub-commands: `deep`, `lit`, `review`, `writer`
+- Outputs: `local`, `to-notebook`, future `to-vault` (Obsidian — see `project_obsidian_integration.md`)
+- File attachment support: deep/lit accept `.md`/`.txt` context files; review accepts supplementary data; writer accepts style guidelines
+- Both Feynman and Docent backends
+
+## v1.4 scope
+
+**Obsidian integration** — See `project_obsidian_integration.md`. `--output vault` for Studio; literature note on `reading done`; Dataview-compatible frontmatter. Config key: `obsidian_vault`.
+
+## UI tweaks (reading plugin — post-v1.2.0)
+- Drag-and-drop sidebar tab reordering; Dashboard tab pinned
+- Move reading stats (queued count, database count, done count) off top panel → under "Local Reading Queue · N Entries" on the reading page
+
+## Open questions / policy gaps
+- **Breaking changes policy** — how to handle breaking changes in external tooling (feynman, MCP servers) and docent itself across versions? No decision yet. Needs a policy before any v2.x work.
+- **Plugin builder spec** — document the plugin contract for third-party developers before the API drifts further. User wants it accessible to non-technical users; AI-powered plugin builder mentioned as a stretch goal.
+
+## Parked
+- **Calendar plugin** — class/exam schedule, sync to external calendars. Out of scope for now.
+- **Omnibox** — flagged; NL → existing action (Mode 1) is in Phase 2 plan. On-the-fly tool generation (Mode 2) is already deferred above.
+
+---
+
 ## When this file is wrong
 
 This is a snapshot of intent at 2026-04-25. Reality will diverge. When it does, update the relevant section here — don't keep this in sync via memory in another file. If a phase is finished, prune it; if priorities flip, reorder. Don't let it rot into a fiction.

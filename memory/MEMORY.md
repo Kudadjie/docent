@@ -25,4 +25,6 @@
 - [OpenCode parallel brief conflict](gotchas.md) - running two OpenCode briefs in parallel that touch the same file causes merge corruption; split briefs to non-overlapping files
 - [Research tool real-life tests](tasks/research_tool_real_life_tests.md) - 17-item manual test checklist for the research-to-notebook tool (deep/lit/review/to-notebook/usage/budget/MCP); priority order included
 - [Codex review blockers](project_codex_review_blockers.md) - ordered pre-v1.2.0 release blockers + architectural debt from 2026-05-08 Codex review; fix release blockers (1-5) before any new feature work or v1.2.0 tag
-- [Research test blockers](project_research_test_blockers.md) - 2 bugs blocking real-life tests 3-17: duplicate tool registration (usage cmd) + missing duckduckgo_search (switch to SerpAPI, 250 req/month free tier, add request count tracking)
+- [Research test blockers](project_research_test_blockers.md) - 2 bugs blocking real-life tests 3-17: duplicate tool registration (usage cmd) + duckduckgo replaced by Tavily (1000 req/month; add request count tracking to usage)
+- [Zotero integration design](project_zotero_integration.md) - ReferenceManagerClient protocol, Mendeley OR Zotero toggle (not both), pyzotero vs zotero-mcp open question; v1.3+ work
+- [Obsidian integration design](project_obsidian_integration.md) - to-vault output, literature notes on done, Dataview-compatible frontmatter, daily notes, Templater; v1.4+ work
