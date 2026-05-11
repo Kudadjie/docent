@@ -273,18 +273,25 @@ def _build_callback(
     invoke: Callable[[BaseModel, Context], Any],
     name: str,
     doc: str,
+    preflight: Callable[[BaseModel, Context], None] | None = None,
 ) -> Any:
     """Build a Typer callback with a synthesized signature from a Pydantic schema.
 
     `invoke(inputs, context)` is called with validated inputs and the Context
     from `ctx.obj`. Its return value (if not None) is printed via the CLI's
     console singleton.
+
+    If ``preflight`` is provided it runs *before* ``invoke`` — outside any
+    Rich Progress wrapper.  This is where interactive prompts (e.g. API-key
+    entry) must live, because Rich Progress steals stdin.
     """
 
     def callback(**kwargs: Any) -> None:
         ctx: typer.Context = kwargs.pop("ctx")
         inputs = schema(**kwargs)
         context: Context = ctx.obj
+        if preflight is not None:
+            preflight(inputs, context)
         maybe = invoke(inputs, context)
         result = _drive_progress(maybe) if inspect.isgenerator(maybe) else maybe
         if result is not None:
@@ -347,6 +354,7 @@ def _register_tool_in_app(tool_cls: type[Tool]) -> None:
             invoke=make_invoke(method_name),
             name=cli_name.replace("-", "_"),
             doc=meta.description,
+            preflight=meta.preflight,
         )
         subapp.command(name=cli_name, help=meta.description)(callback)
     app.add_typer(subapp, name=tool_cls.name, help=tool_cls.description)

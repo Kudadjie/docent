@@ -11,6 +11,35 @@ _BASE_URL = "http://127.0.0.1:4096"
 _DEFAULT_PROVIDER = "opencode-go"
 
 
+def _detect_base_url() -> str:
+    """Return the OpenCode base URL.
+
+    In WSL2, ``127.0.0.1`` points to the Linux VM — not the Windows host
+    where OpenCode typically runs.  Detect WSL2 and swap in the Windows
+    host IP so the client can reach the server.
+    """
+    # Fast path: native Linux / macOS / Windows
+    try:
+        proc_version = Path("/proc/version").read_text()
+    except (FileNotFoundError, PermissionError):
+        return _BASE_URL
+
+    if "microsoft" not in proc_version.lower():
+        return _BASE_URL
+
+    # We're inside WSL2 — read the nameserver from resolv.conf
+    try:
+        for line in Path("/etc/resolv.conf").read_text().splitlines():
+            line = line.strip()
+            if line.startswith("nameserver"):
+                host_ip = line.split(None, 1)[1]
+                return f"http://{host_ip}:4096"
+    except (FileNotFoundError, PermissionError, IndexError):
+        pass
+
+    return _BASE_URL
+
+
 def _oc_spend_file() -> Path:
     from docent.utils.paths import cache_dir
     return cache_dir() / "research" / "oc_spend.json"
@@ -54,11 +83,11 @@ class OcClient:
 
     def __init__(
         self,
-        base_url: str = _BASE_URL,
+        base_url: str | None = None,
         provider: str = _DEFAULT_PROVIDER,
         budget_usd: float = 0.0,
     ) -> None:
-        self.base_url = base_url
+        self.base_url = base_url or _detect_base_url()
         self.provider = provider
         self.budget_usd = budget_usd
 

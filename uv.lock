@@ -505,7 +505,7 @@ requires-dist = [
     { name = "mcp", specifier = ">=1.0,<2" },
     { name = "pydantic-settings", specifier = ">=2.14.0" },
     { name = "rich", specifier = ">=15.0.0" },
-    { name = "tavily-python" },
+    { name = "tavily-python", specifier = ">=0.7.0" },
     { name = "tomli-w", specifier = ">=1.2.0" },
     { name = "typer", specifier = ">=0.24.2" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30.0" },

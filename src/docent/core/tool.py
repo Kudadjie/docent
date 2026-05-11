@@ -16,11 +16,18 @@ class Action:
     The registry introspects each Tool class for methods carrying an `Action`
     via `_docent_action`. CLI name defaults to the method name with
     underscores → dashes (override via `name=`).
+
+    If ``preflight`` is set, the CLI layer calls it *before* driving the
+    generator action.  This is the escape hatch for interactive prompts
+    that must run outside Rich Progress (which steals stdin).  The preflight
+    may mutate ``context.settings`` (e.g. to persist a resolved API key)
+    or raise ``typer.Abort`` / return an early result to short-circuit.
     """
 
     description: str
     input_schema: type[BaseModel]
     name: str | None = None
+    preflight: Callable[[BaseModel, Context], None] | None = None
 
 
 F = TypeVar("F", bound=Callable[..., Any])
@@ -31,12 +38,16 @@ def action(
     description: str,
     input_schema: type[BaseModel],
     name: str | None = None,
+    preflight: Callable[[BaseModel, Context], None] | None = None,
 ) -> Callable[[F], F]:
     """Decorator: mark a method on a Tool as an invocable action."""
 
     def decorator(fn: F) -> F:
         fn._docent_action = Action(  # type: ignore[attr-defined]
-            description=description, input_schema=input_schema, name=name
+            description=description,
+            input_schema=input_schema,
+            name=name,
+            preflight=preflight,
         )
         return fn
 

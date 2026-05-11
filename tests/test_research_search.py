@@ -94,7 +94,7 @@ class TestWebSearchTavily:
             results = web_search("test query", api_key="test-key")
 
         MockClient.assert_called_once_with(api_key="test-key")
-        mock_instance.search.assert_called_once_with("test query", max_results=8)
+        mock_instance.search.assert_called_once_with("test query", max_results=8, search_depth="advanced")
         assert len(results) == 2
         assert results[0] == {
             "title": "Tavily Result",

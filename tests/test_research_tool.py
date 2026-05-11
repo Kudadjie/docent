@@ -9,6 +9,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+import typer
 
 from docent.config.settings import ResearchSettings, Settings
 from docent.core.context import Context
@@ -30,6 +31,8 @@ from docent.bundled_plugins.research_to_notebook import (
     _slugify,
     _artifact_slug,
     _rank_sources,
+    _preflight_docent,
+    _preflight_oc_only,
 )
 
 
@@ -42,6 +45,15 @@ def _drain(maybe_gen: Any) -> Any:
             next(maybe_gen)
     except StopIteration as e:
         return e.value
+
+
+def _fake_pipeline_gen(result_dict: dict):
+    """Create a generator that yields no events and returns result_dict.
+
+    Used to mock run_deep / run_lit / run_review which are now generators.
+    """
+    return result_dict
+    yield  # noqa: unreachable — makes this a generator
 
 
 def _mock_context(
@@ -134,7 +146,6 @@ class TestDeepFeynman:
 
     def test_deep_docent_backend_server_unavailable(self, tmp_path):
         output_dir = tmp_path / "research"
-        tool = ResearchTool()
         ctx = _mock_context(output_dir=output_dir)
 
         with patch(
@@ -144,14 +155,8 @@ class TestDeepFeynman:
             mock_oc_instance.is_available.return_value = False
             MockOc.return_value = mock_oc_instance
 
-            result = _drain(
-                tool.deep(DeepInputs(topic="test", backend="docent"), ctx)
-            )
-
-        assert isinstance(result, ResearchResult)
-        assert result.ok is False
-        assert result.backend == "docent"
-        assert "not running" in result.message
+            with pytest.raises(typer.Exit):
+                _preflight_docent(DeepInputs(topic="test", backend="docent"), ctx)
 
 
 class TestLitFeynman:
@@ -286,7 +291,6 @@ class TestToShapes:
 class TestLitDocent:
     def test_lit_docent_server_unavailable(self, tmp_path):
         output_dir = tmp_path / "research"
-        tool = ResearchTool()
         ctx = _mock_context(output_dir=output_dir)
 
         with patch(
@@ -296,14 +300,8 @@ class TestLitDocent:
             mock_oc_instance.is_available.return_value = False
             MockOc.return_value = mock_oc_instance
 
-            result = _drain(
-                tool.lit(LitInputs(topic="test", backend="docent"), ctx)
-            )
-
-        assert isinstance(result, ResearchResult)
-        assert result.ok is False
-        assert result.backend == "docent"
-        assert "not running" in result.message
+            with pytest.raises(typer.Exit):
+                _preflight_docent(LitInputs(topic="test", backend="docent"), ctx)
 
     @patch("docent.bundled_plugins.research_to_notebook.pipeline.run_lit")
     def test_lit_docent_happy_path(self, mock_run_lit, tmp_path):
@@ -311,7 +309,7 @@ class TestLitDocent:
         tool = ResearchTool()
         ctx = _mock_context(output_dir=output_dir, tavily_api_key="test-key")
 
-        mock_run_lit.return_value = {
+        mock_run_lit.return_value = _fake_pipeline_gen({
             "ok": True,
             "topic": "climate change",
             "draft": "Literature review content",
@@ -319,7 +317,7 @@ class TestLitDocent:
             "sources": [{"title": "Source 1"}],
             "rounds": 1,
             "error": None,
-        }
+        })
 
         with patch(
             "docent.bundled_plugins.research_to_notebook.oc_client.OcClient"
@@ -341,7 +339,6 @@ class TestLitDocent:
 class TestReviewDocent:
     def test_review_docent_server_unavailable(self, tmp_path):
         output_dir = tmp_path / "research"
-        tool = ResearchTool()
         ctx = _mock_context(output_dir=output_dir)
 
         with patch(
@@ -351,14 +348,8 @@ class TestReviewDocent:
             mock_oc_instance.is_available.return_value = False
             MockOc.return_value = mock_oc_instance
 
-            result = _drain(
-                tool.review(ReviewInputs(artifact="2401.12345", backend="docent"), ctx)
-            )
-
-        assert isinstance(result, ResearchResult)
-        assert result.ok is False
-        assert result.backend == "docent"
-        assert "not running" in result.message
+            with pytest.raises(typer.Exit):
+                _preflight_oc_only(ReviewInputs(artifact="2401.12345", backend="docent"), ctx)
 
     @patch("docent.bundled_plugins.research_to_notebook.pipeline.run_review")
     def test_review_docent_happy_path(self, mock_run_review, tmp_path):
@@ -366,14 +357,14 @@ class TestReviewDocent:
         tool = ResearchTool()
         ctx = _mock_context(output_dir=output_dir)
 
-        mock_run_review.return_value = {
+        mock_run_review.return_value = _fake_pipeline_gen({
             "ok": True,
             "artifact": "2401.12345",
             "artifact_content": "Paper content",
             "researcher_notes": "Notes",
             "review": "Review content",
             "error": None,
-        }
+        })
 
         with patch(
             "docent.bundled_plugins.research_to_notebook.oc_client.OcClient"
