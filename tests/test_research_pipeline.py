@@ -14,6 +14,7 @@ from docent.bundled_plugins.research_to_notebook.pipeline import (
     run_lit,
     run_review,
 )
+from docent.core import ProgressEvent
 
 
 def _make_oc_client(responses: dict | None = None) -> MagicMock:
@@ -23,6 +24,18 @@ def _make_oc_client(responses: dict | None = None) -> MagicMock:
     if responses is not None:
         client.call.side_effect = list(responses.values())
     return client
+
+
+def _drain(gen):
+    """Drive a generator to completion, collecting ProgressEvents, returning final value."""
+    events = []
+    try:
+        while True:
+            value = next(gen)
+            if isinstance(value, ProgressEvent):
+                events.append(value)
+    except StopIteration as e:
+        return e.value, events
 
 
 PLANNER_JSON = """{
@@ -50,6 +63,8 @@ WRITER_OUTPUT = """## Executive Summary\nClimate change is real.\n"""
 VERIFIER_OUTPUT = """## Executive Summary\nClimate change is real. [Source 1]\n\n## Sources\n[1] Test — https://example.com"""
 
 REVIEWER_OUTPUT = """## Peer Review\n\n### Verdict\nREVISE"""
+
+REFINER_OUTPUT = """## Executive Summary\nClimate change is real and well-documented. [Source 1]\n\n## Sources\n[1] Test — https://example.com"""
 
 
 class TestParseJson:
@@ -95,25 +110,30 @@ class TestRunDeep:
                 "writer": WRITER_OUTPUT,
                 "verifier": VERIFIER_OUTPUT,
                 "reviewer": REVIEWER_OUTPUT,
+                "refiner": REFINER_OUTPUT,
             }
         )
 
-        result = run_deep("climate change", oc)
+        result, events = _drain(run_deep("climate change", oc))
 
         assert result["ok"] is True
         assert result["topic"] == "climate change"
-        assert result["draft"] == VERIFIER_OUTPUT
+        assert result["draft"] == REFINER_OUTPUT
         assert result["review"] == REVIEWER_OUTPUT
         assert result["error"] is None
         assert result["rounds"] >= 1
         assert len(result["sources"]) > 0
+        # Should have progress events from pipeline stages
+        phases = [e.phase for e in events]
+        assert "search_plan" in phases
+        assert "write" in phases
 
     def test_run_deep_planner_failure(self):
         oc = MagicMock(spec=OcClient)
         oc.is_available.return_value = True
         oc.call.side_effect = Exception("LLM down")
 
-        result = run_deep("climate change", oc)
+        result, events = _drain(run_deep("climate change", oc))
 
         assert result["ok"] is False
         assert "Search planner failed" in result["error"]
@@ -122,7 +142,9 @@ class TestRunDeep:
     @patch("docent.bundled_plugins.research_to_notebook.pipeline.paper_search")
     @patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page")
     def test_run_deep_writer_failure(self, mock_fetch, mock_paper, mock_web):
-        mock_web.return_value = []
+        mock_web.return_value = [
+            {"title": "Web Result", "url": "https://example.com", "snippet": "A snippet"},
+        ]
         mock_paper.return_value = []
         mock_fetch.return_value = ""
 
@@ -134,7 +156,7 @@ class TestRunDeep:
             Exception("Writer LLM failed"),  # writer
         ]
 
-        result = run_deep("climate change", oc)
+        result, _ = _drain(run_deep("climate change", oc))
 
         assert result["ok"] is False
         assert "Writer failed" in result["error"]
@@ -159,12 +181,14 @@ class TestRunDeep:
             WRITER_OUTPUT,        # writer
             Exception("Verifier LLM down"),  # verifier fails
             REVIEWER_OUTPUT,      # reviewer
+            REFINER_OUTPUT,       # refiner
         ]
 
-        result = run_deep("climate change", oc)
+        result, _ = _drain(run_deep("climate change", oc))
 
         assert result["ok"] is True
-        assert result["draft"] == WRITER_OUTPUT
+        # Verifier failed → draft falls back to WRITER_OUTPUT, but refiner succeeds
+        assert result["draft"] == REFINER_OUTPUT
 
     @patch("docent.bundled_plugins.research_to_notebook.pipeline.web_search")
     @patch("docent.bundled_plugins.research_to_notebook.pipeline.paper_search")
@@ -185,9 +209,10 @@ class TestRunDeep:
             WRITER_OUTPUT,
             VERIFIER_OUTPUT,
             REVIEWER_OUTPUT,
+            REFINER_OUTPUT,
         ]
 
-        result = run_deep("climate change", oc)
+        result, _ = _drain(run_deep("climate change", oc))
 
         assert result["ok"] is True
         assert result["rounds"] == 2
@@ -212,9 +237,10 @@ class TestRunDeep:
             WRITER_OUTPUT,
             VERIFIER_OUTPUT,
             REVIEWER_OUTPUT,
+            REFINER_OUTPUT,
         ]
 
-        result = run_deep("climate change", oc)
+        result, _ = _drain(run_deep("climate change", oc))
 
         assert result["ok"] is True
         assert result["rounds"] == 1
@@ -239,28 +265,34 @@ class TestRunDeep:
             WRITER_OUTPUT,
             VERIFIER_OUTPUT,
             REVIEWER_OUTPUT,
+            REFINER_OUTPUT,
         ]
 
-        result = run_deep("climate change", oc)
+        result, _ = _drain(run_deep("climate change", oc))
 
         urls = [s.get("url") for s in result["sources"]]
         assert urls.count("https://example.com") == 1
         assert urls.count("https://other.com") == 1
 
-    def test_run_deep_on_progress_callback(self):
+    def test_run_deep_yields_progress_events(self):
+        """run_deep now yields ProgressEvent items during execution."""
         oc = MagicMock(spec=OcClient)
         oc.is_available.return_value = True
         oc.call.side_effect = Exception("fail immediately")
 
-        events: list[tuple[str, str]] = []
+        gen = run_deep("test topic", oc)
+        events = []
+        try:
+            while True:
+                value = next(gen)
+                if isinstance(value, ProgressEvent):
+                    events.append(value)
+        except StopIteration:
+            pass
 
-        def on_progress(phase: str, message: str) -> None:
-            events.append((phase, message))
-
-        run_deep("test topic", oc, on_progress=on_progress)
-
+        # Should have at least the search_plan event before planner failure
         assert len(events) >= 1
-        assert events[0][0] == "search_plan"
+        assert events[0].phase == "search_plan"
 
     @patch("docent.bundled_plugins.research_to_notebook.pipeline.web_search")
     @patch("docent.bundled_plugins.research_to_notebook.pipeline.paper_search")
@@ -290,9 +322,10 @@ class TestRunDeep:
             WRITER_OUTPUT,
             VERIFIER_OUTPUT,
             REVIEWER_OUTPUT,
+            REFINER_OUTPUT,
         ]
 
-        run_deep("climate change", oc)
+        _drain(run_deep("climate change", oc))
 
         # Round 1 fetched 5 pages. Round 2 encounters the same URLs already in
         # full_text — should add 0 new fetches. Total must remain 5.
@@ -332,14 +365,15 @@ class TestRunLit:
                 "writer": WRITER_OUTPUT,
                 "verifier": VERIFIER_OUTPUT,
                 "reviewer": REVIEWER_OUTPUT,
+                "refiner": REFINER_OUTPUT,
             }
         )
 
-        result = run_lit("climate change", oc)
+        result, _ = _drain(run_lit("climate change", oc))
 
         assert result["ok"] is True
         assert result["topic"] == "climate change"
-        assert result["draft"] == VERIFIER_OUTPUT
+        assert result["draft"] == REFINER_OUTPUT
         assert result["review"] == REVIEWER_OUTPUT
         assert result["error"] is None
         assert result["rounds"] >= 1
@@ -350,7 +384,7 @@ class TestRunLit:
         oc.is_available.return_value = True
         oc.call.side_effect = Exception("LLM down")
 
-        result = run_lit("climate change", oc)
+        result, _ = _drain(run_lit("climate change", oc))
 
         assert result["ok"] is False
         assert "Search planner failed" in result["error"]
@@ -359,7 +393,9 @@ class TestRunLit:
     @patch("docent.bundled_plugins.research_to_notebook.pipeline.paper_search")
     @patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page")
     def test_run_lit_uses_lit_prompts(self, mock_fetch, mock_paper, mock_web):
-        mock_web.return_value = []
+        mock_web.return_value = [
+            {"title": "Web Result", "url": "https://example.com", "snippet": "A snippet"},
+        ]
         mock_paper.return_value = []
         mock_fetch.return_value = ""
 
@@ -370,10 +406,11 @@ class TestRunLit:
                 "writer": WRITER_OUTPUT,
                 "verifier": VERIFIER_OUTPUT,
                 "reviewer": REVIEWER_OUTPUT,
+                "refiner": REFINER_OUTPUT,
             }
         )
 
-        result = run_lit("climate change", oc)
+        result, _ = _drain(run_lit("climate change", oc))
         assert result["ok"] is True
 
         first_call_args = oc.call.call_args_list[0]
@@ -385,7 +422,9 @@ class TestRunLit:
     @patch("docent.bundled_plugins.research_to_notebook.pipeline.paper_search")
     @patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page")
     def test_run_lit_writer_failure(self, mock_fetch, mock_paper, mock_web):
-        mock_web.return_value = []
+        mock_web.return_value = [
+            {"title": "Web Result", "url": "https://example.com", "snippet": "A snippet"},
+        ]
         mock_paper.return_value = []
         mock_fetch.return_value = ""
 
@@ -397,7 +436,7 @@ class TestRunLit:
             Exception("Writer LLM failed"),
         ]
 
-        result = run_lit("climate change", oc)
+        result, _ = _drain(run_lit("climate change", oc))
 
         assert result["ok"] is False
         assert "Writer failed" in result["error"]
@@ -443,7 +482,7 @@ class TestRunReview:
         oc.is_available.return_value = True
         oc.call.side_effect = ["Researcher notes", "Review result"]
 
-        result = run_review("2401.12345", oc)
+        result, _ = _drain(run_review("2401.12345", oc))
 
         mock_fetch.assert_any_call("https://arxiv.org/abs/2401.12345", max_chars=6000)
         assert result["ok"] is True
@@ -455,7 +494,7 @@ class TestRunReview:
         oc.is_available.return_value = True
         oc.call.side_effect = ["Researcher notes", "Review result"]
 
-        result = run_review("https://example.com/paper", oc)
+        result, _ = _drain(run_review("https://example.com/paper", oc))
 
         mock_fetch.assert_called_with("https://example.com/paper", max_chars=6000)
         assert result["ok"] is True
@@ -467,7 +506,7 @@ class TestRunReview:
         oc.is_available.return_value = True
         oc.call.side_effect = ["Researcher notes output", "Review output"]
 
-        result = run_review("2401.12345", oc)
+        result, _ = _drain(run_review("2401.12345", oc))
 
         assert result["ok"] is True
         assert result["artifact"] == "2401.12345"
@@ -483,7 +522,7 @@ class TestRunReview:
         oc.is_available.return_value = True
         oc.call.side_effect = Exception("Researcher LLM down")
 
-        result = run_review("2401.12345", oc)
+        result, _ = _drain(run_review("2401.12345", oc))
 
         assert result["ok"] is False
         assert "Researcher failed" in result["error"]
@@ -495,7 +534,113 @@ class TestRunReview:
         oc.is_available.return_value = True
         oc.call.side_effect = ["Researcher notes", Exception("Reviewer LLM down")]
 
-        result = run_review("2401.12345", oc)
+        result, _ = _drain(run_review("2401.12345", oc))
 
         assert result["ok"] is True
-        assert result["review"] == "(Reviewer unavailable)"
+        assert "(Reviewer unavailable)" in result["review"]
+
+
+class TestZeroSourceAbort:
+    """Tests for the early-abort guard when web_search returns 0 sources."""
+
+    @patch("docent.bundled_plugins.research_to_notebook.pipeline.web_search")
+    @patch("docent.bundled_plugins.research_to_notebook.pipeline.paper_search")
+    @patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page")
+    def test_zero_sources_returns_error(self, mock_fetch, mock_paper, mock_web):
+        mock_web.return_value = []
+        mock_paper.return_value = []
+        mock_fetch.return_value = ""
+
+        oc = MagicMock(spec=OcClient)
+        oc.is_available.return_value = True
+        oc.call.side_effect = [
+            PLANNER_JSON,
+            GAP_SUFFICIENT_JSON,
+        ]
+
+        result, _ = _drain(run_deep("climate change", oc))
+
+        assert result["ok"] is False
+        assert "0 sources" in result["error"]
+
+
+class TestTavilyResearchPipeline:
+    """Tests for the Tavily research path in run_deep / run_lit."""
+
+    @patch("docent.bundled_plugins.research_to_notebook.pipeline.tavily_research")
+    def test_deep_uses_tavily_when_key_provided(self, mock_research):
+        def research_gen(*args, **kwargs):
+            yield ProgressEvent(phase="research", message="Starting Tavily research")
+            return {
+                "content": "Tavily research result",
+                "sources": [{"title": "S1", "url": "https://s1.com", "snippet": "s1 text"}],
+                "request_id": "req-123",
+            }
+        mock_research.side_effect = research_gen
+
+        oc = MagicMock(spec=OcClient)
+        oc.is_available.return_value = True
+        # First call: reviewer, second call: refiner
+        oc.call.side_effect = ["Review: ACCEPT", "Refined Tavily research result"]
+
+        result, events = _drain(run_deep("climate change", oc, tavily_api_key="tvly-test"))
+
+        assert result["ok"] is True
+        assert result["draft"] == "Refined Tavily research result"
+        assert len(result["sources"]) == 1
+        mock_research.assert_called_once()
+        # Reviewer + refiner both called
+        assert oc.call.call_count == 2
+
+    @patch("docent.bundled_plugins.research_to_notebook.pipeline.tavily_research")
+    def test_deep_tavily_failure_falls_back_to_manual(self, mock_research):
+        """When tavily_research raises, run_deep falls back to manual pipeline."""
+        mock_research.side_effect = RuntimeError("Tavily research start failed: API error")
+
+        # Set up manual pipeline mocks
+        with patch("docent.bundled_plugins.research_to_notebook.pipeline.web_search") as mock_web, \
+             patch("docent.bundled_plugins.research_to_notebook.pipeline.paper_search") as mock_paper, \
+             patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page") as mock_fetch:
+            mock_web.return_value = [
+                {"title": "Web Result", "url": "https://example.com", "snippet": "A snippet"},
+            ]
+            mock_paper.return_value = []
+            mock_fetch.return_value = ""
+
+            oc = _make_oc_client({
+                "planner": PLANNER_JSON,
+                "gap_eval": GAP_SUFFICIENT_JSON,
+                "writer": WRITER_OUTPUT,
+                "verifier": VERIFIER_OUTPUT,
+                "reviewer": REVIEWER_OUTPUT,
+            })
+
+            result, events = _drain(run_deep("climate change", oc, tavily_api_key="tvly-test"))
+
+        assert result["ok"] is True
+        # Should have a warning event about fallback
+        warning_events = [e for e in events if e.phase == "warning"]
+        assert len(warning_events) >= 1
+
+    def test_deep_no_tavily_key_uses_manual(self):
+        """When no Tavily key, run_deep uses the manual pipeline."""
+        with patch("docent.bundled_plugins.research_to_notebook.pipeline.web_search") as mock_web, \
+             patch("docent.bundled_plugins.research_to_notebook.pipeline.paper_search") as mock_paper, \
+             patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page") as mock_fetch:
+            mock_web.return_value = [
+                {"title": "Web Result", "url": "https://example.com", "snippet": "A snippet"},
+            ]
+            mock_paper.return_value = []
+            mock_fetch.return_value = ""
+
+            oc = _make_oc_client({
+                "planner": PLANNER_JSON,
+                "gap_eval": GAP_SUFFICIENT_JSON,
+                "writer": WRITER_OUTPUT,
+                "verifier": VERIFIER_OUTPUT,
+                "reviewer": REVIEWER_OUTPUT,
+            })
+
+            result, _ = _drain(run_deep("climate change", oc, tavily_api_key=None))
+
+        assert result["ok"] is True

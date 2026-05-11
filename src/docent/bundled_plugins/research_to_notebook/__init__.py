@@ -53,8 +53,9 @@ def _write_daily_spend(spend: float) -> None:
 def _resolve_tavily_key(context: Context) -> str | None:
     """Ensure a Tavily API key is available. Prompt interactively if missing.
 
-    Must be called BEFORE entering a generator action (Rich Live overwrites
-    interactive prompts inside generators — see memory/gotchas.md).
+    Must be called OUTSIDE any Rich Progress context — i.e. from the preflight,
+    not from inside a generator action.  Rich Progress steals stdin and will
+    abort typer.prompt() calls.
     """
     rs = context.settings.research
     if rs.tavily_api_key:
@@ -72,7 +73,7 @@ def _resolve_tavily_key(context: Context) -> str | None:
             default="",
             show_default=False,
         ).strip()
-    except (EOFError, KeyboardInterrupt):
+    except (EOFError, KeyboardInterrupt, typer.Abort):
         return None
 
     if not key:
@@ -268,8 +269,19 @@ class ConfigShowResult(BaseModel):
     oc_model_reviewer: str
     oc_model_researcher: str
     oc_budget_usd: float
+    tavily_api_key: str | None = None
+    tavily_research_timeout: float = 600.0
+    semantic_scholar_api_key: str | None = None
 
     def to_shapes(self) -> list[Shape]:
+        # Mask sensitive API keys for display
+        def _mask(key: str | None) -> str:
+            if not key:
+                return "(not set)"
+            if len(key) <= 8:
+                return "***"
+            return key[:4] + "..." + key[-4:]
+
         return [
             MetricShape(label="Config", value=self.config_path),
             MetricShape(label="output_dir", value=self.output_dir),
@@ -281,6 +293,9 @@ class ConfigShowResult(BaseModel):
             MetricShape(label="oc_model_reviewer", value=self.oc_model_reviewer),
             MetricShape(label="oc_model_researcher", value=self.oc_model_researcher),
             MetricShape(label="oc_budget_usd", value=str(self.oc_budget_usd)),
+            MetricShape(label="tavily_api_key", value=_mask(self.tavily_api_key)),
+            MetricShape(label="tavily_research_timeout", value=f"{self.tavily_research_timeout:.0f}s"),
+            MetricShape(label="semantic_scholar_api_key", value=_mask(self.semantic_scholar_api_key)),
         ]
 
     def __rich_console__(self, console, options):
@@ -372,7 +387,69 @@ _KNOWN_RESEARCH_KEYS = {
     "oc_model_researcher",
     "oc_budget_usd",
     "tavily_api_key",
+    "tavily_research_timeout",
+    "semantic_scholar_api_key",
 }
+
+
+def _preflight_docent(inputs: BaseModel, context: Context) -> None:
+    """Pre-flight check for deep/lit actions with ``backend='docent'``.
+
+    Runs *before* the generator is created (and therefore before Rich
+    Progress takes over stdin).  Checks OcClient availability and
+    interactively resolves the Tavily API key if needed.
+
+    Non-docent backends are a no-op so the same preflight can be used
+    for all actions.
+    """
+    if getattr(inputs, "backend", None) != "docent":
+        return
+
+    from .oc_client import OcClient
+
+    oc = OcClient(
+        provider=context.settings.research.oc_provider,
+        budget_usd=context.settings.research.oc_budget_usd,
+    )
+    if not oc.is_available():
+        import typer
+        from docent.ui.console import get_console
+        get_console().print(
+            "[red]Error:[/] OpenCode server is not running. "
+            "Start it with: [cyan]opencode serve --port 4096[/]"
+        )
+        raise typer.Exit(1)
+
+    tavily_key = _resolve_tavily_key(context)
+    if not tavily_key:
+        import typer
+        from docent.ui.console import get_console
+        get_console().print(
+            "[red]Error:[/] Tavily API key is required for web search. "
+            "Get one at https://tavily.com (free tier: 1,000 calls/month)."
+        )
+        raise typer.Exit(1)
+
+
+def _preflight_oc_only(inputs: BaseModel, context: Context) -> None:
+    """Pre-flight check for review action (needs OcClient but not Tavily)."""
+    if getattr(inputs, "backend", None) != "docent":
+        return
+
+    from .oc_client import OcClient
+
+    oc = OcClient(
+        provider=context.settings.research.oc_provider,
+        budget_usd=context.settings.research.oc_budget_usd,
+    )
+    if not oc.is_available():
+        import typer
+        from docent.ui.console import get_console
+        get_console().print(
+            "[red]Error:[/] OpenCode server is not running. "
+            "Start it with: [cyan]opencode serve --port 4096[/]"
+        )
+        raise typer.Exit(1)
 
 
 @register_tool
@@ -386,67 +463,35 @@ class ResearchTool(Tool):
     @action(
         description="Deep research on a topic.",
         input_schema=DeepInputs,
+        preflight=_preflight_docent,
     )
     def deep(self, inputs: DeepInputs, context: Context):
         if inputs.backend == "docent":
             from .oc_client import OcClient
             from .pipeline import run_deep
 
+            # OcClient availability and Tavily key are guaranteed by preflight;
+            # read the key from settings (mutated by _resolve_tavily_key).
             oc = OcClient(
                 provider=context.settings.research.oc_provider,
                 budget_usd=context.settings.research.oc_budget_usd,
             )
-            if not oc.is_available():
-                yield ProgressEvent(
-                    phase="start",
-                    message="OpenCode server is not running. Start it with: opencode serve --port 4096",
-                )
-                return ResearchResult(
-                    ok=False,
-                    backend="docent",
-                    workflow="deep",
-                    topic_or_artifact=inputs.topic,
-                    output_file=None,
-                    returncode=None,
-                    message="OpenCode server is not running. Start it with: opencode serve --port 4096",
-                )
-
-            # Resolve Tavily API key before entering generator phase
-            tavily_key = _resolve_tavily_key(context)
-            if not tavily_key:
-                return ResearchResult(
-                    ok=False,
-                    backend="docent",
-                    workflow="deep",
-                    topic_or_artifact=inputs.topic,
-                    output_file=None,
-                    returncode=None,
-                    message="Tavily API key is required for web search. Get one at https://tavily.com (free tier: 1,000 calls/month).",
-                )
+            tavily_key = context.settings.research.tavily_api_key
 
             output_dir = context.settings.research.output_dir.expanduser()
             output_dir.mkdir(parents=True, exist_ok=True)
             slug = _slugify(inputs.topic) + "-deep"
 
-            progress_events: list[tuple[str, str]] = []
-
-            def _capture_progress(phase: str, message: str) -> None:
-                progress_events.append((phase, message))
-
-            yield ProgressEvent(
-                phase="start",
-                message=f"Starting Docent deep research on: {inputs.topic!r}",
-            )
-
             try:
-                result_data = run_deep(
+                result_data = yield from run_deep(
                     inputs.topic, oc,
-                    on_progress=_capture_progress,
                     model_planner=context.settings.research.oc_model_planner,
                     model_writer=context.settings.research.oc_model_writer,
                     model_verifier=context.settings.research.oc_model_verifier,
                     model_reviewer=context.settings.research.oc_model_reviewer,
                     tavily_api_key=tavily_key,
+                    semantic_scholar_api_key=context.settings.research.semantic_scholar_api_key,
+                    tavily_research_timeout=context.settings.research.tavily_research_timeout,
                 )
             except Exception as e:
                 return ResearchResult(
@@ -458,9 +503,6 @@ class ResearchTool(Tool):
                     returncode=None,
                     message=f"Pipeline error: {e}",
                 )
-
-            for phase, message in progress_events:
-                yield ProgressEvent(phase=phase, message=message)
 
             if not result_data["ok"]:
                 return ResearchResult(
@@ -555,66 +597,35 @@ class ResearchTool(Tool):
     @action(
         description="Literature review on a topic.",
         input_schema=LitInputs,
+        preflight=_preflight_docent,
     )
     def lit(self, inputs: LitInputs, context: Context):
         if inputs.backend == "docent":
             from .oc_client import OcClient
             from .pipeline import run_lit
 
+            # OcClient availability and Tavily key are guaranteed by preflight;
+            # read the key from settings (mutated by _resolve_tavily_key).
             oc = OcClient(
                 provider=context.settings.research.oc_provider,
                 budget_usd=context.settings.research.oc_budget_usd,
             )
-            if not oc.is_available():
-                yield ProgressEvent(
-                    phase="start",
-                    message="OpenCode server is not running. Start it with: opencode serve --port 4096",
-                )
-                return ResearchResult(
-                    ok=False,
-                    backend="docent",
-                    workflow="lit",
-                    topic_or_artifact=inputs.topic,
-                    output_file=None,
-                    returncode=None,
-                    message="OpenCode server is not running. Start it with: opencode serve --port 4096",
-                )
-
-            # Resolve Tavily API key before entering generator phase
-            tavily_key = _resolve_tavily_key(context)
-            if not tavily_key:
-                return ResearchResult(
-                    ok=False,
-                    backend="docent",
-                    workflow="lit",
-                    topic_or_artifact=inputs.topic,
-                    output_file=None,
-                    returncode=None,
-                    message="Tavily API key is required for web search. Get one at https://tavily.com (free tier: 1,000 calls/month).",
-                )
+            tavily_key = context.settings.research.tavily_api_key
 
             output_dir = context.settings.research.output_dir.expanduser()
             output_dir.mkdir(parents=True, exist_ok=True)
             slug = _slugify(inputs.topic) + "-lit"
-            progress_events: list[tuple[str, str]] = []
-
-            def _capture(phase: str, message: str) -> None:
-                progress_events.append((phase, message))
-
-            yield ProgressEvent(
-                phase="start",
-                message=f"Starting Docent literature review: {inputs.topic!r}",
-            )
 
             try:
-                result_data = run_lit(
+                result_data = yield from run_lit(
                     inputs.topic, oc,
-                    on_progress=_capture,
                     model_planner=context.settings.research.oc_model_planner,
                     model_writer=context.settings.research.oc_model_writer,
                     model_verifier=context.settings.research.oc_model_verifier,
                     model_reviewer=context.settings.research.oc_model_reviewer,
                     tavily_api_key=tavily_key,
+                    semantic_scholar_api_key=context.settings.research.semantic_scholar_api_key,
+                    tavily_research_timeout=context.settings.research.tavily_research_timeout,
                 )
             except Exception as e:
                 return ResearchResult(
@@ -626,9 +637,6 @@ class ResearchTool(Tool):
                     returncode=None,
                     message=f"Pipeline error: {e}",
                 )
-
-            for phase, message in progress_events:
-                yield ProgressEvent(phase=phase, message=message)
 
             if not result_data["ok"]:
                 return ResearchResult(
@@ -721,48 +729,26 @@ class ResearchTool(Tool):
     @action(
         description="Peer review of an artifact (arXiv ID, PDF path, or URL).",
         input_schema=ReviewInputs,
+        preflight=_preflight_oc_only,
     )
     def review(self, inputs: ReviewInputs, context: Context):
         if inputs.backend == "docent":
             from .oc_client import OcClient
             from .pipeline import run_review
 
+            # OcClient availability is guaranteed by preflight.
             oc = OcClient(
                 provider=context.settings.research.oc_provider,
                 budget_usd=context.settings.research.oc_budget_usd,
             )
-            if not oc.is_available():
-                yield ProgressEvent(
-                    phase="start",
-                    message="OpenCode server is not running. Start it with: opencode serve --port 4096",
-                )
-                return ResearchResult(
-                    ok=False,
-                    backend="docent",
-                    workflow="review",
-                    topic_or_artifact=inputs.artifact,
-                    output_file=None,
-                    returncode=None,
-                    message="OpenCode server is not running. Start it with: opencode serve --port 4096",
-                )
 
             output_dir = context.settings.research.output_dir.expanduser()
             output_dir.mkdir(parents=True, exist_ok=True)
             slug = _slugify(_artifact_slug(inputs.artifact)) + "-review"
-            progress_events: list[tuple[str, str]] = []
-
-            def _capture(phase: str, message: str) -> None:
-                progress_events.append((phase, message))
-
-            yield ProgressEvent(
-                phase="start",
-                message=f"Starting Docent peer review: {inputs.artifact!r}",
-            )
 
             try:
-                result_data = run_review(
+                result_data = yield from run_review(
                     inputs.artifact, oc,
-                    on_progress=_capture,
                     model_researcher=context.settings.research.oc_model_researcher,
                     model_reviewer=context.settings.research.oc_model_reviewer,
                 )
@@ -776,9 +762,6 @@ class ResearchTool(Tool):
                     returncode=None,
                     message=f"Pipeline error: {e}",
                 )
-
-            for phase, message in progress_events:
-                yield ProgressEvent(phase=phase, message=message)
 
             if not result_data["ok"]:
                 return ResearchResult(
@@ -987,6 +970,9 @@ class ResearchTool(Tool):
             oc_model_reviewer=rs.oc_model_reviewer,
             oc_model_researcher=rs.oc_model_researcher,
             oc_budget_usd=rs.oc_budget_usd,
+            tavily_api_key=rs.tavily_api_key,
+            tavily_research_timeout=rs.tavily_research_timeout,
+            semantic_scholar_api_key=rs.semantic_scholar_api_key,
         )
 
     @action(

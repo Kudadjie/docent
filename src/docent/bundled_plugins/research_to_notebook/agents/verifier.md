@@ -14,7 +14,7 @@ You are a citation verifier. Your job is to anchor inline citations in a researc
 4. Append a **Sources** section at the end listing each cited source as:
    `[N] Title — URL or "Author et al., Year"`
 
-Return the complete revised draft with the Sources section appended.
+**CRITICAL: You must return the COMPLETE revised draft.** Do NOT return only correction notes, a diff, or a summary of changes. Output the entire document from start to finish, with your corrections applied inline.
 
 Rules:
 - Do NOT change the substance of the prose

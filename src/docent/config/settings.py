@@ -26,6 +26,8 @@ class ResearchSettings(BaseModel):
     oc_model_researcher: str = "glm-5.1"
     oc_budget_usd: float = 0.0
     tavily_api_key: str | None = None
+    tavily_research_timeout: float = 600.0  # seconds to wait for Tavily Research API results
+    semantic_scholar_api_key: str | None = None
 
 
 class ReadingSettings(BaseModel):
