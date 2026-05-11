@@ -6,13 +6,24 @@ type: project
 
 Docent is a Python CLI "control center" for grad-school workflows. Design lives in `Docent_Architecture.md` (committed to repo). Build order is strict — do not reorder.
 
-## Status as of 2026-05-11 (v1.2.0 shipped — research tool fixes + Tavily web search)
+## Status as of 2026-05-11 (v1.2.0 + Tavily Research API integration)
 
 - [x] v1.2.0: Bug 1 — duplicate registration (relative import + registry guard)
 - [x] v1.2.0: Bug 2 — DDG → Tavily (search.py, pipeline.py, settings, onboarding UX, docs)
 - [x] v1.2.0: Tavily API key interactive onboarding (prompt on first use, saves to config)
-- [x] WSL-native venv: `.venv-wsl` (Windows `.venv` deleted — cross-filesystem incompatible)
-- [x] 263/263 tests green
+- [x] Preflight mechanism for `@action` — interactive prompts run before Rich Progress
+- [x] WSL2 auto-detect in OcClient (reads /etc/resolv.conf for Windows host IP)
+- [x] Tavily Research API as primary path (replaces stages 1-5, fallback to manual pipeline)
+- [x] web_search() error propagation fix (re-raise auth errors, log others, search_depth="advanced")
+- [x] Zero-source abort guard in manual pipeline (clear error instead of garbage output)
+- [x] Windows .venv recreated (was broken — no pyvenv.cfg; tavily-python reinstalled)
+- [x] 280/280 tests green
+- [x] Tavily Research timeout: 300→600s polling, 60→90s HTTP, configurable via setting
+- [x] Semantic Scholar API key support + 429 retry (5s/10s backoff)
+- [x] Verifier quality guard (<30% of original → fallback to original)
+- [x] Refiner stage: review feedback fed back into draft via refiner.md prompt
+- [x] End-to-end deep research verified — produces full refined draft + review
+- [ ] Next: plan D — `docent doctor` + extended onboarding + `docent setup`
 - [ ] Next: Tag v1.2.0 release
 
 ## Status as of 2026-05-06 (Step 12 shipped — plugin discovery + reading as bundled plugin; Step 13 next — Full MCP adapter)

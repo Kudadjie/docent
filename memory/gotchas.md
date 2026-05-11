@@ -100,3 +100,74 @@ Two related landmines around `prompt_for_path` + persist-to-config flows, both c
 The original symptom: pasted `"C:\Users\…\Papers"` with surrounding quotes → `is_dir()` False → "Folder not found" → but `config-show` happily printed the quoted path as if accepted. One trigger, two latent flaws.
 
 Apply this pattern whenever user input flows into a value that gets written to disk: **normalize first (strip quotes / whitespace), validate second (does it satisfy the invariant?), persist only if both pass.**
+
+## `typer.Exit(1)` is `click.exceptions.Exit` (RuntimeError), NOT `SystemExit`
+
+When a preflight function aborts with `typer.Exit(1)`, tests must catch `typer.Exit` (which is `click.exceptions.Exit → RuntimeError → Exception`), NOT `SystemExit`. `SystemExit` is a `BaseException`, not caught by `except Exception`.
+
+```python
+# WRONG:
+with pytest.raises(SystemExit):    # typer.Exit is NOT a SystemExit!
+    _preflight_docent(inputs, ctx)
+
+# CORRECT:
+import typer
+with pytest.raises(typer.Exit):    # click.exceptions.Exit
+    _preflight_docent(inputs, ctx)
+```
+
+## `web_search()` must never silently return `[]` on auth/rate-limit errors
+
+`except Exception: return []` silently swallowed `InvalidAPIKeyError` and `UsageLimitExceededError`, producing 0 sources and garbage LLM output with no warning. **Always re-raise auth and rate-limit exceptions; log everything else.**
+
+```python
+# WRONG:
+except Exception:
+    return []   # silently hides every failure
+
+# CORRECT:
+from tavily.errors import InvalidAPIKeyError, UsageLimitExceededError
+# (imported at module level with try/except ImportError fallback)
+
+try:
+    ...
+except (InvalidAPIKeyError, UsageLimitExceededError):
+    raise  # propagate auth/rate-limit failures
+except Exception as exc:
+    logger.warning("Tavily search for %r failed: %s", query, exc)
+    return []
+```
+
+## Windows .venv vs WSL .venv-wsl — deps must be in BOTH
+
+Docent runs from Windows Python (`.venv`), but tests run from WSL (`.venv-wsl`). Adding a dep to `pyproject.toml` requires syncing BOTH venvs:
+
+```bash
+# WSL (testing):
+cd /mnt/c/Users/DELL/Desktop/Docent
+.venv-wsl/bin/pip install -e ".[dev]"
+
+# Windows (running docent):
+cd C:\Users\DELL\Desktop\Docent
+uv sync
+```
+
+**Symptom of wrong venv:** `ModuleNotFoundError: No module named 'X'` from `docent` CLI even though `uv run pytest` passes.
+
+**If Windows `.venv` breaks** (no `pyvenv.cfg`, `uv sync` fails with access denied):
+```powershell
+Stop-Process -Name docent -Force -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force .venv
+uv venv --python 3.11
+uv sync
+```
+
+## Refiner and verifier quality guards — LLMs can return diffs instead of full drafts
+
+When an LLM is asked to "revise" or "verify" a draft, it sometimes returns inline correction notes or a diff instead of the complete revised document. The pipeline has two guards:
+
+1. **Verifier guard** (`pipeline.py`): If `len(verified_draft) < 0.3 * len(draft)`, falls back to the original draft. Threshold 30% chosen because diff-style outputs are typically very short.
+
+2. **Refiner guard** (`pipeline.py`): If `len(refined_draft) < 0.5 * len(original)`, keeps the verified/original draft. Higher threshold (50%) because the refiner should produce something close in length to the input.
+
+If either guard triggers, a warning is logged. Do NOT remove these guards — they prevent garbage output silently replacing a good draft.
