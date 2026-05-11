@@ -25,6 +25,7 @@ class ResearchSettings(BaseModel):
     oc_model_reviewer: str = "deepseek-v4-pro"
     oc_model_researcher: str = "glm-5.1"
     oc_budget_usd: float = 0.0
+    tavily_api_key: str | None = None
 
 
 class ReadingSettings(BaseModel):

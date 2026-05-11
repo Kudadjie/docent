@@ -234,9 +234,26 @@ git push --tags
 
 GitHub Actions builds the wheel, publishes to PyPI, and creates a GitHub release automatically.
 
-## 🚀 Coming Soon
+## 🔬 Research Tool
 
-- **`docent research`** — AI-powered research tool: paper search (alphaXiv, Google Scholar), literature review, and multi-source synthesis pipelines. Routes through [Feynman](https://www.feynman.is/) as the primary research agent, with a direct Claude fallback if Feynman isn't available.
+The `docent research` tool runs AI-powered deep research, literature reviews, and peer reviews:
+
+| Action | Description |
+|--------|-------------|
+| `docent research deep "topic"` | Full 6-stage research pipeline |
+| `docent research lit "topic"` | Literature-focused review (80% paper bias) |
+| `docent research review "paper"` | Peer review of an artifact |
+| `docent research usage` | Today's Feynman/OpenCode spend + Tavily requests |
+| `docent research config-show` | Show research settings |
+| `docent research config-set --key <k> --value <v>` | Set config (e.g. `tavily_api_key`) |
+
+**Backends:** [Feynman CLI](https://www.feynman.is/) (primary) or Docent-native pipeline via OpenCode Go models (fallback).  
+**Web search:** [Tavily](https://tavily.com/) (free tier: 1,000 calls/month). Set your key:
+```bash
+docent research config-set --key tavily_api_key --value "tvly-..."
+```
+
+## 🚀 Coming Soon
 
 - **Omnibox (natural language interface)** — type what you want in plain English and Docent routes it to the right action: *"what should I read next for CES701?"* or *"sync my Mendeley queue"* — no flags, no subcommands.
 

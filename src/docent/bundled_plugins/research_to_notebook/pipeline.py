@@ -59,6 +59,7 @@ def _run_pipeline(
     model_writer: str = "minimax-m2.7",
     model_verifier: str = "glm-5.1",
     model_reviewer: str = "deepseek-v4-pro",
+    tavily_api_key: str | None = None,
 ) -> dict:
     """Shared search-fetch-write-verify-review pipeline."""
     sources: list[dict] = []
@@ -94,7 +95,7 @@ def _run_pipeline(
             f"Fetching {len(web_qs)} web + {len(paper_qs)} paper queries...",
         )
         for q in web_qs:
-            results = web_search(q, max_results=6)
+            results = web_search(q, max_results=6, api_key=tavily_api_key)
             for r in results:
                 r["query"] = q
                 r["source_type"] = "web"
@@ -232,6 +233,7 @@ def run_deep(
     model_writer: str = "minimax-m2.7",
     model_verifier: str = "glm-5.1",
     model_reviewer: str = "deepseek-v4-pro",
+    tavily_api_key: str | None = None,
 ) -> dict:
     """Run the full deep research pipeline. Returns result dict."""
     return _run_pipeline(
@@ -239,6 +241,7 @@ def run_deep(
         on_progress=on_progress,
         model_planner=model_planner, model_writer=model_writer,
         model_verifier=model_verifier, model_reviewer=model_reviewer,
+        tavily_api_key=tavily_api_key,
     )
 
 
@@ -251,6 +254,7 @@ def run_lit(
     model_writer: str = "minimax-m2.7",
     model_verifier: str = "glm-5.1",
     model_reviewer: str = "deepseek-v4-pro",
+    tavily_api_key: str | None = None,
 ) -> dict:
     """Run the literature review pipeline. Returns result dict."""
     return _run_pipeline(
@@ -258,6 +262,7 @@ def run_lit(
         on_progress=on_progress,
         model_planner=model_planner, model_writer=model_writer,
         model_verifier=model_verifier, model_reviewer=model_reviewer,
+        tavily_api_key=tavily_api_key,
     )
 
 

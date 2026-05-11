@@ -50,6 +50,40 @@ def _write_daily_spend(spend: float) -> None:
     )
 
 
+def _resolve_tavily_key(context: Context) -> str | None:
+    """Ensure a Tavily API key is available. Prompt interactively if missing.
+
+    Must be called BEFORE entering a generator action (Rich Live overwrites
+    interactive prompts inside generators — see memory/gotchas.md).
+    """
+    rs = context.settings.research
+    if rs.tavily_api_key:
+        return rs.tavily_api_key
+
+    # Don't prompt in non-TTY contexts (tests, MCP, cron)
+    import sys
+    if not sys.stdin.isatty():
+        return None
+
+    try:
+        import typer
+        key = typer.prompt(
+            "\nTavily API key (free at https://tavily.com — 1,000 calls/month)",
+            default="",
+            show_default=False,
+        ).strip()
+    except (EOFError, KeyboardInterrupt):
+        return None
+
+    if not key:
+        return None
+
+    write_setting("research.tavily_api_key", key)
+    # Mutate the in-memory settings so we don't prompt again this session
+    rs.tavily_api_key = key
+    return key
+
+
 class FeynmanBudgetExceededError(RuntimeError):
     """Raised when Feynman session spend reaches 90% of the configured budget."""
 
@@ -337,6 +371,7 @@ _KNOWN_RESEARCH_KEYS = {
     "oc_model_reviewer",
     "oc_model_researcher",
     "oc_budget_usd",
+    "tavily_api_key",
 }
 
 
@@ -376,6 +411,19 @@ class ResearchTool(Tool):
                     message="OpenCode server is not running. Start it with: opencode serve --port 4096",
                 )
 
+            # Resolve Tavily API key before entering generator phase
+            tavily_key = _resolve_tavily_key(context)
+            if not tavily_key:
+                return ResearchResult(
+                    ok=False,
+                    backend="docent",
+                    workflow="deep",
+                    topic_or_artifact=inputs.topic,
+                    output_file=None,
+                    returncode=None,
+                    message="Tavily API key is required for web search. Get one at https://tavily.com (free tier: 1,000 calls/month).",
+                )
+
             output_dir = context.settings.research.output_dir.expanduser()
             output_dir.mkdir(parents=True, exist_ok=True)
             slug = _slugify(inputs.topic) + "-deep"
@@ -398,6 +446,7 @@ class ResearchTool(Tool):
                     model_writer=context.settings.research.oc_model_writer,
                     model_verifier=context.settings.research.oc_model_verifier,
                     model_reviewer=context.settings.research.oc_model_reviewer,
+                    tavily_api_key=tavily_key,
                 )
             except Exception as e:
                 return ResearchResult(
@@ -531,6 +580,19 @@ class ResearchTool(Tool):
                     message="OpenCode server is not running. Start it with: opencode serve --port 4096",
                 )
 
+            # Resolve Tavily API key before entering generator phase
+            tavily_key = _resolve_tavily_key(context)
+            if not tavily_key:
+                return ResearchResult(
+                    ok=False,
+                    backend="docent",
+                    workflow="lit",
+                    topic_or_artifact=inputs.topic,
+                    output_file=None,
+                    returncode=None,
+                    message="Tavily API key is required for web search. Get one at https://tavily.com (free tier: 1,000 calls/month).",
+                )
+
             output_dir = context.settings.research.output_dir.expanduser()
             output_dir.mkdir(parents=True, exist_ok=True)
             slug = _slugify(inputs.topic) + "-lit"
@@ -552,6 +614,7 @@ class ResearchTool(Tool):
                     model_writer=context.settings.research.oc_model_writer,
                     model_verifier=context.settings.research.oc_model_verifier,
                     model_reviewer=context.settings.research.oc_model_reviewer,
+                    tavily_api_key=tavily_key,
                 )
             except Exception as e:
                 return ResearchResult(
@@ -956,11 +1019,11 @@ class ResearchTool(Tool):
     )
     def usage(self, inputs: UsageInputs, context: Context) -> UsageResult:
         import datetime
-        from docent.bundled_plugins.research_to_notebook.oc_client import (
-            _read_oc_daily_spend,
-        )
+        from .oc_client import _read_oc_daily_spend
+        from .search import _read_tavily_daily_requests
         feynman_spend = _read_daily_spend()
         oc_spend = _read_oc_daily_spend()
+        tavily_requests = _read_tavily_daily_requests()
         rs = context.settings.research
         today = datetime.date.today().isoformat()
         return UsageResult(
@@ -974,6 +1037,8 @@ class ResearchTool(Tool):
                 + (f" / ${rs.feynman_budget_usd:.2f}" if rs.feynman_budget_usd > 0 else "")
                 + f", OpenCode ${oc_spend:.4f}"
                 + (f" / ${rs.oc_budget_usd:.2f}" if rs.oc_budget_usd > 0 else "")
+                + f", Tavily {tavily_requests} reqs"
+                + " / 1000/mo free"
             ),
         )
 
