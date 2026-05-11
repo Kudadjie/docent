@@ -6,7 +6,7 @@ type: project
 
 # Multi-Model Workflow Design
 
-**Status:** Implemented. `scripts/oc_delegate.py` is the entry point.
+**Status:** Two scripts — `scripts/oc_delegate.py` (OpenCode, one-shot) and `scripts/hermes_delegate.py` (Hermes WSL, self-correcting loop).
 
 **Why:** Save Claude Code tokens on bounded implementation tasks. The token savings come primarily from OpenCode reading the codebase on its own subscription budget — not from avoiding orchestration overhead.
 
@@ -14,24 +14,22 @@ type: project
 
 ## How to use
 
+### OpenCode (`oc_delegate.py`)
 ```bash
-# 1. Start server once (from project dir, keep running)
-opencode serve --port 4096
-
-# 2. Write a brief file, then delegate
-python scripts/oc_delegate.py memory/tasks/my-brief.md
-
-# 3. Or pipe a brief inline
-cat <<'EOF' | python scripts/oc_delegate.py -
-# Add X action to paper tool
-...
-EOF
-
-# 4. Override model
+opencode serve --port 4096          # start once, keep running
+python scripts/oc_delegate.py memory/tasks/briefs/my-brief.md
+python scripts/oc_delegate.py --task reason brief.md
 python scripts/oc_delegate.py --model deepseek-v4-pro brief.md
 ```
 
-Response text → stdout. Diff summary + cost → stderr. Brief archived to `memory/tasks/done/`.
+### Hermes (`hermes_delegate.py`) — no server, WSL only
+```bash
+python scripts/hermes_delegate.py memory/tasks/briefs/my-brief.md
+python scripts/hermes_delegate.py --task loop brief.md       # test-fix loop
+python scripts/hermes_delegate.py --timeout 1800 brief.md    # slow test suite
+```
+
+Response text → stdout. Diff summary → stderr. Brief archived to `memory/tasks/done/`.
 
 ## Architecture
 

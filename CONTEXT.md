@@ -1,11 +1,11 @@
 # CONTEXT - resume hint for next session
 
-**Current Task:** Pre-v1.2.0 bugs unresolved; 2 blockers remain before research tool real-life tests 3–17 can run.
+**Current Task:** Hermes WSL delegation integrated; pre-v1.2.0 bugs still pending.
 
 **Key Decisions:**
-- Model stack confirmed: GLM-5.1 for OpenCode delegation, Sonnet for Claude orchestration, Opus reserved for heavy reasoning only.
-- Drop `duckduckgo_search`; switch to Tavily (1,000 req/month free).
-- Both Kimi-2.6 and GLM-5.1 reviews saved; top priorities: UI server direct-invocation, reading monolith split, research tool DRY-up.
+- Hermes added as second delegation script (`scripts/hermes_delegate.py`) — self-correcting loop, no server needed.
+- Loop tasks → deepseek-v4-pro (1M ctx + reasoning); implement → glm-5.1; simple → qwen3.5-plus.
+- `HERMES.md` at project root; memory preamble auto-injected for non-simple tasks via `--no-memory` to skip.
 
 **Next Steps:**
 1. Fix Bug 1: duplicate tool registration (`ValueError` on `docent research usage`).
