@@ -179,6 +179,12 @@ def _summarize_feynman_error(stderr: str, configured_model: str | None = None) -
     import json as _json
 
     _DOCS_LINK = "https://feynman.is/docs"
+    _DOCS_FOOTER = (
+        f"Docs: {_DOCS_LINK}\n"
+        f"\n"
+        f"Adjust Feynman settings via its CLI in a separate terminal.\n"
+        f"See {_DOCS_LINK} for more Feynman-native options."
+    )
 
     last_model = None
     last_error_raw = None
@@ -213,42 +219,38 @@ def _summarize_feynman_error(stderr: str, configured_model: str | None = None) -
         found_model = m_model.group(1) if m_model else None
         stderr_lower = stderr.lower()
 
-        model_line = ""
-        if configured_model:
-            model_line = f"\n  Docent configured: `{configured_model}`"
-        elif found_model:
-            model_line = f"\n  Model attempted: `{found_model}`"
+        model_note = _model_note(found_model, configured_model)
 
         # ── Categorize from regex hits ──────────────────────────────────
         if "quota" in stderr_lower or "RESOURCE_EXHAUSTED" in stderr or code == 429:
             return (
-                f"Feynman API quota exhausted.{model_line}\n"
+                f"Feynman API quota exhausted.{model_note}\n"
                 "To fix:\n"
                 "  1. Add API credits to your provider account, or\n"
                 "  2. Switch to a model with available credits:\n"
                 f"     docent research config-set --key feynman_model --value <provider/model>\n"
                 "  (e.g. anthropic/claude-sonnet-4-5, openai/gpt-4o)\n"
-                f"Docs: {_DOCS_LINK}"
+                f"{_DOCS_FOOTER}"
             )
         if "auth" in stderr_lower or "unauthorized" in stderr_lower or code in (401, 403):
             return (
-                f"Feynman API authentication failed.{model_line}\n"
+                f"Feynman API authentication failed.{model_note}\n"
                 "Run `feynman setup` to configure your API keys.\n"
-                f"Docs: {_DOCS_LINK}"
+                f"{_DOCS_FOOTER}"
             )
         if code in (500, 502, 503):
             return (
-                f"Feynman received a server error (code {code}).{model_line}\n"
+                f"Feynman received a server error (code {code}).{model_note}\n"
                 "This is usually temporary. Retry or switch models.\n"
-                f"Docs: {_DOCS_LINK}"
+                f"{_DOCS_FOOTER}"
             )
 
         # ── Nothing recognized — show cleaned-up last 500 chars ─────────
         tail = stderr.strip()[-500:] if stderr.strip() else "(no output)"
         return (
-            f"Feynman exited with an error.{model_line}\n"
+            f"Feynman exited with an error.{model_note}\n"
             f"{tail}\n"
-            f"Docs: {_DOCS_LINK}"
+            f"{_DOCS_FOOTER}"
         )
 
     # Parse structured JSON Lines error
@@ -272,7 +274,7 @@ def _summarize_feynman_error(stderr: str, configured_model: str | None = None) -
             f"Feynman API rate-limited.{model_note}\n"
             "Wait 30-60 seconds and retry, or switch to a different model:\n"
             f"  docent research config-set --key feynman_model --value <provider/model>\n"
-            f"Docs: {_DOCS_LINK}"
+            f"{_DOCS_FOOTER}"
         )
 
     if code == 429 or "RESOURCE_EXHAUSTED" in str(status):
@@ -283,14 +285,14 @@ def _summarize_feynman_error(stderr: str, configured_model: str | None = None) -
             "  2. Switch to a model with available credits:\n"
             f"     docent research config-set --key feynman_model --value <provider/model>\n"
             "  (e.g. anthropic/claude-sonnet-4-5, openai/gpt-4o)\n"
-            f"Docs: {_DOCS_LINK}"
+            f"{_DOCS_FOOTER}"
         )
 
     if code in (401, 403) or "auth" in msg.lower():
         return (
             f"Feynman API authentication failed.{model_note}\n"
             "Run `feynman setup` to configure your API keys.\n"
-            f"Docs: {_DOCS_LINK}"
+            f"{_DOCS_FOOTER}"
         )
 
     if code == 400 or "invalid" in msg.lower():
@@ -303,7 +305,7 @@ def _summarize_feynman_error(stderr: str, configured_model: str | None = None) -
             )
         return (
             f"Feynman invalid request (400).{model_note}{hint}\n"
-            f"Docs: {_DOCS_LINK}"
+            f"{_DOCS_FOOTER}"
         )
 
     if code in (500, 502, 503):
@@ -312,28 +314,28 @@ def _summarize_feynman_error(stderr: str, configured_model: str | None = None) -
             f"Feynman received a server error from {provider} (code {code}).{model_note}\n"
             "This is usually temporary. Wait a minute and retry, or switch models:\n"
             f"  docent research config-set --key feynman_model --value <provider/model>\n"
-            f"Docs: {_DOCS_LINK}"
+            f"{_DOCS_FOOTER}"
         )
 
     if "timeout" in msg.lower():
         return (
             f"Feynman API call timed out.{model_note}\n"
             "The model provider may be overloaded. Retry or switch models.\n"
-            f"Docs: {_DOCS_LINK}"
+            f"{_DOCS_FOOTER}"
         )
 
     if "not found" in msg.lower() and "model" in msg.lower():
         return (
             f"Feynman could not find the requested model.{model_note}\n"
             "Check available models with `feynman model list` or `feynman setup`.\n"
-            f"Docs: {_DOCS_LINK}"
+            f"{_DOCS_FOOTER}"
         )
 
     # ── Generic: we have a code + message, surface both ───────────────────
     return (
         f"Feynman error (code {code}).{model_note}\n"
         f"Details: {msg[:400]}\n"
-        f"Docs: {_DOCS_LINK}"
+        f"{_DOCS_FOOTER}"
     )
 
 

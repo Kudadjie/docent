@@ -207,6 +207,7 @@ class TestSummarizeFeynmanError:
         from docent.bundled_plugins.research_to_notebook import _summarize_feynman_error
         msg = _summarize_feynman_error("")
         assert "feynman" in msg.lower()
+        assert "Model attempted" in msg  # model attribution now shown via _model_note
 
     def test_invalid_model(self):
         from docent.bundled_plugins.research_to_notebook import _summarize_feynman_error
@@ -259,3 +260,22 @@ class TestSummarizeFeynmanError:
         msg = _summarize_feynman_error(stderr)
         assert "Feynman exited with an error" in msg
         assert "something went wrong" in msg
+        assert "Model attempted" in msg  # model attribution via _model_note (even if unknown)
+
+    def test_footer_includes_feynman_cli_hint(self):
+        """Every error message should include the Feynman CLI adjustment hint."""
+        from docent.bundled_plugins.research_to_notebook import _summarize_feynman_error
+        stderr = (
+            '{"model":"openai/gpt-4o","errorMessage":"{\\"error\\":{\\"code\\":429,\\"status\\":\\"RESOURCE_EXHAUSTED\\"}}"}\n'
+        )
+        msg = _summarize_feynman_error(stderr)
+        assert "Adjust Feynman settings via its CLI" in msg
+        assert "Feynman-native options" in msg
+
+    def test_regex_fallback_extracts_model(self):
+        """Regex fallback should show the model extracted from stderr text."""
+        from docent.bundled_plugins.research_to_notebook import _summarize_feynman_error
+        stderr = 'some log text... {"model":"openai/gpt-4o","code":429} ...traceback...'
+        msg = _summarize_feynman_error(stderr)
+        assert "openai/gpt-4o" in msg
+        assert "Model attempted" in msg
