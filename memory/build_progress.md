@@ -29,7 +29,7 @@ Docent is a Python CLI "control center" for grad-school workflows. Design lives 
 - [x] Tavily quota exhaustion: specific `UsageLimitExceededError` catch, clear message, skips manual fallback
 - [ ] Hardening sprint: UI server direct invocation (wire to `invoke_action()`)
 - [x] Hardening sprint: Reading monolith split (~1,215 lines → modules) — COMPLETE 2026-05-12
-- [ ] Hardening sprint: Research tool DRY-up (extract `_run_pipeline()` shared core)
+- [x] Hardening sprint: Research tool DRY-up — DONE 2026-05-12 (extracted _run_with_tavily_fallback; run_deep/run_lit 55→17 lines each)
 - [ ] Medium debt: MCP single-action tools (doesn't iterate single-action plugins)
 - [ ] Medium debt: `edit --status` bypasses `_set_status` lifecycle
 - [ ] Plan D: `docent doctor` + extended onboarding (tooling check, auth status, feynman storage warning)

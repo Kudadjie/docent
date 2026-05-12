@@ -1,6 +1,6 @@
 # CONTEXT - resume hint for next session
 
-**Current Task:** v1.2.0 omnibus release — hardening sprint + v1.3 planning + medium architectural debt ALL ship in v1.2.0. Feynman backend hardened. Reading monolith split complete. Real-life tests #1–#9 PASSED. 302 tests green. Tests #10-19 remaining (blocked on feynman reinstall + API credits).
+**Current Task:** v1.2.0 omnibus release — hardening sprint + v1.3 planning + medium architectural debt ALL ship in v1.2.0. Feynman backend hardened. Reading monolith split complete. Research tool DRY-up complete. Real-life tests #1–#9 PASSED. 302 tests green. Tests #10-19 remaining (blocked on feynman reinstall + API credits).
 
 **Key Changes (2026-05-12):**
 - Duplicate References: FIXED (`_strip_references_section()` + `_append_references()`)
@@ -14,7 +14,7 @@
 - v1.2.0 scope expanded: hardening sprint + v1.3 planning + medium debt all ship before v1.2.0 tag
 
 **Next Steps (ordered):**
-1. Hardening sprint (items 7, 9): UI server fix, research DRY-up
+1. Hardening sprint (item 7): UI server fix
 2. v1.3 planning: `docent doctor` / onboarding command (tooling check, auth status, feynman storage warning)
 3. Medium architectural debt (items 10-11): MCP single-action tools, edit --status bypass
 4. Run remaining real-life tests #10-19 (blocked on API credits)

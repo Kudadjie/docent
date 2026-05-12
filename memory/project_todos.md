@@ -18,7 +18,7 @@ Last updated: 2026-05-12 (Hermes session — Feynman error messages improved, re
 6. ~~**Feynman FileNotFoundError**~~ — FIXED (`FeynmanNotFoundError` + `_find_feynman()`)
 7. **Hardening: UI server direct invocation** — wire `ui_server.py` to `invoke_action()` instead of spawning subprocesses
 8. ~~**Hardening: Reading monolith split**~~ — DONE 2026-05-12 (split into models.py + mendeley_sync.py; 1271→618 lines)
-9. **Hardening: Research tool DRY-up** — extract shared `_run_pipeline()` core from deep/lit/review (~400 lines duplication)
+9. ~~**Hardening: Research tool DRY-up**~~ — DONE 2026-05-12 (extracted `_run_with_tavily_fallback()`; run_deep/run_lit 55→17 lines)
 10. **Medium debt: MCP single-action tools** — `mcp_server.py` doesn't iterate single-action plugins
 11. **Medium debt: `edit --status` bypass** — route through `_set_status` lifecycle
 12. **v1.3 planning: `docent doctor` / onboarding** — tooling check (feynman, MCP), auth status, feynman storage warning (~2GB), guided setup

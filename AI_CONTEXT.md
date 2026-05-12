@@ -394,6 +394,7 @@ Current published version: **v1.1.0** (2026-05-08). Next: **v1.2.0** — 300 tes
 - Added `feynman_model`, `feynman_timeout` to settings + config-show/config-set
 - Feynman error messages: unified model attribution across JSON Lines + regex fallback paths; added `_DOCS_FOOTER` with CLI adjustment hint
 - Reading monolith split: `__init__.py` 1271→618 lines; new `models.py` (371) + `mendeley_sync.py` (351)
+- Research tool DRY-up: extracted `_run_with_tavily_fallback` from run_deep/run_lit (55→17 lines each)
 
 ---
 
