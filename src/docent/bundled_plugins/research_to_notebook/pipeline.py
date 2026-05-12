@@ -438,9 +438,12 @@ def _run_pipeline(
 # Public API
 # ---------------------------------------------------------------------------
 
-def run_deep(
+def _run_with_tavily_fallback(
     topic: str,
     oc: OcClient,
+    planner_name: str,
+    writer_name: str,
+    research_prefix: str,
     *,
     model_planner: str = "glm-5.1",
     model_writer: str = "minimax-m2.7",
@@ -450,15 +453,22 @@ def run_deep(
     semantic_scholar_api_key: str | None = None,
     tavily_research_timeout: float = 600.0,
 ) -> Generator[ProgressEvent, None, dict]:
-    """Run the full deep research pipeline. Yields ProgressEvent, returns result dict."""
-    # Primary path: Tavily Research API (replaces stages 1-5)
+    """Tavily Research API primary path with manual pipeline fallback.
+
+    Shared by run_deep and run_lit — both follow the identical pattern:
+    1. Try Tavily Research API (replaces stages 1-5)
+    2. If ok, return
+    3. If quota exhausted, return error (manual fallback won't help)
+    4. If Tavily failed, fall back to _run_pipeline
+    5. If no Tavily key, go directly to _run_pipeline
+    """
     if tavily_api_key:
         result = yield from _run_tavily_pipeline(
             topic, oc,
             tavily_api_key=tavily_api_key,
             tavily_model="pro",
             model_reviewer=model_reviewer,
-            research_prefix="Deep research: ",
+            research_prefix=research_prefix,
             tavily_research_timeout=tavily_research_timeout,
         )
         if result.get("ok"):
@@ -474,10 +484,10 @@ def run_deep(
             )
             yield ProgressEvent(
                 phase="warning",
-                message=f"Tavily research failed, falling back to manual search...",
+                message="Tavily research failed, falling back to manual search...",
             )
             result = yield from _run_pipeline(
-                topic, oc, "search_planner", "writer",
+                topic, oc, planner_name, writer_name,
                 model_planner=model_planner, model_writer=model_writer,
                 model_verifier=model_verifier, model_reviewer=model_reviewer,
                 tavily_api_key=tavily_api_key,
@@ -487,13 +497,38 @@ def run_deep(
 
     # Fallback: manual pipeline (no Tavily key)
     result = yield from _run_pipeline(
-        topic, oc, "search_planner", "writer",
+        topic, oc, planner_name, writer_name,
         model_planner=model_planner, model_writer=model_writer,
         model_verifier=model_verifier, model_reviewer=model_reviewer,
         tavily_api_key=tavily_api_key,
         semantic_scholar_api_key=semantic_scholar_api_key,
     )
     return result
+
+
+def run_deep(
+    topic: str,
+    oc: OcClient,
+    *,
+    model_planner: str = "glm-5.1",
+    model_writer: str = "minimax-m2.7",
+    model_verifier: str = "glm-5.1",
+    model_reviewer: str = "deepseek-v4-pro",
+    tavily_api_key: str | None = None,
+    semantic_scholar_api_key: str | None = None,
+    tavily_research_timeout: float = 600.0,
+) -> Generator[ProgressEvent, None, dict]:
+    """Run the full deep research pipeline. Yields ProgressEvent, returns result dict."""
+    return (yield from _run_with_tavily_fallback(
+        topic, oc,
+        planner_name="search_planner", writer_name="writer",
+        research_prefix="Deep research: ",
+        model_planner=model_planner, model_writer=model_writer,
+        model_verifier=model_verifier, model_reviewer=model_reviewer,
+        tavily_api_key=tavily_api_key,
+        semantic_scholar_api_key=semantic_scholar_api_key,
+        tavily_research_timeout=tavily_research_timeout,
+    ))
 
 
 def run_lit(
@@ -509,49 +544,16 @@ def run_lit(
     tavily_research_timeout: float = 600.0,
 ) -> Generator[ProgressEvent, None, dict]:
     """Run the literature review pipeline. Yields ProgressEvent, returns result dict."""
-    # Primary path: Tavily Research API
-    if tavily_api_key:
-        result = yield from _run_tavily_pipeline(
-            topic, oc,
-            tavily_api_key=tavily_api_key,
-            tavily_model="pro",
-            model_reviewer=model_reviewer,
-            research_prefix="Literature review: ",
-            tavily_research_timeout=tavily_research_timeout,
-        )
-        if result.get("ok"):
-            return result
-        # Quota exhaustion — fallback won't help either (also uses Tavily)
-        if "monthly free tier" in (result.get("error") or ""):
-            return result
-        # Other Tavily failures — try manual fallback
-        if result.get("error", "").startswith("Tavily research failed"):
-            logger.warning(
-                "Tavily research failed (%s), falling back to manual pipeline",
-                result.get("error"),
-            )
-            yield ProgressEvent(
-                phase="warning",
-                message=f"Tavily research failed, falling back to manual search...",
-            )
-            result = yield from _run_pipeline(
-                topic, oc, "lit_planner", "lit_writer",
-                model_planner=model_planner, model_writer=model_writer,
-                model_verifier=model_verifier, model_reviewer=model_reviewer,
-                tavily_api_key=tavily_api_key,
-                semantic_scholar_api_key=semantic_scholar_api_key,
-            )
-        return result
-
-    # Fallback: manual pipeline (no Tavily key)
-    result = yield from _run_pipeline(
-        topic, oc, "lit_planner", "lit_writer",
+    return (yield from _run_with_tavily_fallback(
+        topic, oc,
+        planner_name="lit_planner", writer_name="lit_writer",
+        research_prefix="Literature review: ",
         model_planner=model_planner, model_writer=model_writer,
         model_verifier=model_verifier, model_reviewer=model_reviewer,
         tavily_api_key=tavily_api_key,
         semantic_scholar_api_key=semantic_scholar_api_key,
-    )
-    return result
+        tavily_research_timeout=tavily_research_timeout,
+    ))
 
 
 def run_review(
