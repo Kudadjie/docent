@@ -21,7 +21,7 @@ Python engine:
 | **Web UI** | `docent ui` | `http://localhost:7432` |
 | **MCP server** | `docent serve` | stdio (MCP protocol) |
 
-Current published version: **v1.1.0** (2026-05-08). Next: **v1.2.0** — Tavily Research API + pipeline fixes + preflight + refiner + references in markdown + quota exhaustion handling. 280 tests green, e2e tests 1-8 passed. See [`memory/build_progress.md`](memory/build_progress.md) for changelog.
+Current published version: **v1.1.0** (2026-05-08). Next: **v1.2.0** — omnibus release including: Tavily Research API + pipeline fixes + preflight + refiner + references in markdown + quota exhaustion handling + duplicate refs fix + FeynmanNotFoundError + hardening sprint (UI server, reading split, research DRY-up) + v1.3 planning (docent doctor, onboarding) + medium architectural debt (MCP single-action tools, edit status bypass). 282 tests green. Real-life tests 1-9 PASSED. See [`memory/build_progress.md`](memory/build_progress.md) for changelog.
 
 ---
 
@@ -371,25 +371,27 @@ tools (those using `run()` instead of `@action`) are never exposed over MCP.
 
 ---
 
-## 8. v1.2.0 status — tests 1-8 passed, tests 9-19 remaining
+## 8. v1.2.0 omnibus — hardening + v1.3 planning + debt
 
-Both original blockers fixed. 280/280 tests green. Real-life tests #1–#8 PASSED (2026-05-12).
+**Policy decision (2026-05-12):** v1.2.0 is an omnibus release. Everything ships in v1.2.0.
+
+Current published version: **v1.1.0** (2026-05-08). Next: **v1.2.0** — 300 tests green. Real-life tests 1-9 PASSED. See [`memory/build_progress.md`](memory/build_progress.md).
+
+**Feynman backend hardening (2026-05-12):**
+- `--prompt` one-shot mode (was interactive TUI → hangs with capture_output)
+- `feynman_model` config key (passes `--model` to feynman)
+- `feynman_timeout` config key (default 900s; kills stuck runs cleanly)
+- stderr captured for error surfacing; `_summarize_feynman_error()` parses JSON Lines + regex fallback for actionable messages
+- Raw text fallback with categorized recommendations (quota, auth, server-error, etc.)
+- Model info shown in every error message (Docent-configured vs feynman-attempted)
+- Docs link (`https://feynman.is/docs`) in every error message
 
 **Code changes this session (2026-05-12):**
-- References section in markdown output — `_build_references_section()` appends `## References` with numbered entries (title, URL, type) to `.md` files for both `deep` and `lit`
-- Tavily quota exhaustion — `UsageLimitExceededError` caught specifically with clear message; quota errors skip manual-pipeline fallback (which would also fail)
-- Real-life test checklist updated: tests 1-8 passed, new tests 18 (quota exhaustion) and 19 (references section) added
-
-**Previous session (2026-05-11):**
-- Tavily Research API integration — `tavily_research()` is primary path, replacing stages 1-5
-- `web_search()` error propagation fix — re-raises auth/rate-limit errors, logs others
-- Zero-source abort guard — clear error message instead of garbage LLM output
-- Preflight mechanism for `@action` — interactive prompts run before Rich Progress
-- WSL2 auto-detect in `OcClient`
-- Verifier quality guard + Refiner stage
-- Bug 1 (duplicate registration) + Bug 2 (DDG→Tavily) fixed
-
-**Remaining before release:** Complete real-life tests #9–#19.
+- Duplicate References fix (`_strip_references_section` + `_append_references`)
+- FeynmanNotFoundError + `_find_feynman()` PATH resolution
+- Feynman subprocess hang fix (`--prompt` one-shot mode, removed `capture_output=True`)
+- Feynman error summarizer (`_summarize_feynman_error` + `_model_note`)
+- Added `feynman_model`, `feynman_timeout` to settings + config-show/config-set
 
 ---
 

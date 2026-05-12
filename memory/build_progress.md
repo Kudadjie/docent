@@ -6,7 +6,7 @@ type: project
 
 Docent is a Python CLI "control center" for grad-school workflows. Design lives in `Docent_Architecture.md` (committed to repo). Build order is strict — do not reorder.
 
-## Status as of 2026-05-12 (v1.2.0 pre-release — references + quota handling)
+## Status as of 2026-05-12 (v1.2.0 omnibus — hardening + v1.3 planning + debt ALL before tag)
 
 - [x] v1.2.0: Bug 1 — duplicate registration (relative import + registry guard)
 - [x] v1.2.0: Bug 2 — DDG → Tavily (search.py, pipeline.py, settings, onboarding UX, docs)
@@ -17,18 +17,25 @@ Docent is a Python CLI "control center" for grad-school workflows. Design lives 
 - [x] web_search() error propagation fix (re-raise auth errors, log others, search_depth="advanced")
 - [x] Zero-source abort guard in manual pipeline (clear error instead of garbage output)
 - [x] Windows .venv recreated (was broken — no pyvenv.cfg; tavily-python reinstalled)
-- [x] 280/280 tests green
 - [x] Tavily Research timeout: 300→600s polling, 60→90s HTTP, configurable via setting
 - [x] Semantic Scholar API key support + 429 retry (5s/10s backoff)
 - [x] Verifier quality guard (<30% of original → fallback to original)
 - [x] Refiner stage: review feedback fed back into draft via refiner.md prompt
 - [x] End-to-end deep research verified — produces full refined draft + review
-- [x] Real-life tests #1–#8 PASSED
+- [x] Real-life tests #1–#9 PASSED (test 9 found duplicate refs bug → now FIXED)
 - [x] References section appended to markdown output (`## References` with numbered URLs)
+- [x] Duplicate References fix: `_strip_references_section()` + `_append_references()`
+- [x] FeynmanNotFoundError: `_find_feynman()` PATH+AppData resolution, friendly error message
 - [x] Tavily quota exhaustion: specific `UsageLimitExceededError` catch, clear message, skips manual fallback
-- [ ] Real-life tests #9–#19 (lit review, references verification, quota test, Feynman, MCP, UI)
-- [ ] Next: plan D — `docent doctor` + extended onboarding + `docent setup`
-- [ ] Next: Tag v1.2.0 release
+- [ ] Hardening sprint: UI server direct invocation (wire to `invoke_action()`)
+- [ ] Hardening sprint: Reading monolith split (~1,215 lines → modules)
+- [ ] Hardening sprint: Research tool DRY-up (extract `_run_pipeline()` shared core)
+- [ ] Medium debt: MCP single-action tools (doesn't iterate single-action plugins)
+- [ ] Medium debt: `edit --status` bypasses `_set_status` lifecycle
+- [ ] Plan D: `docent doctor` + extended onboarding (tooling check, auth status, feynman storage warning)
+- [ ] Plan D: `docent setup` command
+- [ ] Real-life tests #10–#19 (can happen in parallel; #10 blocked on feynman reinstall + credits)
+- [ ] Next: Tag v1.2.0 release (AFTER all of the above)
 
 ## Status as of 2026-05-06 (Step 12 shipped — plugin discovery + reading as bundled plugin; Step 13 next — Full MCP adapter)
 

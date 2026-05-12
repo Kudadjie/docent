@@ -4,47 +4,30 @@ description: Comprehensive ordered todo list across all active tracks; update af
 type: project
 ---
 
-Last updated: 2026-05-12 (Hermes session — references-in-markdown + Tavily quota handling)
+Last updated: 2026-05-12 (Hermes session — Feynman fixes, test 9+10 bugs, storage warning)
 
 ---
 
-## IMMEDIATE — v1.2.0 release blockers
+## IMMEDIATE — v1.2.0 release blockers (omnibus: all ship BEFORE tag)
 
 1. ~~**Bug 1: Duplicate tool registration**~~ — FIXED 2026-05-11
 2. ~~**Bug 2: Replace `duckduckgo_search` with Tavily**~~ — FIXED 2026-05-11
-3. **Real-life research tests #9–#18 must pass before v1.2.0 tag**
-   - Tests #1–#8: PASSED (2026-05-12)
-   - Test #9 (lit review): not yet run
-   - Test #19 (references section in markdown): not yet run — code is done, needs manual verification
-   - Test #18 (Tavily quota exhaustion with invalid key): not yet run — code is done, needs manual verification
-   - Tests #10–#17: not yet run (Feynman, budget, MCP, UI — less critical)
+3. ~~**References section in markdown output**~~ — DONE
+4. ~~**Tavily quota exhaustion — graceful failure**~~ — DONE
+5. ~~**Duplicate References bug**~~ — FIXED (`_strip_references_section()` + `_append_references()`)
+6. ~~**Feynman FileNotFoundError**~~ — FIXED (`FeynmanNotFoundError` + `_find_feynman()`)
+7. **Hardening: UI server direct invocation** — wire `ui_server.py` to `invoke_action()` instead of spawning subprocesses
+8. **Hardening: Reading monolith split** — split `bundled_plugins/reading/__init__.py` (~1,215 lines) into modules
+9. **Hardening: Research tool DRY-up** — extract shared `_run_pipeline()` core from deep/lit/review (~400 lines duplication)
+10. **Medium debt: MCP single-action tools** — `mcp_server.py` doesn't iterate single-action plugins
+11. **Medium debt: `edit --status` bypass** — route through `_set_status` lifecycle
+12. **v1.3 planning: `docent doctor` / onboarding** — tooling check (feynman, MCP), auth status, feynman storage warning (~2GB), guided setup
+13. **v1.3 planning: `docent setup` command** — interactive first-run wizard
+14. **Real-life tests #10–#19** (can happen in parallel with above; #10 blocked on feynman reinstall + credits)
 
 ---
 
-## DONE this session (2026-05-12)
-
-4. ~~**References section in markdown output**~~ — DONE. `_build_references_section()` added to `__init__.py`; both `deep` and `lit` actions now append a `## References` section with numbered entries (title, URL, source type) to the `.md` output. Sources without URLs are skipped. JSON file kept alongside.
-5. ~~**Tavily quota exhaustion — graceful failure**~~ — DONE. `UsageLimitExceededError` caught specifically in `_run_tavily_pipeline` (pipeline.py) with a clear message: "Tavily monthly free tier (1,000 calls) has been exceeded. Wait for next billing cycle, upgrade, or use backend='feynman'." Quota errors skip the manual-pipeline fallback (which would also fail). Other Tavily errors still fall back as before.
-6. ~~**Tests #1–#8 real-life verification**~~ — PASSED 2026-05-12
-
----
-
-## POST-v1.2.0 — Hardening Sprint (do before Phase 2 UI)
-
-7. **UI server direct invocation** — `ui_server.py` spawns a CLI subprocess per mutation. Causes stale titles (no Mendeley overlay applied), ~100ms spawn overhead, brittle ANSI parsing. Fix: wire `ui_server.py` endpoints to call `invoke_action()` directly (already in `mcp_server.py`).
-8. **Reading monolith split** — `bundled_plugins/reading/__init__.py` ~1,215 lines. Split into: `models.py` / `sync.py` / `ordering.py` / `renderers.py` / `tool.py` (~400 lines) / `__init__.py` (re-exports only, ~20 lines).
-9. **Research tool DRY-up** — `deep()`, `lit()`, `review()` ~150 lines each with 3–4 real differences. Extract `_run_pipeline()` shared core; each action collapses to ~15 lines. (~400 lines duplication to remove)
-
----
-
-## POST-v1.2.0 — Medium Codex debt (before v1.3.0)
-
-10. **MCP single-action tools missing** — `mcp_server.py` only iterates `collect_actions()`; single-action plugins never appear. Add the single-action branch (mirrors `cli.py:324`).
-11. **`edit --status` bypasses `_set_status`** — `EditInputs.status` writes directly, skipping timestamp/lifecycle logic. Route through `_set_status` or remove `status` from `edit`. Use `Literal`/enum to prevent invalid values.
-
----
-
-## ARCHITECTURE debt (deliberate backlog)
+## AFTER v1.2.0
 
 12. **`docent.core.invoke` module** — CLI, MCP, FastAPI, Next dev routes all invoke tools differently. A single `invoke(tool, action, inputs, context)` with adapters for each surface eliminates the drift class of bugs. Biggest leverage move.
 13. **Next API routes → thin dev-only proxies** — FastAPI is the canonical backend. Correct architecture: (a) FastAPI implements every endpoint first, (b) Next dev routes forward to `http://127.0.0.1:7432/api/...` with no business logic. Decide post-v1.2.0 whether to drop Next routes entirely.

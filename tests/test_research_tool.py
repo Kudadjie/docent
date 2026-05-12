@@ -93,6 +93,57 @@ class TestSlugify:
         assert _artifact_slug("2401.12345") == "2401.12345"
 
 
+class TestStripReferencesSection:
+    """Tests for _strip_references_section and _append_references."""
+
+    def test_strip_removes_trailing_references(self):
+        from docent.bundled_plugins.research_to_notebook import (
+            _strip_references_section,
+        )
+        draft = "Introduction\n\n## References\n1. **Paper A** — https://example.com [web]"
+        result = _strip_references_section(draft)
+        assert "## References" not in result
+        assert "Introduction" in result
+        assert "Paper A" not in result
+
+    def test_strip_preserves_draft_without_references(self):
+        from docent.bundled_plugins.research_to_notebook import (
+            _strip_references_section,
+        )
+        draft = "Just a regular draft with no references section."
+        result = _strip_references_section(draft)
+        assert result == draft
+
+    def test_append_references_strips_existing(self):
+        from docent.bundled_plugins.research_to_notebook import (
+            _append_references,
+        )
+        sources = [
+            {"title": "Source A", "url": "https://a.com", "source_type": "web"},
+            {"title": "Source B", "url": "https://b.com", "source_type": "paper"},
+        ]
+        # Draft that already has a references section from Tavily
+        draft = "Content\n\n## References\n1. Tavily source - https://tavily.com [web]"
+        result = _append_references(draft, sources)
+        # Should have exactly one ## References section
+        assert result.count("## References") == 1
+        assert "Source A" in result
+        assert "Source B" in result
+        assert "Tavily source" not in result
+
+    def test_append_references_adds_to_draft_without(self):
+        from docent.bundled_plugins.research_to_notebook import (
+            _append_references,
+        )
+        sources = [
+            {"title": "Source A", "url": "https://a.com", "source_type": "web"},
+        ]
+        draft = "Just a draft with no references."
+        result = _append_references(draft, sources)
+        assert "## References" in result
+        assert "Source A" in result
+
+
 class TestDeepFeynman:
     def test_deep_feynman_happy_path(self, tmp_path):
         output_dir = tmp_path / "research"
@@ -102,7 +153,7 @@ class TestDeepFeynman:
         fake_output = str(output_dir / "storm-surge-ghana-deep.md")
         with patch(
             "docent.bundled_plugins.research_to_notebook._run_feynman",
-            return_value=(0, fake_output),
+            return_value=(0, fake_output, ""),
         ):
             result = _drain(tool.deep(DeepInputs(topic="storm surge Ghana"), ctx))
 
@@ -121,7 +172,7 @@ class TestDeepFeynman:
 
         with patch(
             "docent.bundled_plugins.research_to_notebook._run_feynman",
-            return_value=(0, None),
+            return_value=(0, None, ""),
         ):
             result = _drain(tool.deep(DeepInputs(topic="storm surge Ghana"), ctx))
 
@@ -136,13 +187,14 @@ class TestDeepFeynman:
 
         with patch(
             "docent.bundled_plugins.research_to_notebook._run_feynman",
-            return_value=(1, None),
+            return_value=(1, None, "quota exceeded"),
         ):
             result = _drain(tool.deep(DeepInputs(topic="storm surge Ghana"), ctx))
 
         assert result.ok is False
         assert result.returncode == 1
-        assert "exited with code 1" in result.message
+        assert "quota exhausted" in result.message.lower()
+        assert "docent research config-set" in result.message
 
     def test_deep_docent_backend_server_unavailable(self, tmp_path):
         output_dir = tmp_path / "research"
@@ -168,7 +220,7 @@ class TestLitFeynman:
         fake_output = str(output_dir / "climate-change-lit.md")
         with patch(
             "docent.bundled_plugins.research_to_notebook._run_feynman",
-            return_value=(0, fake_output),
+            return_value=(0, fake_output, ""),
         ):
             result = _drain(tool.lit(LitInputs(topic="climate change"), ctx))
 
@@ -188,7 +240,7 @@ class TestReviewFeynman:
         fake_output = str(output_dir / "2401-12345-review.md")
         with patch(
             "docent.bundled_plugins.research_to_notebook._run_feynman",
-            return_value=(0, fake_output),
+            return_value=(0, fake_output, ""),
         ):
             result = _drain(tool.review(ReviewInputs(artifact="2401.12345"), ctx))
 

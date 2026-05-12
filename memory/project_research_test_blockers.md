@@ -36,7 +36,18 @@ uv sync
 
 **Lesson:** Docent runs from Windows `.venv`, NOT WSL's `.venv-wsl`. Always sync deps in both environments after adding to `pyproject.toml`.
 
-STATUS: All bugs fixed. 280/280 tests green. End-to-end verification done — deep research run succeeded.
+STATUS: All bugs fixed. 282/282 tests green. Two new fixes added 2026-05-12:
+
+### F. Duplicate References section in markdown output
+The Tavily Research API returns `content` that already includes a `## References` section. Then `__init__.py` blindly appended `_build_references_section(sources)`, producing two `## References` sections. **Fix:** new `_strip_references_section()` regex strips any existing `## References` block from the draft before appending. Called via `_append_references(draft, sources)` which strips first then appends. Both `deep` and `lit` action sites updated.
+
+### G. Feynman FileNotFoundError — raw traceback when feynman not on PATH
+`_run_feynman()` called `subprocess.run(cmd)` with default `["feynman", ...]`. If feynman isn't on PATH (or not installed), `subprocess.run` raises `FileNotFoundError` — an uncaught traceback, not a friendly error. **Fix:**
+- New `FeynmanNotFoundError` exception with install instructions
+- New `_find_feynman(configured_command)` that resolves the executable: PATH lookup → Windows npm global fallback (`%APPDATA%\npm\feynman.cmd`) → raises `FeynmanNotFoundError`
+- `_run_feynman()` signature changed to accept `configured_command` and `subcommand_args` separately (resolves executable internally)
+- `subprocess.run` wrapped in try/except FileNotFoundError → `FeynmanNotFoundError`
+- All three action sites (deep, lit, review) catch `(FeynmanBudgetExceededError, FeynmanNotFoundError)`
 
 ## Pipeline quality fixes (2026-05-11, same session as bugs above)
 

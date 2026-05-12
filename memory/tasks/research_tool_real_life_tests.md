@@ -135,6 +135,8 @@ docent research lit "coastal erosion West Africa" --backend docent
 - **References in markdown:** `.md` file should end with `## References` section
 - Sources list should contain more Semantic Scholar / arXiv entries than web snippets
 
+**Result (2026-05-12): PASSED** — but duplicate References section found (Tavily output already had one + we appended another). Fixed: `_append_references()` now strips existing `## References` before appending.
+
 ---
 
 ## 10. Feynman backend — deep research
@@ -148,6 +150,8 @@ docent research deep "sea level rise adaptation" --backend feynman
 - After completion: `<output_dir>/sea-level-rise-adaptation-deep.md` created (copy of Feynman's output)
 - NO sources file created (Feynman backend doesn't expose sources)
 - `docent research to-notebook --output-file sea-level-rise-adaptation-deep.md` → fails with "No sources file found"
+
+**Result (2026-05-12): FAILED — FileNotFoundError.** Feynman not on PATH gave raw traceback. Fixed: new `_find_feynman()` resolves PATH + Windows npm fallback, `FeynmanNotFoundError` gives install instructions. Pending: user needs to reinstall feynman (npm only) and set up Anthropic API credits before re-testing.
 
 ---
 

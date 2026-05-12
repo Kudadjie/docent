@@ -99,19 +99,23 @@ Fix: `invoke_action()` already exists in `mcp_server.py`. Wire `ui_server.py` en
           Omnibox (NL → action mode only)                }  (base app exists)
 ```
 
-## v1.3 scope (from More Thoughts, 2026-05-11)
+## v1.2.0 scope (NOW — all ship before v1.2.0 tag)
 
-**Zotero integration** — See `project_zotero_integration.md`. Single `sync_source` toggle (Mendeley OR Zotero). Bundled install. Resolve pyzotero vs zotero-mcp before touching queue code.
+**Policy (2026-05-12):** v1.2.0 is an omnibus release. Hardening sprint + v1.3 planning + medium architectural debt ALL ship in v1.2.0. These were previously post-v1.2.0 items but are now required before the v1.2.0 tag.
 
-**`docent doctor` / onboarding command** — Check tooling (feynman, mendeley-mcp / zotero-mcp, PATH), auth status, and guide user through setup interactively. Docent should bundle MCP installs rather than leaving them to the user. Also: warn when feynman is installed via binary instead of npm (binary path causes silent update confusion — recommend npm install).
+### Hardening Sprint (was post-v1.2.0)
+- **UI server direct invocation** — wire `ui_server.py` to `invoke_action()` instead of spawning CLI subprocesses
+- **Reading monolith split** — split `bundled_plugins/reading/__init__.py` (~1,215 lines) into modules
+- **Research tool DRY-up** — extract shared `_run_pipeline()` core from deep/lit/review (~400 lines duplication)
+
+### Medium architectural debt (was post-v1.2.0 / before v1.3.0)
+- **MCP single-action tools** — `mcp_server.py` doesn't iterate single-action plugins
+- **`edit --status` bypass** — route through `_set_status` lifecycle
+
+### v1.3 planning (was v1.3 scope)
+**`docent doctor` / onboarding command** — Check tooling (feynman, mendeley-mcp / zotero-mcp, PATH), auth status, and guide user through setup interactively. Docent should bundle MCP installs rather than leaving them to the user. Also: warn when feynman is installed via binary instead of npm (binary path causes silent update confusion — recommend npm install). **Storage warning:** Feynman's config/cache dir (`~/.feynman`) can grow to ~2 GB — warn users during onboarding about disk space requirements before installing feynman.
 
 **Hermes stream view** — Add live stream output to `hermes_delegate.py` matching OpenCode's stream UX. Currently a silent subprocess.
-
-**Studio plugin** (restructures `research-to-notebook`):
-- Sub-commands: `deep`, `lit`, `review`, `writer`
-- Outputs: `local`, `to-notebook`, future `to-vault` (Obsidian — see `project_obsidian_integration.md`)
-- File attachment support: deep/lit accept `.md`/`.txt` context files; review accepts supplementary data; writer accepts style guidelines
-- Both Feynman and Docent backends
 
 ## v1.4 scope
 
