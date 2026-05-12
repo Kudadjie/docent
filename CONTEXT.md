@@ -15,8 +15,8 @@
 
 **Next Steps (ordered):**
 1. Hardening sprint (item 7): UI server fix
-2. v1.3 planning: `docent doctor` / onboarding command (tooling check, auth status, feynman storage warning)
-3. Medium architectural debt (items 10-11): MCP single-action tools, edit --status bypass
+2. Medium architectural debt (item 11): edit --status bypass
+3. v1.3 planning: `docent doctor` / onboarding command (tooling check, auth status, feynman storage warning)
 4. Run remaining real-life tests #10-19 (blocked on API credits)
 5. Tag v1.2.0 release
 

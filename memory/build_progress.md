@@ -30,7 +30,7 @@ Docent is a Python CLI "control center" for grad-school workflows. Design lives 
 - [ ] Hardening sprint: UI server direct invocation (wire to `invoke_action()`)
 - [x] Hardening sprint: Reading monolith split (~1,215 lines → modules) — COMPLETE 2026-05-12
 - [x] Hardening sprint: Research tool DRY-up — DONE 2026-05-12 (extracted _run_with_tavily_fallback; run_deep/run_lit 55→17 lines each)
-- [ ] Medium debt: MCP single-action tools (doesn't iterate single-action plugins)
+- [x] Medium debt: MCP single-action tools — DONE 2026-05-12 (`build_mcp_tools()` + `invoke_action()` now handle single-action tools; 4 new tests)
 - [ ] Medium debt: `edit --status` bypasses `_set_status` lifecycle
 - [ ] Plan D: `docent doctor` + extended onboarding (tooling check, auth status, feynman storage warning)
 - [ ] Plan D: `docent setup` command

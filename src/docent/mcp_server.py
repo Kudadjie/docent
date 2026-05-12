@@ -72,15 +72,32 @@ def parse_mcp_tool_name(mcp_name: str) -> tuple[str, str] | None:
 # ---------------------------------------------------------------------------
 
 def build_mcp_tools() -> list[types.Tool]:
-    """Return one MCP Tool descriptor per (tool, action) pair in the registry."""
+    """Return one MCP Tool descriptor per (tool, action) pair in the registry.
+
+    Both multi-action tools (@action methods) and single-action tools
+    (``input_schema`` + ``run()``) are exposed.  Single-action tools get
+    the fixed MCP name ``{tool}__run``.
+    """
     result = []
     for tool_name, tool_cls in sorted(all_tools().items()):
-        for action_cli_name, (_method, meta) in sorted(collect_actions(tool_cls).items()):
+        actions = collect_actions(tool_cls)
+        if actions:
+            for action_cli_name, (_method, meta) in sorted(actions.items()):
+                result.append(
+                    types.Tool(
+                        name=mcp_tool_name(tool_name, action_cli_name),
+                        description=f"[{tool_name}] {meta.description}",
+                        inputSchema=meta.input_schema.model_json_schema(),
+                    )
+                )
+        else:
+            # Single-action tool — expose via fixed "run" action name.
+            assert tool_cls.input_schema is not None
             result.append(
                 types.Tool(
-                    name=mcp_tool_name(tool_name, action_cli_name),
-                    description=f"[{tool_name}] {meta.description}",
-                    inputSchema=meta.input_schema.model_json_schema(),
+                    name=mcp_tool_name(tool_name, "run"),
+                    description=f"[{tool_name}] {tool_cls.description}",
+                    inputSchema=tool_cls.input_schema.model_json_schema(),
                 )
             )
     return result
@@ -111,6 +128,10 @@ def invoke_action(
 ) -> str:
     """Run one Docent action and return its result as a JSON string.
 
+    Works for both multi-action tools (``@action`` methods) and
+    single-action tools (``run()``).  For single-action tools the
+    ``action_cli_name`` must be ``"run"``.
+
     Generator actions (streaming) collect ProgressEvent messages as a
     prefix and the final return value as the last line.
     """
@@ -120,14 +141,29 @@ def invoke_action(
 
     tool_cls = tools[tool_name]
     actions = collect_actions(tool_cls)
-    if action_cli_name not in actions:
-        raise ValueError(f"Tool '{tool_name}' has no action '{action_cli_name}'")
-
-    method_name, meta = actions[action_cli_name]
-    inputs = meta.input_schema(**arguments)
     ctx = _make_context()
-    method = getattr(tool_cls(), method_name)
-    raw = method(inputs, ctx)
+
+    # --- Multi-action path ---
+    if actions:
+        if action_cli_name not in actions:
+            raise ValueError(f"Tool '{tool_name}' has no action '{action_cli_name}'")
+        method_name, meta = actions[action_cli_name]
+        inputs = meta.input_schema(**arguments)
+        method = getattr(tool_cls(), method_name)
+        raw = method(inputs, ctx)
+    else:
+        # --- Single-action path ---
+        if action_cli_name != "run":
+            raise ValueError(
+                f"Tool '{tool_name}' is single-action — use 'run', "
+                f"not '{action_cli_name}'"
+            )
+        if tool_cls.input_schema is not None:
+            inputs = tool_cls.input_schema(**arguments)
+        else:
+            inputs = BaseModel()  # shouldn't happen per registry validation
+            inputs = inputs(**arguments)
+        raw = tool_cls().run(inputs, ctx)
 
     if inspect.isgenerator(raw):
         lines: list[str] = []

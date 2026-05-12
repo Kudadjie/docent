@@ -4,10 +4,14 @@ from __future__ import annotations
 import json
 
 import pytest
+from pydantic import BaseModel
 
 # Importing from `reading` triggers @register_tool, populating the registry.
 from reading import ReadingQueue  # noqa: F401
 
+from docent.core.context import Context
+from docent.core.registry import register_tool
+from docent.core.tool import Tool
 from docent.mcp_server import (
     build_mcp_tools,
     invoke_action,
@@ -89,3 +93,55 @@ def test_invoke_action_bad_tool():
 def test_invoke_action_bad_action():
     with pytest.raises(ValueError, match="no action"):
         invoke_action("reading", "does-not-exist", {})
+
+
+# ---------------------------------------------------------------------------
+# Single-action tool support
+# ---------------------------------------------------------------------------
+
+class _SingleActionInputs(BaseModel):
+    name: str = "world"
+
+
+@register_tool
+class _SingleActionTool(Tool):
+    name = "singleton"
+    description = "A single-action test tool."
+    input_schema = _SingleActionInputs
+
+    def run(self, inputs: _SingleActionInputs, context: Context) -> dict:
+        return {"greeting": f"Hello, {inputs.name}!"}
+
+
+@pytest.fixture
+def _single_action_registered(isolated_registry):
+    """Register a temporary single-action tool.  Cleans up after the test."""
+    return _SingleActionTool
+
+
+def test_build_mcp_tools_includes_single_action_tool(_single_action_registered):
+    tools = build_mcp_tools()
+    names = {t.name for t in tools}
+    assert "singleton__run" in names
+
+    singleton = next(t for t in tools if t.name == "singleton__run")
+    assert singleton.description == "[singleton] A single-action test tool."
+    schema = singleton.inputSchema
+    assert isinstance(schema, dict)
+    assert "name" in schema.get("properties", {})
+
+
+def test_invoke_action_single_action_tool(_single_action_registered, tmp_docent_home):
+    text = invoke_action("singleton", "run", {"name": "Hermes"})
+    data = json.loads(text)
+    assert data == {"greeting": "Hello, Hermes!"}
+
+
+def test_invoke_action_single_action_bad_action(_single_action_registered, tmp_docent_home):
+    with pytest.raises(ValueError, match="single-action"):
+        invoke_action("singleton", "stats", {})
+
+
+def test_invoke_action_single_action_bad_tool():
+    with pytest.raises(ValueError, match="No tool named"):
+        invoke_action("nonexistent", "run", {})
