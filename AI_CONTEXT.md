@@ -21,7 +21,7 @@ Python engine:
 | **Web UI** | `docent ui` | `http://localhost:7432` |
 | **MCP server** | `docent serve` | stdio (MCP protocol) |
 
-Current published version: **v1.1.0** (2026-05-08). Next: **v1.2.0** — omnibus release including: Tavily Research API + pipeline fixes + preflight + refiner + references in markdown + quota exhaustion handling + duplicate refs fix + FeynmanNotFoundError + hardening sprint (UI server, reading split, research DRY-up) + v1.3 planning (docent doctor, onboarding) + medium architectural debt (MCP single-action tools, edit status bypass). 282 tests green. Real-life tests 1-9 PASSED. See [`memory/build_progress.md`](memory/build_progress.md) for changelog.
+Current published version: **v1.1.0** (2026-05-08). Next: **v1.2.0** — omnibus release including: Tavily Research API + pipeline fixes + preflight + refiner + references in markdown + quota exhaustion handling + duplicate refs fix + FeynmanNotFoundError + hardening sprint (UI server, reading split ✓, research DRY-up) + v1.3 planning (docent doctor, onboarding) + medium architectural debt (MCP single-action tools, edit status bypass). 302 tests green. Real-life tests 1-9 PASSED. See [`memory/build_progress.md`](memory/build_progress.md) for changelog.
 
 ---
 
@@ -392,6 +392,8 @@ Current published version: **v1.1.0** (2026-05-08). Next: **v1.2.0** — 300 tes
 - Feynman subprocess hang fix (`--prompt` one-shot mode, removed `capture_output=True`)
 - Feynman error summarizer (`_summarize_feynman_error` + `_model_note`)
 - Added `feynman_model`, `feynman_timeout` to settings + config-show/config-set
+- Feynman error messages: unified model attribution across JSON Lines + regex fallback paths; added `_DOCS_FOOTER` with CLI adjustment hint
+- Reading monolith split: `__init__.py` 1271→618 lines; new `models.py` (371) + `mendeley_sync.py` (351)
 
 ---
 

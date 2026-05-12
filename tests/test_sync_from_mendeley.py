@@ -65,8 +65,8 @@ def _patch_mendeley(
             return {"items": [], "error": None}
         return documents(folder_id) if callable(documents) else documents
 
-    monkeypatch.setattr("reading.mendeley_list_folders", fake_folders)
-    monkeypatch.setattr("reading.mendeley_list_documents", fake_documents)
+    monkeypatch.setattr("reading.mendeley_sync.mendeley_list_folders", fake_folders)
+    monkeypatch.setattr("reading.mendeley_sync.mendeley_list_documents", fake_documents)
     return calls
 
 
@@ -382,8 +382,9 @@ def test_dry_run_reports_would_remove(tmp_docent_home, monkeypatch):
 
 def test_normalize_authors_dict_form():
     """Mendeley sometimes returns authors as dicts (other endpoints).
-    `_normalize_mendeley_authors` joins first_name + last_name with '; '."""
-    out = ReadingQueue._normalize_mendeley_authors([
+    `normalize_mendeley_authors` joins first_name + last_name with '; '."""
+    from docent.bundled_plugins.reading.mendeley_sync import normalize_mendeley_authors
+    out = normalize_mendeley_authors([
         {"first_name": "John", "last_name": "Smith"},
         {"first_name": "Kate", "last_name": "Jones"},
     ])
@@ -391,13 +392,15 @@ def test_normalize_authors_dict_form():
 
 
 def test_normalize_authors_string_passthrough():
-    assert ReadingQueue._normalize_mendeley_authors("Smith, J") == "Smith, J"
+    from docent.bundled_plugins.reading.mendeley_sync import normalize_mendeley_authors
+    assert normalize_mendeley_authors("Smith, J") == "Smith, J"
 
 
 def test_normalize_authors_none_or_empty_yields_unknown():
-    assert ReadingQueue._normalize_mendeley_authors(None) == "Unknown"
-    assert ReadingQueue._normalize_mendeley_authors([]) == "Unknown"
-    assert ReadingQueue._normalize_mendeley_authors([{}, ""]) == "Unknown"
+    from docent.bundled_plugins.reading.mendeley_sync import normalize_mendeley_authors
+    assert normalize_mendeley_authors(None) == "Unknown"
+    assert normalize_mendeley_authors([]) == "Unknown"
+    assert normalize_mendeley_authors([{}, ""]) == "Unknown"
 
 
 # ----------------------------------------------------------------------

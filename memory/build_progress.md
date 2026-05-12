@@ -28,7 +28,7 @@ Docent is a Python CLI "control center" for grad-school workflows. Design lives 
 - [x] FeynmanNotFoundError: `_find_feynman()` PATH+AppData resolution, friendly error message
 - [x] Tavily quota exhaustion: specific `UsageLimitExceededError` catch, clear message, skips manual fallback
 - [ ] Hardening sprint: UI server direct invocation (wire to `invoke_action()`)
-- [ ] Hardening sprint: Reading monolith split (~1,215 lines → modules)
+- [x] Hardening sprint: Reading monolith split (~1,215 lines → modules) — COMPLETE 2026-05-12
 - [ ] Hardening sprint: Research tool DRY-up (extract `_run_pipeline()` shared core)
 - [ ] Medium debt: MCP single-action tools (doesn't iterate single-action plugins)
 - [ ] Medium debt: `edit --status` bypasses `_set_status` lifecycle

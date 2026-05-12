@@ -4,7 +4,7 @@ description: Comprehensive ordered todo list across all active tracks; update af
 type: project
 ---
 
-Last updated: 2026-05-12 (Hermes session — Feynman fixes, test 9+10 bugs, storage warning)
+Last updated: 2026-05-12 (Hermes session — Feynman error messages improved, reading monolith split)
 
 ---
 
@@ -17,7 +17,7 @@ Last updated: 2026-05-12 (Hermes session — Feynman fixes, test 9+10 bugs, stor
 5. ~~**Duplicate References bug**~~ — FIXED (`_strip_references_section()` + `_append_references()`)
 6. ~~**Feynman FileNotFoundError**~~ — FIXED (`FeynmanNotFoundError` + `_find_feynman()`)
 7. **Hardening: UI server direct invocation** — wire `ui_server.py` to `invoke_action()` instead of spawning subprocesses
-8. **Hardening: Reading monolith split** — split `bundled_plugins/reading/__init__.py` (~1,215 lines) into modules
+8. ~~**Hardening: Reading monolith split**~~ — DONE 2026-05-12 (split into models.py + mendeley_sync.py; 1271→618 lines)
 9. **Hardening: Research tool DRY-up** — extract shared `_run_pipeline()` core from deep/lit/review (~400 lines duplication)
 10. **Medium debt: MCP single-action tools** — `mcp_server.py` doesn't iterate single-action plugins
 11. **Medium debt: `edit --status` bypass** — route through `_set_status` lifecycle

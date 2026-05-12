@@ -2,399 +2,65 @@
 from __future__ import annotations
 
 import json
-import re
-from datetime import datetime, date
+from datetime import datetime
 from pathlib import Path
 from typing import Any
-
-from pydantic import BaseModel, Field, model_validator
-from rich.panel import Panel
-from rich.table import Table
-from rich.text import Text
 
 from docent.config import write_setting
 from docent.core import Context, ProgressEvent, Tool, action, register_tool
 from docent.core.shapes import (
     DataTableShape,
     ErrorShape,
-    LinkShape,
     MarkdownShape,
     MessageShape,
     MetricShape,
-    ProgressShape,
     Shape,
 )
 from docent.learning import RunLog
+from docent.utils.paths import cache_dir, data_dir
+from docent.utils.prompt import NoInteractiveError, prompt_for_path
+
+from .models import (
+    AddInputs,
+    AddResult,
+    ConfigSetInputs,
+    ConfigSetResult,
+    ConfigShowInputs,
+    ConfigShowResult,
+    EditInputs,
+    ExportInputs,
+    ExportResult,
+    IdOnlyInputs,
+    MoveToInputs,
+    MutationResult,
+    NextInputs,
+    QueueClearInputs,
+    QueueClearResult,
+    QueueEntry,
+    SearchInputs,
+    SearchResult,
+    SetDeadlineInputs,
+    StatsInputs,
+    StatsResult,
+    SyncFromMendeleyInputs,
+    SyncFromMendeleyResult,
+    SyncStatusInputs,
+    SyncStatusResult,
+)
+from .mendeley_sync import (
+    normalize_mendeley_authors,
+    sync_from_mendeley_run,
+)
 from .reading_store import BannerCounts, ReadingQueueStore
 from .mendeley_cache import MendeleyCache
 from .mendeley_client import (
     list_documents as mendeley_list_documents,
     list_folders as mendeley_list_folders,
 )
-from docent.utils.paths import cache_dir, data_dir
-from docent.utils.prompt import NoInteractiveError, prompt_for_path
 
 
 _DEFAULT_DATABASE_DIR = "~/Documents/Papers"
 _KNOWN_READING_KEYS = {"database_dir", "queue_collection"}
-# `mendeley_mcp_command` is a list field; config-set only handles strings today.
-# Power users can edit config.toml directly; defaulted to ["uvx", "mendeley-mcp"] in mendeley_client.
-
-class QueueEntry(BaseModel):
-    id: str
-    title: str = ""        # Mendeley-owned snapshot; overlay refreshes on read.
-    authors: str = ""      # Mendeley-owned snapshot; overlay refreshes on read.
-    year: int | None = None
-    doi: str | None = None
-    type: str = "paper"   # paper | book | book_chapter; mapped from Mendeley document type on sync.
-    added: str             # ISO date
-    status: str = "queued"
-    order: int = 0         # 1-based position in the reading queue; 0 = unordered.
-    category: str | None = None   # Mendeley sub-collection path, e.g. "CES701" or "CES701/Topic"; None = root.
-    deadline: str | None = None   # ISO date (YYYY-MM-DD), user-settable.
-    tags: list[str] = Field(default_factory=list)
-    notes: str = ""
-    mendeley_id: str | None = None
-    started: str | None = None    # ISO timestamp when status -> reading.
-    finished: str | None = None   # ISO timestamp when status -> done.
-
-    @model_validator(mode="after")
-    def _require_identifier(self) -> "QueueEntry":
-        if not self.doi and not self.mendeley_id:
-            raise ValueError(
-                "QueueEntry requires doi or mendeley_id — identifier-free entries are not allowed."
-            )
-        return self
-
-
-class AddInputs(BaseModel):
-    pass
-
-
-class AddResult(BaseModel):
-    added: bool
-    queue_size: int
-    banner: BannerCounts
-    message: str
-
-    def to_shapes(self) -> list[Shape]:
-        return [
-            MarkdownShape(content=self.message),
-            MessageShape(text=f"Queue: {self.queue_size} entries", level="info"),
-        ]
-
-    def __rich_console__(self, console, options):
-        from docent.ui.renderers import render_shapes
-        render_shapes(self.to_shapes(), console)
-        yield from ()
-
-
-class IdOnlyInputs(BaseModel):
-    id: str = Field(..., description="Entry id (e.g. 'smith-2024-foo').")
-
-
-class NextInputs(BaseModel):
-    category: str | None = Field(None, description="Restrict to a category prefix (e.g. 'CES701' matches 'CES701' and 'CES701/Topic').")
-
-
-class SearchInputs(BaseModel):
-    query: str = Field(..., description="Case-insensitive substring matched against title, authors, notes, category, id, and tags.")
-
-
-class StatsInputs(BaseModel):
-    pass
-
-
-class EditInputs(BaseModel):
-    id: str = Field(..., description="Entry id to edit.")
-    status: str | None = Field(None, description="New status (queued|reading|done).")
-    order: int | None = Field(None, description="New reading order position (1 = read first).")
-    type: str | None = Field(None, description="Entry type: paper | book | book_chapter.")
-    category: str | None = Field(None, description="Override category (e.g. 'CES701'). Normally auto-detected from the Mendeley sub-collection on sync.")
-    deadline: str | None = Field(None, description="New deadline (YYYY-MM-DD) or '' to clear.")
-    notes: str | None = Field(None, description="New notes.")
-    tags: list[str] | None = Field(None, description="Replace tag list.")
-
-
-class SetDeadlineInputs(BaseModel):
-    id: str = Field(..., description="Entry id to update.")
-    deadline: str = Field(..., description="ISO date deadline (YYYY-MM-DD). Pass '' to clear the deadline.")
-
-
-class ExportInputs(BaseModel):
-    format: str = Field("json", description="Output format: json | markdown.")
-    category: str | None = Field(None, description="Filter by exact category path (e.g. 'CES701' or 'CES701/Topic').")
-    status: str | None = Field(None, description="Filter by status (queued|reading|done).")
-
-
-class ConfigShowInputs(BaseModel):
-    pass
-
-
-class ConfigSetInputs(BaseModel):
-    key: str = Field(..., description="Setting key under the [reading] section, e.g. 'database_dir' or 'queue_collection'.")
-    value: str = Field(..., description="New value. Use '' to clear. Paths may use '~'.")
-
-
-class ConfigShowResult(BaseModel):
-    config_path: str
-    database_dir: str | None
-    queue_collection: str
-
-    def to_shapes(self) -> list[Shape]:
-        return [
-            MetricShape(label="Config", value=self.config_path),
-            MetricShape(label="database_dir", value=self.database_dir or "(not set)"),
-            MetricShape(label="queue_collection", value=self.queue_collection),
-        ]
-
-    def __rich_console__(self, console, options):
-        from docent.ui.renderers import render_shapes
-        render_shapes(self.to_shapes(), console)
-        yield from ()
-
-
-class ConfigSetResult(BaseModel):
-    ok: bool
-    key: str
-    value: str
-    config_path: str
-    message: str
-
-    def to_shapes(self) -> list[Shape]:
-        return [
-            MessageShape(text=self.message, level="success" if self.ok else "error"),
-        ]
-
-    def __rich_console__(self, console, options):
-        from docent.ui.renderers import render_shapes
-        render_shapes(self.to_shapes(), console)
-        yield from ()
-
-
-class MutationResult(BaseModel):
-    ok: bool
-    id: str
-    entry: QueueEntry | None
-    queue_size: int
-    banner: BannerCounts
-    message: str
-
-    def to_shapes(self) -> list[Shape]:
-        if not self.ok or self.entry is None:
-            return [ErrorShape(reason=self.message)]
-        e = self.entry
-        lines: list[str] = [e.title]
-        meta_parts = [p for p in [e.authors, str(e.year) if e.year else ""] if p and p != "Unknown"]
-        if meta_parts:
-            lines.append("  ·  ".join(meta_parts))
-        detail_parts = [f"Order: {e.order}", f"Status: {e.status}"]
-        if e.type and e.type != "paper":
-            detail_parts.append(f"Type: {e.type.replace('_', ' ')}")
-        if e.category:
-            detail_parts.append(f"Category: {e.category}")
-        if e.deadline:
-            detail_parts.append(f"Deadline: {e.deadline}")
-        lines.append("  ".join(detail_parts))
-        if e.doi:
-            lines.append(f"DOI: {e.doi}")
-        if e.notes:
-            lines.append(f"Notes: {e.notes}")
-        shapes: list[Shape] = [MarkdownShape(content="\n".join(lines))]
-        if self.message:
-            shapes.append(MessageShape(text=self.message, level="info"))
-        return shapes
-
-    def __rich_console__(self, console, options):
-        from docent.ui.renderers import render_shapes
-        render_shapes(self.to_shapes(), console)
-        yield from ()
-
-
-class SearchResult(BaseModel):
-    query: str
-    matches: list[QueueEntry]
-    total: int
-    queue_size: int
-
-    def to_shapes(self) -> list[Shape]:
-        label = "match" if self.total == 1 else "matches"
-        shapes: list[Shape] = [
-            MessageShape(text=f"{self.total} {label} for {self.query!r}", level="info"),
-        ]
-        if self.matches:
-            rows = []
-            for e in self.matches:
-                etype = (e.type or "paper").replace("_", " ") if (e.type or "paper") != "paper" else ""
-                rows.append([
-                    str(e.order), e.title,
-                    e.authors if e.authors != "Unknown" else "",
-                    str(e.year) if e.year else "",
-                    etype, e.category or "", e.status,
-                ])
-            shapes.append(DataTableShape(
-                columns=["#", "Title", "Authors", "Year", "Type", "Category", "Status"],
-                rows=rows,
-            ))
-        return shapes
-
-    def __rich_console__(self, console, options):
-        from docent.ui.renderers import render_shapes
-        render_shapes(self.to_shapes(), console)
-        yield from ()
-
-
-class StatsResult(BaseModel):
-    total: int
-    by_status: dict[str, int]
-    by_category: dict[str, int]
-    banner: BannerCounts
-
-    def to_shapes(self) -> list[Shape]:
-        shapes: list[Shape] = [
-            MetricShape(label="Total", value=self.total, unit="entries"),
-            DataTableShape(
-                columns=["Status", "Count"],
-                rows=[[k, str(v)] for k, v in sorted(self.by_status.items())],
-            ),
-        ]
-        if self.by_category:
-            shapes.append(DataTableShape(
-                columns=["Category", "Count"],
-                rows=[[k or "(none)", str(v)] for k, v in sorted(self.by_category.items())],
-            ))
-        return shapes
-
-    def __rich_console__(self, console, options):
-        from docent.ui.renderers import render_shapes
-        render_shapes(self.to_shapes(), console)
-        yield from ()
-
-
-class ExportResult(BaseModel):
-    format: str
-    count: int
-    content: str
-
-    def to_shapes(self) -> list[Shape]:
-        return [
-            MessageShape(text=f"Exported {self.count} entries ({self.format})", level="info"),
-            MarkdownShape(content=self.content),
-        ]
-
-    def __rich_console__(self, console, options):
-        from docent.ui.renderers import render_shapes
-        render_shapes(self.to_shapes(), console)
-        yield from ()
-
-
-class QueueClearInputs(BaseModel):
-    yes: bool = Field(False, description="Confirm: actually clear the queue. Without this, the action reports the size and exits.")
-
-
-class QueueClearResult(BaseModel):
-    cleared: bool
-    removed_count: int
-    queue_size: int
-    banner: BannerCounts
-    message: str
-
-    def to_shapes(self) -> list[Shape]:
-        return [
-            MessageShape(text=self.message, level="success" if self.cleared else "warning"),
-        ]
-
-    def __rich_console__(self, console, options):
-        from docent.ui.renderers import render_shapes
-        render_shapes(self.to_shapes(), console)
-        yield from ()
-
-
-class SyncStatusInputs(BaseModel):
-    pass
-
-
-class SyncFromMendeleyInputs(BaseModel):
-    dry_run: bool = Field(False, description="Resolve the collection and report what would change without writing the queue.")
-
-
-class SyncFromMendeleyResult(BaseModel):
-    """Per-doc buckets after running sync-from-mendeley.
-
-    `added`: {id, mendeley_id, title}; `unchanged`: entry ids; `removed`:
-    entry ids (status flipped to 'removed'); `failed`: {mendeley_id, error};
-    dry-run variants populate only when dry_run=True.
-    `message` carries early-exit reasons (collection missing, MCP transport error).
-    """
-    queue_collection: str
-    folder_id: str | None
-    added: list[dict[str, str]]
-    unchanged: list[str]
-    removed: list[str]
-    failed: list[dict[str, str]]
-    dry_run_added: list[dict[str, str]]
-    dry_run_removed: list[str]
-    summary: str
-    message: str = ""
-
-    def to_shapes(self) -> list[Shape]:
-        if self.message:
-            return [MessageShape(text=self.message, level="warning")]
-        is_dry = bool(self.dry_run_added or self.dry_run_removed)
-        actual_added = self.dry_run_added if is_dry else self.added
-        actual_removed = self.dry_run_removed if is_dry else self.removed
-        shapes: list[Shape] = [
-            MessageShape(text=f"Collection: {self.queue_collection}", level="info"),
-            MetricShape(label="Added", value=len(actual_added)),
-            MetricShape(label="Unchanged", value=len(self.unchanged)),
-            MetricShape(label="Removed", value=len(actual_removed)),
-            MetricShape(label="Failed", value=len(self.failed)),
-        ]
-        if actual_added:
-            shapes.append(DataTableShape(
-                columns=["id", "title"],
-                rows=[[item.get("id", ""), item.get("title", "")[:60]] for item in actual_added[:10]],
-            ))
-        if self.failed:
-            shapes.append(DataTableShape(
-                columns=["mendeley_id", "error"],
-                rows=[[item.get("mendeley_id", "")[:12], item.get("error", "")] for item in self.failed],
-            ))
-        return shapes
-
-    def __rich_console__(self, console, options):
-        from docent.ui.renderers import render_shapes
-        render_shapes(self.to_shapes(), console)
-        yield from ()
-
-
-class SyncStatusResult(BaseModel):
-    database_dir: str | None
-    queue_size: int
-    database_pdfs: list[str]
-    summary: str
-    message: str = ""
-
-    def to_shapes(self) -> list[Shape]:
-        shapes: list[Shape] = [
-            MetricShape(label="Database", value=self.database_dir or "(not configured)"),
-            MetricShape(label="Queue", value=self.queue_size, unit="entries"),
-            MetricShape(label="PDFs in database", value=len(self.database_pdfs)),
-        ]
-        if self.message:
-            shapes.append(MessageShape(text=self.message, level="warning"))
-        return shapes
-
-    def __rich_console__(self, console, options):
-        from docent.ui.renderers import render_shapes
-        render_shapes(self.to_shapes(), console)
-        yield from ()
-
-
-class MoveToInputs(BaseModel):
-    id: str = Field(..., description="Entry id to move.")
-    position: int = Field(..., ge=1, description="New position (1 = read first).")
-
 
 @register_tool
 class ReadingQueue(Tool):
@@ -776,323 +442,14 @@ class ReadingQueue(Tool):
     def sync_from_mendeley(self, inputs: SyncFromMendeleyInputs, context: Context):
         collection_name = context.settings.reading.queue_collection
         launch_command = context.settings.reading.mendeley_mcp_command
-        return self._sync_from_mendeley_run(collection_name, launch_command, inputs.dry_run)
-
-    @staticmethod
-    def _compute_category_path(folder_id: str, root_id: str, folder_map: dict[str, dict]) -> str | None:
-        """Return 'ParentName/ChildName' path from root to folder_id (root excluded).
-        Returns None when folder_id == root_id (doc is directly in the root collection)."""
-        parts: list[str] = []
-        cur = folder_id
-        while cur and cur != root_id:
-            f = folder_map.get(cur)
-            if not f:
-                break
-            parts.insert(0, f.get("name", ""))
-            cur = f.get("parent_id")
-        return "/".join(parts) if parts else None
-
-    def _sync_from_mendeley_run(
-        self, collection_name: str, launch_command: list[str] | None, dry_run: bool
-    ):
-        empty = SyncFromMendeleyResult(
-            queue_collection=collection_name, folder_id=None,
-            added=[], unchanged=[], removed=[], failed=[],
-            dry_run_added=[], dry_run_removed=[], summary="",
+        return sync_from_mendeley_run(
+            self._store,
+            collection_name,
+            launch_command,
+            inputs.dry_run,
+            self._mendeley_cache(),
+            self._log_event,
         )
-
-        yield ProgressEvent(phase="discover", message=f"Listing Mendeley folders to resolve {collection_name!r}.")
-        folders_resp = mendeley_list_folders(launch_command)
-        if folders_resp.get("error"):
-            err = folders_resp["error"]
-            return empty.model_copy(update={"message": (
-                f"Could not list Mendeley folders: {self._mendeley_failure_hint(err)}"
-            )})
-        folders = folders_resp.get("items") or []
-        matches = [f for f in folders if isinstance(f, dict) and f.get("name") == collection_name]
-        if not matches:
-            return empty.model_copy(update={"message": (
-                f"Mendeley collection {collection_name!r} not found. "
-                f"Create a collection named {collection_name!r} in the Mendeley desktop app, "
-                f"drag the papers you want to read into it, then re-run. "
-                f"(Or change the configured name with "
-                f"`docent reading config-set queue_collection <name>`.)"
-            )})
-        if len(matches) > 1:
-            return empty.model_copy(update={"message": (
-                f"Found {len(matches)} Mendeley collections named {collection_name!r}. "
-                f"Rename one in Mendeley, or change `reading.queue_collection` to a unique name."
-            )})
-        folder_id = matches[0].get("id")
-        if not isinstance(folder_id, str) or not folder_id:
-            return empty.model_copy(update={"message": (
-                f"Mendeley collection {collection_name!r} has no usable id; "
-                f"try toggling its name in Mendeley to refresh."
-            )})
-
-        # Build folder map + discover sub-collection hierarchy.
-        folder_map: dict[str, dict] = {f["id"]: f for f in folders if isinstance(f, dict) and f.get("id")}
-        children: dict[str, list[str]] = {}
-        for f in folders:
-            if isinstance(f, dict):
-                pid = f.get("parent_id")
-                if pid:
-                    children.setdefault(pid, []).append(f["id"])
-
-        # BFS from root to collect all descendant sub-folder ids.
-        sub_folder_ids: list[str] = []
-        bfs: list[str] = list(children.get(folder_id, []))
-        while bfs:
-            fid = bfs.pop(0)
-            sub_folder_ids.append(fid)
-            bfs.extend(children.get(fid, []))
-
-        # Fetch docs from root (fatal if fails), then each sub-folder (non-fatal).
-        yield ProgressEvent(phase="discover", message=f"Reading collection {collection_name!r} ({folder_id[:8]}…).")
-        docs_resp = mendeley_list_documents(folder_id=folder_id, launch_command=launch_command)
-        if docs_resp.get("error"):
-            err = docs_resp["error"]
-            return empty.model_copy(update={
-                "folder_id": folder_id,
-                "message": f"Could not list documents in {collection_name!r}: {self._mendeley_failure_hint(err)}",
-            })
-
-        # doc_with_category: {mendeley_id: (doc, category_path)} — deepest path wins.
-        doc_with_category: dict[str, tuple[dict, str | None]] = {}
-        _no_id_failed: list[dict[str, str]] = []
-
-        for doc in [d for d in (docs_resp.get("items") or []) if isinstance(d, dict)]:
-            mid = self._extract_mendeley_id(doc)
-            if mid:
-                doc_with_category[mid] = (doc, None)  # None = directly in root
-            else:
-                _no_id_failed.append({"mendeley_id": "", "error": "doc has no usable id"})
-
-        for sfid in sub_folder_ids:
-            sf_name = folder_map.get(sfid, {}).get("name", sfid)
-            cat_path = self._compute_category_path(sfid, folder_id, folder_map)
-            yield ProgressEvent(phase="discover", message=f"Reading sub-collection {sf_name!r}…")
-            sf_resp = mendeley_list_documents(folder_id=sfid, launch_command=launch_command)
-            if sf_resp.get("error"):
-                yield ProgressEvent(phase="discover", level="warn",
-                                    message=f"Could not read '{sf_name}': {sf_resp['error']}")
-                continue
-            for doc in [d for d in (sf_resp.get("items") or []) if isinstance(d, dict)]:
-                mid = self._extract_mendeley_id(doc)
-                if not mid:
-                    continue  # already captured from root fetch if it appeared there
-                existing = doc_with_category.get(mid)
-                if existing is None:
-                    doc_with_category[mid] = (doc, cat_path)
-                else:
-                    _, existing_path = existing
-                    existing_depth = len(existing_path.split("/")) if existing_path else 0
-                    new_depth = len(cat_path.split("/")) if cat_path else 0
-                    if new_depth > existing_depth:
-                        doc_with_category[mid] = (doc, cat_path)
-
-        docs_to_process = list(doc_with_category.items())
-        yield ProgressEvent(phase="discover", message=f"Found {len(docs_to_process)} doc(s) total.")
-
-        added: list[dict[str, str]] = []
-        unchanged: list[str] = []
-        removed: list[str] = []
-        failed: list[dict[str, str]] = list(_no_id_failed)
-        dry_run_added: list[dict[str, str]] = []
-        dry_run_removed: list[str] = []
-        category_updates: dict[str, str | None] = {}  # entry_id -> new category
-
-        queue = self._store.load_queue()
-        by_mendeley_id: dict[str, dict[str, Any]] = {
-            e["mendeley_id"]: e for e in queue if e.get("mendeley_id")
-        }
-        existing_ids: set[str] = {e.get("id") for e in queue if e.get("id")}
-        reserved_ids: set[str] = set()
-        in_collection: set[str] = set()
-        new_entries: list[dict[str, Any]] = []
-        max_order = max((e.get("order", 0) for e in queue), default=0)
-
-        for i, (mid, (doc, category)) in enumerate(docs_to_process, 1):
-            in_collection.add(mid)
-            yield ProgressEvent(phase="reconcile", current=i, total=len(docs_to_process), item=doc.get("title", mid)[:60])
-
-            if mid in by_mendeley_id:
-                existing_entry = by_mendeley_id[mid]
-                eid = existing_entry.get("id") or mid
-                if existing_entry.get("category") != category:
-                    category_updates[eid] = category
-                unchanged.append(eid)
-                continue
-
-            try:
-                max_order += 1
-                entry = self._build_entry_from_mendeley(doc, mid, existing_ids | reserved_ids, max_order, category=category)
-            except Exception as e:  # noqa: BLE001
-                failed.append({"mendeley_id": mid, "error": str(e)})
-                yield ProgressEvent(phase="reconcile", level="error", message=f"{mid[:8]}: {e}")
-                continue
-
-            reserved_ids.add(entry.id)
-            if dry_run:
-                dry_run_added.append({"id": entry.id, "mendeley_id": mid, "title": entry.title})
-            else:
-                new_entries.append(entry.model_dump())
-                added.append({"id": entry.id, "mendeley_id": mid, "title": entry.title})
-
-        for e in queue:
-            mid = e.get("mendeley_id")
-            if not mid or mid in in_collection:
-                continue
-            if e.get("status") == "removed":
-                continue
-            if dry_run:
-                dry_run_removed.append(e.get("id", mid))
-            else:
-                removed.append(e.get("id", mid))
-
-        if not dry_run and (new_entries or removed or category_updates):
-            queue = self._store.load_queue()
-            by_id = {e.get("id"): e for e in queue}
-            for ne in new_entries:
-                if ne["id"] not in by_id:
-                    queue.append(ne)
-            removed_set = set(removed)
-            for e in queue:
-                eid = e.get("id")
-                if eid in removed_set:
-                    e["status"] = "removed"
-                if eid in category_updates:
-                    e["category"] = category_updates[eid]
-            self._store.save_queue(queue)
-
-        if not dry_run:
-            self._mendeley_cache().invalidate(folder_id)
-
-        self._log_event(
-            "sync_from_mendeley",
-            collection=collection_name,
-            folder_id=folder_id,
-            in_collection=len(in_collection),
-            added=len(added),
-            unchanged=len(unchanged),
-            removed=len(removed),
-            failed=len(failed),
-            dry_run=dry_run,
-        )
-
-        summary = (
-            f"{len(added)} added, {len(unchanged)} unchanged, "
-            f"{len(removed)} removed, {len(failed)} failed"
-            + (
-                f", {len(dry_run_added)} would-add, {len(dry_run_removed)} would-remove (dry-run)"
-                if dry_run else ""
-            )
-            + "."
-        )
-        if any("auth:" in f.get("error", "") for f in failed):
-            summary += " Auth failure detected — run `mendeley-auth login` and retry."
-
-        return SyncFromMendeleyResult(
-            queue_collection=collection_name,
-            folder_id=folder_id,
-            added=added,
-            unchanged=unchanged,
-            removed=removed,
-            failed=failed,
-            dry_run_added=dry_run_added,
-            dry_run_removed=dry_run_removed,
-            summary=summary,
-        )
-
-    def _build_entry_from_mendeley(
-        self, doc: dict[str, Any], mendeley_id: str, taken_ids: set[str], order: int,
-        category: str | None = None,
-    ) -> "QueueEntry":
-        title = (doc.get("title") or "").strip() or "(untitled)"
-        authors = self._normalize_mendeley_authors(doc.get("authors"))
-        year = doc.get("year")
-        if not isinstance(year, int):
-            year = None
-        doi: str | None = None
-        idents = doc.get("identifiers")
-        if isinstance(idents, dict):
-            d = idents.get("doi")
-            if isinstance(d, str) and d.strip():
-                doi = d.strip()
-
-        mendeley_type = (doc.get("type") or "").lower()
-        entry_type = {
-            "book": "book",
-            "book_section": "book_chapter",
-            "edited_book": "book",
-        }.get(mendeley_type, "paper")
-
-        base = self._derive_id(authors, year, title)
-        entry_id = f"{base}-{mendeley_id[:8]}" if base in taken_ids else base
-
-        return QueueEntry(
-            id=entry_id,
-            title=title,
-            authors=authors,
-            year=year,
-            doi=doi,
-            type=entry_type,
-            added=datetime.now().date().isoformat(),
-            order=order,
-            category=category,
-            mendeley_id=mendeley_id,
-        )
-
-    @staticmethod
-    def _normalize_mendeley_authors(authors: Any) -> str:
-        if isinstance(authors, list):
-            parts: list[str] = []
-            for a in authors:
-                if isinstance(a, str) and a.strip():
-                    parts.append(a.strip())
-                elif isinstance(a, dict):
-                    name = " ".join(filter(None, [a.get("first_name", ""), a.get("last_name", "")])).strip()
-                    if name:
-                        parts.append(name)
-            if parts:
-                return "; ".join(parts)
-        if isinstance(authors, str) and authors.strip():
-            return authors.strip()
-        return "Unknown"
-
-    @staticmethod
-    def _extract_mendeley_id(item: dict[str, Any]) -> str | None:
-        for key in ("id", "catalog_id", "document_id", "mendeley_id"):
-            v = item.get(key)
-            if isinstance(v, str) and v:
-                return v
-        return None
-
-    @staticmethod
-    def _candidate_summary(item: dict[str, Any]) -> dict[str, str]:
-        title = item.get("title") or ""
-        year = item.get("year")
-        authors = item.get("authors") or item.get("author") or ""
-        if isinstance(authors, list):
-            authors = ", ".join(
-                " ".join(filter(None, [a.get("first_name", ""), a.get("last_name", "")])).strip()
-                if isinstance(a, dict) else str(a)
-                for a in authors[:3]
-            )
-        return {
-            "mendeley_id": ReadingQueue._extract_mendeley_id(item) or "",
-            "title": str(title),
-            "year": str(year) if year is not None else "",
-            "authors": str(authors),
-        }
-
-    @staticmethod
-    def _mendeley_failure_hint(error: str) -> str:
-        if error.startswith("auth:"):
-            return f"{error} (run `mendeley-auth login` to refresh tokens)"
-        if "launch command not found" in error:
-            return f"{error} (install with `uv tool install mendeley-mcp` or set reading.mendeley_mcp_command)"
-        return error
 
     # ------------------------------------------------------------------
     # Ordering helpers
@@ -1165,7 +522,7 @@ class ReadingQueue(Tool):
         title = (doc.get("title") or "").strip()
         if title:
             out["title"] = title
-        authors = ReadingQueue._normalize_mendeley_authors(doc.get("authors"))
+        authors = normalize_mendeley_authors(doc.get("authors"))
         if authors and authors != "Unknown":
             out["authors"] = authors
         year = doc.get("year")
@@ -1251,16 +608,6 @@ class ReadingQueue(Tool):
 
     def _log_event(self, event: str, **fields: Any) -> None:
         RunLog(self.name).append({"event": event, **fields})
-
-    @staticmethod
-    def _derive_id(authors: str, year: int | None, title: str) -> str:
-        first_chunk = authors.split(",")[0].split(";")[0].strip() if authors else ""
-        first_word = first_chunk.split()[0] if first_chunk else "unknown"
-        last_name = re.sub(r"[^a-zA-Z0-9]", "", first_word).lower() or "unknown"
-        year_part = str(year) if year else "nd"
-        first_title_word = title.split()[0] if title else "untitled"
-        title_word = re.sub(r"[^a-zA-Z0-9]", "", first_title_word).lower() or "untitled"
-        return f"{last_name}-{year_part}-{title_word}"
 
 
 def on_startup(context) -> None:  # noqa: ARG001

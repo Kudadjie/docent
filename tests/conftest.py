@@ -61,13 +61,14 @@ def _seed_queue_entry(
     """Build a QueueEntry directly and persist it via the tool's store.
 
     Bypasses the `reading add` CLI surface so sync-* tests can seed arbitrary
-    fixtures. Mirrors ReadingQueue._derive_id when no explicit `id` is given.
+    fixtures. Mirrors derive_id() when no explicit `id` is given.
     Defaults to mendeley_id="m-<id>" so the entry passes _require_identifier
     when the test doesn't supply a doi.
     """
-    from reading import ReadingQueue, QueueEntry
+    from docent.bundled_plugins.reading import ReadingQueue, QueueEntry
+    from docent.bundled_plugins.reading.mendeley_sync import derive_id
 
-    entry_id = id or ReadingQueue._derive_id(authors, year, title)
+    entry_id = id or derive_id(authors, year, title)
     if not doi and not mendeley_id:
         mendeley_id = f"m-{entry_id}"
     entry = QueueEntry(
