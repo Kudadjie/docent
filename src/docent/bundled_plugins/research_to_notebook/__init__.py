@@ -1369,12 +1369,12 @@ class ResearchTool(Tool):
 
 def on_startup(context) -> None:  # noqa: ARG001
     """Check for Feynman updates once per day and notify the user."""
-    from docent.utils.update_check import check_npm
+    from docent.utils.update_check import check_github_release
     from docent.ui import get_console
 
-    info = check_npm(
-        "feynman",
-        upgrade_cmd="npm install -g feynman",
+    info = check_github_release(
+        "companion-inc/feynman",
+        upgrade_cmd="npm install -g @companion-ai/feynman",
     )
     if info:
         get_console().print(

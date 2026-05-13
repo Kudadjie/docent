@@ -62,12 +62,22 @@ def _load_plugin_module(module_name: str) -> bool:
     return True
 
 
-def _scan_plugin_dir(directory: Path) -> None:
-    """Scan a directory for plugin modules/packages and load them."""
+def _scan_plugin_dir(directory: Path, *, qualified_prefix: str | None = None) -> None:
+    """Scan a directory for plugin modules/packages and load them.
+
+    ``qualified_prefix`` — if given (e.g. ``"docent.bundled_plugins"``), import
+    modules as ``<prefix>.<name>`` so they share the same sys.modules slot as any
+    other absolute import of that path.  This prevents the double-import problem
+    that occurs when the same file is imported twice under different module names.
+
+    Without a prefix (external user plugins) the directory is added to sys.path
+    and modules are imported by their bare name, as before.
+    """
     if not directory.exists():
         return
 
-    _ensure_in_sys_path(directory)
+    if qualified_prefix is None:
+        _ensure_in_sys_path(directory)
 
     for entry in directory.iterdir():
         name = entry.name
@@ -76,17 +86,20 @@ def _scan_plugin_dir(directory: Path) -> None:
             continue
 
         if entry.is_file() and name.endswith(".py"):
-            module_name = name[:-3]
-            _load_plugin_module(module_name)
+            base = name[:-3]
         elif entry.is_dir() and (entry / "__init__.py").exists():
-            module_name = name
-            _load_plugin_module(module_name)
+            base = name
+        else:
+            continue
+
+        module_name = f"{qualified_prefix}.{base}" if qualified_prefix else base
+        _load_plugin_module(module_name)
 
 
 def load_plugins() -> None:
     """Discover and load all external plugins."""
     _STARTUP_HOOKS.clear()
-    _scan_plugin_dir(_bundled_plugins_dir())
+    _scan_plugin_dir(_bundled_plugins_dir(), qualified_prefix="docent.bundled_plugins")
     _scan_plugin_dir(plugins_dir())
 
 

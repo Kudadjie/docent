@@ -41,69 +41,159 @@ _USER_FILE = _DOCENT_DIR / "user.json"
 _LEVEL_CHOICES = ["Undergraduate", "Masters", "PhD", "Postdoc", "Faculty", "Other"]
 
 
-def _run_onboarding() -> None:
-    """Prompt for user profile on first run; skip silently in non-TTY contexts."""
+def _is_setup_complete() -> bool:
+    """Return True when the user profile has a non-empty name."""
+    try:
+        data = json.loads(_USER_FILE.read_text(encoding="utf-8"))
+        name = (data.get("name") or "").strip()
+        return bool(name and name != "You")
+    except Exception:
+        return False
+
+
+def _run_setup_flow(*, first_run: bool = False) -> None:
+    """Full interactive Docent setup. Called on first run and by `docent setup`."""
+    console = get_console()
+    settings = load_settings()
+
+    if first_run:
+        console.print("\n[bold cyan]Welcome to Docent![/]  Let's get you set up.\n")
+    else:
+        console.print("\n[bold cyan]Docent Setup[/]")
+        console.print("[dim]Press Enter to keep the current value. Ctrl+C to cancel.[/]\n")
+
+    # ── Profile ──
+    console.print("[bold]Profile[/]")
+    existing: dict = {}
+    try:
+        existing = json.loads(_USER_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+
+    name = typer.prompt("  Name", default=existing.get("name", "")).strip()
+    program = typer.prompt("  Program / field of study", default=existing.get("program", "")).strip()
+
+    console.print("  Academic level:")
+    for i, choice in enumerate(_LEVEL_CHOICES, 1):
+        console.print(f"    [dim]{i}.[/] {choice}")
+    existing_level = existing.get("level", "")
+    level: str = existing_level
+    raw_level = typer.prompt(
+        "  Enter number or name", default=existing_level, show_default=bool(existing_level)
+    ).strip()
+    if raw_level:
+        if raw_level.isdigit() and 1 <= int(raw_level) <= len(_LEVEL_CHOICES):
+            level = _LEVEL_CHOICES[int(raw_level) - 1]
+        elif raw_level in _LEVEL_CHOICES:
+            level = raw_level
+        elif raw_level.title() in _LEVEL_CHOICES:
+            level = raw_level.title()
+
+    if name:
+        _DOCENT_DIR.mkdir(parents=True, exist_ok=True)
+        _USER_FILE.write_text(
+            json.dumps({"name": name, "program": program, "level": level}, indent=2),
+            encoding="utf-8",
+        )
+        console.print("  [green]Profile saved.[/]\n")
+
+    # ── Reading database ──
+    console.print("[bold]Reading Database[/]")
+    existing_db = str(settings.reading.database_dir or "")
+    console.print("  [dim]Where do you keep your PDFs (Mendeley watch folder)?[/]")
+    db_raw = typer.prompt(
+        "  Papers folder", default=existing_db, show_default=bool(existing_db)
+    ).strip()
+    if db_raw and db_raw != existing_db:
+        try:
+            write_setting("reading.database_dir", db_raw)
+            console.print("  [green]Database folder set.[/]\n")
+        except Exception as e:
+            console.print(f"  [yellow]Could not save: {e}[/]\n")
+    else:
+        console.print()
+
+    # ── Research API keys ──
+    console.print("[bold]Research Keys[/]")
+    existing_tavily = settings.research.tavily_api_key or ""
+    if existing_tavily:
+        masked = (existing_tavily[:4] + "..." + existing_tavily[-4:]) if len(existing_tavily) > 8 else "set"
+        console.print(f"  [dim]Tavily key: currently {masked}[/]")
+    else:
+        console.print("  [dim]Tavily: free tier at tavily.com - 1,000 calls/month[/]")
+    tavily_raw = typer.prompt("  Tavily API key (Enter to skip)", default="", show_default=False).strip()
+    if tavily_raw:
+        try:
+            write_setting("research.tavily_api_key", tavily_raw)
+            console.print("  [green]Tavily key saved.[/]")
+        except Exception as e:
+            console.print(f"  [yellow]Could not save: {e}[/]")
+
+    existing_ss = settings.research.semantic_scholar_api_key or ""
+    if existing_ss:
+        console.print("  [dim]Semantic Scholar key: already set[/]")
+    ss_raw = typer.prompt("  Semantic Scholar key (Enter to skip)", default="", show_default=False).strip()
+    if ss_raw and ss_raw != existing_ss:
+        try:
+            write_setting("research.semantic_scholar_api_key", ss_raw)
+            console.print("  [green]Semantic Scholar key saved.[/]")
+        except Exception as e:
+            console.print(f"  [yellow]Could not save: {e}[/]")
+    console.print()
+
+    # ── External tools ──
+    console.print("[bold]External Tools[/]")
+    from docent.bundled_plugins.research_to_notebook import _find_feynman, FeynmanNotFoundError
+    try:
+        cmd = _find_feynman(settings.research.feynman_command)
+        console.print(f"  [green]Feynman CLI:[/] found at {cmd[0]}")
+    except FeynmanNotFoundError:
+        console.print("  [yellow]Feynman CLI:[/] not installed")
+        console.print("  [dim]Feynman runs deep research sessions. To install (~2 GB disk space):[/]")
+        console.print("    npm install -g feynman")
+    console.print()
+
+    console.print("[bold green]Setup complete![/]  Run [cyan]docent doctor[/] to verify.")
+
+
+def _run_setup_if_needed() -> bool:
+    """Run the full setup flow on first use. Returns True if setup was run.
+
+    Skipped silently in non-TTY contexts (MCP, pipes, tests).
+    """
+    if not sys.stdin.isatty():
+        return False
+    if _is_setup_complete():
+        return False
+    _run_setup_flow(first_run=True)
+    return True
+
+
+def _startup_doctor_check(settings: Any) -> None:
+    """Fast (<10ms, no subprocess) startup health check.
+
+    Only shows a banner when config that was previously set is now broken
+    (e.g. database_dir path deleted). Silent when all is OK.
+    Skipped in non-TTY contexts.
+    """
     if not sys.stdin.isatty():
         return
 
-    # Check whether onboarding is needed
-    if _USER_FILE.exists():
-        try:
-            data = json.loads(_USER_FILE.read_text(encoding="utf-8"))
-            name = (data.get("name") or "").strip()
-            if name and name != "You":
-                return  # Already set up
-        except (json.JSONDecodeError, OSError):
-            pass  # Corrupt file — re-run onboarding
+    issues: list[str] = []
 
-    console = get_console()
-    console.print(
-        "\n[bold cyan]Welcome to Docent![/] Let's get you set up quickly.\n"
-    )
+    db = settings.reading.database_dir
+    if db is not None:
+        expanded = Path(str(db)).expanduser()
+        if not expanded.exists():
+            issues.append(f"reading DB path missing: {expanded}")
 
-    name = typer.prompt("Your name").strip()
-    program = typer.prompt("Your program / field of study").strip()
-
-    # Show numbered choices for academic level
-    console.print("Academic level:")
-    for i, choice in enumerate(_LEVEL_CHOICES, 1):
-        console.print(f"  [dim]{i}.[/] {choice}")
-
-    level: str = ""
-    while not level:
-        raw = typer.prompt("Enter number or name").strip()
-        if raw.isdigit():
-            idx = int(raw) - 1
-            if 0 <= idx < len(_LEVEL_CHOICES):
-                level = _LEVEL_CHOICES[idx]
-            else:
-                console.print(f"[yellow]Please enter a number between 1 and {len(_LEVEL_CHOICES)}.[/]")
-        elif raw.title() in _LEVEL_CHOICES:
-            level = raw.title()
-        elif raw in _LEVEL_CHOICES:
-            level = raw
-        else:
-            console.print(f"[yellow]Not recognised. Choose a number 1–{len(_LEVEL_CHOICES)} or type the level.[/]")
-
-    # Optional: database folder
-    console.print("\n[dim]Where do you keep your PDFs? (press Enter to skip)[/]")
-    db_dir_raw = typer.prompt("Papers folder", default="", show_default=False).strip()
-
-    _DOCENT_DIR.mkdir(parents=True, exist_ok=True)
-    profile = {"name": name, "program": program, "level": level}
-    _USER_FILE.write_text(json.dumps(profile, indent=2), encoding="utf-8")
-
-    if db_dir_raw:
-        try:
-            write_setting("reading.database_dir", db_dir_raw)
-            console.print(f"[dim]Database folder set to [cyan]{db_dir_raw}[/].[/]")
-        except Exception:
-            console.print("[yellow]Could not save database folder — set it later with: docent reading config-set --key database_dir --value <path>[/]")
-
-    console.print(
-        f"\n[bold green]All set, {name}![/] Your profile has been saved. "
-        "Run [cyan]docent --help[/] to see what's available.\n"
-    )
+    if issues:
+        console = get_console()
+        noun = "issue" if len(issues) == 1 else "issues"
+        console.print(
+            f"[yellow]{len(issues)} config {noun} detected[/]  "
+            "[dim]Run [cyan]docent doctor[/] for details.[/]"
+        )
 
 app = typer.Typer(
     name="docent",
@@ -147,7 +237,13 @@ def main(
     settings.no_color = no_color or settings.no_color
 
     configure_console(no_color=settings.no_color)
-    _run_onboarding()
+
+    # Skip startup prompts when the user is explicitly running setup or doctor —
+    # those commands manage their own output.
+    _skip_startup = ctx.invoked_subcommand in ("setup", "doctor")
+    if not _skip_startup:
+        _run_setup_if_needed()
+        _startup_doctor_check(settings)
 
     ctx.obj = Context(settings=settings, llm=LLMClient(settings), executor=Executor())
     run_startup_hooks(ctx.obj)
@@ -217,6 +313,202 @@ def _format_field(fname: str, finfo: Any) -> str:
     annot = getattr(finfo.annotation, "__name__", str(finfo.annotation))
     desc = f" - {finfo.description}" if finfo.description else ""
     return f"--{fname.replace('_', '-')}: {annot} {status}{desc}"
+
+
+# ─── doctor / setup helpers ───────────────────────────────────────────────────
+
+_STATUS_STYLE: dict[str, str] = {"OK": "green", "WARN": "yellow", "FAIL": "red", "SKIP": "dim"}
+
+
+def _check_profile(user_file: Path = _USER_FILE) -> tuple[str, str, str, str]:
+    try:
+        data = json.loads(user_file.read_text(encoding="utf-8"))
+        name = (data.get("name") or "").strip()
+        if name and name != "You":
+            return "Profile", "OK", "-", f"{name} | {data.get('level', '?')} | {data.get('program', '?')}"
+    except Exception:
+        pass
+    return "Profile", "WARN", "-", "Not set up - run: docent setup"
+
+
+def _check_cli_tool(
+    label: str,
+    version_cmd: list[str],
+    install_hint: str,
+    *,
+    npm_package: str | None = None,
+    github_repo: str | None = None,
+    upgrade_cmd: str | None = None,
+    timeout: int = 8,
+) -> tuple[str, str, str, str]:
+    """Run a version command and return a check result.
+
+    Pass ``npm_package`` to check npm registry for updates, or ``github_repo``
+    (``"owner/repo"``) to check GitHub releases.  ``upgrade_cmd`` overrides the
+    default upgrade hint shown when an update is available.
+    """
+    import re
+    import shutil
+    import subprocess
+    try:
+        # Resolve the executable via shutil.which so that Windows .cmd/.bat
+        # scripts (e.g. npm.cmd, node.cmd) are found and runnable without shell=True.
+        exe = shutil.which(version_cmd[0])
+        if exe is None:
+            return label, "FAIL", "-", install_hint
+        r = subprocess.run([exe] + version_cmd[1:], capture_output=True, text=True, timeout=timeout)
+        raw_lines = (r.stdout.strip() or r.stderr.strip()).splitlines()
+        version = raw_lines[0].strip() if raw_lines else "?"
+        update_note = ""
+        m = re.search(r"\d+\.\d+(?:\.\d+)?", version)
+        bare = m.group() if m else None
+        if github_repo:
+            from docent.utils.update_check import check_github_release
+            info = check_github_release(github_repo, current_version=bare,
+                                        upgrade_cmd=upgrade_cmd)
+            if info:
+                update_note = f"update: {info.latest} - {info.upgrade_cmd}"
+        elif npm_package:
+            from docent.utils.update_check import check_npm
+            info = check_npm(npm_package, current_version=bare,
+                             upgrade_cmd=upgrade_cmd)
+            if info:
+                update_note = f"update: {info.latest} - {info.upgrade_cmd}"
+        return label, "OK", version, update_note
+    except FileNotFoundError:
+        return label, "FAIL", "-", install_hint
+    except subprocess.TimeoutExpired:
+        return label, "WARN", "?", "version check timed out"
+    except Exception as e:
+        return label, "WARN", "?", str(e)[:80]
+
+
+def _dir_size_gb(path: Path) -> float | None:
+    """Walk a directory tree, return total size in GB. Returns None if path missing or too large."""
+    if not path.is_dir():
+        return None
+    try:
+        total = 0
+        count = 0
+        for entry in path.rglob("*"):
+            count += 1
+            if count > 5000:
+                return None
+            if entry.is_file():
+                total += entry.stat().st_size
+        return total / (1024 ** 3)
+    except Exception:
+        return None
+
+
+def _feynman_version_from_package_json(cmd: list[str]) -> str:
+    """Read feynman version from its npm package.json — no subprocess, instant.
+
+    Checks both the bare name ``feynman`` and the scoped ``@companion-ai/feynman``
+    package layout used by the current official release.
+    """
+    import json
+    import os
+    path = Path(cmd[0]).resolve()
+    npm_roots = [
+        path.parent / "node_modules",
+        path.parent.parent / "lib" / "node_modules",
+    ]
+    appdata = os.environ.get("APPDATA", "")
+    if appdata:
+        npm_roots.append(Path(appdata) / "npm" / "node_modules")
+    for root in npm_roots:
+        for pkg_path in (
+            root / "feynman" / "package.json",
+            root / "@companion-ai" / "feynman" / "package.json",
+        ):
+            try:
+                data = json.loads(pkg_path.read_text(encoding="utf-8"))
+                v = data.get("version")
+                if v:
+                    return str(v)
+            except Exception:
+                pass
+    return "?"
+
+
+def _check_feynman(settings: "Settings") -> tuple[str, str, str, str]:
+    import os
+    import re
+    from docent.bundled_plugins.research_to_notebook import _find_feynman, FeynmanNotFoundError
+    from docent.utils.update_check import check_github_release
+
+    try:
+        cmd = _find_feynman(settings.research.feynman_command)
+    except FeynmanNotFoundError:
+        return "Feynman CLI", "WARN", "-", "Not installed (~2 GB needed) - npm install -g feynman"
+
+    # Read version from package.json — avoids spawning a Node.js subprocess
+    # which can hang on Windows when capture_output+timeout is used.
+    version = _feynman_version_from_package_json(cmd)
+
+    detail_parts: list[str] = []
+    m = re.search(r"\d+\.\d+(?:\.\d+)?", version)
+    bare = m.group() if m else None
+    update_info = check_github_release("companion-inc/feynman", current_version=bare,
+                                       upgrade_cmd="npm install -g @companion-ai/feynman")
+    if update_info:
+        detail_parts.append(f"update: {update_info.latest}")
+
+    candidates = [
+        Path(cmd[0]).resolve().parent / "node_modules" / "feynman",
+        Path(cmd[0]).resolve().parent.parent / "lib" / "node_modules" / "feynman",
+    ]
+    appdata = os.environ.get("APPDATA", "")
+    if appdata:
+        candidates.append(Path(appdata) / "npm" / "node_modules" / "feynman")
+
+    status = "OK"
+    for candidate in candidates:
+        if candidate.is_dir():
+            gb = _dir_size_gb(candidate)
+            if gb is not None:
+                size_str = f"{gb:.1f} GB" if gb >= 0.1 else f"{gb * 1024:.0f} MB"
+                detail_parts.append(f"{size_str} installed")
+                if gb >= 2.0:
+                    status = "WARN"
+            break
+
+    return "Feynman CLI", status, version, "  ".join(detail_parts) or "-"
+
+
+def _check_mendeley_mcp(settings: "Settings") -> tuple[str, str, str, str]:
+    """Check Mendeley MCP prerequisites via PATH lookup — no subprocess spawn."""
+    import shutil
+    cmd = list(settings.reading.mendeley_mcp_command or ["uvx", "mendeley-mcp"])
+    runner = cmd[0]
+    if shutil.which(runner):
+        return "Mendeley MCP", "OK", "-", f"{runner} found (test: {' '.join(cmd[:2])} --help)"
+    return "Mendeley MCP", "FAIL", "-", f"{runner} not found - install uv: https://docs.astral.sh/uv/"
+
+
+def _check_tavily(settings: "Settings") -> tuple[str, str, str, str]:
+    key = settings.research.tavily_api_key
+    if key:
+        masked = (key[:4] + "..." + key[-4:]) if len(key) > 8 else "set"
+        return "Tavily key", "OK", "-", f"configured ({masked})"
+    return "Tavily key", "WARN", "-", "Not set - free at tavily.com  (docent setup to configure)"
+
+
+def _check_semantic_scholar(settings: "Settings") -> tuple[str, str, str, str]:
+    if settings.research.semantic_scholar_api_key:
+        return "Semantic Scholar", "OK", "-", "API key set"
+    return "Semantic Scholar", "SKIP", "-", "No key (optional - raises rate limits)"
+
+
+def _check_reading_db(settings: "Settings") -> tuple[str, str, str, str]:
+    db = settings.reading.database_dir
+    if db is None:
+        return "Reading DB", "WARN", "-", "Not configured - run: docent reading config-set --key database_dir --value <path>"
+    expanded = Path(str(db)).expanduser()
+    if not expanded.exists():
+        return "Reading DB", "WARN", "-", f"{expanded} does not exist"
+    return "Reading DB", "OK", "-", str(expanded)
 
 
 def _drive_progress(gen: Any) -> Any:
@@ -431,6 +723,65 @@ def serve_command() -> None:
     from docent.mcp_server import run_server
 
     run_server()
+
+
+@app.command("doctor", help="Check environment, tooling versions, and auth status.")
+def doctor_command(ctx: typer.Context) -> None:
+    """Run diagnostics on Docent's environment and third-party tooling."""
+    import sys
+    from concurrent.futures import ThreadPoolExecutor
+
+    console = get_console()
+    settings = ctx.obj.settings
+
+    console.print("\n[bold]Checking your Docent environment...[/]\n")
+
+    # Run all checks in parallel so subprocess timeouts don't stack sequentially.
+    check_fns = [
+        lambda: _check_profile(),
+        lambda: ("Python", "OK", f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}", "-"),
+        lambda: _check_cli_tool(
+            "uv", ["uv", "--version"], "Install uv: https://docs.astral.sh/uv/",
+            github_repo="astral-sh/uv",
+            upgrade_cmd="uv self update",
+        ),
+        lambda: _check_cli_tool("Node.js", ["node", "--version"], "Install Node.js: https://nodejs.org"),
+        lambda: _check_cli_tool("npm", ["npm", "--version"], "Install npm: https://nodejs.org"),
+        lambda: _check_feynman(settings),
+        lambda: _check_mendeley_mcp(settings),
+        lambda: _check_tavily(settings),
+        lambda: _check_semantic_scholar(settings),
+        lambda: _check_reading_db(settings),
+    ]
+    with ThreadPoolExecutor(max_workers=len(check_fns)) as pool:
+        futures = [pool.submit(fn) for fn in check_fns]
+        checks: list[tuple[str, str, str, str]] = [f.result() for f in futures]
+
+    table = Table(box=box.ROUNDED, show_header=True, header_style="bold")
+    table.add_column("Check", style="cyan", no_wrap=True)
+    table.add_column("Status", no_wrap=True)
+    table.add_column("Version", no_wrap=True)
+    table.add_column("Detail")
+
+    issues = 0
+    for label, status, version, detail in checks:
+        style = _STATUS_STYLE.get(status, "white")
+        table.add_row(label, f"[{style}]{status}[/{style}]", version, detail)
+        if status in ("WARN", "FAIL"):
+            issues += 1
+
+    console.print(table)
+    if issues == 0:
+        console.print("[green]All checks passed.[/]")
+    else:
+        noun = "issue" if issues == 1 else "issues"
+        console.print(f"\n[yellow]{issues} {noun} found.[/]  Run [cyan]docent setup[/] to configure missing items.")
+
+
+@app.command("setup", help="Interactive setup: profile, database folder, and API keys.")
+def setup_command() -> None:
+    """Configure Docent interactively. Safe to re-run - existing values shown as defaults."""
+    _run_setup_flow(first_run=False)
 
 
 if __name__ == "__main__":
