@@ -4,7 +4,7 @@ description: Comprehensive ordered todo list across all active tracks; update af
 type: project
 ---
 
-Last updated: 2026-05-13 (vision alignment pass — v1.3+ sections restructured to match Academic Workstation phases)
+Last updated: 2026-05-13 (CI gap confirmed: tests never run on tag push; #27 already done)
 
 ---
 
@@ -59,8 +59,8 @@ Last updated: 2026-05-13 (vision alignment pass — v1.3+ sections restructured 
 
 ## Infrastructure / housekeeping
 
-27. **Pin `actions/setup-node` to SHA** in `publish.yml` — CSO audit flag; still unpinned. Must ship before next public release.
-28. **`ruff` + `mypy` in CI** — missing from pipeline; flagged in GLM-5.1 review.
+27. ~~**Pin `actions/setup-node` to SHA**~~ — DONE 2026-05-07. All 3 actions SHA-pinned (`checkout`, `setup-uv`, `setup-node`).
+28. **CI test + lint gap** — `publish.yml` has NO test run at all: goes `build UI → pip-audit → uv build → publish` with 340 tests never executed. Fix: (a) add a `pytest` step before the build, (b) add `ruff` check while there. `mypy` deferred — needs type stubs configured first. **Do this before v1.2.0 tag.** ← NEXT SESSION START HERE
 29. **`mendeley_mcp_command` config-set** — list-typed setting not yet exposed via `config-set`. Deferred since Step 11.4.
 30. **BibTeX export** — needs CrossRef-clean metadata. Deferred since Step 8.
 31. **Semantic Scholar orphan identification** — `--identify-orphans` flag on `sync-status`. Deferred since Step 11.1.
