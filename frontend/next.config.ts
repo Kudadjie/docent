@@ -17,6 +17,10 @@ const nextConfig: NextConfig = {
   ...(process.env.NODE_ENV === "production" ? { output: "export" } : {}),
   trailingSlash: true,
   images: { unoptimized: true },
+  async rewrites() {
+    if (process.env.NODE_ENV === "production") return [];
+    return [{ source: "/api/:path*", destination: "http://127.0.0.1:7432/api/:path*" }];
+  },
   async headers() {
     return [
       {

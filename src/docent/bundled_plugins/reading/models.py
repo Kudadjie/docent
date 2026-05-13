@@ -58,10 +58,6 @@ class AddResult(BaseModel):
             MessageShape(text=f"Queue: {self.queue_size} entries", level="info"),
         ]
 
-    def __rich_console__(self, console, options):
-        from docent.ui.renderers import render_shapes
-        render_shapes(self.to_shapes(), console)
-        yield from ()
 
 
 class IdOnlyInputs(BaseModel):
@@ -123,10 +119,6 @@ class ConfigShowResult(BaseModel):
             MetricShape(label="queue_collection", value=self.queue_collection),
         ]
 
-    def __rich_console__(self, console, options):
-        from docent.ui.renderers import render_shapes
-        render_shapes(self.to_shapes(), console)
-        yield from ()
 
 
 class ConfigSetResult(BaseModel):
@@ -141,10 +133,6 @@ class ConfigSetResult(BaseModel):
             MessageShape(text=self.message, level="success" if self.ok else "error"),
         ]
 
-    def __rich_console__(self, console, options):
-        from docent.ui.renderers import render_shapes
-        render_shapes(self.to_shapes(), console)
-        yield from ()
 
 
 class MutationResult(BaseModel):
@@ -180,10 +168,6 @@ class MutationResult(BaseModel):
             shapes.append(MessageShape(text=self.message, level="info"))
         return shapes
 
-    def __rich_console__(self, console, options):
-        from docent.ui.renderers import render_shapes
-        render_shapes(self.to_shapes(), console)
-        yield from ()
 
 
 class SearchResult(BaseModel):
@@ -213,10 +197,6 @@ class SearchResult(BaseModel):
             ))
         return shapes
 
-    def __rich_console__(self, console, options):
-        from docent.ui.renderers import render_shapes
-        render_shapes(self.to_shapes(), console)
-        yield from ()
 
 
 class StatsResult(BaseModel):
@@ -240,10 +220,6 @@ class StatsResult(BaseModel):
             ))
         return shapes
 
-    def __rich_console__(self, console, options):
-        from docent.ui.renderers import render_shapes
-        render_shapes(self.to_shapes(), console)
-        yield from ()
 
 
 class ExportResult(BaseModel):
@@ -257,10 +233,6 @@ class ExportResult(BaseModel):
             MarkdownShape(content=self.content),
         ]
 
-    def __rich_console__(self, console, options):
-        from docent.ui.renderers import render_shapes
-        render_shapes(self.to_shapes(), console)
-        yield from ()
 
 
 class QueueClearInputs(BaseModel):
@@ -279,10 +251,6 @@ class QueueClearResult(BaseModel):
             MessageShape(text=self.message, level="success" if self.cleared else "warning"),
         ]
 
-    def __rich_console__(self, console, options):
-        from docent.ui.renderers import render_shapes
-        render_shapes(self.to_shapes(), console)
-        yield from ()
 
 
 class SyncStatusInputs(BaseModel):
@@ -337,10 +305,6 @@ class SyncFromMendeleyResult(BaseModel):
             ))
         return shapes
 
-    def __rich_console__(self, console, options):
-        from docent.ui.renderers import render_shapes
-        render_shapes(self.to_shapes(), console)
-        yield from ()
 
 
 class SyncStatusResult(BaseModel):
@@ -360,10 +324,6 @@ class SyncStatusResult(BaseModel):
             shapes.append(MessageShape(text=self.message, level="warning"))
         return shapes
 
-    def __rich_console__(self, console, options):
-        from docent.ui.renderers import render_shapes
-        render_shapes(self.to_shapes(), console)
-        yield from ()
 
 
 class MoveToInputs(BaseModel):

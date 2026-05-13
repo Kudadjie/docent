@@ -4,7 +4,7 @@ description: Comprehensive ordered todo list across all active tracks; update af
 type: project
 ---
 
-Last updated: 2026-05-12 (Hermes session — Feynman error messages improved, reading monolith split)
+Last updated: 2026-05-13 (items 13, 14, 16 done — post-v1.2.0 sprint complete)
 
 ---
 
@@ -16,24 +16,24 @@ Last updated: 2026-05-12 (Hermes session — Feynman error messages improved, re
 4. ~~**Tavily quota exhaustion — graceful failure**~~ — DONE
 5. ~~**Duplicate References bug**~~ — FIXED (`_strip_references_section()` + `_append_references()`)
 6. ~~**Feynman FileNotFoundError**~~ — FIXED (`FeynmanNotFoundError` + `_find_feynman()`)
-7. **Hardening: UI server direct invocation** — wire `ui_server.py` to `invoke_action()` instead of spawning subprocesses
+7. ~~**Hardening: UI server direct invocation**~~ — DONE 2026-05-13 (ui_server wired to invoke_action(); commit 1dfd8f8)
 8. ~~**Hardening: Reading monolith split**~~ — DONE 2026-05-12 (split into models.py + mendeley_sync.py; 1271→618 lines)
 9. ~~**Hardening: Research tool DRY-up**~~ — DONE 2026-05-12 (extracted `_run_with_tavily_fallback()`; run_deep/run_lit 55→17 lines)
 10. ~~**Medium debt: MCP single-action tools**~~ — DONE 2026-05-12 (`build_mcp_tools()` + `invoke_action()` now handle single-action tools)
-11. **Medium debt: `edit --status` bypass** — route through `_set_status` lifecycle
-12. **v1.3 planning: `docent doctor` / onboarding** — tooling check (feynman, MCP), auth status, feynman storage warning (~2GB), guided setup
-13. **v1.3 planning: `docent setup` command** — interactive first-run wizard
+11. ~~**Medium debt: `edit --status` bypass**~~ — DONE 2026-05-13 (`_apply_status_transition` helper; timestamps stamped correctly)
+12. ~~**`docent doctor`**~~ — DONE 2026-05-13 (10-check table, subprocess-free, 327 tests green)
+13. ~~**`docent setup`**~~ — DONE 2026-05-13 (re-runnable guided config wizard)
 14. **Real-life tests #10–#19** (can happen in parallel with above; #10 blocked on feynman reinstall + credits)
 
 ---
 
 ## AFTER v1.2.0
 
-12. **`docent.core.invoke` module** — CLI, MCP, FastAPI, Next dev routes all invoke tools differently. A single `invoke(tool, action, inputs, context)` with adapters for each surface eliminates the drift class of bugs. Biggest leverage move.
-13. **Next API routes → thin dev-only proxies** — FastAPI is the canonical backend. Correct architecture: (a) FastAPI implements every endpoint first, (b) Next dev routes forward to `http://127.0.0.1:7432/api/...` with no business logic. Decide post-v1.2.0 whether to drop Next routes entirely.
-14. **Move Rich rendering out of tool result models** — `__rich_console__` inside plugin result models leaks UI concerns. CLI should render shapes explicitly via `to_shapes()`.
-15. **File locking on reading queue writes** — atomic temp+rename protects against partial writes but not concurrent read-modify-write races. Add lock in `ReadingQueueStore`.
-16. **Schema-generated docs** — generate README flag tables from registered tool schemas, or add a contract test verifying docs only reference valid flags.
+12. ~~**`docent.core.invoke` module**~~ — DONE 2026-05-13. `core/invoke.py`: `make_context()` + `run_action()`; mcp_server delegates to it; ui_server POST /api/config uses it directly.
+13. ~~**Next API routes → thin dev-only proxies**~~ — DONE 2026-05-13. Replaced all 6 `route.ts` files with a single `rewrites` rule in `next.config.ts`. `npm run dev` now proxies `/api/*` → `http://127.0.0.1:7432`. Also fixed silent `tags` drop in `ui_server.py` post_action.
+14. ~~**Move Rich rendering out of tool result models**~~ — DONE 2026-05-13. Removed 15 `__rich_console__` methods; `_build_callback` in `cli.py` now calls `render_shapes(result.to_shapes(), console)` directly.
+15. ~~**File locking on reading queue writes**~~ — DONE 2026-05-13. `ReadingQueueStore.lock()` with filelock, timeout=0 (fail-fast). All 8 mutating actions + mendeley_sync write block wrapped.
+16. ~~**Schema-generated docs**~~ — DONE 2026-05-13. `tests/test_doc_flags.py` contract test: all `--flag` mentions in README + docs/cli.md verified against registered tool schemas on every test run.
 
 ---
 

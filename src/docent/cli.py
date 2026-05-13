@@ -587,7 +587,12 @@ def _build_callback(
         maybe = invoke(inputs, context)
         result = _drive_progress(maybe) if inspect.isgenerator(maybe) else maybe
         if result is not None:
-            get_console().print(result)
+            console = get_console()
+            if hasattr(result, "to_shapes"):
+                from docent.ui.renderers import render_shapes
+                render_shapes(result.to_shapes(), console)
+            else:
+                console.print(result)
 
     params = [
         inspect.Parameter("ctx", inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation=typer.Context),

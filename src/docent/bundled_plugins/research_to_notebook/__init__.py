@@ -560,10 +560,6 @@ class ResearchResult(BaseModel):
             shapes.append(LinkShape(url=self.output_file, label="Output file"))
         return shapes
 
-    def __rich_console__(self, console, options):
-        from docent.ui.renderers import render_shapes
-        render_shapes(self.to_shapes(), console)
-        yield from ()
 
 
 class ConfigShowResult(BaseModel):
@@ -610,10 +606,6 @@ class ConfigShowResult(BaseModel):
             MetricShape(label="feynman_timeout", value=f"{self.feynman_timeout:.0f}s"),
         ]
 
-    def __rich_console__(self, console, options):
-        from docent.ui.renderers import render_shapes
-        render_shapes(self.to_shapes(), console)
-        yield from ()
 
 
 class ConfigSetResult(BaseModel):
@@ -628,10 +620,6 @@ class ConfigSetResult(BaseModel):
             MessageShape(text=self.message, level="success" if self.ok else "error"),
         ]
 
-    def __rich_console__(self, console, options):
-        from docent.ui.renderers import render_shapes
-        render_shapes(self.to_shapes(), console)
-        yield from ()
 
 
 class ToNotebookResult(BaseModel):
@@ -650,10 +638,6 @@ class ToNotebookResult(BaseModel):
             shapes.append(LinkShape(url=self.package_dir, label="Notebook package"))
         return shapes
 
-    def __rich_console__(self, console, options):
-        from docent.ui.renderers import render_shapes
-        render_shapes(self.to_shapes(), console)
-        yield from ()
 
 
 class UsageInputs(BaseModel):
@@ -678,10 +662,6 @@ class UsageResult(BaseModel):
         ]
         return shapes
 
-    def __rich_console__(self, console, options):
-        from docent.ui.renderers import render_shapes
-        render_shapes(self.to_shapes(), console)
-        yield from ()
 
 
 # ---------------------------------------------------------------------------

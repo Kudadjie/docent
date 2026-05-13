@@ -170,6 +170,8 @@ async def post_action(body: ActionBody) -> JSONResponse:
             args["deadline"] = body.deadline
         if body.notes is not None:
             args["notes"] = body.notes
+        if body.tags is not None:
+            args["tags"] = body.tags
     elif action == "queue-clear":
         args["yes"] = True
 

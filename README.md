@@ -199,13 +199,17 @@ uv run pytest -x -q    # stop on first failure, quiet output
 
 ### Running the frontend
 
+The dev server proxies all `/api/*` requests to `http://127.0.0.1:7432`, so the FastAPI backend must be running first:
+
 ```bash
+docent ui              # start FastAPI backend on :7432 (keep this running)
+
 cd frontend
 npm install
 npm run dev            # starts at http://localhost:3000
 ```
 
-The frontend talks to a running `docent` install for API calls. Make sure the editable install is active before starting the dev server.
+Make sure the editable install is active (`uv tool install --editable .`) before starting either server.
 
 ### Project layout
 
