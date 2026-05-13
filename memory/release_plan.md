@@ -1,6 +1,6 @@
 ---
 name: Docent release plan
-description: Single bundled release track; v1.1.0 shipped 2026-05-08; next: v1.2.0 on research bug fixes + Tavily
+description: Single bundled release track; v1.1.0 shipped 2026-05-08; v1.2.0 omnibus (hardening + bugs + doctor/setup) pending real-life tests #10-19
 type: project
 ---
 
@@ -27,5 +27,5 @@ The two-track plan (separate CLI and UI tags) was superseded before it was execu
 ## How to apply
 
 - CLI and UI ship together; bump the version once for both.
-- Next version: `v1.2.0` — research bug fixes (DDG→Tavily, registry warn+skip, Tavily key onboarding). Ready to tag.
+- Next version: `v1.2.0` — omnibus: research bugs (DDG→Tavily, registry guard, Tavily onboarding), hardening sprint (reading split, DRY-up, UI server invoke, file locking), MCP single-action tools, edit-status lifecycle fix, `docent doctor` + `docent setup`. **Pending:** real-life tests #10–19 before tag.
 - `actions/setup-node` SHA-pinned 2026-05-07 (Phase A CSO fix): `@49933ea5288caeca8642d1e84afbd3f7d6820020`

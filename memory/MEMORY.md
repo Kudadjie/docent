@@ -22,8 +22,6 @@
 - [OpenCode for Docent agentic tools](feedback_opencode_for_agentic_tools.md) — route LLM calls in Docent's agentic tools through OpenCode (not Anthropic API); design as single-shot briefs
 - [Release plan](release_plan.md) — single bundled track (CLI + UI ship together); v1.1.0 shipped 2026-05-08; v1.2.0 (Tavily Research API + pipeline fixes + preflight)
 - [UI bundling strategy](project_ui_bundling.md) — decided: FastAPI + Next.js static export; `docent ui` command; two-file sync cost per new endpoint; deferred to next release
-- [Feynman + OC budget guard](project_feynman_budget_guard.md) — ARCHIVED; feature shipped. See archive/project_feynman_budget_guard-shipped-2026-05-08.md
-- [Feynman port plan](project_feynman_port.md) — ARCHIVED; research tool shipped. See archive/project_feynman_port-shipped-2026-05-08.md
 - [Research tool real-life tests](tasks/research_tool_real_life_tests.md) — 19-item manual test checklist for the research-to-notebook tool; tests 1-8 PASSED, 9-19 remaining before v1.2.0 release
 - [Master todo list](project_todos.md) — comprehensive ordered todos across all tracks: v1.2.0 blockers → hardening sprint → skill ports → Phase 2 UI → infrastructure; update each session
 - [Codex review blockers](project_codex_review_blockers.md) — ordered pre-v1.2.0 release blockers (1-5 ALL DONE 2026-05-08) + medium/architectural debt (6-12); consulted for debt items

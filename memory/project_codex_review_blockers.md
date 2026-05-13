@@ -16,8 +16,8 @@ Fix these in order before any new features or v1.2.0 tag.
 
 ## Medium debt (post-v1.2.0, before v1.3.0)
 
-6. **MCP single-action tools missing** - `mcp_server.py` only iterates `collect_actions(tool_cls)`; single-action plugins never appear. Add the single-action branch (mirrors `cli.py:324`).
-7. **`edit --status` bypasses `_set_status`** - `EditInputs.status` accepts any string and writes it directly, skipping the timestamp/lifecycle logic in `_set_status`. Either route through `_set_status` or remove `status` from `edit`. Use `Literal` / enum to prevent invalid values.
+6. **DONE 2026-05-12: MCP single-action tools missing** - `build_mcp_tools()` + `invoke_action()` now handle single-action tools; the single-action branch mirrors `cli.py:324`.
+7. **DONE 2026-05-13: `edit --status` bypasses `_set_status`** - routed through `_apply_status_transition` helper; started/finished timestamps now stamped correctly on status changes via `edit`.
 
 ## Architectural debt (deliberate backlog)
 
