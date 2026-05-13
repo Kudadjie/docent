@@ -13,6 +13,8 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from docent.mcp_server import invoke_action
+
 UI_DIST = Path(__file__).parent / "ui_dist"
 DOCENT_DIR = Path.home() / ".docent"
 QUEUE_FILE = DOCENT_DIR / "data" / "reading" / "queue.json"
@@ -132,6 +134,18 @@ class ActionBody(BaseModel):
     tags: Optional[list[str]] = None
 
 
+_ACTION_MAP: dict[str, tuple[str, str]] = {
+    "edit": ("reading", "edit"),
+    "done": ("reading", "done"),
+    "start": ("reading", "start"),
+    "remove": ("reading", "remove"),
+    "move-up": ("reading", "move-up"),
+    "move-down": ("reading", "move-down"),
+    "sync": ("reading", "sync-from-mendeley"),
+    "queue-clear": ("reading", "queue-clear"),
+}
+
+
 @app.post("/api/actions")
 async def post_action(body: ActionBody) -> JSONResponse:
     action = body.action
@@ -139,41 +153,28 @@ async def post_action(body: ActionBody) -> JSONResponse:
     if action not in no_id_actions and not body.id:
         return JSONResponse({"ok": False, "error": "id required"}, status_code=400)
 
-    try:
-        if action == "edit":
-            args = ["reading", "edit", "--id", body.id]
-            if body.status is not None:
-                args += ["--status", body.status]
-            if body.order is not None:
-                args += ["--order", str(body.order)]
-            if body.deadline is not None:
-                args += ["--deadline", body.deadline]
-            if body.notes is not None:
-                args += ["--notes", body.notes]
-            if body.tags is not None:
-                for t in body.tags:
-                    args += ["--tags", t]
-            stdout, stderr, rc = await _run(args)
-        elif action == "done":
-            stdout, stderr, rc = await _run(["reading", "done", "--id", body.id])
-        elif action == "start":
-            stdout, stderr, rc = await _run(["reading", "start", "--id", body.id])
-        elif action == "remove":
-            stdout, stderr, rc = await _run(["reading", "remove", "--id", body.id])
-        elif action == "move-up":
-            stdout, stderr, rc = await _run(["reading", "move-up", "--id", body.id])
-        elif action == "move-down":
-            stdout, stderr, rc = await _run(["reading", "move-down", "--id", body.id])
-        elif action == "sync":
-            stdout, stderr, rc = await _run(["reading", "sync-from-mendeley"], timeout=120.0)
-        elif action == "queue-clear":
-            stdout, stderr, rc = await _run(["reading", "queue-clear", "--yes"])
-        else:
-            return JSONResponse({"error": "Unknown action"}, status_code=400)
+    if action not in _ACTION_MAP:
+        return JSONResponse({"error": "Unknown action"}, status_code=400)
 
-        if rc != 0:
-            raise RuntimeError(stderr or stdout)
-        return JSONResponse({"ok": True, "stdout": stdout, "stderr": stderr})
+    tool_name, action_name = _ACTION_MAP[action]
+    args: dict[str, Any] = {}
+    if body.id is not None:
+        args["id"] = body.id
+    if action == "edit":
+        if body.status is not None:
+            args["status"] = body.status
+        if body.order is not None:
+            args["order"] = body.order
+        if body.deadline is not None:
+            args["deadline"] = body.deadline
+        if body.notes is not None:
+            args["notes"] = body.notes
+    elif action == "queue-clear":
+        args["yes"] = True
+
+    try:
+        result = await asyncio.to_thread(invoke_action, tool_name, action_name, args)
+        return JSONResponse({"ok": True, "stdout": result})
     except Exception as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
 
@@ -296,4 +297,8 @@ if UI_DIST.is_dir():
 
 
 def run_server(host: str = "127.0.0.1", port: int = 7432) -> None:
+    from docent.core import load_plugins
+    from docent.tools import discover_tools
+    discover_tools()
+    load_plugins()
     uvicorn.run(app, host=host, port=port)

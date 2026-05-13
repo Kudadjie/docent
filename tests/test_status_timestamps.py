@@ -9,7 +9,7 @@ from docent.config import load_settings
 from docent.core.context import Context
 from docent.execution import Executor
 from docent.llm import LLMClient
-from reading import IdOnlyInputs, ReadingQueue
+from reading import EditInputs, IdOnlyInputs, ReadingQueue
 
 
 def _ctx() -> Context:
@@ -51,3 +51,25 @@ def test_started_not_overwritten_on_re_read(tmp_docent_home, seed_queue_entry):
 
     second = tool.start(IdOnlyInputs(id=eid), _ctx())
     assert second.entry.started == first_started
+
+
+def test_edit_status_reading_stamps_started(tmp_docent_home, seed_queue_entry):
+    tool = ReadingQueue()
+    seeded = seed_queue_entry(tool, title="X", authors="Smith, J", year=2024, doi="10.1/x")
+    eid = seeded["id"]
+
+    result = tool.edit(EditInputs(id=eid, status="reading"), _ctx())
+    assert result.ok
+    assert result.entry.status == "reading"
+    assert result.entry.started is not None
+
+
+def test_edit_status_done_stamps_finished(tmp_docent_home, seed_queue_entry):
+    tool = ReadingQueue()
+    seeded = seed_queue_entry(tool, title="X", authors="Smith, J", year=2024, doi="10.1/x")
+    eid = seeded["id"]
+
+    result = tool.edit(EditInputs(id=eid, status="done"), _ctx())
+    assert result.ok
+    assert result.entry.status == "done"
+    assert result.entry.finished is not None

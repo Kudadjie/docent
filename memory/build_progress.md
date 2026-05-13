@@ -27,11 +27,11 @@ Docent is a Python CLI "control center" for grad-school workflows. Design lives 
 - [x] Duplicate References fix: `_strip_references_section()` + `_append_references()`
 - [x] FeynmanNotFoundError: `_find_feynman()` PATH+AppData resolution, friendly error message
 - [x] Tavily quota exhaustion: specific `UsageLimitExceededError` catch, clear message, skips manual fallback
-- [ ] Hardening sprint: UI server direct invocation (wire to `invoke_action()`)
+- [x] Hardening sprint: UI server direct invocation (wire to `invoke_action()`) — DONE 2026-05-13
 - [x] Hardening sprint: Reading monolith split (~1,215 lines → modules) — COMPLETE 2026-05-12
 - [x] Hardening sprint: Research tool DRY-up — DONE 2026-05-12 (extracted _run_with_tavily_fallback; run_deep/run_lit 55→17 lines each)
 - [x] Medium debt: MCP single-action tools — DONE 2026-05-12 (`build_mcp_tools()` + `invoke_action()` now handle single-action tools; 4 new tests)
-- [ ] Medium debt: `edit --status` bypasses `_set_status` lifecycle
+- [x] Medium debt: `edit --status` bypasses `_set_status` lifecycle — DONE 2026-05-13 (`_apply_status_transition` helper; 308 tests green)
 - [ ] Plan D: `docent doctor` + extended onboarding (tooling check, auth status, feynman storage warning)
 - [ ] Plan D: `docent setup` command
 - [ ] Real-life tests #10–#19 (can happen in parallel; #10 blocked on feynman reinstall + credits)

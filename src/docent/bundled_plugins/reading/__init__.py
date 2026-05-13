@@ -194,7 +194,9 @@ class ReadingQueue(Tool):
             return self._not_found(inputs.id, queue)
         updates: dict[str, Any] = {}
         if inputs.status is not None:
-            updates["status"] = inputs.status
+            # Route through lifecycle helper so started/finished get stamped correctly.
+            self._apply_status_transition(entry, inputs.status)
+            updates["status"] = inputs.status  # track for log; entry already mutated
         if inputs.type is not None:
             updates["type"] = inputs.type
         if inputs.category is not None:
@@ -211,7 +213,8 @@ class ReadingQueue(Tool):
                 queue_size=len(queue), banner=self._store.banner_counts(),
                 message="No fields supplied; nothing to edit.",
             )
-        entry.update(updates)
+        # Status already applied via _apply_status_transition; skip it here.
+        entry.update({k: v for k, v in updates.items() if k != "status"})
         if inputs.order is not None:
             # Route through reorder logic so other entries shift correctly.
             self._reorder_move_to(queue, inputs.id, inputs.order)
@@ -586,18 +589,23 @@ class ReadingQueue(Tool):
             message=f"No entry with id {entry_id!r}.",
         )
 
-    def _set_status(self, entry_id: str, status: str) -> MutationResult:
-        queue = self._store.load_queue()
-        entry = self._find_entry(queue, entry_id)
-        if not entry:
-            return self._not_found(entry_id, queue)
-        previous = entry.get("status")
+    def _apply_status_transition(self, entry: dict, status: str) -> str:
+        """Mutate entry in-place for a status change. Stamps started/finished. Returns previous status."""
+        previous = entry.get("status", "queued")
         entry["status"] = status
         ts = datetime.now().isoformat()
         if status == "reading" and not entry.get("started"):
             entry["started"] = ts
         elif status == "done" and not entry.get("finished"):
             entry["finished"] = ts
+        return previous
+
+    def _set_status(self, entry_id: str, status: str) -> MutationResult:
+        queue = self._store.load_queue()
+        entry = self._find_entry(queue, entry_id)
+        if not entry:
+            return self._not_found(entry_id, queue)
+        previous = self._apply_status_transition(entry, status)
         self._store.save_queue(queue)
         self._log_event("set_status", id=entry_id, status=status, previous=previous)
         return MutationResult(

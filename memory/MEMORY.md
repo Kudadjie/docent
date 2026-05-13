@@ -30,3 +30,6 @@
 - [Research test blockers](project_research_test_blockers.md) — ALL FIXED 2026-05-11: dupe registration, DDG→Tavily, 0-sources garbage output, Windows venv; pipeline quality: timeout/S2/verifier guard/refiner stage; 280 tests green
 - [Zotero integration design](project_zotero_integration.md) — ReferenceManagerClient protocol, Mendeley OR Zotero toggle (not both), pyzotero vs zotero-mcp open question; v1.3+ work
 - [Obsidian integration design](project_obsidian_integration.md) — to-vault output, literature notes on done, Dataview-compatible frontmatter, daily notes, Templater; v1.4+ work
+- [Academic workstation vision analysis](vision_academic_workstation_analysis.md) — Hermes analysis of `txt/docent in the near future.txt`; maps the 4-phase "All-Around Academic Workstation" vision against current roadmap, flags 6 gaps/risks, recommends sequencing
+- [OpenCode usage limits](project_opencode_limits.md) — Hermes/OpenCode delegation blocked (quota hit 2026-05-13); use Claude sub-agents (Agent tool) as fallback; Haiku=lookups, Sonnet=impl, worktree isolation for code changes
+- [Hermes WSL venv](hermes.md) — Hermes must not touch Windows .venv at /mnt/c/...; Linux wheels corrupt Windows venv; fix via PowerShell `Remove-Item -Recurse -Force .venv` + `uv sync`
