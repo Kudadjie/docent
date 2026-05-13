@@ -36,16 +36,13 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from pydantic import BaseModel
 
-from docent.config import load_settings
 from docent.core import (
-    Context,
     ProgressEvent,
     all_tools,
     collect_actions,
     load_plugins,
+    run_action,
 )
-from docent.execution import Executor
-from docent.llm import LLMClient
 from docent.tools import discover_tools
 
 
@@ -107,11 +104,6 @@ def build_mcp_tools() -> list[types.Tool]:
 # Action invocation
 # ---------------------------------------------------------------------------
 
-def _make_context() -> Context:
-    settings = load_settings()
-    return Context(settings=settings, llm=LLMClient(settings), executor=Executor())
-
-
 def _serialize(result: Any) -> str:
     if isinstance(result, BaseModel):
         return result.model_dump_json(indent=2)
@@ -128,42 +120,11 @@ def invoke_action(
 ) -> str:
     """Run one Docent action and return its result as a JSON string.
 
-    Works for both multi-action tools (``@action`` methods) and
-    single-action tools (``run()``).  For single-action tools the
-    ``action_cli_name`` must be ``"run"``.
-
-    Generator actions (streaming) collect ProgressEvent messages as a
-    prefix and the final return value as the last line.
+    Delegates dispatch to core.invoke.run_action.  Generator actions collect
+    ProgressEvent messages as a prefix followed by the final JSON result —
+    so MCP callers see the full execution trace in a single response.
     """
-    tools = all_tools()
-    if tool_name not in tools:
-        raise ValueError(f"No tool named '{tool_name}'")
-
-    tool_cls = tools[tool_name]
-    actions = collect_actions(tool_cls)
-    ctx = _make_context()
-
-    # --- Multi-action path ---
-    if actions:
-        if action_cli_name not in actions:
-            raise ValueError(f"Tool '{tool_name}' has no action '{action_cli_name}'")
-        method_name, meta = actions[action_cli_name]
-        inputs = meta.input_schema(**arguments)
-        method = getattr(tool_cls(), method_name)
-        raw = method(inputs, ctx)
-    else:
-        # --- Single-action path ---
-        if action_cli_name != "run":
-            raise ValueError(
-                f"Tool '{tool_name}' is single-action — use 'run', "
-                f"not '{action_cli_name}'"
-            )
-        if tool_cls.input_schema is not None:
-            inputs = tool_cls.input_schema(**arguments)
-        else:
-            inputs = BaseModel()  # shouldn't happen per registry validation
-            inputs = inputs(**arguments)
-        raw = tool_cls().run(inputs, ctx)
+    raw = run_action(tool_name, action_cli_name, arguments)
 
     if inspect.isgenerator(raw):
         lines: list[str] = []

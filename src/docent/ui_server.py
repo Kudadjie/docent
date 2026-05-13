@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from docent.core.invoke import run_action
 from docent.mcp_server import invoke_action
 
 UI_DIST = Path(__file__).parent / "ui_dist"
@@ -201,9 +202,9 @@ async def post_config(body: ConfigBody) -> JSONResponse:
     if body.section != "reading":
         return JSONResponse({"error": "Only section='reading' is supported"}, status_code=400)
     try:
-        stdout, stderr, rc = await _run(["reading", "config-set", "--key", body.key, "--value", body.value])
-        if rc != 0:
-            raise RuntimeError(stderr or stdout)
+        await asyncio.to_thread(
+            run_action, "reading", "config-set", {"key": body.key, "value": body.value}
+        )
     except Exception as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
     cfg = _read_config_reading()

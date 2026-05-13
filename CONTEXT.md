@@ -1,13 +1,13 @@
 # CONTEXT - resume hint for next session
 
-**Current Task:** v1.2.0 omnibus hardening — UI server wired to invoke_action() (todo #1 done) and edit --status lifecycle fix (todo #2 done). 308 tests green.
+**Current Task:** Plan D complete — `docent doctor` + `docent setup` shipped (commit 81feaa6 on dev). 326 tests green.
 
 **Key Decisions:**
-- UI server `post_action` now calls `invoke_action()` in-process via `asyncio.to_thread`; no more subprocess-per-action
-- `_apply_status_transition` helper extracted; `edit --status` now stamps `started`/`finished` correctly
-- Hermes must not modify Windows `.venv` — see `memory/hermes.md`
+- Doctor: 10 checks in parallel (ThreadPoolExecutor); subprocess-free for feynman (package.json) and mendeley-mcp (shutil.which) to avoid Windows pipe-hang
+- Plugin loader: bundled plugins imported as `docent.bundled_plugins.<name>` — fixes duplicate @register_tool warning
+- Feynman package is `@companion-ai/feynman`; update source = GitHub releases (`companion-inc/feynman`)
 
 **Next Steps:**
-1. `docent doctor` + extended onboarding (Plan D) — tooling check, auth status, feynman ~2GB warning
-2. Real-life tests #10-19 (blocked on credits — reset ~2026-05-17 17:00)
-3. Tag v1.2.0
+1. Real-life tests #10-19 (credits reset ~2026-05-17 17:00)
+2. Tag v1.2.0 (after tests pass)
+3. `docent doctor` auto-install idea (post-v1.2.0) — user wants doctor to offer installing missing tools

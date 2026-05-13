@@ -173,58 +173,60 @@ class ReadingQueue(Tool):
 
     @action(description="Remove an entry from the queue.", input_schema=IdOnlyInputs)
     def remove(self, inputs: IdOnlyInputs, context: Context) -> MutationResult:
-        queue = self._store.load_queue()
-        entry = self._find_entry(queue, inputs.id)
-        if not entry:
-            return self._not_found(inputs.id, queue)
-        new_queue = [e for e in queue if e.get("id") != inputs.id]
-        self._store.save_queue(new_queue)
-        self._log_event("remove", id=inputs.id, title=entry.get("title"))
-        return MutationResult(
-            ok=True, id=inputs.id, entry=QueueEntry(**entry),
-            queue_size=len(new_queue), banner=self._store.banner_counts(),
-            message=f"Removed {inputs.id!r}.",
-        )
+        with self._store.lock():
+            queue = self._store.load_queue()
+            entry = self._find_entry(queue, inputs.id)
+            if not entry:
+                return self._not_found(inputs.id, queue)
+            new_queue = [e for e in queue if e.get("id") != inputs.id]
+            self._store.save_queue(new_queue)
+            self._log_event("remove", id=inputs.id, title=entry.get("title"))
+            return MutationResult(
+                ok=True, id=inputs.id, entry=QueueEntry(**entry),
+                queue_size=len(new_queue), banner=self._store.banner_counts(),
+                message=f"Removed {inputs.id!r}.",
+            )
 
     @action(description="Edit user-settable fields on an existing entry (Mendeley-owned fields: title/authors/year/doi are not editable here).", input_schema=EditInputs)
     def edit(self, inputs: EditInputs, context: Context) -> MutationResult:
-        queue = self._store.load_queue()
-        entry = self._find_entry(queue, inputs.id)
-        if not entry:
-            return self._not_found(inputs.id, queue)
-        updates: dict[str, Any] = {}
-        if inputs.status is not None:
-            # Route through lifecycle helper so started/finished get stamped correctly.
-            self._apply_status_transition(entry, inputs.status)
-            updates["status"] = inputs.status  # track for log; entry already mutated
-        if inputs.type is not None:
-            updates["type"] = inputs.type
-        if inputs.category is not None:
-            updates["category"] = inputs.category or None
-        if inputs.deadline is not None:
-            updates["deadline"] = inputs.deadline or None
-        if inputs.notes is not None:
-            updates["notes"] = inputs.notes
-        if inputs.tags is not None:
-            updates["tags"] = inputs.tags
-        if not updates and inputs.order is None:
+        with self._store.lock():
+            queue = self._store.load_queue()
+            entry = self._find_entry(queue, inputs.id)
+            if not entry:
+                return self._not_found(inputs.id, queue)
+            updates: dict[str, Any] = {}
+            if inputs.status is not None:
+                # Route through lifecycle helper so started/finished get stamped correctly.
+                self._apply_status_transition(entry, inputs.status)
+                updates["status"] = inputs.status  # track for log; entry already mutated
+            if inputs.type is not None:
+                updates["type"] = inputs.type
+            if inputs.category is not None:
+                updates["category"] = inputs.category or None
+            if inputs.deadline is not None:
+                updates["deadline"] = inputs.deadline or None
+            if inputs.notes is not None:
+                updates["notes"] = inputs.notes
+            if inputs.tags is not None:
+                updates["tags"] = inputs.tags
+            if not updates and inputs.order is None:
+                return MutationResult(
+                    ok=False, id=inputs.id, entry=QueueEntry(**entry),
+                    queue_size=len(queue), banner=self._store.banner_counts(),
+                    message="No fields supplied; nothing to edit.",
+                )
+            # Status already applied via _apply_status_transition; skip it here.
+            entry.update({k: v for k, v in updates.items() if k != "status"})
+            if inputs.order is not None:
+                # Route through reorder logic so other entries shift correctly.
+                self._reorder_move_to(queue, inputs.id, inputs.order)
+            self._store.save_queue(queue)
+            self._log_event("edit", id=inputs.id, fields=sorted(updates.keys()))
             return MutationResult(
-                ok=False, id=inputs.id, entry=QueueEntry(**entry),
+                ok=True, id=inputs.id, entry=QueueEntry(**entry),
                 queue_size=len(queue), banner=self._store.banner_counts(),
-                message="No fields supplied; nothing to edit.",
+                message=f"Updated {inputs.id!r}: {sorted(updates.keys())}.",
             )
-        # Status already applied via _apply_status_transition; skip it here.
-        entry.update({k: v for k, v in updates.items() if k != "status"})
-        if inputs.order is not None:
-            # Route through reorder logic so other entries shift correctly.
-            self._reorder_move_to(queue, inputs.id, inputs.order)
-        self._store.save_queue(queue)
-        self._log_event("edit", id=inputs.id, fields=sorted(updates.keys()))
-        return MutationResult(
-            ok=True, id=inputs.id, entry=QueueEntry(**entry),
-            queue_size=len(queue), banner=self._store.banner_counts(),
-            message=f"Updated {inputs.id!r}: {sorted(updates.keys())}.",
-        )
 
     @action(
         description="Empty the reading queue (irreversible). Re-run with --yes to actually clear.",
@@ -232,40 +234,42 @@ class ReadingQueue(Tool):
         name="queue-clear",
     )
     def queue_clear(self, inputs: QueueClearInputs, context: Context) -> QueueClearResult:
-        queue = self._store.load_queue()
-        n = len(queue)
-        if not inputs.yes:
+        with self._store.lock():
+            queue = self._store.load_queue()
+            n = len(queue)
+            if not inputs.yes:
+                return QueueClearResult(
+                    cleared=False,
+                    removed_count=0,
+                    queue_size=n,
+                    banner=self._store.banner_counts(),
+                    message=f"{n} entries in queue. Re-run with --yes to clear.",
+                )
+            self._store.save_queue([])
+            self._log_event("queue_clear", removed=n)
             return QueueClearResult(
-                cleared=False,
-                removed_count=0,
-                queue_size=n,
+                cleared=True,
+                removed_count=n,
+                queue_size=0,
                 banner=self._store.banner_counts(),
-                message=f"{n} entries in queue. Re-run with --yes to clear.",
+                message=f"Cleared {n} entries from the queue.",
             )
-        self._store.save_queue([])
-        self._log_event("queue_clear", removed=n)
-        return QueueClearResult(
-            cleared=True,
-            removed_count=n,
-            queue_size=0,
-            banner=self._store.banner_counts(),
-            message=f"Cleared {n} entries from the queue.",
-        )
 
     @action(description="Set or clear a reading deadline on an entry.", input_schema=SetDeadlineInputs, name="set-deadline")
     def set_deadline(self, inputs: SetDeadlineInputs, context: Context) -> MutationResult:
-        queue = self._store.load_queue()
-        entry = self._find_entry(queue, inputs.id)
-        if entry is None:
-            return self._not_found(inputs.id, queue)
-        entry["deadline"] = inputs.deadline.strip() or None
-        self._store.save_queue(queue)
-        self._log_event("set_deadline", id=inputs.id, deadline=entry["deadline"])
-        return MutationResult(
-            ok=True, id=inputs.id, entry=QueueEntry(**entry),
-            queue_size=len(queue), banner=self._store.banner_counts(),
-            message=f"Deadline {'set to ' + entry['deadline'] if entry['deadline'] else 'cleared'} for {inputs.id!r}.",
-        )
+        with self._store.lock():
+            queue = self._store.load_queue()
+            entry = self._find_entry(queue, inputs.id)
+            if entry is None:
+                return self._not_found(inputs.id, queue)
+            entry["deadline"] = inputs.deadline.strip() or None
+            self._store.save_queue(queue)
+            self._log_event("set_deadline", id=inputs.id, deadline=entry["deadline"])
+            return MutationResult(
+                ok=True, id=inputs.id, entry=QueueEntry(**entry),
+                queue_size=len(queue), banner=self._store.banner_counts(),
+                message=f"Deadline {'set to ' + entry['deadline'] if entry['deadline'] else 'cleared'} for {inputs.id!r}.",
+            )
 
     @action(description="Mark an entry as done.", input_schema=IdOnlyInputs)
     def done(self, inputs: IdOnlyInputs, context: Context) -> MutationResult:
@@ -308,72 +312,75 @@ class ReadingQueue(Tool):
 
     @action(description="Move an entry one position earlier in the reading order.", input_schema=IdOnlyInputs, name="move-up")
     def move_up(self, inputs: IdOnlyInputs, context: Context) -> MutationResult:
-        queue = self._store.load_queue()
-        entry = self._find_entry(queue, inputs.id)
-        if not entry:
-            return self._not_found(inputs.id, queue)
-        # Rank among active entries only (done/removed excluded).
-        active = sorted(
-            [e for e in queue if e.get("status") not in ("done", "removed")],
-            key=lambda e: (e.get("order") or 0),
-        )
-        rank = next((i + 1 for i, e in enumerate(active) if e.get("id") == inputs.id), 0)
-        if rank <= 1:
-            return MutationResult(
-                ok=False, id=inputs.id, entry=QueueEntry(**entry),
-                queue_size=len(queue), banner=self._store.banner_counts(),
-                message=f"{inputs.id!r} is already at position 1; can't move up.",
+        with self._store.lock():
+            queue = self._store.load_queue()
+            entry = self._find_entry(queue, inputs.id)
+            if not entry:
+                return self._not_found(inputs.id, queue)
+            # Rank among active entries only (done/removed excluded).
+            active = sorted(
+                [e for e in queue if e.get("status") not in ("done", "removed")],
+                key=lambda e: (e.get("order") or 0),
             )
-        self._reorder_move_to(queue, inputs.id, rank - 1)
-        self._store.save_queue(queue)
-        updated = self._find_entry(queue, inputs.id)
-        return MutationResult(
-            ok=True, id=inputs.id, entry=QueueEntry(**updated),
-            queue_size=len(queue), banner=self._store.banner_counts(),
-            message=f"Moved {inputs.id!r} to position {updated.get('order')}.",
-        )
+            rank = next((i + 1 for i, e in enumerate(active) if e.get("id") == inputs.id), 0)
+            if rank <= 1:
+                return MutationResult(
+                    ok=False, id=inputs.id, entry=QueueEntry(**entry),
+                    queue_size=len(queue), banner=self._store.banner_counts(),
+                    message=f"{inputs.id!r} is already at position 1; can't move up.",
+                )
+            self._reorder_move_to(queue, inputs.id, rank - 1)
+            self._store.save_queue(queue)
+            updated = self._find_entry(queue, inputs.id)
+            return MutationResult(
+                ok=True, id=inputs.id, entry=QueueEntry(**updated),
+                queue_size=len(queue), banner=self._store.banner_counts(),
+                message=f"Moved {inputs.id!r} to position {updated.get('order')}.",
+            )
 
     @action(description="Move an entry one position later in the reading order.", input_schema=IdOnlyInputs, name="move-down")
     def move_down(self, inputs: IdOnlyInputs, context: Context) -> MutationResult:
-        queue = self._store.load_queue()
-        entry = self._find_entry(queue, inputs.id)
-        if not entry:
-            return self._not_found(inputs.id, queue)
-        # Rank among active entries only (done/removed excluded).
-        active = sorted(
-            [e for e in queue if e.get("status") not in ("done", "removed")],
-            key=lambda e: (e.get("order") or 0),
-        )
-        rank = next((i + 1 for i, e in enumerate(active) if e.get("id") == inputs.id), 0)
-        if rank >= len(active):
-            return MutationResult(
-                ok=False, id=inputs.id, entry=QueueEntry(**entry),
-                queue_size=len(queue), banner=self._store.banner_counts(),
-                message=f"{inputs.id!r} is already at the last position; can't move down.",
+        with self._store.lock():
+            queue = self._store.load_queue()
+            entry = self._find_entry(queue, inputs.id)
+            if not entry:
+                return self._not_found(inputs.id, queue)
+            # Rank among active entries only (done/removed excluded).
+            active = sorted(
+                [e for e in queue if e.get("status") not in ("done", "removed")],
+                key=lambda e: (e.get("order") or 0),
             )
-        self._reorder_move_to(queue, inputs.id, rank + 1)
-        self._store.save_queue(queue)
-        updated = self._find_entry(queue, inputs.id)
-        return MutationResult(
-            ok=True, id=inputs.id, entry=QueueEntry(**updated),
-            queue_size=len(queue), banner=self._store.banner_counts(),
-            message=f"Moved {inputs.id!r} to position {updated.get('order')}.",
-        )
+            rank = next((i + 1 for i, e in enumerate(active) if e.get("id") == inputs.id), 0)
+            if rank >= len(active):
+                return MutationResult(
+                    ok=False, id=inputs.id, entry=QueueEntry(**entry),
+                    queue_size=len(queue), banner=self._store.banner_counts(),
+                    message=f"{inputs.id!r} is already at the last position; can't move down.",
+                )
+            self._reorder_move_to(queue, inputs.id, rank + 1)
+            self._store.save_queue(queue)
+            updated = self._find_entry(queue, inputs.id)
+            return MutationResult(
+                ok=True, id=inputs.id, entry=QueueEntry(**updated),
+                queue_size=len(queue), banner=self._store.banner_counts(),
+                message=f"Moved {inputs.id!r} to position {updated.get('order')}.",
+            )
 
     @action(description="Move an entry to a specific position in the reading order.", input_schema=MoveToInputs, name="move-to")
     def move_to(self, inputs: MoveToInputs, context: Context) -> MutationResult:
-        queue = self._store.load_queue()
-        entry = self._find_entry(queue, inputs.id)
-        if not entry:
-            return self._not_found(inputs.id, queue)
-        self._reorder_move_to(queue, inputs.id, inputs.position)
-        self._store.save_queue(queue)
-        updated = self._find_entry(queue, inputs.id)
-        return MutationResult(
-            ok=True, id=inputs.id, entry=QueueEntry(**updated),
-            queue_size=len(queue), banner=self._store.banner_counts(),
-            message=f"Moved {inputs.id!r} to position {updated.get('order')}.",
-        )
+        with self._store.lock():
+            queue = self._store.load_queue()
+            entry = self._find_entry(queue, inputs.id)
+            if not entry:
+                return self._not_found(inputs.id, queue)
+            self._reorder_move_to(queue, inputs.id, inputs.position)
+            self._store.save_queue(queue)
+            updated = self._find_entry(queue, inputs.id)
+            return MutationResult(
+                ok=True, id=inputs.id, entry=QueueEntry(**updated),
+                queue_size=len(queue), banner=self._store.banner_counts(),
+                message=f"Moved {inputs.id!r} to position {updated.get('order')}.",
+            )
 
     @action(description="Show the configured reading settings.", input_schema=ConfigShowInputs, name="config-show")
     def config_show(self, inputs: ConfigShowInputs, context: Context) -> ConfigShowResult:
@@ -601,18 +608,19 @@ class ReadingQueue(Tool):
         return previous
 
     def _set_status(self, entry_id: str, status: str) -> MutationResult:
-        queue = self._store.load_queue()
-        entry = self._find_entry(queue, entry_id)
-        if not entry:
-            return self._not_found(entry_id, queue)
-        previous = self._apply_status_transition(entry, status)
-        self._store.save_queue(queue)
-        self._log_event("set_status", id=entry_id, status=status, previous=previous)
-        return MutationResult(
-            ok=True, id=entry_id, entry=QueueEntry(**entry),
-            queue_size=len(queue), banner=self._store.banner_counts(),
-            message=f"Set status to {status!r} for {entry_id!r} (was {previous!r}).",
-        )
+        with self._store.lock():
+            queue = self._store.load_queue()
+            entry = self._find_entry(queue, entry_id)
+            if not entry:
+                return self._not_found(entry_id, queue)
+            previous = self._apply_status_transition(entry, status)
+            self._store.save_queue(queue)
+            self._log_event("set_status", id=entry_id, status=status, previous=previous)
+            return MutationResult(
+                ok=True, id=entry_id, entry=QueueEntry(**entry),
+                queue_size=len(queue), banner=self._store.banner_counts(),
+                message=f"Set status to {status!r} for {entry_id!r} (was {previous!r}).",
+            )
 
     def _log_event(self, event: str, **fields: Any) -> None:
         RunLog(self.name).append({"event": event, **fields})

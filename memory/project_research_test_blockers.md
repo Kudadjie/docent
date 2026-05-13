@@ -4,6 +4,14 @@ description: Original bugs fixed; new pipeline quality issues found and fixed in
 type: project
 ---
 
+## Credit model (corrected 2026-05-13)
+
+- **Tavily**: free tier — no credit constraints, tests can run anytime
+- **OpenCode model credits**: reset 2026-05-17 17:00 — blocks tests that route through OcClient (`research deep/lit --backend oc` or similar)
+- **Feynman API**: paid credits required regardless of model — feynman-backed tests blocked until credits are available
+
+Tests using only the **native Tavily pipeline** are unblocked and can run anytime. OcClient and Feynman-backed tests are blocked on their respective credits.
+
 ## Bug 1 — Duplicate tool registration (FIXED 2026-05-11)
 
 Root cause: absolute import `from docent.bundled_plugins.research_to_notebook.oc_client` in `usage()` caused `__init__.py` to execute under different `sys.modules` key. Fix A: relative import. Fix B: registry guard warns + skips on duplicate.

@@ -371,30 +371,19 @@ tools (those using `run()` instead of `@action`) are never exposed over MCP.
 
 ---
 
-## 8. v1.2.0 omnibus — hardening + v1.3 planning + debt
+## 8. v1.2.0 — current release (omnibus: hardening + v1.3 planning + debt)
 
-**Policy decision (2026-05-12):** v1.2.0 is an omnibus release. Everything ships in v1.2.0.
+**Policy:** v1.2.0 ships everything before tag. 302 tests green. Real-life tests #1-9 PASSED.
 
-Current published version: **v1.1.0** (2026-05-08). Next: **v1.2.0** — 300 tests green. Real-life tests 1-9 PASSED. See [`memory/build_progress.md`](memory/build_progress.md).
+**What shipped in v1.2.0 so far:** Feynman backend hardened (`--prompt` one-shot, error summarizer, `feynman_model`/`feynman_timeout` config). Reading monolith split (1271→618 lines). Research tool DRY-up. MCP single-action tools. Duplicate references fix. Tavily quota exhaustion handling. FeynmanNotFoundError. ~2GB Feynman storage warning.
 
-**Feynman backend hardening (2026-05-12):**
-- `--prompt` one-shot mode (was interactive TUI → hangs with capture_output)
-- `feynman_model` config key (passes `--model` to feynman)
-- `feynman_timeout` config key (default 900s; kills stuck runs cleanly)
-- stderr captured for error surfacing; `_summarize_feynman_error()` parses JSON Lines + regex fallback for actionable messages
-- Raw text fallback with categorized recommendations (quota, auth, server-error, etc.)
-- Model info shown in every error message (Docent-configured vs feynman-attempted)
-- Docs link (`https://feynman.is/docs`) in every error message
+**Remaining before v1.2.0 tag:**
+1. UI server fix (wire to `invoke_action()`)
+2. `edit --status` bypass (route through `_set_status`)
+3. `docent doctor` onboarding command
+4. Real-life tests #10-19 (blocked on API credits)
 
-**Code changes this session (2026-05-12):**
-- Duplicate References fix (`_strip_references_section` + `_append_references`)
-- FeynmanNotFoundError + `_find_feynman()` PATH resolution
-- Feynman subprocess hang fix (`--prompt` one-shot mode, removed `capture_output=True`)
-- Feynman error summarizer (`_summarize_feynman_error` + `_model_note`)
-- Added `feynman_model`, `feynman_timeout` to settings + config-show/config-set
-- Feynman error messages: unified model attribution across JSON Lines + regex fallback paths; added `_DOCS_FOOTER` with CLI adjustment hint
-- Reading monolith split: `__init__.py` 1271→618 lines; new `models.py` (371) + `mendeley_sync.py` (351)
-- Research tool DRY-up: extracted `_run_with_tavily_fallback` from run_deep/run_lit (55→17 lines each)
+Full changelog and per-item status: [`memory/build_progress.md`](memory/build_progress.md). Master task list: [`memory/project_todos.md`](memory/project_todos.md). Architectural debt detail: [`memory/project_codex_review_blockers.md`](memory/project_codex_review_blockers.md).
 
 ---
 

@@ -297,19 +297,20 @@ def sync_from_mendeley_run(
             removed.append(e.get("id", mid))
 
     if not dry_run and (new_entries or removed or category_updates):
-        queue = store.load_queue()
-        by_id = {e.get("id"): e for e in queue}
-        for ne in new_entries:
-            if ne["id"] not in by_id:
-                queue.append(ne)
-        removed_set = set(removed)
-        for e in queue:
-            eid = e.get("id")
-            if eid in removed_set:
-                e["status"] = "removed"
-            if eid in category_updates:
-                e["category"] = category_updates[eid]
-        store.save_queue(queue)
+        with store.lock():
+            queue = store.load_queue()
+            by_id = {e.get("id"): e for e in queue}
+            for ne in new_entries:
+                if ne["id"] not in by_id:
+                    queue.append(ne)
+            removed_set = set(removed)
+            for e in queue:
+                eid = e.get("id")
+                if eid in removed_set:
+                    e["status"] = "removed"
+                if eid in category_updates:
+                    e["category"] = category_updates[eid]
+            store.save_queue(queue)
 
     if not dry_run:
         mendeley_cache.invalidate(folder_id)

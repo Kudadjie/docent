@@ -13,10 +13,12 @@ from __future__ import annotations
 
 import json
 import os
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
+from filelock import FileLock
 from pydantic import BaseModel
 
 
@@ -41,6 +43,22 @@ class ReadingQueueStore:
     @property
     def state_path(self) -> Path:
         return self.root / "state.json"
+
+    @contextmanager
+    def lock(self, timeout: float = 0) -> Iterator[None]:
+        """File lock for a read-modify-write cycle.
+        timeout=0 (default): fail immediately if another process holds the lock.
+        """
+        from filelock import Timeout as _FileLockTimeout
+        self.root.mkdir(parents=True, exist_ok=True)
+        try:
+            with FileLock(str(self.root / "queue.json.lock"), timeout=timeout):
+                yield
+        except _FileLockTimeout:
+            raise RuntimeError(
+                "Queue is busy — another Docent process is currently writing. "
+                "Retry in a moment."
+            ) from None
 
     def load_queue(self) -> list[dict[str, Any]]:
         if not self.queue_path.exists():
