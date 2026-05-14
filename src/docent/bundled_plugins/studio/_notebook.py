@@ -476,11 +476,12 @@ class ToNotebookInputs(BaseModel):
             "Overrides research.notebooklm_notebook_id in config."
         ),
     )
-    guide_file: str | None = Field(
-        None,
+    guide_files: list[str] = Field(
+        default_factory=list,
         description=(
-            "Path to a file (PDF, .md, .txt) that guides the notebook population — "
-            "added as a source and used to focus the NLM research query."
+            "Path(s) to files (PDF, .md, .txt) that guide the notebook population — "
+            "each is added as a source and used to focus the NLM research query. "
+            "Pass the flag multiple times to supply several files."
         ),
     )
     run_nlm_research: bool = Field(
@@ -563,7 +564,7 @@ def _nlm_push(
     context: "Context",
     max_sources: int = 20,
     topic: str | None = None,
-    guide_file: Path | None = None,
+    guide_files: list[Path] | None = None,
     run_nlm_research: bool = True,
     run_quality_gate: bool = True,
     run_perspectives: bool = True,
@@ -620,22 +621,26 @@ def _nlm_push(
     _errors: list[str] = []
     _errors_deleted = 0
 
-    # ── Resolve guide file ────────────────────────────────────────────────
-    guide_path: Path | None = None
-    if guide_file:
-        guide_path = Path(guide_file).expanduser()
-        if not guide_path.exists():
+    # ── Resolve guide files ───────────────────────────────────────────────
+    _guide_paths: list[Path] = []
+    for _gf in (guide_files or []):
+        _gp = Path(_gf).expanduser()
+        if _gp.exists():
+            _guide_paths.append(_gp)
+        else:
             yield ProgressEvent(
-                phase="nlm-guide", message=f"Guide file not found: {guide_path} -- ignoring."
+                phase="nlm-guide", message=f"Guide file not found: {_gp} -- ignoring."
             )
-            guide_path = None
 
     # ── Phase 1: Start NLM web research (non-blocking) ────────────────────
     # Enrich query with guide file keywords if available
     research_query = effective_topic
-    if guide_path:
+    if _guide_paths:
         try:
-            guide_snippet = guide_path.read_text(encoding="utf-8")[:500].replace("\n", " ")
+            guide_snippet = " ".join(
+                gp.read_text(encoding="utf-8")[:300].replace("\n", " ")
+                for gp in _guide_paths
+            )
             research_query = f"{effective_topic} -- {guide_snippet}"
         except OSError:
             pass
@@ -670,8 +675,8 @@ def _nlm_push(
         )
     time.sleep(1)
 
-    # ── Guide file as source ──────────────────────────────────────────────
-    if guide_path:
+    # ── Guide files as sources ────────────────────────────────────────────
+    for guide_path in _guide_paths:
         yield ProgressEvent(phase="nlm-push", message=f"Adding guide file: {guide_path.name}...")
         rc, err = _nlm_add_source(str(guide_path), notebook_id)
         if rc == 0:
@@ -902,7 +907,7 @@ def _nlm_push(
         "auth_expired_mid_run": False,
         "errors": _errors,
         "auto_tune_overrides": [k for k, v in overrides.items() if v and k != "wait_stable_max"],
-        "guide_file": str(guide_file) if guide_file else None,
+        "guide_files": [str(gp) for gp in _guide_paths],
     })
 
     return {

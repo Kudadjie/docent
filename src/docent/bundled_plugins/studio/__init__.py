@@ -191,7 +191,7 @@ def _slugify(text: str) -> str:
 
 
 def _read_guide_file(path: str | None) -> str:
-    """Read a guide file and return its text content, or '' if missing/unreadable."""
+    """Read a single guide file. Returns '' if missing/unreadable."""
     if not path:
         return ""
     p = Path(path).expanduser()
@@ -199,7 +199,6 @@ def _read_guide_file(path: str | None) -> str:
         return ""
     try:
         if p.suffix.lower() == ".pdf":
-            # Best-effort PDF text via pdfminer; fall back to empty string
             try:
                 from pdfminer.high_level import extract_text
                 return extract_text(str(p))
@@ -208,6 +207,25 @@ def _read_guide_file(path: str | None) -> str:
         return p.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return ""
+
+
+def _read_guide_files(paths: list[str]) -> str:
+    """Read one or more guide files and concatenate their content.
+
+    Each file's content is prefixed with a header so the LLM can distinguish
+    sources. Files that are missing or unreadable are silently skipped.
+    """
+    if not paths:
+        return ""
+    if len(paths) == 1:
+        return _read_guide_file(paths[0])
+    parts: list[str] = []
+    for path in paths:
+        text = _read_guide_file(path)
+        if text:
+            name = Path(path).name
+            parts.append(f"### {name}\n\n{text}")
+    return "\n\n".join(parts)
 
 
 def _artifact_slug(artifact: str) -> str:
@@ -574,11 +592,12 @@ def _append_references(draft: str, sources: list[dict]) -> str:
 _OUTPUT_CHOICES = "'local' (default), 'notebook' (push to NotebookLM), 'vault' (write to Obsidian vault)."
 
 
-_GUIDE_FILE_FIELD = Field(
-    None,
+_GUIDE_FILES_FIELD = Field(
+    default_factory=list,
     description=(
-        "Optional path to a file (.md, .txt, PDF) that guides the research — "
-        "its content is injected into the research brief to focus the output."
+        "Optional path(s) to files (.md, .txt, PDF) that guide the research — "
+        "their content is injected into the research brief to focus the output. "
+        "Pass the flag multiple times to supply several files."
     ),
 )
 
@@ -587,21 +606,21 @@ class DeepInputs(BaseModel):
     topic: str = Field(..., description="Research topic or question.")
     backend: str = Field("feynman", description="Research backend: 'feynman' (default) or 'docent'.")
     output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
-    guide_file: str | None = _GUIDE_FILE_FIELD
+    guide_files: list[str] = _GUIDE_FILES_FIELD
 
 
 class LitInputs(BaseModel):
     topic: str = Field(..., description="Research topic or question.")
     backend: str = Field("feynman", description="Research backend: 'feynman' (default) or 'docent'.")
     output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
-    guide_file: str | None = _GUIDE_FILE_FIELD
+    guide_files: list[str] = _GUIDE_FILES_FIELD
 
 
 class ReviewInputs(BaseModel):
     artifact: str = Field(..., description="arXiv ID, local PDF path, or URL to review.")
     backend: str = Field("feynman", description="Research backend: 'feynman' (default) or 'docent'.")
     output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
-    guide_file: str | None = _GUIDE_FILE_FIELD
+    guide_files: list[str] = _GUIDE_FILES_FIELD
 
 
 class ConfigShowInputs(BaseModel):
@@ -716,7 +735,7 @@ class ToLocalInputs(BaseModel):
             "If omitted, the most recent output in research.output_dir is used."
         ),
     )
-    guide_file: str | None = _GUIDE_FILE_FIELD
+    guide_files: list[str] = _GUIDE_FILES_FIELD
     to_vault: bool = Field(
         False,
         description="Also copy to Obsidian vault if research.obsidian_vault is configured.",
@@ -873,11 +892,11 @@ def _route_output(inputs: Any, out_path: Path, sources_path: Path | None, contex
     """
     if inputs.output == "notebook":
         topic = getattr(inputs, "topic", None)
-        gf_str = getattr(inputs, "guide_file", None)
+        gf_list = getattr(inputs, "guide_files", []) or []
         result = yield from _nlm_push(
             out_path, sources_path, context,
             topic=topic,
-            guide_file=Path(gf_str).expanduser() if gf_str else None,
+            guide_files=[Path(p).expanduser() for p in gf_list],
         )
         if result["ok"]:
             return result["notebook_id"], None, f" {result['message']}"
@@ -1123,12 +1142,13 @@ class StudioTool(Tool):
             output_dir.mkdir(parents=True, exist_ok=True)
             slug = _slugify(inputs.topic) + "-deep"
 
-            guide_ctx = _read_guide_file(inputs.guide_file)
+            guide_ctx = _read_guide_files(inputs.guide_files)
             effective_topic = inputs.topic
             if guide_ctx:
+                names = ", ".join(Path(p).name for p in inputs.guide_files)
                 effective_topic = (
                     f"{inputs.topic}\n\n"
-                    f"## Guide context ({Path(inputs.guide_file).name})\n{guide_ctx}"
+                    f"## Guide context ({names})\n{guide_ctx}"
                 )
 
             try:
@@ -1208,10 +1228,11 @@ class StudioTool(Tool):
         output_dir = context.settings.research.output_dir.expanduser()
         workspace_dir = output_dir / "workspace"
         slug = _slugify(inputs.topic) + "-deep"
-        guide_ctx = _read_guide_file(inputs.guide_file)
+        guide_ctx = _read_guide_files(inputs.guide_files)
         feynman_prompt = f"/deepresearch {inputs.topic}"
         if guide_ctx:
-            feynman_prompt += f"\n\n## Guide context ({Path(inputs.guide_file).name})\n{guide_ctx}"
+            names = ", ".join(Path(p).name for p in inputs.guide_files)
+            feynman_prompt += f"\n\n## Guide context ({names})\n{guide_ctx}"
         cmd_args = ["--prompt", feynman_prompt]
         if context.settings.research.feynman_model:
             cmd_args = ["--model", context.settings.research.feynman_model] + cmd_args
@@ -1290,12 +1311,13 @@ class StudioTool(Tool):
             output_dir.mkdir(parents=True, exist_ok=True)
             slug = _slugify(inputs.topic) + "-lit"
 
-            guide_ctx = _read_guide_file(inputs.guide_file)
+            guide_ctx = _read_guide_files(inputs.guide_files)
             effective_topic = inputs.topic
             if guide_ctx:
+                names = ", ".join(Path(p).name for p in inputs.guide_files)
                 effective_topic = (
                     f"{inputs.topic}\n\n"
-                    f"## Guide context ({Path(inputs.guide_file).name})\n{guide_ctx}"
+                    f"## Guide context ({names})\n{guide_ctx}"
                 )
 
             try:
@@ -1373,10 +1395,11 @@ class StudioTool(Tool):
         output_dir = context.settings.research.output_dir.expanduser()
         workspace_dir = output_dir / "workspace"
         slug = _slugify(inputs.topic) + "-lit"
-        guide_ctx = _read_guide_file(inputs.guide_file)
+        guide_ctx = _read_guide_files(inputs.guide_files)
         feynman_prompt = f"/lit {inputs.topic}"
         if guide_ctx:
-            feynman_prompt += f"\n\n## Guide context ({Path(inputs.guide_file).name})\n{guide_ctx}"
+            names = ", ".join(Path(p).name for p in inputs.guide_files)
+            feynman_prompt += f"\n\n## Guide context ({names})\n{guide_ctx}"
         cmd_args = ["--prompt", feynman_prompt]
         if context.settings.research.feynman_model:
             cmd_args = ["--model", context.settings.research.feynman_model] + cmd_args
@@ -1633,7 +1656,7 @@ class StudioTool(Tool):
             context=context,
             max_sources=inputs.max_sources,
             topic=inputs.topic,
-            guide_file=Path(inputs.guide_file).expanduser() if inputs.guide_file else None,
+            guide_files=[Path(p).expanduser() for p in inputs.guide_files],
             run_nlm_research=inputs.run_nlm_research,
             run_quality_gate=inputs.run_quality_gate,
             run_perspectives=inputs.run_perspectives,
@@ -1728,9 +1751,9 @@ class StudioTool(Tool):
         if has_sources:
             shutil.copy2(sources_path, package_dir / sources_path.name)
 
-        # ── Include guide file in package ────────────────────────────────────
-        if inputs.guide_file:
-            gf = Path(inputs.guide_file).expanduser()
+        # ── Include guide files in package ───────────────────────────────────
+        for gf_str in inputs.guide_files:
+            gf = Path(gf_str).expanduser()
             if gf.exists():
                 shutil.copy2(gf, package_dir / gf.name)
 
