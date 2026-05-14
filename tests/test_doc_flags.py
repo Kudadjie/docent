@@ -18,6 +18,8 @@ _EXTRA_VALID = {
     # Other CLI tools documented in README/docs (uv, pip, npm)
     "all-extras",   # uv sync --all-extras
     "editable",     # uv tool install --editable .
+    "python",       # uv tool install --python 3.13
+    "reinstall",    # uv tool install --reinstall
     "upgrade",      # pip install --upgrade docent-cli
     # MCP JSON config argument (not a CLI flag)
     "directory",    # "--directory" in .mcp.json args array

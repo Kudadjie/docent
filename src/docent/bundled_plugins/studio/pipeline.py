@@ -477,14 +477,15 @@ def _run_with_tavily_fallback(
         if "monthly free tier" in (result.get("error") or ""):
             return result
         # Other Tavily failures — try manual fallback
-        if result.get("error", "").startswith("Tavily research failed"):
+        if result.get("error", "").startswith("Tavily research"):
+            err_detail = result.get("error", "")
             logger.warning(
                 "Tavily research failed (%s), falling back to manual pipeline",
-                result.get("error"),
+                err_detail,
             )
             yield ProgressEvent(
                 phase="warning",
-                message="Tavily research failed, falling back to manual search...",
+                message=f"Tavily failed ({err_detail[:120]}), falling back to manual search...",
             )
             result = yield from _run_pipeline(
                 topic, oc, planner_name, writer_name,

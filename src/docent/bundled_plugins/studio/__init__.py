@@ -388,14 +388,21 @@ def _run_feynman(
     stderr_output = ""
     returncode: int
 
+    import platform
+
+    # On Windows, start feynman in its own process group so that pressing
+    # Ctrl+C only interrupts Python (not feynman via the console event).
+    # We then explicitly kill feynman ourselves on KeyboardInterrupt.
+    popen_kwargs: dict = {}
+    if platform.system() == "Windows":
+        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+
     try:
-        result = subprocess.run(
+        proc = subprocess.Popen(
             full_cmd, cwd=workspace_dir,
             stderr=subprocess.PIPE, text=True,
-            timeout=timeout,
+            **popen_kwargs,
         )
-        returncode = result.returncode
-        stderr_output = result.stderr or ""
     except FileNotFoundError:
         # _find_feynman already validates the executable, so a FileNotFoundError
         # here means PATH/sys resolution succeeded but the binary itself failed
@@ -406,7 +413,17 @@ def _run_feynman(
             "This may indicate a corrupt installation. Try reinstalling: "
             "npm install -g feynman",
         )
+
+    try:
+        _, stderr_output_raw = proc.communicate(timeout=timeout)
+        returncode = proc.returncode
+        stderr_output = stderr_output_raw or ""
     except subprocess.TimeoutExpired:
+        proc.kill()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            pass
         returncode = -1
         stderr_output = (
             f"Feynman timed out after {timeout:.0f}s. "
@@ -414,6 +431,22 @@ def _run_feynman(
             "Try increasing the timeout with: "
             "docent studio config-set --key feynman_timeout --value <seconds>"
         )
+    except KeyboardInterrupt:
+        # Explicitly kill feynman — it's in its own process group on Windows
+        # so it did not receive the CTRL_C_EVENT from the console.
+        if platform.system() == "Windows":
+            import os, signal as _signal
+            try:
+                os.kill(proc.pid, _signal.CTRL_BREAK_EVENT)
+            except Exception:
+                pass
+        else:
+            proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        raise
 
     # Post-run cost capture — persist to daily store
     if budget_usd > 0:
@@ -1003,8 +1036,11 @@ def _preflight_docent(inputs: BaseModel, context: Context) -> None:
     """Pre-flight check for deep/lit actions with ``backend='docent'``.
 
     Runs *before* the generator is created (and therefore before Rich
-    Progress takes over stdin).  Checks OcClient availability and
-    interactively resolves the Tavily API key if needed.
+    Progress takes over stdin).  Checks:
+      1. OpenCode server is running.
+      2. The planner model is usable (has credits, valid auth) — makes a
+         minimal test call so the task never starts on an exhausted model.
+      3. Tavily API key is available.
 
     Non-docent backends are a no-op so the same preflight can be used
     for all actions.
@@ -1012,25 +1048,65 @@ def _preflight_docent(inputs: BaseModel, context: Context) -> None:
     if getattr(inputs, "backend", None) != "docent":
         return
 
-    from .oc_client import OcClient
+    import typer
+    from docent.ui.console import get_console
+    from docent.utils.model_health import verify_opencode_model
+    from .oc_client import OcClient, OcModelError, OcUnavailableError
 
     oc = OcClient(
         provider=context.settings.research.oc_provider,
         budget_usd=context.settings.research.oc_budget_usd,
     )
     if not oc.is_available():
-        import typer
-        from docent.ui.console import get_console
         get_console().print(
             "[red]Error:[/] OpenCode server is not running. "
             "Start it with: [cyan]opencode serve --port 4096[/]"
         )
         raise typer.Exit(1)
 
+    # Verify the planner model has available credits before starting the task.
+    # Every failure is a hard block — running the pipeline when the model is
+    # unreachable, quota-exhausted, or unresponsive wastes time and produces
+    # a worse error message than stopping here.
+    planner = context.settings.research.oc_model_planner
+    console = get_console()
+    try:
+        with console.status(f"Checking model availability: [cyan]{planner}[/]..."):
+            verify_opencode_model(planner, provider=context.settings.research.oc_provider)
+        console.print(f"[green]✓[/] Model [cyan]{planner}[/] is available")
+    except OcModelError as e:
+        console.print(
+            f"[red]✗[/] Model [cyan]{planner}[/] is not usable: {e}\n"
+            "Use [cyan]--backend feynman[/] to run without OpenCode, or "
+            "fix the model issue above then retry."
+        )
+        raise typer.Exit(1)
+    except OcUnavailableError as e:
+        console.print(
+            f"[red]✗[/] OpenCode server became unreachable during model check: {e}\n"
+            "Use [cyan]--backend feynman[/] or restart the OpenCode server."
+        )
+        raise typer.Exit(1)
+    except Exception as e:
+        # Covers timeouts and any unexpected failure from the test call.
+        # A timeout here is the most common signal that the model's quota
+        # is exhausted — providers often silently queue/drop requests rather
+        # than returning a quota-exceeded error.  There is no OpenCode API
+        # for checking remaining quota directly; the test call is the check.
+        console.print(
+            f"[red]✗[/] Model check failed for [cyan]{planner}[/] ({e})\n"
+            "Most likely cause: quota exhausted on the provider — many providers\n"
+            "silently drop requests rather than returning an explicit error.\n"
+            "Diagnose with: [cyan]opencode stats[/]\n"
+            "Options:\n"
+            "  • Switch to [cyan]--backend feynman[/] (no OpenCode required)\n"
+            "  • Change model: [cyan]docent studio config-set --key oc_model_planner --value <model>[/]\n"
+            "  • Top up your OpenCode subscription and retry"
+        )
+        raise typer.Exit(1)
+
     tavily_key = _resolve_tavily_key(context)
     if not tavily_key:
-        import typer
-        from docent.ui.console import get_console
         get_console().print(
             "[red]Error:[/] Tavily API key is required for web search. "
             "Get one at https://tavily.com (free tier: 1,000 calls/month)."
@@ -1043,18 +1119,51 @@ def _preflight_oc_only(inputs: BaseModel, context: Context) -> None:
     if getattr(inputs, "backend", None) != "docent":
         return
 
-    from .oc_client import OcClient
+    import typer
+    from docent.ui.console import get_console
+    from docent.utils.model_health import verify_opencode_model
+    from .oc_client import OcClient, OcModelError, OcUnavailableError
 
     oc = OcClient(
         provider=context.settings.research.oc_provider,
         budget_usd=context.settings.research.oc_budget_usd,
     )
     if not oc.is_available():
-        import typer
-        from docent.ui.console import get_console
         get_console().print(
             "[red]Error:[/] OpenCode server is not running. "
             "Start it with: [cyan]opencode serve --port 4096[/]"
+        )
+        raise typer.Exit(1)
+
+    reviewer = context.settings.research.oc_model_reviewer
+    console = get_console()
+    try:
+        with console.status(f"Checking model availability: [cyan]{reviewer}[/]..."):
+            verify_opencode_model(reviewer, provider=context.settings.research.oc_provider)
+        console.print(f"[green]✓[/] Model [cyan]{reviewer}[/] is available")
+    except OcModelError as e:
+        console.print(
+            f"[red]✗[/] Model [cyan]{reviewer}[/] is not usable: {e}\n"
+            "Use [cyan]--backend feynman[/] to run without OpenCode, or "
+            "fix the model issue above then retry."
+        )
+        raise typer.Exit(1)
+    except OcUnavailableError as e:
+        console.print(
+            f"[red]✗[/] OpenCode server became unreachable during model check: {e}\n"
+            "Use [cyan]--backend feynman[/] or restart the OpenCode server."
+        )
+        raise typer.Exit(1)
+    except Exception as e:
+        console.print(
+            f"[red]✗[/] Model check failed for [cyan]{reviewer}[/] ({e})\n"
+            "Most likely cause: quota exhausted on the provider — many providers\n"
+            "silently drop requests rather than returning an explicit error.\n"
+            "Diagnose with: [cyan]opencode stats[/]\n"
+            "Options:\n"
+            "  • Switch to [cyan]--backend feynman[/] (no OpenCode required)\n"
+            "  • Change model: [cyan]docent studio config-set --key oc_model_reviewer --value <model>[/]\n"
+            "  • Top up your OpenCode subscription and retry"
         )
         raise typer.Exit(1)
 

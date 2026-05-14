@@ -173,7 +173,7 @@ For tools with several related operations on shared state, use the multi-action 
 
 ### Prerequisites
 
-- Python ≥ 3.11
+- Python 3.12 or 3.13 (`alphaxiv-py` sets the floor at 3.12)
 - [uv](https://docs.astral.sh/uv/) — `pip install uv`
 - Node.js ≥ 20 (only needed for the frontend UI)
 
@@ -186,8 +186,10 @@ cd docent
 # Install in editable mode (all dev deps)
 uv sync --all-extras
 
-# Make the `docent` command available globally
-uv tool install --editable .
+# Make the `docent` command available globally.
+# uv tool install is a global operation and does not read .python-version,
+# so pass --python explicitly to match the project pin.
+uv tool install --python 3.13 --editable .
 ```
 
 ### Running tests
@@ -209,7 +211,7 @@ npm install
 npm run dev            # starts at http://localhost:3000
 ```
 
-Make sure the editable install is active (`uv tool install --editable .`) before starting either server.
+Make sure the editable install is active (`uv tool install --python 3.13 --editable .`) before starting either server.
 
 ### Project layout
 

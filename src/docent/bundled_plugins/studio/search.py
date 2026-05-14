@@ -221,7 +221,22 @@ def tavily_research(
     except (InvalidAPIKeyError, UsageLimitExceededError):
         raise
     except Exception as e:
-        raise RuntimeError(f"Tavily research start failed: {e}") from e
+        e_str = str(e)
+        # Detect plan/permission errors by HTTP status or keyword in the message
+        import re as _re
+        _status = None
+        m = _re.search(r'\b(4\d{2})\b', e_str)
+        if m:
+            _status = int(m.group(1))
+        _lower = e_str.lower()
+        if _status in (402, 403) or any(k in _lower for k in ("plan", "upgrade", "premium", "not available", "forbidden")):
+            raise RuntimeError(
+                f"Tavily Research API is not available on your current plan "
+                f"({e_str[:200]}). "
+                "Upgrade at https://tavily.com, or use backend='feynman' which "
+                "does not require the Research API."
+            ) from e
+        raise RuntimeError(f"Tavily research start failed: {e_str}") from e
 
     request_id = task.get("request_id")
     if not request_id:

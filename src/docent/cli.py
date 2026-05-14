@@ -529,6 +529,15 @@ def _check_notebooklm_py() -> tuple[str, str, str, str]:
     return "notebooklm-py", "OK", nlm_version, f"installed{update_hint}"
 
 
+def _check_opencode(settings: "Settings") -> tuple[str, str, str, str]:
+    """Check OpenCode server availability (fast — no model call)."""
+    from docent.utils.model_health import check_opencode_server
+    return check_opencode_server(
+        provider=settings.research.oc_provider,
+        model=settings.research.oc_model_planner,
+    )
+
+
 def _check_reading_db(settings: "Settings") -> tuple[str, str, str, str]:
     db = settings.reading.database_dir
     if db is None:
@@ -585,6 +594,11 @@ def _drive_progress(gen: Any) -> Any:
                     progress.console.print(f"[dim]{evt.phase}[/] {evt.message}")
         except StopIteration as stop:
             result = stop.value
+        except KeyboardInterrupt:
+            gen.close()
+            progress.console.print("\n[yellow]Interrupted[/] (Ctrl+C)")
+            import typer as _typer
+            raise _typer.Exit(130)
     return result
 
 
@@ -781,6 +795,7 @@ def doctor_command(ctx: typer.Context) -> None:
         lambda: _check_cli_tool("Node.js", ["node", "--version"], "Install Node.js: https://nodejs.org"),
         lambda: _check_cli_tool("npm", ["npm", "--version"], "Install npm: https://nodejs.org"),
         lambda: _check_feynman(settings),
+        lambda: _check_opencode(settings),
         lambda: _check_mendeley_mcp(settings),
         lambda: _check_tavily(settings),
         lambda: _check_semantic_scholar(settings),

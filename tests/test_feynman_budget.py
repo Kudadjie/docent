@@ -66,12 +66,16 @@ class TestExtractFeynmanCost:
 
 
 class TestBudgetGuard:
+    def _mock_proc(self, returncode: int = 0, stderr: str = "") -> MagicMock:
+        """Build a mock Popen object whose communicate() returns (stdout, stderr)."""
+        proc = MagicMock()
+        proc.communicate.return_value = ("", stderr)
+        proc.returncode = returncode
+        return proc
+
     def test_no_budget_no_guard(self, tmp_path: Path):
         _write_daily_spend(9999.0)
-        mock_result = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="", stderr="Cost: $0.43"
-        )
-        with patch("docent.bundled_plugins.studio.subprocess.run", return_value=mock_result), \
+        with patch("docent.bundled_plugins.studio.subprocess.Popen", return_value=self._mock_proc(stderr="Cost: $0.43")), \
              patch("docent.bundled_plugins.studio._find_feynman", return_value=["echo"]):
             rc, out, _ = _run_feynman(
                 ["echo"], [], tmp_path, tmp_path, "slug", budget_usd=0.0,
@@ -79,10 +83,7 @@ class TestBudgetGuard:
         assert rc == 0
 
     def test_budget_not_exceeded_runs(self, tmp_path: Path):
-        mock_result = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="", stderr=""
-        )
-        with patch("docent.bundled_plugins.studio.subprocess.run", return_value=mock_result), \
+        with patch("docent.bundled_plugins.studio.subprocess.Popen", return_value=self._mock_proc()), \
              patch("docent.bundled_plugins.studio._find_feynman", return_value=["echo"]):
             rc, out, _ = _run_feynman(
                 ["echo"], [], tmp_path, tmp_path, "slug", budget_usd=2.0,
@@ -97,10 +98,7 @@ class TestBudgetGuard:
             )
 
     def test_budget_accumulates_after_run(self, tmp_path: Path):
-        mock_result = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="", stderr="Cost: $0.50"
-        )
-        with patch("docent.bundled_plugins.studio.subprocess.run", return_value=mock_result), \
+        with patch("docent.bundled_plugins.studio.subprocess.Popen", return_value=self._mock_proc(stderr="Cost: $0.50")), \
              patch("docent.bundled_plugins.studio._find_feynman", return_value=["echo"]):
             _run_feynman(
                 ["echo"], [], tmp_path, tmp_path, "slug", budget_usd=2.0,
