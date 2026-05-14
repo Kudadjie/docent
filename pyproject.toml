@@ -30,6 +30,7 @@ dependencies = [
     "tomli-w>=1.2.0",
     "typer>=0.24.2",
     "uvicorn[standard]>=0.30.0",
+    "notebooklm-py>=0.3.4",
 ]
 
 [project.urls]

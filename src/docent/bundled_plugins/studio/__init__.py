@@ -684,39 +684,66 @@ class UsageResult(BaseModel):
 # NotebookLM CLI helpers
 # ---------------------------------------------------------------------------
 
-def _nlm_cmd() -> list[str]:
-    """Return the base command for invoking notebooklm via the current Python."""
-    import sys
-    return [sys.executable, "-m", "notebooklm"]
+def _nlm_exe() -> str | None:
+    """Return the path to the notebooklm executable, or None if not on PATH."""
+    return shutil.which("notebooklm")
 
 
-def _check_notebooklm_cli(notebook_id: str | None = None) -> bool:
-    """Return True if `python -m notebooklm` is installed and can reach NotebookLM."""
-    cmd = _nlm_cmd() + ["source", "list", "--json"]
-    if notebook_id:
-        cmd += ["--notebook", notebook_id]
+def _nlm_run(args: list[str], timeout: float = 30) -> tuple[int, str, str]:
+    """Run a notebooklm command. Returns (returncode, stdout, stderr)."""
+    import os
+    exe = _nlm_exe()
+    if not exe:
+        return -1, "", "notebooklm not found on PATH"
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
-        return result.returncode == 0
-    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        result = subprocess.run(
+            [exe] + args, capture_output=True, text=True, timeout=timeout, env=env
+        )
+        return result.returncode, result.stdout or "", result.stderr or ""
+    except subprocess.TimeoutExpired:
+        return -1, "", f"Timeout after {timeout:.0f}s"
+    except OSError as e:
+        return -1, "", str(e)
+
+
+def _nlm_auth_ok() -> bool:
+    """Return True if notebooklm is installed and authenticated."""
+    exe = _nlm_exe()
+    if not exe:
         return False
+    rc, stdout, _ = _nlm_run(["list", "--json"], timeout=20)
+    if rc != 0:
+        return False
+    try:
+        data = json.loads(stdout)
+        # Auth failure returns {"error": true, ...}
+        return not (isinstance(data, dict) and data.get("error"))
+    except (json.JSONDecodeError, ValueError):
+        return False
+
+
+def _nlm_create_notebook(title: str) -> str | None:
+    """Create a new NotebookLM notebook. Returns notebook ID on success, None on failure."""
+    rc, stdout, _ = _nlm_run(["create", title, "--json"], timeout=30)
+    if rc != 0:
+        return None
+    try:
+        data = json.loads(stdout)
+        return data.get("id") or data.get("notebook_id")
+    except (json.JSONDecodeError, ValueError):
+        return None
 
 
 def _nlm_add_source(source: str, notebook_id: str) -> tuple[int, str]:
     """Add a single source (URL or file path) to a NotebookLM notebook.
 
-    Returns (returncode, stderr). returncode 0 = success.
+    Returns (returncode, error_message). returncode 0 = success.
     """
-    import os
-    cmd = _nlm_cmd() + ["source", "add", source, "--notebook", notebook_id]
-    try:
-        env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, env=env)
-        return result.returncode, result.stderr or ""
-    except subprocess.TimeoutExpired:
-        return -1, "Timeout adding source"
-    except (FileNotFoundError, OSError) as e:
-        return -1, str(e)
+    rc, _, stderr = _nlm_run(
+        ["source", "add", source, "-n", notebook_id, "--json"], timeout=30
+    )
+    return rc, stderr
 
 
 # ---------------------------------------------------------------------------
@@ -1218,14 +1245,15 @@ class StudioTool(Tool):
 
     @action(
         description=(
-            "Push research sources directly into a NotebookLM notebook. "
-            "Requires the `notebooklm` Python package and a notebook ID. "
-            "Falls back to local package export + browser open if unavailable."
+            "Create a new NotebookLM notebook and populate it with research sources. "
+            "Creates the notebook automatically; no prior setup needed. "
+            "Falls back to local package export + browser if the CLI is unavailable or unauthenticated."
         ),
         input_schema=ToNotebookInputs,
         name="to-notebook",
     )
     def to_notebook(self, inputs: ToNotebookInputs, context: Context):
+        import time
         output_dir = context.settings.research.output_dir.expanduser()
 
         # ── Resolve output file ──────────────────────────────────────────────
@@ -1244,7 +1272,7 @@ class StudioTool(Tool):
                     package_dir=None, sources_count=0,
                     message=(
                         f"No research output found in {output_dir}. "
-                        "Run `docent research deep` or `docent research lit` first."
+                        "Run `docent studio deep-research` or `docent studio lit` first."
                     ),
                 )
             out_path = max(candidates, key=lambda p: p.stat().st_mtime)
@@ -1266,76 +1294,83 @@ class StudioTool(Tool):
         sources: list[dict] = json.loads(sources_path.read_text(encoding="utf-8"))
         selected = _rank_sources(sources, inputs.max_sources)
 
-        # ── Write local package (always — useful as a fallback record) ───────
+        # ── Write local package (always — useful as a local record) ──────────
         package_dir = out_path.parent / f"{stem}-notebook"
         package_dir.mkdir(parents=True, exist_ok=True)
-        urls_file = package_dir / "sources_urls.txt"
-        urls_file.write_text(
+        (package_dir / "sources_urls.txt").write_text(
             "\n".join(s["url"] for s in selected if s.get("url")),
             encoding="utf-8",
         )
         shutil.copy2(out_path, package_dir / out_path.name)
-
         yield ProgressEvent(phase="package", message=f"Local package written to {package_dir}")
 
-        # ── Resolve notebook ID ──────────────────────────────────────────────
+        # ── Check CLI and auth ───────────────────────────────────────────────
+        yield ProgressEvent(phase="check", message="Checking NotebookLM CLI and auth...")
+        if not _nlm_exe():
+            import webbrowser
+            webbrowser.open("https://notebooklm.google.com")
+            return ToNotebookResult(
+                ok=True,
+                output_file=str(out_path), sources_file=str(sources_path),
+                package_dir=str(package_dir), sources_count=len(selected),
+                message=(
+                    "notebooklm CLI not found — opened browser. "
+                    f"Local package at {package_dir}. "
+                    "Install with: pip install notebooklm-py"
+                ),
+            )
+
+        if not _nlm_auth_ok():
+            import webbrowser
+            webbrowser.open("https://notebooklm.google.com")
+            return ToNotebookResult(
+                ok=True,
+                output_file=str(out_path), sources_file=str(sources_path),
+                package_dir=str(package_dir), sources_count=len(selected),
+                message=(
+                    "NotebookLM auth expired — opened browser. "
+                    "Run `notebooklm login` then retry. "
+                    f"Local package at {package_dir}."
+                ),
+            )
+
+        # ── Resolve or create notebook ───────────────────────────────────────
         notebook_id = inputs.notebook_id or context.settings.research.notebooklm_notebook_id
+        created_notebook = False
 
         if not notebook_id:
-            import webbrowser
-            webbrowser.open("https://notebooklm.google.com")
-            return ToNotebookResult(
-                ok=True,
-                output_file=str(out_path),
-                sources_file=str(sources_path),
-                package_dir=str(package_dir),
-                sources_count=len(selected),
-                message=(
-                    f"No notebook ID configured — opened NotebookLM in browser. "
-                    f"Local package at {package_dir}. "
-                    "To push directly, set your notebook ID: "
-                    "docent research config-set --key notebooklm_notebook_id --value <id>"
-                ),
-            )
+            title = f"Studio: {stem}"
+            yield ProgressEvent(phase="notebook", message=f"Creating notebook '{title}'...")
+            notebook_id = _nlm_create_notebook(title)
+            if not notebook_id:
+                return ToNotebookResult(
+                    ok=False, output_file=str(out_path), sources_file=str(sources_path),
+                    package_dir=str(package_dir), sources_count=len(selected),
+                    message="Failed to create NotebookLM notebook. Check `notebooklm login`.",
+                )
+            created_notebook = True
+            yield ProgressEvent(phase="notebook", message=f"Notebook created — ID: {notebook_id}")
 
-        # ── Check CLI availability ───────────────────────────────────────────
-        yield ProgressEvent(phase="check", message="Checking NotebookLM CLI...")
-        if not _check_notebooklm_cli(notebook_id):
-            import webbrowser
-            webbrowser.open("https://notebooklm.google.com")
-            return ToNotebookResult(
-                ok=True,
-                output_file=str(out_path),
-                sources_file=str(sources_path),
-                package_dir=str(package_dir),
-                sources_count=len(selected),
-                message=(
-                    "NotebookLM CLI unavailable or not authenticated — opened browser. "
-                    f"Local package at {package_dir}. "
-                    "Install with: pip install notebooklm"
-                ),
-            )
-
-        # ── Push sources via CLI ─────────────────────────────────────────────
+        # ── Add synthesis doc first, then sources ────────────────────────────
         added = 0
         failed = 0
 
-        yield ProgressEvent(phase="push", message=f"Adding research document to notebook {notebook_id}...")
+        yield ProgressEvent(phase="push", message="Adding research synthesis document...")
         rc, _err = _nlm_add_source(str(out_path), notebook_id)
         if rc == 0:
             added += 1
         else:
             failed += 1
+        time.sleep(1)
 
-        total = len([s for s in selected if s.get("url")])
-        for i, s in enumerate(selected, 1):
-            url = s.get("url", "")
-            if not url:
-                continue
-            title = s.get("title", url)[:60]
+        url_sources = [s for s in selected if s.get("url")]
+        total = len(url_sources)
+        for i, s in enumerate(url_sources, 1):
+            url = s["url"]
+            title_short = s.get("title", url)[:60]
             yield ProgressEvent(
                 phase="push",
-                message=f"[{i}/{total}] {title}",
+                message=f"[{i}/{total}] {title_short}",
                 current=i,
                 total=total,
             )
@@ -1344,6 +1379,15 @@ class StudioTool(Tool):
                 added += 1
             else:
                 failed += 1
+            time.sleep(1)
+
+        msg = f"Notebook ready: {added} source(s) added"
+        if failed:
+            msg += f" ({failed} failed)"
+        if created_notebook:
+            msg += f". New notebook ID: {notebook_id} — save it with: docent studio config-set --key notebooklm_notebook_id --value {notebook_id}"
+        else:
+            msg += f". Notebook: {notebook_id}"
 
         return ToNotebookResult(
             ok=True,
@@ -1353,11 +1397,7 @@ class StudioTool(Tool):
             sources_count=len(selected),
             sources_added=added,
             sources_failed=failed,
-            message=(
-                f"Pushed {added} source(s) to notebook {notebook_id}"
-                + (f" ({failed} failed)" if failed else "")
-                + f". Local package at {package_dir}."
-            ),
+            message=msg,
         )
 
     @action(
