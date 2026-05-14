@@ -576,7 +576,7 @@ def _nlm_push(
     # ── Phase 0: Auth ──────────────────────────────────────────────────────
     yield ProgressEvent(phase="nlm-check", message="Checking NotebookLM auth...")
     if not _nlm_auth_ok():
-        yield ProgressEvent(phase="nlm-login", message="Auth expired — running notebooklm login...")
+        yield ProgressEvent(phase="nlm-login", message="Auth expired -- running notebooklm login...")
         login_ok, login_err = _nlm_login()
         if not login_ok or not _nlm_auth_ok():
             detail = f": {login_err}" if login_err else ""
@@ -626,7 +626,7 @@ def _nlm_push(
         guide_path = Path(guide_file).expanduser()
         if not guide_path.exists():
             yield ProgressEvent(
-                phase="nlm-guide", message=f"Guide file not found: {guide_path} — ignoring."
+                phase="nlm-guide", message=f"Guide file not found: {guide_path} -- ignoring."
             )
             guide_path = None
 
@@ -636,7 +636,7 @@ def _nlm_push(
     if guide_path:
         try:
             guide_snippet = guide_path.read_text(encoding="utf-8")[:500].replace("\n", " ")
-            research_query = f"{effective_topic} — {guide_snippet}"
+            research_query = f"{effective_topic} -- {guide_snippet}"
         except OSError:
             pass
 
@@ -650,7 +650,7 @@ def _nlm_push(
         if not nlm_research_started:
             yield ProgressEvent(
                 phase="nlm-research",
-                message="NLM research start failed — continuing without it.",
+                message="NLM research start failed -- continuing without it.",
             )
 
     # ── Phase 2a: Add synthesis document ─────────────────────────────────
@@ -755,7 +755,7 @@ def _nlm_push(
     yield ProgressEvent(
         phase="nlm-stabilise",
         message=(
-            f"Stable after {waited:.0f}s — "
+            f"Stable after {waited:.0f}s: "
             f"ready: {counts.get('ready', 0)}, "
             f"error: {counts.get('error', 0)}, "
             f"preparing: {counts.get('preparing', 0)}"
@@ -869,7 +869,7 @@ def _nlm_push(
             parts.append(f"{gaps_filled} gap(s) filled")
     if perspectives:
         parts.append("perspectives generated")
-    parts.append(f"— notebook {notebook_id}")
+    parts.append(f"notebook: {notebook_id}")
 
     # ── Post-run: update source-compat.json + write run log ───────────────
     _update_compat(_url_outcomes)

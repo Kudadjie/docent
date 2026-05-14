@@ -1581,7 +1581,7 @@ class StudioTool(Tool):
                 output_file=str(out_path), sources_file=sources_file_str,
                 package_dir=str(package_dir), sources_count=len(selected),
                 sources_added=0, sources_failed=0,
-                message=f"{nlm['message']} — opened browser. Local package at {package_dir}.",
+                message=f"{nlm['message']} -- opened browser. Local package at {package_dir}.",
             )
 
         nb_id = nlm["notebook_id"]
@@ -1701,7 +1701,7 @@ class StudioTool(Tool):
             package_dir=str(package_dir),
             sources_count=len(selected),
             vault_path=vault_path,
-            message=" — ".join(parts),
+            message=" -- ".join(parts),
         )
 
     @action(
