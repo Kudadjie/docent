@@ -213,6 +213,10 @@ The research tool runs deep research, literature reviews, and peer reviews, back
 | `docent research deep "topic" [--backend feynman|docent]` | Full research pipeline |
 | `docent research lit "topic" [--backend feynman|docent]` | Literature-focused (80% paper search bias) |
 | `docent research review "artifact"` | 3-stage: fetch → researcher → reviewer |
+| `docent research deep "topic" [--backend feynman|docent]` | Full research pipeline |
+| `docent research lit "topic" [--backend feynman|docent]` | Literature-focused (80% paper search bias) |
+| `docent research review "artifact"` | 3-stage: fetch → researcher → reviewer |
+| `docent research to-notebook [--output-file <path>] [--max-sources N]` | Package research sources for NotebookLM + open browser |
 | `docent research usage` | Show today's Feynman/OpenCode spend + Tavily requests |
 | `docent research config-show` | Show current research settings |
 | `docent research config-set --key <k> --value <v>` | Set a research config value |

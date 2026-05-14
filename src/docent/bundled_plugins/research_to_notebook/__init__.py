@@ -535,7 +535,15 @@ class ToNotebookInputs(BaseModel):
     )
     max_sources: int = Field(
         20,
-        description="Maximum number of sources to include in the notebook package (default 20).",
+        description="Maximum number of sources to include (default 20).",
+    )
+    notebook_id: str | None = Field(
+        None,
+        description=(
+            "NotebookLM notebook ID (from the URL when viewing the notebook). "
+            "Overrides research.notebooklm_notebook_id in config. "
+            "If neither is set, falls back to package export + browser open."
+        ),
     )
 
 
@@ -578,6 +586,7 @@ class ConfigShowResult(BaseModel):
     semantic_scholar_api_key: str | None = None
     feynman_model: str | None = None
     feynman_timeout: float = 900.0
+    notebooklm_notebook_id: str | None = None
 
     def to_shapes(self) -> list[Shape]:
         # Mask sensitive API keys for display
@@ -604,6 +613,7 @@ class ConfigShowResult(BaseModel):
             MetricShape(label="semantic_scholar_api_key", value=_mask(self.semantic_scholar_api_key)),
             MetricShape(label="feynman_model", value=self.feynman_model or "(feynman default)"),
             MetricShape(label="feynman_timeout", value=f"{self.feynman_timeout:.0f}s"),
+            MetricShape(label="notebooklm_notebook_id", value=self.notebooklm_notebook_id or "(not set)"),
         ]
 
 
@@ -628,14 +638,20 @@ class ToNotebookResult(BaseModel):
     sources_file: str | None
     package_dir: str | None
     sources_count: int
+    sources_added: int = 0
+    sources_failed: int = 0
     message: str
 
     def to_shapes(self) -> list[Shape]:
         if not self.ok:
             return [ErrorShape(reason=self.message)]
         shapes: list[Shape] = [MessageShape(text=self.message, level="success")]
+        if self.sources_added:
+            shapes.append(MetricShape(label="Sources pushed to NotebookLM", value=self.sources_added))
+        if self.sources_failed:
+            shapes.append(MetricShape(label="Sources failed", value=self.sources_failed))
         if self.package_dir:
-            shapes.append(LinkShape(url=self.package_dir, label="Notebook package"))
+            shapes.append(LinkShape(url=self.package_dir, label="Local package"))
         return shapes
 
 
@@ -665,6 +681,45 @@ class UsageResult(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# NotebookLM CLI helpers
+# ---------------------------------------------------------------------------
+
+def _nlm_cmd() -> list[str]:
+    """Return the base command for invoking notebooklm via the current Python."""
+    import sys
+    return [sys.executable, "-m", "notebooklm"]
+
+
+def _check_notebooklm_cli(notebook_id: str | None = None) -> bool:
+    """Return True if `python -m notebooklm` is installed and can reach NotebookLM."""
+    cmd = _nlm_cmd() + ["source", "list", "--json"]
+    if notebook_id:
+        cmd += ["--notebook", notebook_id]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return False
+
+
+def _nlm_add_source(source: str, notebook_id: str) -> tuple[int, str]:
+    """Add a single source (URL or file path) to a NotebookLM notebook.
+
+    Returns (returncode, stderr). returncode 0 = success.
+    """
+    import os
+    cmd = _nlm_cmd() + ["source", "add", source, "--notebook", notebook_id]
+    try:
+        env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, env=env)
+        return result.returncode, result.stderr or ""
+    except subprocess.TimeoutExpired:
+        return -1, "Timeout adding source"
+    except (FileNotFoundError, OSError) as e:
+        return -1, str(e)
+
+
+# ---------------------------------------------------------------------------
 # Tool
 # ---------------------------------------------------------------------------
 
@@ -683,6 +738,7 @@ _KNOWN_RESEARCH_KEYS = {
     "tavily_api_key",
     "tavily_research_timeout",
     "semantic_scholar_api_key",
+    "notebooklm_notebook_id",
 }
 
 
@@ -1162,16 +1218,17 @@ class ResearchTool(Tool):
 
     @action(
         description=(
-            "Prepare research sources for NotebookLM and open the browser. "
-            "Reads the sources collected by the Docent pipeline (deep or lit) "
-            "and writes a notebook-ready package."
+            "Push research sources directly into a NotebookLM notebook. "
+            "Requires the `notebooklm` Python package and a notebook ID. "
+            "Falls back to local package export + browser open if unavailable."
         ),
         input_schema=ToNotebookInputs,
         name="to-notebook",
     )
-    def to_notebook(self, inputs: ToNotebookInputs, context: Context) -> ToNotebookResult:
+    def to_notebook(self, inputs: ToNotebookInputs, context: Context):
         output_dir = context.settings.research.output_dir.expanduser()
 
+        # ── Resolve output file ──────────────────────────────────────────────
         if inputs.output_file:
             out_path = Path(inputs.output_file)
             if not out_path.is_absolute():
@@ -1209,50 +1266,84 @@ class ResearchTool(Tool):
         sources: list[dict] = json.loads(sources_path.read_text(encoding="utf-8"))
         selected = _rank_sources(sources, inputs.max_sources)
 
-        import webbrowser
-
+        # ── Write local package (always — useful as a fallback record) ───────
         package_dir = out_path.parent / f"{stem}-notebook"
         package_dir.mkdir(parents=True, exist_ok=True)
-
         urls_file = package_dir / "sources_urls.txt"
         urls_file.write_text(
             "\n".join(s["url"] for s in selected if s.get("url")),
             encoding="utf-8",
         )
-
         shutil.copy2(out_path, package_dir / out_path.name)
 
-        guide_lines = [
-            "# NotebookLM Setup Guide",
-            "",
-            f"Research: {out_path.name}",
-            f"Sources: {len(selected)} selected",
-            "",
-            "## Steps",
-            "",
-            "1. Open https://notebooklm.google.com and create a new notebook",
-            f"2. Add the research draft as a source: drag `{out_path.name}` into the Sources panel",
-            "3. Add each URL below as a 'Website' source (copy/paste one at a time):",
-            "",
-        ]
+        yield ProgressEvent(phase="package", message=f"Local package written to {package_dir}")
+
+        # ── Resolve notebook ID ──────────────────────────────────────────────
+        notebook_id = inputs.notebook_id or context.settings.research.notebooklm_notebook_id
+
+        if not notebook_id:
+            import webbrowser
+            webbrowser.open("https://notebooklm.google.com")
+            return ToNotebookResult(
+                ok=True,
+                output_file=str(out_path),
+                sources_file=str(sources_path),
+                package_dir=str(package_dir),
+                sources_count=len(selected),
+                message=(
+                    f"No notebook ID configured — opened NotebookLM in browser. "
+                    f"Local package at {package_dir}. "
+                    "To push directly, set your notebook ID: "
+                    "docent research config-set --key notebooklm_notebook_id --value <id>"
+                ),
+            )
+
+        # ── Check CLI availability ───────────────────────────────────────────
+        yield ProgressEvent(phase="check", message="Checking NotebookLM CLI...")
+        if not _check_notebooklm_cli(notebook_id):
+            import webbrowser
+            webbrowser.open("https://notebooklm.google.com")
+            return ToNotebookResult(
+                ok=True,
+                output_file=str(out_path),
+                sources_file=str(sources_path),
+                package_dir=str(package_dir),
+                sources_count=len(selected),
+                message=(
+                    "NotebookLM CLI unavailable or not authenticated — opened browser. "
+                    f"Local package at {package_dir}. "
+                    "Install with: pip install notebooklm"
+                ),
+            )
+
+        # ── Push sources via CLI ─────────────────────────────────────────────
+        added = 0
+        failed = 0
+
+        yield ProgressEvent(phase="push", message=f"Adding research document to notebook {notebook_id}...")
+        rc, _err = _nlm_add_source(str(out_path), notebook_id)
+        if rc == 0:
+            added += 1
+        else:
+            failed += 1
+
+        total = len([s for s in selected if s.get("url")])
         for i, s in enumerate(selected, 1):
-            title = s.get("title", "Untitled")[:80]
             url = s.get("url", "")
-            stype = s.get("source_type", "web")
-            guide_lines.append(f"   [{i}] [{stype}] {title}")
-            guide_lines.append(f"       {url}")
-            guide_lines.append("")
-
-        guide_lines += [
-            "## Tips",
-            "",
-            "- Add the draft first so NotebookLM can cross-reference it with sources",
-            "- Use the 'Notebook guide' feature to get an overview after adding all sources",
-            "- Generate a podcast or study guide once sources are loaded",
-        ]
-        (package_dir / "guide.md").write_text("\n".join(guide_lines), encoding="utf-8")
-
-        webbrowser.open("https://notebooklm.google.com")
+            if not url:
+                continue
+            title = s.get("title", url)[:60]
+            yield ProgressEvent(
+                phase="push",
+                message=f"[{i}/{total}] {title}",
+                current=i,
+                total=total,
+            )
+            rc, _err = _nlm_add_source(url, notebook_id)
+            if rc == 0:
+                added += 1
+            else:
+                failed += 1
 
         return ToNotebookResult(
             ok=True,
@@ -1260,10 +1351,12 @@ class ResearchTool(Tool):
             sources_file=str(sources_path),
             package_dir=str(package_dir),
             sources_count=len(selected),
+            sources_added=added,
+            sources_failed=failed,
             message=(
-                f"Notebook package ready: {len(selected)} sources. "
-                f"NotebookLM opened in browser. "
-                f"Follow the guide in {package_dir / 'guide.md'}."
+                f"Pushed {added} source(s) to notebook {notebook_id}"
+                + (f" ({failed} failed)" if failed else "")
+                + f". Local package at {package_dir}."
             ),
         )
 
@@ -1291,6 +1384,7 @@ class ResearchTool(Tool):
             semantic_scholar_api_key=rs.semantic_scholar_api_key,
             feynman_model=rs.feynman_model,
             feynman_timeout=rs.feynman_timeout,
+            notebooklm_notebook_id=rs.notebooklm_notebook_id,
         )
 
     @action(

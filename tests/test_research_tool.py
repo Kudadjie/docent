@@ -61,11 +61,13 @@ def _mock_context(
     output_dir: Path | None = None,
     feynman_command: list[str] | None = None,
     tavily_api_key: str | None = None,
+    notebooklm_notebook_id: str | None = None,
 ) -> Context:
     research = ResearchSettings(
         output_dir=output_dir or Path("/tmp/docent-test-research"),
         feynman_command=feynman_command,
         tavily_api_key=tavily_api_key,
+        notebooklm_notebook_id=notebooklm_notebook_id,
     )
     settings = MagicMock(spec=Settings)
     settings.research = research
@@ -453,10 +455,13 @@ class TestToNotebook:
         sources_file.write_text(json.dumps(SAMPLE_SOURCES), encoding="utf-8")
         return md_file, sources_file
 
+    def _run(self, tool, inputs, ctx):
+        return _drain(tool.to_notebook(inputs, ctx))
+
     def test_to_notebook_no_output_dir(self, tmp_path):
         tool = ResearchTool()
         ctx = _mock_context(output_dir=tmp_path / "nonexistent")
-        result = tool.to_notebook(ToNotebookInputs(), ctx)
+        result = self._run(tool, ToNotebookInputs(), ctx)
         assert result.ok is False
         assert "No research output found" in result.message
 
@@ -465,7 +470,7 @@ class TestToNotebook:
         output_dir.mkdir()
         tool = ResearchTool()
         ctx = _mock_context(output_dir=output_dir)
-        result = tool.to_notebook(ToNotebookInputs(), ctx)
+        result = self._run(tool, ToNotebookInputs(), ctx)
         assert result.ok is False
         assert "No research output found" in result.message
 
@@ -475,25 +480,25 @@ class TestToNotebook:
         (output_dir / "test-deep.md").write_text("# Draft", encoding="utf-8")
         tool = ResearchTool()
         ctx = _mock_context(output_dir=output_dir)
-        result = tool.to_notebook(ToNotebookInputs(), ctx)
+        result = self._run(tool, ToNotebookInputs(), ctx)
         assert result.ok is False
         assert "No sources file" in result.message
 
-    def test_to_notebook_happy_path(self, tmp_path):
+    def test_to_notebook_no_notebook_id_opens_browser(self, tmp_path):
         output_dir = tmp_path / "research"
         md_file, _ = self._write_research_files(output_dir)
         tool = ResearchTool()
         ctx = _mock_context(output_dir=output_dir)
         with patch("webbrowser.open") as mock_browser:
-            result = tool.to_notebook(ToNotebookInputs(), ctx)
+            result = self._run(tool, ToNotebookInputs(), ctx)
         assert result.ok is True
         assert result.sources_count == len(SAMPLE_SOURCES)
         assert result.package_dir is not None
         pkg = Path(result.package_dir)
         assert (pkg / "sources_urls.txt").exists()
-        assert (pkg / "guide.md").exists()
         assert (pkg / md_file.name).exists()
         mock_browser.assert_called_once_with("https://notebooklm.google.com")
+        assert "No notebook ID" in result.message
 
     def test_to_notebook_uses_specified_output_file(self, tmp_path):
         output_dir = tmp_path / "research"
@@ -501,7 +506,7 @@ class TestToNotebook:
         tool = ResearchTool()
         ctx = _mock_context(output_dir=output_dir)
         with patch("webbrowser.open"):
-            result = tool.to_notebook(ToNotebookInputs(output_file=str(md_file)), ctx)
+            result = self._run(tool, ToNotebookInputs(output_file=str(md_file)), ctx)
         assert result.ok is True
         assert "climate-lit" in result.output_file
 
@@ -511,7 +516,7 @@ class TestToNotebook:
         tool = ResearchTool()
         ctx = _mock_context(output_dir=output_dir)
         with patch("webbrowser.open"):
-            result = tool.to_notebook(ToNotebookInputs(), ctx)
+            result = self._run(tool, ToNotebookInputs(), ctx)
         urls_content = (Path(result.package_dir) / "sources_urls.txt").read_text()
         lines = [l for l in urls_content.strip().splitlines() if l]
         assert "arxiv.org" in lines[0]
@@ -522,10 +527,68 @@ class TestToNotebook:
         tool = ResearchTool()
         ctx = _mock_context(output_dir=output_dir)
         with patch("webbrowser.open"):
-            result = tool.to_notebook(ToNotebookInputs(max_sources=2), ctx)
+            result = self._run(tool, ToNotebookInputs(max_sources=2), ctx)
         assert result.sources_count == 2
         urls_content = (Path(result.package_dir) / "sources_urls.txt").read_text()
         assert len(urls_content.strip().splitlines()) == 2
+
+    def test_to_notebook_pushes_when_cli_available(self, tmp_path):
+        output_dir = tmp_path / "research"
+        self._write_research_files(output_dir)
+        tool = ResearchTool()
+        ctx = _mock_context(output_dir=output_dir)
+        with (
+            patch("docent.bundled_plugins.research_to_notebook._check_notebooklm_cli", return_value=True),
+            patch("docent.bundled_plugins.research_to_notebook._nlm_add_source", return_value=(0, "")) as mock_add,
+        ):
+            result = self._run(tool, ToNotebookInputs(notebook_id="nb-abc123"), ctx)
+        assert result.ok is True
+        assert result.sources_added > 0
+        assert result.sources_failed == 0
+        assert mock_add.call_count == result.sources_added
+
+    def test_to_notebook_cli_unavailable_falls_back(self, tmp_path):
+        output_dir = tmp_path / "research"
+        self._write_research_files(output_dir)
+        tool = ResearchTool()
+        ctx = _mock_context(output_dir=output_dir)
+        with (
+            patch("docent.bundled_plugins.research_to_notebook._check_notebooklm_cli", return_value=False),
+            patch("webbrowser.open") as mock_browser,
+        ):
+            result = self._run(tool, ToNotebookInputs(notebook_id="nb-abc123"), ctx)
+        assert result.ok is True
+        assert result.sources_added == 0
+        mock_browser.assert_called_once_with("https://notebooklm.google.com")
+        assert "CLI unavailable" in result.message
+
+    def test_to_notebook_tracks_partial_failures(self, tmp_path):
+        output_dir = tmp_path / "research"
+        self._write_research_files(output_dir)
+        tool = ResearchTool()
+        ctx = _mock_context(output_dir=output_dir)
+        responses = [(0, "")] + [(1, "error")] * 10  # first succeeds, rest fail
+        with (
+            patch("docent.bundled_plugins.research_to_notebook._check_notebooklm_cli", return_value=True),
+            patch("docent.bundled_plugins.research_to_notebook._nlm_add_source", side_effect=responses),
+        ):
+            result = self._run(tool, ToNotebookInputs(notebook_id="nb-abc123"), ctx)
+        assert result.ok is True
+        assert result.sources_added == 1
+        assert result.sources_failed > 0
+
+    def test_to_notebook_notebook_id_from_config(self, tmp_path):
+        output_dir = tmp_path / "research"
+        self._write_research_files(output_dir)
+        tool = ResearchTool()
+        ctx = _mock_context(output_dir=output_dir, notebooklm_notebook_id="config-nb-id")
+        with (
+            patch("docent.bundled_plugins.research_to_notebook._check_notebooklm_cli", return_value=True),
+            patch("docent.bundled_plugins.research_to_notebook._nlm_add_source", return_value=(0, "")),
+        ):
+            result = self._run(tool, ToNotebookInputs(), ctx)
+        assert result.ok is True
+        assert "config-nb-id" in result.message
 
 
 class TestUsageAction:
