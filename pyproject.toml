@@ -55,7 +55,7 @@ packages = ["src/docent"]
 artifacts = ["src/docent/ui_dist/**"]
 
 [dependency-groups]
-dev = ["pytest>=8.0", "pip-audit>=2.7"]
+dev = ["pytest>=8.0", "pip-audit>=2.7", "ruff>=0.9"]
 
 [tool.uv]
 default-groups = ["dev"]

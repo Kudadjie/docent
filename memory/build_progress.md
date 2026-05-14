@@ -33,6 +33,7 @@ Docent is a Python CLI "control center" for grad-school workflows. Design lives 
 - [x] Medium debt: MCP single-action tools — DONE 2026-05-12 (`build_mcp_tools()` + `invoke_action()` now handle single-action tools; 4 new tests)
 - [x] Medium debt: `edit --status` bypasses `_set_status` lifecycle — DONE 2026-05-13 (`_apply_status_transition` helper; 308 tests green)
 - [x] Plan D: `docent doctor` + `docent setup` — DONE 2026-05-13 (doctor: 10-check table with GitHub update checks for feynman + uv; setup: re-runnable guided config; 327 tests green)
+- [x] CI gap fix: pytest + ruff added to publish.yml before `uv build` (item #28) — 2026-05-14
 - [ ] Real-life tests #10–#19 (can happen in parallel; #10 blocked on feynman reinstall + credits)
 - [ ] Next: Tag v1.2.0 release (AFTER all of the above)
 

@@ -38,6 +38,12 @@ jobs:
         # litellm for outbound API calls only. Suppressed until a stable fix lands.
         run: uv run pip-audit --ignore-vuln CVE-2026-42203 --ignore-vuln CVE-2026-42208 --ignore-vuln CVE-2026-42271
 
+      - name: Lint
+        run: uv run ruff check src/
+
+      - name: Test
+        run: uv run pytest
+
       - name: Build package
         run: uv build --wheel
 
