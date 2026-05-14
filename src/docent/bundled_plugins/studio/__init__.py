@@ -501,19 +501,25 @@ def _append_references(draft: str, sources: list[dict]) -> str:
 # Input models
 # ---------------------------------------------------------------------------
 
+_OUTPUT_CHOICES = "'local' (default), 'notebook' (push to NotebookLM), 'vault' (write to Obsidian vault)."
+
+
 class DeepInputs(BaseModel):
     topic: str = Field(..., description="Research topic or question.")
-    backend: str = Field("feynman", description="Research backend: 'feynman' (default). 'docent' is planned.")
+    backend: str = Field("feynman", description="Research backend: 'feynman' (default) or 'docent'.")
+    output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
 
 
 class LitInputs(BaseModel):
     topic: str = Field(..., description="Research topic or question.")
-    backend: str = Field("feynman", description="Research backend: 'feynman' (default). 'docent' is planned.")
+    backend: str = Field("feynman", description="Research backend: 'feynman' (default) or 'docent'.")
+    output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
 
 
 class ReviewInputs(BaseModel):
     artifact: str = Field(..., description="arXiv ID, local PDF path, or URL to review.")
-    backend: str = Field("feynman", description="Research backend: 'feynman' (default). 'docent' is planned.")
+    backend: str = Field("feynman", description="Research backend: 'feynman' (default) or 'docent'.")
+    output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
 
 
 class ConfigShowInputs(BaseModel):
@@ -559,6 +565,8 @@ class ResearchResult(BaseModel):
     output_file: str | None
     returncode: int | None
     message: str
+    notebook_id: str | None = None
+    vault_path: str | None = None
 
     def to_shapes(self) -> list[Shape]:
         if not self.ok:
@@ -566,6 +574,10 @@ class ResearchResult(BaseModel):
         shapes: list[Shape] = [MessageShape(text=self.message, level="success")]
         if self.output_file is not None:
             shapes.append(LinkShape(url=self.output_file, label="Output file"))
+        if self.notebook_id is not None:
+            shapes.append(MetricShape(label="NotebookLM notebook", value=self.notebook_id))
+        if self.vault_path is not None:
+            shapes.append(LinkShape(url=self.vault_path, label="Obsidian vault note"))
         return shapes
 
 
@@ -587,6 +599,7 @@ class ConfigShowResult(BaseModel):
     feynman_model: str | None = None
     feynman_timeout: float = 900.0
     notebooklm_notebook_id: str | None = None
+    obsidian_vault: str | None = None
 
     def to_shapes(self) -> list[Shape]:
         # Mask sensitive API keys for display
@@ -614,6 +627,7 @@ class ConfigShowResult(BaseModel):
             MetricShape(label="feynman_model", value=self.feynman_model or "(feynman default)"),
             MetricShape(label="feynman_timeout", value=f"{self.feynman_timeout:.0f}s"),
             MetricShape(label="notebooklm_notebook_id", value=self.notebooklm_notebook_id or "(not set)"),
+            MetricShape(label="obsidian_vault", value=self.obsidian_vault or "(not set)"),
         ]
 
 
@@ -746,6 +760,161 @@ def _nlm_add_source(source: str, notebook_id: str) -> tuple[int, str]:
     return rc, stderr
 
 
+def _nlm_push(
+    out_path: Path,
+    sources_path: Path | None,
+    context: "Context",
+    max_sources: int = 20,
+):
+    """Shared generator: push a research output file + sources to NotebookLM.
+
+    Checks exe, auth, creates or reuses a notebook, adds the doc then URLs.
+    Yields ProgressEvents. Returns dict with keys:
+      ok, notebook_id, sources_added, sources_failed, message
+    """
+    import time
+
+    if not _nlm_exe():
+        return {
+            "ok": False,
+            "notebook_id": None,
+            "sources_added": 0,
+            "sources_failed": 0,
+            "message": "notebooklm not found on PATH. Install with: pip install notebooklm-py",
+        }
+
+    yield ProgressEvent(phase="nlm-check", message="Checking NotebookLM auth...")
+    if not _nlm_auth_ok():
+        return {
+            "ok": False,
+            "notebook_id": None,
+            "sources_added": 0,
+            "sources_failed": 0,
+            "message": "NotebookLM auth expired. Run `notebooklm login` then retry.",
+        }
+
+    notebook_id = context.settings.research.notebooklm_notebook_id
+    if not notebook_id:
+        title = f"Studio: {out_path.stem}"
+        yield ProgressEvent(phase="nlm-notebook", message=f"Creating notebook '{title}'...")
+        notebook_id = _nlm_create_notebook(title)
+        if not notebook_id:
+            return {
+                "ok": False,
+                "notebook_id": None,
+                "sources_added": 0,
+                "sources_failed": 0,
+                "message": "Failed to create NotebookLM notebook.",
+            }
+        yield ProgressEvent(phase="nlm-notebook", message=f"Created notebook {notebook_id}")
+
+    added = 0
+    failed = 0
+
+    yield ProgressEvent(phase="nlm-push", message="Adding synthesis document...")
+    rc, _ = _nlm_add_source(str(out_path), notebook_id)
+    if rc == 0:
+        added += 1
+    else:
+        failed += 1
+    time.sleep(1)
+
+    if sources_path and sources_path.exists():
+        raw: list[dict] = json.loads(sources_path.read_text(encoding="utf-8"))
+        selected = _rank_sources(raw, max_sources)
+        url_sources = [s for s in selected if s.get("url")]
+        total = len(url_sources)
+        for i, s in enumerate(url_sources, 1):
+            url = s["url"]
+            title_short = s.get("title", url)[:60]
+            yield ProgressEvent(
+                phase="nlm-push",
+                message=f"[{i}/{total}] {title_short}",
+                current=i,
+                total=total,
+            )
+            rc, _ = _nlm_add_source(url, notebook_id)
+            if rc == 0:
+                added += 1
+            else:
+                failed += 1
+            time.sleep(1)
+
+    msg = f"Notebook ready: {added} source(s) added"
+    if failed:
+        msg += f" ({failed} failed)"
+    msg += f" — notebook {notebook_id}"
+
+    return {
+        "ok": True,
+        "notebook_id": notebook_id,
+        "sources_added": added,
+        "sources_failed": failed,
+        "message": msg,
+    }
+
+
+def _route_output(inputs: Any, out_path: Path, sources_path: Path | None, context: "Context", workflow: str):
+    """Generator helper: handles --output routing after local file is written.
+
+    Yields ProgressEvents from _nlm_push when output='notebook'.
+    Returns (notebook_id, vault_path, extra_message) as a tuple.
+    """
+    if inputs.output == "notebook":
+        result = yield from _nlm_push(out_path, sources_path, context)
+        if result["ok"]:
+            return result["notebook_id"], None, f" {result['message']}"
+        return None, None, f" (NotebookLM push failed: {result['message']})"
+
+    if inputs.output == "vault":
+        vault = context.settings.research.obsidian_vault
+        if not vault:
+            return None, None, (
+                " (vault output requested but obsidian_vault is not configured — "
+                "set it with: docent studio config-set --key obsidian_vault --value <path>)"
+            )
+        topic = getattr(inputs, "topic", None) or getattr(inputs, "artifact", "")
+        dest = _write_to_vault(out_path, topic, workflow, inputs.backend, vault)
+        return None, str(dest), f" Written to Obsidian vault: {dest.name}"
+
+    return None, None, ""
+
+
+def _write_to_vault(
+    out_path: Path,
+    topic_or_artifact: str,
+    workflow: str,
+    backend: str,
+    vault: Path,
+) -> Path:
+    """Write a research output to the Obsidian vault under {vault}/Studio/.
+
+    Adds YAML frontmatter compatible with Obsidian, Dataview, and Citations plugin.
+    Returns the destination path.
+    """
+    import datetime
+    studio_dir = vault.expanduser() / "Studio"
+    studio_dir.mkdir(parents=True, exist_ok=True)
+
+    dest = studio_dir / out_path.name
+    content = out_path.read_text(encoding="utf-8")
+
+    date_str = datetime.date.today().isoformat()
+    tag = f"docent/studio/{workflow}"
+    frontmatter = (
+        f"---\n"
+        f"tags: [docent/studio, {tag}]\n"
+        f"date: {date_str}\n"
+        f"topic: \"{topic_or_artifact.replace(chr(34), chr(39))}\"\n"
+        f"backend: {backend}\n"
+        f"source_file: {out_path.name}\n"
+        f"---\n\n"
+    )
+
+    dest.write_text(frontmatter + content, encoding="utf-8")
+    return dest
+
+
 # ---------------------------------------------------------------------------
 # Tool
 # ---------------------------------------------------------------------------
@@ -766,6 +935,7 @@ _KNOWN_RESEARCH_KEYS = {
     "tavily_research_timeout",
     "semantic_scholar_api_key",
     "notebooklm_notebook_id",
+    "obsidian_vault",
 }
 
 
@@ -911,6 +1081,9 @@ class StudioTool(Tool):
                 phase="done", message=f"Output written to {out_file}"
             )
 
+            notebook_id, vault_path, extra = yield from _route_output(
+                inputs, out_file, sources_file, context, "deep-research"
+            )
             return ResearchResult(
                 ok=True,
                 backend="docent",
@@ -918,7 +1091,9 @@ class StudioTool(Tool):
                 topic_or_artifact=inputs.topic,
                 output_file=str(out_file),
                 returncode=0,
-                message=f"Deep research complete. {result_data['rounds']} search round(s), {len(result_data['sources'])} sources.",
+                notebook_id=notebook_id,
+                vault_path=vault_path,
+                message=f"Deep research complete. {result_data['rounds']} search round(s), {len(result_data['sources'])} sources.{extra}",
             )
 
         # Feynman branch
@@ -970,6 +1145,10 @@ class StudioTool(Tool):
                 message=f"Deep research completed for {inputs.topic!r}, but no output file was found.",
             )
 
+        out_path_obj = Path(output_file)
+        notebook_id, vault_path, extra = yield from _route_output(
+            inputs, out_path_obj, None, context, "deep-research"
+        )
         return ResearchResult(
             ok=True,
             backend="feynman",
@@ -977,7 +1156,9 @@ class StudioTool(Tool):
             topic_or_artifact=inputs.topic,
             output_file=output_file,
             returncode=returncode,
-            message=f"Deep research completed for {inputs.topic!r}.",
+            notebook_id=notebook_id,
+            vault_path=vault_path,
+            message=f"Deep research completed for {inputs.topic!r}.{extra}",
         )
 
     @action(
@@ -1052,6 +1233,9 @@ class StudioTool(Tool):
 
             yield ProgressEvent(phase="done", message=f"Output written to {out_file}")
 
+            notebook_id, vault_path, extra = yield from _route_output(
+                inputs, out_file, sources_file, context, "lit"
+            )
             return ResearchResult(
                 ok=True,
                 backend="docent",
@@ -1059,7 +1243,9 @@ class StudioTool(Tool):
                 topic_or_artifact=inputs.topic,
                 output_file=str(out_file),
                 returncode=0,
-                message=f"Literature review complete. {result_data['rounds']} search round(s), {len(result_data['sources'])} sources.",
+                notebook_id=notebook_id,
+                vault_path=vault_path,
+                message=f"Literature review complete. {result_data['rounds']} search round(s), {len(result_data['sources'])} sources.{extra}",
             )
 
         # Feynman branch
@@ -1111,6 +1297,10 @@ class StudioTool(Tool):
                 message=f"Literature review completed for {inputs.topic!r}, but no output file was found.",
             )
 
+        out_path_obj = Path(output_file)
+        notebook_id, vault_path, extra = yield from _route_output(
+            inputs, out_path_obj, None, context, "lit"
+        )
         return ResearchResult(
             ok=True,
             backend="feynman",
@@ -1118,7 +1308,9 @@ class StudioTool(Tool):
             topic_or_artifact=inputs.topic,
             output_file=output_file,
             returncode=returncode,
-            message=f"Literature review completed for {inputs.topic!r}.",
+            notebook_id=notebook_id,
+            vault_path=vault_path,
+            message=f"Literature review completed for {inputs.topic!r}.{extra}",
         )
 
     @action(
@@ -1174,6 +1366,9 @@ class StudioTool(Tool):
 
             yield ProgressEvent(phase="done", message=f"Review written to {out_file}")
 
+            notebook_id, vault_path, extra = yield from _route_output(
+                inputs, out_file, None, context, "review"
+            )
             return ResearchResult(
                 ok=True,
                 backend="docent",
@@ -1181,7 +1376,9 @@ class StudioTool(Tool):
                 topic_or_artifact=inputs.artifact,
                 output_file=str(out_file),
                 returncode=0,
-                message=f"Peer review complete for {inputs.artifact!r}.",
+                notebook_id=notebook_id,
+                vault_path=vault_path,
+                message=f"Peer review complete for {inputs.artifact!r}.{extra}",
             )
 
         # Feynman branch
@@ -1233,6 +1430,10 @@ class StudioTool(Tool):
                 message=f"Review completed for {inputs.artifact!r}, but no output file was found.",
             )
 
+        out_path_obj = Path(output_file)
+        notebook_id, vault_path, extra = yield from _route_output(
+            inputs, out_path_obj, None, context, "review"
+        )
         return ResearchResult(
             ok=True,
             backend="feynman",
@@ -1240,7 +1441,9 @@ class StudioTool(Tool):
             topic_or_artifact=inputs.artifact,
             output_file=output_file,
             returncode=returncode,
-            message=f"Review completed for {inputs.artifact!r}.",
+            notebook_id=notebook_id,
+            vault_path=vault_path,
+            message=f"Review completed for {inputs.artifact!r}.{extra}",
         )
 
     @action(
@@ -1304,90 +1507,28 @@ class StudioTool(Tool):
         shutil.copy2(out_path, package_dir / out_path.name)
         yield ProgressEvent(phase="package", message=f"Local package written to {package_dir}")
 
-        # ── Check CLI and auth ───────────────────────────────────────────────
-        yield ProgressEvent(phase="check", message="Checking NotebookLM CLI and auth...")
-        if not _nlm_exe():
+        # ── Override notebook_id from inputs if provided ─────────────────────
+        if inputs.notebook_id:
+            context.settings.research.notebooklm_notebook_id = inputs.notebook_id
+
+        # ── Push to NotebookLM via shared helper ─────────────────────────────
+        nlm = yield from _nlm_push(out_path, sources_path, context, inputs.max_sources)
+
+        if not nlm["ok"]:
             import webbrowser
             webbrowser.open("https://notebooklm.google.com")
             return ToNotebookResult(
                 ok=True,
                 output_file=str(out_path), sources_file=str(sources_path),
                 package_dir=str(package_dir), sources_count=len(selected),
-                message=(
-                    "notebooklm CLI not found — opened browser. "
-                    f"Local package at {package_dir}. "
-                    "Install with: pip install notebooklm-py"
-                ),
+                sources_added=0, sources_failed=0,
+                message=f"{nlm['message']} — opened browser. Local package at {package_dir}.",
             )
 
-        if not _nlm_auth_ok():
-            import webbrowser
-            webbrowser.open("https://notebooklm.google.com")
-            return ToNotebookResult(
-                ok=True,
-                output_file=str(out_path), sources_file=str(sources_path),
-                package_dir=str(package_dir), sources_count=len(selected),
-                message=(
-                    "NotebookLM auth expired — opened browser. "
-                    "Run `notebooklm login` then retry. "
-                    f"Local package at {package_dir}."
-                ),
-            )
-
-        # ── Resolve or create notebook ───────────────────────────────────────
-        notebook_id = inputs.notebook_id or context.settings.research.notebooklm_notebook_id
-        created_notebook = False
-
-        if not notebook_id:
-            title = f"Studio: {stem}"
-            yield ProgressEvent(phase="notebook", message=f"Creating notebook '{title}'...")
-            notebook_id = _nlm_create_notebook(title)
-            if not notebook_id:
-                return ToNotebookResult(
-                    ok=False, output_file=str(out_path), sources_file=str(sources_path),
-                    package_dir=str(package_dir), sources_count=len(selected),
-                    message="Failed to create NotebookLM notebook. Check `notebooklm login`.",
-                )
-            created_notebook = True
-            yield ProgressEvent(phase="notebook", message=f"Notebook created — ID: {notebook_id}")
-
-        # ── Add synthesis doc first, then sources ────────────────────────────
-        added = 0
-        failed = 0
-
-        yield ProgressEvent(phase="push", message="Adding research synthesis document...")
-        rc, _err = _nlm_add_source(str(out_path), notebook_id)
-        if rc == 0:
-            added += 1
-        else:
-            failed += 1
-        time.sleep(1)
-
-        url_sources = [s for s in selected if s.get("url")]
-        total = len(url_sources)
-        for i, s in enumerate(url_sources, 1):
-            url = s["url"]
-            title_short = s.get("title", url)[:60]
-            yield ProgressEvent(
-                phase="push",
-                message=f"[{i}/{total}] {title_short}",
-                current=i,
-                total=total,
-            )
-            rc, _err = _nlm_add_source(url, notebook_id)
-            if rc == 0:
-                added += 1
-            else:
-                failed += 1
-            time.sleep(1)
-
-        msg = f"Notebook ready: {added} source(s) added"
-        if failed:
-            msg += f" ({failed} failed)"
-        if created_notebook:
-            msg += f". New notebook ID: {notebook_id} — save it with: docent studio config-set --key notebooklm_notebook_id --value {notebook_id}"
-        else:
-            msg += f". Notebook: {notebook_id}"
+        nb_id = nlm["notebook_id"]
+        save_hint = ""
+        if nb_id and nb_id != context.settings.research.notebooklm_notebook_id:
+            save_hint = f" Save with: docent studio config-set --key notebooklm_notebook_id --value {nb_id}"
 
         return ToNotebookResult(
             ok=True,
@@ -1395,9 +1536,9 @@ class StudioTool(Tool):
             sources_file=str(sources_path),
             package_dir=str(package_dir),
             sources_count=len(selected),
-            sources_added=added,
-            sources_failed=failed,
-            message=msg,
+            sources_added=nlm["sources_added"],
+            sources_failed=nlm["sources_failed"],
+            message=nlm["message"] + save_hint,
         )
 
     @action(
@@ -1425,6 +1566,7 @@ class StudioTool(Tool):
             feynman_model=rs.feynman_model,
             feynman_timeout=rs.feynman_timeout,
             notebooklm_notebook_id=rs.notebooklm_notebook_id,
+            obsidian_vault=str(rs.obsidian_vault) if rs.obsidian_vault else None,
         )
 
     @action(

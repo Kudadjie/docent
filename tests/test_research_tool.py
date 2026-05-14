@@ -62,12 +62,14 @@ def _mock_context(
     feynman_command: list[str] | None = None,
     tavily_api_key: str | None = None,
     notebooklm_notebook_id: str | None = None,
+    obsidian_vault: Path | None = None,
 ) -> Context:
     research = ResearchSettings(
         output_dir=output_dir or Path("/tmp/docent-test-research"),
         feynman_command=feynman_command,
         tavily_api_key=tavily_api_key,
         notebooklm_notebook_id=notebooklm_notebook_id,
+        obsidian_vault=obsidian_vault,
     )
     settings = MagicMock(spec=Settings)
     settings.research = research
@@ -609,6 +611,72 @@ class TestToNotebook:
             result = self._run(tool, ToNotebookInputs(), ctx)
         assert result.ok is True
         assert "config-nb-id" in result.message
+
+
+class TestOutputDestinations:
+    """Tests for --output local|notebook|vault on deep-research / lit / review."""
+
+    FAKE_MD = "# Research Draft\n\nContent here."
+
+    def _run_deep(self, ctx, extra_inputs=None, feynman_output=None):
+        tool = StudioTool()
+        output_dir = ctx.settings.research.output_dir.expanduser()
+        output_dir.mkdir(parents=True, exist_ok=True)
+        fake_path = output_dir / "test-deep.md"
+        fake_path.write_text(self.FAKE_MD, encoding="utf-8")
+        inputs = DeepInputs(topic="test topic", **(extra_inputs or {}))
+        with patch("docent.bundled_plugins.studio._run_feynman",
+                   return_value=(0, feynman_output or str(fake_path), "")):
+            return _drain(tool.deep_research(inputs, ctx))
+
+    def test_output_local_default(self, tmp_path):
+        ctx = _mock_context(output_dir=tmp_path / "r")
+        result = self._run_deep(ctx)
+        assert result.ok is True
+        assert result.notebook_id is None
+        assert result.vault_path is None
+
+    def test_output_notebook_pushes(self, tmp_path):
+        output_dir = tmp_path / "r"
+        ctx = _mock_context(output_dir=output_dir)
+        with patch("docent.bundled_plugins.studio._nlm_exe", return_value="/bin/notebooklm"), \
+             patch("docent.bundled_plugins.studio._nlm_auth_ok", return_value=True), \
+             patch("docent.bundled_plugins.studio._nlm_create_notebook", return_value="new-nb"), \
+             patch("docent.bundled_plugins.studio._nlm_add_source", return_value=(0, "")), \
+             patch("time.sleep"):
+            result = self._run_deep(ctx, extra_inputs={"output": "notebook"})
+        assert result.ok is True
+        assert result.notebook_id == "new-nb"
+        assert result.vault_path is None
+
+    def test_output_vault_writes_frontmatter(self, tmp_path):
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        ctx = _mock_context(output_dir=tmp_path / "r", obsidian_vault=vault)
+        result = self._run_deep(ctx, extra_inputs={"output": "vault"})
+        assert result.ok is True
+        assert result.vault_path is not None
+        note = Path(result.vault_path)
+        assert note.exists()
+        content = note.read_text(encoding="utf-8")
+        assert "tags:" in content
+        assert "docent/studio" in content
+        assert "date:" in content
+        assert "topic:" in content
+
+    def test_output_vault_not_configured(self, tmp_path):
+        ctx = _mock_context(output_dir=tmp_path / "r")  # no obsidian_vault
+        result = self._run_deep(ctx, extra_inputs={"output": "vault"})
+        assert result.ok is True
+        assert result.vault_path is None
+        assert "obsidian_vault is not configured" in result.message
+
+    def test_output_vault_creates_studio_subfolder(self, tmp_path):
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        ctx = _mock_context(output_dir=tmp_path / "r", obsidian_vault=vault)
+        self._run_deep(ctx, extra_inputs={"output": "vault"})
+        assert (vault / "Studio").is_dir()
 
 
 class TestUsageAction:

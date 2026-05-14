@@ -31,6 +31,7 @@ class ResearchSettings(BaseModel):
     tavily_research_timeout: float = 600.0  # seconds to wait for Tavily Research API results
     semantic_scholar_api_key: str | None = None
     notebooklm_notebook_id: str | None = None  # NotebookLM notebook ID from the URL (e.g. abc123...)
+    obsidian_vault: Path | None = None  # Absolute path to Obsidian vault root (or target subfolder)
 
 
 class ReadingSettings(BaseModel):
