@@ -602,6 +602,130 @@ def run_lit(
     ))
 
 
+def run_compare(
+    artifact_a: str,
+    artifact_b: str,
+    oc: OcClient,
+    *,
+    model_researcher: str = "glm-5.1",
+    model_reviewer: str = "deepseek-v4-pro",
+) -> Generator[ProgressEvent, None, dict]:
+    """Compare two artifacts side by side. Yields ProgressEvent, returns result dict."""
+    yield ProgressEvent(phase="fetch", message=f"Fetching {artifact_a!r}...")
+    content_a = _fetch_artifact(artifact_a)
+    yield ProgressEvent(phase="fetch", message=f"Fetching {artifact_b!r}...")
+    content_b = _fetch_artifact(artifact_b)
+
+    yield ProgressEvent(phase="compare", message="Comparing artifacts...")
+    compare_prompt = (
+        _load_prompt("compare_researcher")
+        .replace("{artifact_a}", artifact_a)
+        .replace("{artifact_b}", artifact_b)
+        .replace("{artifact_a_content}", content_a)
+        .replace("{artifact_b_content}", content_b)
+    )
+    try:
+        comparison = oc.call(compare_prompt, model=model_researcher, timeout=300)
+    except Exception as e:
+        return {"ok": False, "error": f"Compare failed: {e}", "comparison": "", "review": ""}
+
+    yield ProgressEvent(phase="review", message="Running adversarial review...")
+    reviewer_prompt = _load_prompt("reviewer").replace("{draft}", comparison)
+    try:
+        review = oc.call(reviewer_prompt, model=model_reviewer, timeout=300)
+    except Exception:
+        review = "(Reviewer unavailable)"
+
+    return {"ok": True, "comparison": comparison, "review": review, "error": None}
+
+
+def run_draft(
+    topic: str,
+    oc: OcClient,
+    *,
+    guide_context: str = "",
+    model_writer: str = "minimax-m2.7",
+) -> Generator[ProgressEvent, None, dict]:
+    """Draft a paper section on a topic. Yields ProgressEvent, returns result dict."""
+    yield ProgressEvent(phase="write", message=f"Drafting: {topic!r}...")
+    guide_section = f"\n\n## Guide context\n{guide_context}" if guide_context else ""
+    draft_prompt = (
+        _load_prompt("draft_writer")
+        .replace("{topic}", topic)
+        .replace("{guide_context}", guide_section)
+    )
+    try:
+        draft = oc.call(draft_prompt, model=model_writer, timeout=600)
+    except Exception as e:
+        return {"ok": False, "error": f"Draft failed: {e}", "draft": ""}
+
+    return {"ok": True, "draft": draft, "error": None}
+
+
+def run_replicate(
+    artifact: str,
+    oc: OcClient,
+    *,
+    model_researcher: str = "glm-5.1",
+    model_reviewer: str = "deepseek-v4-pro",
+) -> Generator[ProgressEvent, None, dict]:
+    """Build a replication guide for a paper. Yields ProgressEvent, returns result dict."""
+    yield ProgressEvent(phase="fetch", message=f"Fetching artifact: {artifact!r}...")
+    content = _fetch_artifact(artifact)
+
+    yield ProgressEvent(phase="analyze", message="Building replication guide...")
+    replicate_prompt = (
+        _load_prompt("replicate_researcher")
+        .replace("{artifact}", artifact)
+        .replace("{artifact_content}", content)
+    )
+    try:
+        guide = oc.call(replicate_prompt, model=model_researcher, timeout=300)
+    except Exception as e:
+        return {"ok": False, "error": f"Replication analysis failed: {e}", "guide": "", "review": ""}
+
+    yield ProgressEvent(phase="review", message="Reviewing replication guide...")
+    reviewer_prompt = _load_prompt("reviewer").replace("{draft}", guide)
+    try:
+        review = oc.call(reviewer_prompt, model=model_reviewer, timeout=300)
+    except Exception:
+        review = "(Reviewer unavailable)"
+
+    return {"ok": True, "guide": guide, "review": review, "error": None}
+
+
+def run_audit(
+    artifact: str,
+    oc: OcClient,
+    *,
+    model_researcher: str = "glm-5.1",
+    model_reviewer: str = "deepseek-v4-pro",
+) -> Generator[ProgressEvent, None, dict]:
+    """Audit a paper for methodology, validity, and reproducibility. Yields ProgressEvent, returns result dict."""
+    yield ProgressEvent(phase="fetch", message=f"Fetching artifact: {artifact!r}...")
+    content = _fetch_artifact(artifact)
+
+    yield ProgressEvent(phase="audit", message="Running audit...")
+    audit_prompt = (
+        _load_prompt("audit_researcher")
+        .replace("{artifact}", artifact)
+        .replace("{artifact_content}", content)
+    )
+    try:
+        report = oc.call(audit_prompt, model=model_researcher, timeout=300)
+    except Exception as e:
+        return {"ok": False, "error": f"Audit failed: {e}", "report": "", "review": ""}
+
+    yield ProgressEvent(phase="review", message="Reviewing audit findings...")
+    reviewer_prompt = _load_prompt("reviewer").replace("{draft}", report)
+    try:
+        review = oc.call(reviewer_prompt, model=model_reviewer, timeout=300)
+    except Exception:
+        review = "(Reviewer unavailable)"
+
+    return {"ok": True, "report": report, "review": review, "error": None}
+
+
 def run_review(
     artifact: str,
     oc: OcClient,

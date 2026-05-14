@@ -15,12 +15,16 @@ from docent.config.settings import ResearchSettings, Settings
 from docent.core.context import Context
 from docent.core.shapes import ErrorShape, LinkShape, MessageShape
 from docent.bundled_plugins.studio import (
+    AuditInputs,
+    CompareInputs,
     ConfigSetInputs,
     ConfigShowInputs,
     ConfigShowResult,
     ConfigSetResult,
     DeepInputs,
+    DraftInputs,
     LitInputs,
+    ReplicateInputs,
     ReviewInputs,
     ResearchResult,
     StudioTool,
@@ -744,3 +748,289 @@ class TestUsageAction:
         assert isinstance(result, UsageResult)
         assert result.feynman_spend_usd == pytest.approx(1.23)
         assert result.oc_spend_usd == pytest.approx(0.45)
+
+
+# ---------------------------------------------------------------------------
+# Phase E: compare, draft, replicate, audit
+# ---------------------------------------------------------------------------
+
+class TestCompareAction:
+    def test_compare_feynman_happy_path(self, tmp_path):
+        output_dir = tmp_path / "research"
+        tool = StudioTool()
+        ctx = _mock_context(output_dir=output_dir, feynman_command=["feynman"])
+
+        fake_output = str(output_dir / "2401-12345-vs-2402-67890-compare.md")
+        with patch("docent.bundled_plugins.studio._run_feynman", return_value=(0, fake_output, "")):
+            result = _drain(
+                tool.compare(CompareInputs(artifact_a="2401.12345", artifact_b="2402.67890"), ctx)
+            )
+
+        assert result.ok is True
+        assert result.workflow == "compare"
+        assert "2401.12345" in result.topic_or_artifact
+        assert "2402.67890" in result.topic_or_artifact
+
+    def test_compare_feynman_error(self, tmp_path):
+        output_dir = tmp_path / "research"
+        tool = StudioTool()
+        ctx = _mock_context(output_dir=output_dir, feynman_command=["feynman"])
+
+        with patch("docent.bundled_plugins.studio._run_feynman", return_value=(1, None, '{"errorMessage": "{}"}')) :
+            result = _drain(
+                tool.compare(CompareInputs(artifact_a="2401.12345", artifact_b="2402.67890"), ctx)
+            )
+
+        assert result.ok is False
+        assert result.backend == "feynman"
+
+    def test_compare_feynman_no_output_file(self, tmp_path):
+        output_dir = tmp_path / "research"
+        tool = StudioTool()
+        ctx = _mock_context(output_dir=output_dir, feynman_command=["feynman"])
+
+        with patch("docent.bundled_plugins.studio._run_feynman", return_value=(0, None, "")):
+            result = _drain(
+                tool.compare(CompareInputs(artifact_a="2401.12345", artifact_b="2402.67890"), ctx)
+            )
+
+        assert result.ok is True
+        assert result.output_file is None
+        assert "no output file" in result.message
+
+    @patch("docent.bundled_plugins.studio.pipeline.run_compare")
+    def test_compare_docent_happy_path(self, mock_run_compare, tmp_path):
+        output_dir = tmp_path / "research"
+        tool = StudioTool()
+        ctx = _mock_context(output_dir=output_dir)
+
+        mock_run_compare.return_value = _fake_pipeline_gen({
+            "ok": True,
+            "comparison": "Comparison content",
+            "review": "Review content",
+            "error": None,
+        })
+
+        with patch("docent.bundled_plugins.studio.oc_client.OcClient") as MockOc:
+            mock_oc_instance = MagicMock()
+            mock_oc_instance.is_available.return_value = True
+            MockOc.return_value = mock_oc_instance
+
+            result = _drain(
+                tool.compare(CompareInputs(artifact_a="2401.12345", artifact_b="2402.67890", backend="docent"), ctx)
+            )
+
+        assert result.ok is True
+        assert result.backend == "docent"
+        assert result.workflow == "compare"
+        assert result.output_file is not None
+
+    def test_compare_inputs_topic_property(self):
+        inp = CompareInputs(artifact_a="2401.12345", artifact_b="2402.67890")
+        assert inp.topic == "2401.12345 vs 2402.67890"
+
+
+class TestDraftAction:
+    def test_draft_feynman_happy_path(self, tmp_path):
+        output_dir = tmp_path / "research"
+        tool = StudioTool()
+        ctx = _mock_context(output_dir=output_dir, feynman_command=["feynman"])
+
+        fake_output = str(output_dir / "storm-surge-draft.md")
+        with patch("docent.bundled_plugins.studio._run_feynman", return_value=(0, fake_output, "")):
+            result = _drain(tool.draft(DraftInputs(topic="storm surge modelling"), ctx))
+
+        assert result.ok is True
+        assert result.workflow == "draft"
+        assert result.topic_or_artifact == "storm surge modelling"
+
+    def test_draft_feynman_error(self, tmp_path):
+        output_dir = tmp_path / "research"
+        tool = StudioTool()
+        ctx = _mock_context(output_dir=output_dir, feynman_command=["feynman"])
+
+        with patch("docent.bundled_plugins.studio._run_feynman", return_value=(1, None, '{"errorMessage": "{}"}')):
+            result = _drain(tool.draft(DraftInputs(topic="storm surge modelling"), ctx))
+
+        assert result.ok is False
+
+    @patch("docent.bundled_plugins.studio.pipeline.run_draft")
+    def test_draft_docent_happy_path(self, mock_run_draft, tmp_path):
+        output_dir = tmp_path / "research"
+        tool = StudioTool()
+        ctx = _mock_context(output_dir=output_dir)
+
+        mock_run_draft.return_value = _fake_pipeline_gen({
+            "ok": True,
+            "draft": "Draft content here",
+            "error": None,
+        })
+
+        with patch("docent.bundled_plugins.studio.oc_client.OcClient") as MockOc:
+            mock_oc_instance = MagicMock()
+            mock_oc_instance.is_available.return_value = True
+            MockOc.return_value = mock_oc_instance
+
+            result = _drain(
+                tool.draft(DraftInputs(topic="storm surge modelling", backend="docent"), ctx)
+            )
+
+        assert result.ok is True
+        assert result.backend == "docent"
+        assert result.workflow == "draft"
+        assert result.output_file is not None
+
+    @patch("docent.bundled_plugins.studio.pipeline.run_draft")
+    def test_draft_docent_pipeline_error(self, mock_run_draft, tmp_path):
+        output_dir = tmp_path / "research"
+        tool = StudioTool()
+        ctx = _mock_context(output_dir=output_dir)
+
+        mock_run_draft.return_value = _fake_pipeline_gen({
+            "ok": False,
+            "draft": "",
+            "error": "Writer failed: timeout",
+        })
+
+        with patch("docent.bundled_plugins.studio.oc_client.OcClient") as MockOc:
+            mock_oc_instance = MagicMock()
+            mock_oc_instance.is_available.return_value = True
+            MockOc.return_value = mock_oc_instance
+
+            result = _drain(
+                tool.draft(DraftInputs(topic="storm surge modelling", backend="docent"), ctx)
+            )
+
+        assert result.ok is False
+        assert "Writer failed" in result.message
+
+
+class TestReplicateAction:
+    def test_replicate_feynman_happy_path(self, tmp_path):
+        output_dir = tmp_path / "research"
+        tool = StudioTool()
+        ctx = _mock_context(output_dir=output_dir, feynman_command=["feynman"])
+
+        fake_output = str(output_dir / "2401-12345-replicate.md")
+        with patch("docent.bundled_plugins.studio._run_feynman", return_value=(0, fake_output, "")):
+            result = _drain(tool.replicate(ReplicateInputs(artifact="2401.12345"), ctx))
+
+        assert result.ok is True
+        assert result.workflow == "replicate"
+        assert result.topic_or_artifact == "2401.12345"
+
+    def test_replicate_feynman_no_output_file(self, tmp_path):
+        output_dir = tmp_path / "research"
+        tool = StudioTool()
+        ctx = _mock_context(output_dir=output_dir, feynman_command=["feynman"])
+
+        with patch("docent.bundled_plugins.studio._run_feynman", return_value=(0, None, "")):
+            result = _drain(tool.replicate(ReplicateInputs(artifact="2401.12345"), ctx))
+
+        assert result.ok is True
+        assert result.output_file is None
+
+    @patch("docent.bundled_plugins.studio.pipeline.run_replicate")
+    def test_replicate_docent_happy_path(self, mock_run_replicate, tmp_path):
+        output_dir = tmp_path / "research"
+        tool = StudioTool()
+        ctx = _mock_context(output_dir=output_dir)
+
+        mock_run_replicate.return_value = _fake_pipeline_gen({
+            "ok": True,
+            "guide": "Replication guide content",
+            "review": "Review notes",
+            "error": None,
+        })
+
+        with patch("docent.bundled_plugins.studio.oc_client.OcClient") as MockOc:
+            mock_oc_instance = MagicMock()
+            mock_oc_instance.is_available.return_value = True
+            MockOc.return_value = mock_oc_instance
+
+            result = _drain(
+                tool.replicate(ReplicateInputs(artifact="2401.12345", backend="docent"), ctx)
+            )
+
+        assert result.ok is True
+        assert result.backend == "docent"
+        assert result.workflow == "replicate"
+        assert result.output_file is not None
+
+
+class TestAuditAction:
+    def test_audit_feynman_happy_path(self, tmp_path):
+        output_dir = tmp_path / "research"
+        tool = StudioTool()
+        ctx = _mock_context(output_dir=output_dir, feynman_command=["feynman"])
+
+        fake_output = str(output_dir / "2401-12345-audit.md")
+        with patch("docent.bundled_plugins.studio._run_feynman", return_value=(0, fake_output, "")):
+            result = _drain(tool.audit(AuditInputs(artifact="2401.12345"), ctx))
+
+        assert result.ok is True
+        assert result.workflow == "audit"
+        assert result.topic_or_artifact == "2401.12345"
+
+    def test_audit_feynman_error(self, tmp_path):
+        output_dir = tmp_path / "research"
+        tool = StudioTool()
+        ctx = _mock_context(output_dir=output_dir, feynman_command=["feynman"])
+
+        with patch("docent.bundled_plugins.studio._run_feynman", return_value=(1, None, '{"errorMessage": "{}"}')):
+            result = _drain(tool.audit(AuditInputs(artifact="2401.12345"), ctx))
+
+        assert result.ok is False
+        assert result.backend == "feynman"
+
+    @patch("docent.bundled_plugins.studio.pipeline.run_audit")
+    def test_audit_docent_happy_path(self, mock_run_audit, tmp_path):
+        output_dir = tmp_path / "research"
+        tool = StudioTool()
+        ctx = _mock_context(output_dir=output_dir)
+
+        mock_run_audit.return_value = _fake_pipeline_gen({
+            "ok": True,
+            "report": "Audit report content",
+            "review": "Reviewer notes",
+            "error": None,
+        })
+
+        with patch("docent.bundled_plugins.studio.oc_client.OcClient") as MockOc:
+            mock_oc_instance = MagicMock()
+            mock_oc_instance.is_available.return_value = True
+            MockOc.return_value = mock_oc_instance
+
+            result = _drain(
+                tool.audit(AuditInputs(artifact="2401.12345", backend="docent"), ctx)
+            )
+
+        assert result.ok is True
+        assert result.backend == "docent"
+        assert result.workflow == "audit"
+        assert result.output_file is not None
+
+    @patch("docent.bundled_plugins.studio.pipeline.run_audit")
+    def test_audit_docent_pipeline_error(self, mock_run_audit, tmp_path):
+        output_dir = tmp_path / "research"
+        tool = StudioTool()
+        ctx = _mock_context(output_dir=output_dir)
+
+        mock_run_audit.return_value = _fake_pipeline_gen({
+            "ok": False,
+            "report": "",
+            "review": "",
+            "error": "Audit failed: timeout",
+        })
+
+        with patch("docent.bundled_plugins.studio.oc_client.OcClient") as MockOc:
+            mock_oc_instance = MagicMock()
+            mock_oc_instance.is_available.return_value = True
+            MockOc.return_value = mock_oc_instance
+
+            result = _drain(
+                tool.audit(AuditInputs(artifact="2401.12345", backend="docent"), ctx)
+            )
+
+        assert result.ok is False
+        assert "Audit failed" in result.message

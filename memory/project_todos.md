@@ -4,7 +4,7 @@ description: Comprehensive ordered todo list across all active tracks; update af
 type: project
 ---
 
-Last updated: 2026-05-13 (CI gap confirmed: tests never run on tag push; #27 already done)
+Last updated: 2026-05-14 (breaking changes policy decided; #19/#20/#21 done; /audit-memory command added)
 
 ---
 
@@ -41,9 +41,9 @@ Last updated: 2026-05-13 (CI gap confirmed: tests never run on tag push; #27 alr
 
 17. ~~**`to-notebook` polish**~~ — DONE 2026-05-14. Fixed `docent research` → `docent studio` in all error messages (3 files); relaxed Feynman-output guard (no sources.json no longer fatal); 19 new NLM helper tests; 369 green.
 18. ~~**`alpha-research` port**~~ — DONE 2026-05-14. `studio search-papers` + `studio get-paper` actions (alphaxiv-py SDK, async→sync wrapper); 398 tests green.
-19. **`scholarly-search` port** — Google Scholar wrapper with Semantic Scholar/CrossRef fallback. Cheap once alpha-research lands.
-20. **`literature-review` port** — multi-source synthesis consuming alpha + scholarly outputs.
-21. **Phase E: remaining Feynman workflows** — `compare`, `draft`, `replicate`, `audit`, `watch` on both backends. Deferred.
+19. ~~**`scholarly-search` port**~~ — DONE 2026-05-14 (confirmed shipped: `studio scholarly-search` action, GS→Semantic Scholar→CrossRef fallback chain).
+20. ~~**`literature-review` port**~~ — DONE 2026-05-14 (confirmed: `studio lit` has both feynman + docent backends; docent pipeline uses Tavily + scholarly + arXiv via `academic_search_parallel`).
+21. ~~**Phase E: remaining Feynman workflows**~~ — DONE 2026-05-14. `compare`, `draft`, `replicate`, `audit` added to StudioTool (both feynman + docent backends); 91 tests green. `watch` deferred — scheduling concern, not a single-run generator action.
 
 ---
 
@@ -66,7 +66,7 @@ Last updated: 2026-05-13 (CI gap confirmed: tests never run on tag push; #27 alr
 31. **Semantic Scholar orphan identification** — `--identify-orphans` flag on `sync-status`. Deferred since Step 11.1.
 32. **`utils/logging.py`** — defer until a step needs logged output.
 33. **Eval harness** — trigger: first production LLM call tool that needs golden sets + scoring. Deferred per `harness_principles.md`.
-34. **Breaking changes policy** — how to handle breaking changes in external tooling (feynman, MCP servers) and docent itself. Needs a decision before any v2.x work.
+34. ~~**Breaking changes policy**~~ — DECIDED 2026-05-14. See `memory/project_breaking_changes_policy.md`. Semver with 1-MINOR deprecation window; external tools are WARN in doctor, not Docent MAJOR bumps.
 
 ---
 

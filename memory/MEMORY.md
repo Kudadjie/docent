@@ -23,6 +23,7 @@
 - [Release plan](release_plan.md) — single bundled track (CLI + UI ship together); v1.1.0 shipped 2026-05-08; v1.2.0 (Tavily Research API + pipeline fixes + preflight)
 - [UI bundling strategy](project_ui_bundling.md) — decided: FastAPI + Next.js static export; `docent ui` command; two-file sync cost per new endpoint; deferred to next release
 - [Studio real-life tests](tasks/research_tool_real_life_tests.md) — 19-item manual test checklist for the studio tool; tests 1–9 PASSED, 10–19 remaining before v1.2.0 release
+- [Breaking changes policy](project_breaking_changes_policy.md) — semver rules, deprecation window, external tool handling, state file migrations; decided 2026-05-14
 - [Master todo list](project_todos.md) — comprehensive ordered todos across all tracks: v1.2.0 blockers → hardening sprint → skill ports → Phase 2 UI → infrastructure; update each session
 - [Zotero integration design](project_zotero_integration.md) — ReferenceManagerClient protocol, Mendeley OR Zotero toggle (not both), pyzotero vs zotero-mcp open question; v1.3+ work
 - [Obsidian integration design](project_obsidian_integration.md) — to-vault output, literature notes on done, Dataview-compatible frontmatter, daily notes, Templater; v1.4+ work

@@ -211,11 +211,16 @@ Studio runs deep research, literature reviews, and peer reviews, backed by Feynm
 | Command | Notes |
 |---------|-------|
 | `docent studio deep-research "topic" [--backend feynman\|docent] [--output local\|notebook\|vault]` | Full research pipeline |
-| `docent studio lit "topic" [--backend feynman\|docent] [--output local\|notebook\|vault]` | Literature-focused (80% paper search bias) |
-| `docent studio review "artifact" [--output local\|notebook\|vault]` | 3-stage: fetch → researcher → reviewer |
+| `docent studio lit "topic" [--backend feynman\|docent] [--output local\|notebook\|vault]` | Literature review (Tavily + scholarly + arXiv) |
+| `docent studio review "artifact" [--backend feynman\|docent] [--output local\|notebook\|vault]` | Peer review of arXiv ID, PDF, or URL |
+| `docent studio compare "id-a" "id-b" [--backend feynman\|docent] [--output local\|notebook\|vault]` | Side-by-side comparison of two artifacts |
+| `docent studio draft "topic" [--backend feynman\|docent] [--output local\|notebook\|vault]` | Draft a paper section or document |
+| `docent studio replicate "artifact" [--backend feynman\|docent] [--output local\|notebook\|vault]` | Build a replication guide for a paper |
+| `docent studio audit "artifact" [--backend feynman\|docent] [--output local\|notebook\|vault]` | Audit a paper for methodology and reproducibility |
 | `docent studio to-notebook [--output-file <path>] [--max-sources N] [--notebook-id <id>]` | Post-process: push existing research output to NotebookLM |
 | `docent studio search-papers "query" [--max-results N]` | Search alphaXiv for academic papers |
 | `docent studio get-paper "arxiv-id"` | Fetch AI-generated overview for a paper |
+| `docent studio scholarly-search "query" [--max-results N]` | Search Google Scholar / Semantic Scholar / CrossRef |
 | `docent studio usage` | Show today's Feynman/OpenCode spend + Tavily requests |
 | `docent studio config-show` | Show current Studio settings |
 | `docent studio config-set --key <k> --value <v>` | Set a Studio config value |

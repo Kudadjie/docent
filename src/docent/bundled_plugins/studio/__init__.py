@@ -857,6 +857,39 @@ class ScholarlySearchResult(BaseModel):
         return shapes
 
 
+class CompareInputs(BaseModel):
+    artifact_a: str = Field(..., description="First artifact: arXiv ID, PDF path, or URL.")
+    artifact_b: str = Field(..., description="Second artifact: arXiv ID, PDF path, or URL.")
+    backend: str = Field("feynman", description="Research backend: 'feynman' (default) or 'docent'.")
+    output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
+    guide_files: list[str] = _GUIDE_FILES_FIELD
+
+    @property
+    def topic(self) -> str:
+        return f"{self.artifact_a} vs {self.artifact_b}"
+
+
+class DraftInputs(BaseModel):
+    topic: str = Field(..., description="Topic or section title to draft.")
+    backend: str = Field("feynman", description="Research backend: 'feynman' (default) or 'docent'.")
+    output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
+    guide_files: list[str] = _GUIDE_FILES_FIELD
+
+
+class ReplicateInputs(BaseModel):
+    artifact: str = Field(..., description="arXiv ID, PDF path, or URL of the paper to replicate.")
+    backend: str = Field("feynman", description="Research backend: 'feynman' (default) or 'docent'.")
+    output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
+    guide_files: list[str] = _GUIDE_FILES_FIELD
+
+
+class AuditInputs(BaseModel):
+    artifact: str = Field(..., description="arXiv ID, PDF path, or URL of the paper to audit.")
+    backend: str = Field("feynman", description="Research backend: 'feynman' (default) or 'docent'.")
+    output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
+    guide_files: list[str] = _GUIDE_FILES_FIELD
+
+
 class UsageInputs(BaseModel):
     pass
 
@@ -1938,6 +1971,435 @@ class StudioTool(Tool):
             value=inputs.value,
             config_path=str(path),
             message=f"Set research.{inputs.key} = {inputs.value!r} in {path}.",
+        )
+
+    @action(
+        description="Compare two research artifacts (arXiv IDs, PDFs, or URLs) side by side.",
+        input_schema=CompareInputs,
+        preflight=_preflight_oc_only,
+    )
+    def compare(self, inputs: CompareInputs, context: Context):
+        topic_label = f"{inputs.artifact_a} vs {inputs.artifact_b}"
+        slug = _slugify(_artifact_slug(inputs.artifact_a) + "-vs-" + _artifact_slug(inputs.artifact_b)) + "-compare"
+
+        if inputs.backend == "docent":
+            from .oc_client import OcClient
+            from .pipeline import run_compare
+
+            oc = OcClient(
+                provider=context.settings.research.oc_provider,
+                budget_usd=context.settings.research.oc_budget_usd,
+            )
+            output_dir = context.settings.research.output_dir.expanduser()
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+            try:
+                result_data = yield from run_compare(
+                    inputs.artifact_a, inputs.artifact_b, oc,
+                    model_researcher=context.settings.research.oc_model_researcher,
+                    model_reviewer=context.settings.research.oc_model_reviewer,
+                )
+            except Exception as e:
+                return ResearchResult(
+                    ok=False, backend="docent", workflow="compare",
+                    topic_or_artifact=topic_label, output_file=None, returncode=None,
+                    message=f"Pipeline error: {e}",
+                )
+
+            if not result_data["ok"]:
+                return ResearchResult(
+                    ok=False, backend="docent", workflow="compare",
+                    topic_or_artifact=topic_label, output_file=None, returncode=None,
+                    message=result_data.get("error") or "Compare failed.",
+                )
+
+            out_file = output_dir / f"{slug}.md"
+            review_file = output_dir / f"{slug}-review.md"
+            out_file.write_text(result_data["comparison"], encoding="utf-8")
+            review_file.write_text(result_data["review"], encoding="utf-8")
+
+            yield ProgressEvent(phase="done", message=f"Output written to {out_file}")
+
+            notebook_id, vault_path, extra = yield from _route_output(
+                inputs, out_file, None, context, "compare"
+            )
+            return ResearchResult(
+                ok=True, backend="docent", workflow="compare",
+                topic_or_artifact=topic_label, output_file=str(out_file), returncode=0,
+                notebook_id=notebook_id, vault_path=vault_path,
+                message=f"Comparison complete.{extra}",
+            )
+
+        # Feynman branch
+        yield ProgressEvent(phase="start", message=f"Starting Feynman compare: {topic_label!r}")
+        feynman_cmd = context.settings.research.feynman_command or ["feynman"]
+        output_dir = context.settings.research.output_dir.expanduser()
+        workspace_dir = output_dir / "workspace"
+        guide_ctx = _read_guide_files(inputs.guide_files)
+        feynman_prompt = f"/compare {inputs.artifact_a} {inputs.artifact_b}"
+        if guide_ctx:
+            names = ", ".join(Path(p).name for p in inputs.guide_files)
+            feynman_prompt += f"\n\n## Guide context ({names})\n{guide_ctx}"
+        cmd_args = ["--prompt", feynman_prompt]
+        if context.settings.research.feynman_model:
+            cmd_args = ["--model", context.settings.research.feynman_model] + cmd_args
+
+        try:
+            returncode, output_file, stderr_output = _run_feynman(
+                feynman_cmd, cmd_args, workspace_dir, output_dir, slug,
+                budget_usd=context.settings.research.feynman_budget_usd,
+                timeout=context.settings.research.feynman_timeout,
+            )
+        except (FeynmanBudgetExceededError, FeynmanNotFoundError) as e:
+            return ResearchResult(
+                ok=False, backend="feynman", workflow="compare",
+                topic_or_artifact=topic_label, output_file=None, returncode=None, message=str(e),
+            )
+
+        if returncode != 0:
+            msg = _summarize_feynman_error(stderr_output, configured_model=context.settings.research.feynman_model)
+            return ResearchResult(
+                ok=False, backend="feynman", workflow="compare",
+                topic_or_artifact=topic_label, output_file=output_file, returncode=returncode, message=msg,
+            )
+
+        if output_file is None:
+            return ResearchResult(
+                ok=True, backend="feynman", workflow="compare",
+                topic_or_artifact=topic_label, output_file=None, returncode=returncode,
+                message=f"Compare completed for {topic_label!r}, but no output file was found.",
+            )
+
+        out_path_obj = Path(output_file)
+        notebook_id, vault_path, extra = yield from _route_output(
+            inputs, out_path_obj, None, context, "compare"
+        )
+        return ResearchResult(
+            ok=True, backend="feynman", workflow="compare",
+            topic_or_artifact=topic_label, output_file=output_file, returncode=returncode,
+            notebook_id=notebook_id, vault_path=vault_path,
+            message=f"Compare completed for {topic_label!r}.{extra}",
+        )
+
+    @action(
+        description="Draft a paper section or document on a topic.",
+        input_schema=DraftInputs,
+        preflight=_preflight_oc_only,
+    )
+    def draft(self, inputs: DraftInputs, context: Context):
+        slug = _slugify(inputs.topic) + "-draft"
+
+        if inputs.backend == "docent":
+            from .oc_client import OcClient
+            from .pipeline import run_draft
+
+            oc = OcClient(
+                provider=context.settings.research.oc_provider,
+                budget_usd=context.settings.research.oc_budget_usd,
+            )
+            output_dir = context.settings.research.output_dir.expanduser()
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+            guide_ctx = _read_guide_files(inputs.guide_files)
+
+            try:
+                result_data = yield from run_draft(
+                    inputs.topic, oc,
+                    guide_context=guide_ctx,
+                    model_writer=context.settings.research.oc_model_writer,
+                )
+            except Exception as e:
+                return ResearchResult(
+                    ok=False, backend="docent", workflow="draft",
+                    topic_or_artifact=inputs.topic, output_file=None, returncode=None,
+                    message=f"Pipeline error: {e}",
+                )
+
+            if not result_data["ok"]:
+                return ResearchResult(
+                    ok=False, backend="docent", workflow="draft",
+                    topic_or_artifact=inputs.topic, output_file=None, returncode=None,
+                    message=result_data.get("error") or "Draft failed.",
+                )
+
+            out_file = output_dir / f"{slug}.md"
+            out_file.write_text(result_data["draft"], encoding="utf-8")
+
+            yield ProgressEvent(phase="done", message=f"Output written to {out_file}")
+
+            notebook_id, vault_path, extra = yield from _route_output(
+                inputs, out_file, None, context, "draft"
+            )
+            return ResearchResult(
+                ok=True, backend="docent", workflow="draft",
+                topic_or_artifact=inputs.topic, output_file=str(out_file), returncode=0,
+                notebook_id=notebook_id, vault_path=vault_path,
+                message=f"Draft complete.{extra}",
+            )
+
+        # Feynman branch
+        yield ProgressEvent(phase="start", message=f"Starting Feynman draft: {inputs.topic!r}")
+        feynman_cmd = context.settings.research.feynman_command or ["feynman"]
+        output_dir = context.settings.research.output_dir.expanduser()
+        workspace_dir = output_dir / "workspace"
+        guide_ctx = _read_guide_files(inputs.guide_files)
+        feynman_prompt = f"/draft {inputs.topic}"
+        if guide_ctx:
+            names = ", ".join(Path(p).name for p in inputs.guide_files)
+            feynman_prompt += f"\n\n## Guide context ({names})\n{guide_ctx}"
+        cmd_args = ["--prompt", feynman_prompt]
+        if context.settings.research.feynman_model:
+            cmd_args = ["--model", context.settings.research.feynman_model] + cmd_args
+
+        try:
+            returncode, output_file, stderr_output = _run_feynman(
+                feynman_cmd, cmd_args, workspace_dir, output_dir, slug,
+                budget_usd=context.settings.research.feynman_budget_usd,
+                timeout=context.settings.research.feynman_timeout,
+            )
+        except (FeynmanBudgetExceededError, FeynmanNotFoundError) as e:
+            return ResearchResult(
+                ok=False, backend="feynman", workflow="draft",
+                topic_or_artifact=inputs.topic, output_file=None, returncode=None, message=str(e),
+            )
+
+        if returncode != 0:
+            msg = _summarize_feynman_error(stderr_output, configured_model=context.settings.research.feynman_model)
+            return ResearchResult(
+                ok=False, backend="feynman", workflow="draft",
+                topic_or_artifact=inputs.topic, output_file=output_file, returncode=returncode, message=msg,
+            )
+
+        if output_file is None:
+            return ResearchResult(
+                ok=True, backend="feynman", workflow="draft",
+                topic_or_artifact=inputs.topic, output_file=None, returncode=returncode,
+                message=f"Draft completed for {inputs.topic!r}, but no output file was found.",
+            )
+
+        out_path_obj = Path(output_file)
+        notebook_id, vault_path, extra = yield from _route_output(
+            inputs, out_path_obj, None, context, "draft"
+        )
+        return ResearchResult(
+            ok=True, backend="feynman", workflow="draft",
+            topic_or_artifact=inputs.topic, output_file=output_file, returncode=returncode,
+            notebook_id=notebook_id, vault_path=vault_path,
+            message=f"Draft completed for {inputs.topic!r}.{extra}",
+        )
+
+    @action(
+        description="Build a replication guide for a paper (arXiv ID, PDF, or URL).",
+        input_schema=ReplicateInputs,
+        preflight=_preflight_oc_only,
+    )
+    def replicate(self, inputs: ReplicateInputs, context: Context):
+        slug = _slugify(_artifact_slug(inputs.artifact)) + "-replicate"
+
+        if inputs.backend == "docent":
+            from .oc_client import OcClient
+            from .pipeline import run_replicate
+
+            oc = OcClient(
+                provider=context.settings.research.oc_provider,
+                budget_usd=context.settings.research.oc_budget_usd,
+            )
+            output_dir = context.settings.research.output_dir.expanduser()
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+            try:
+                result_data = yield from run_replicate(
+                    inputs.artifact, oc,
+                    model_researcher=context.settings.research.oc_model_researcher,
+                    model_reviewer=context.settings.research.oc_model_reviewer,
+                )
+            except Exception as e:
+                return ResearchResult(
+                    ok=False, backend="docent", workflow="replicate",
+                    topic_or_artifact=inputs.artifact, output_file=None, returncode=None,
+                    message=f"Pipeline error: {e}",
+                )
+
+            if not result_data["ok"]:
+                return ResearchResult(
+                    ok=False, backend="docent", workflow="replicate",
+                    topic_or_artifact=inputs.artifact, output_file=None, returncode=None,
+                    message=result_data.get("error") or "Replication analysis failed.",
+                )
+
+            out_file = output_dir / f"{slug}.md"
+            review_file = output_dir / f"{slug}-review.md"
+            out_file.write_text(result_data["guide"], encoding="utf-8")
+            review_file.write_text(result_data["review"], encoding="utf-8")
+
+            yield ProgressEvent(phase="done", message=f"Output written to {out_file}")
+
+            notebook_id, vault_path, extra = yield from _route_output(
+                inputs, out_file, None, context, "replicate"
+            )
+            return ResearchResult(
+                ok=True, backend="docent", workflow="replicate",
+                topic_or_artifact=inputs.artifact, output_file=str(out_file), returncode=0,
+                notebook_id=notebook_id, vault_path=vault_path,
+                message=f"Replication guide complete.{extra}",
+            )
+
+        # Feynman branch
+        yield ProgressEvent(phase="start", message=f"Starting Feynman replicate: {inputs.artifact!r}")
+        feynman_cmd = context.settings.research.feynman_command or ["feynman"]
+        output_dir = context.settings.research.output_dir.expanduser()
+        workspace_dir = output_dir / "workspace"
+        guide_ctx = _read_guide_files(inputs.guide_files)
+        feynman_prompt = f"/replicate {inputs.artifact}"
+        if guide_ctx:
+            names = ", ".join(Path(p).name for p in inputs.guide_files)
+            feynman_prompt += f"\n\n## Guide context ({names})\n{guide_ctx}"
+        cmd_args = ["--prompt", feynman_prompt]
+        if context.settings.research.feynman_model:
+            cmd_args = ["--model", context.settings.research.feynman_model] + cmd_args
+
+        try:
+            returncode, output_file, stderr_output = _run_feynman(
+                feynman_cmd, cmd_args, workspace_dir, output_dir, slug,
+                budget_usd=context.settings.research.feynman_budget_usd,
+                timeout=context.settings.research.feynman_timeout,
+            )
+        except (FeynmanBudgetExceededError, FeynmanNotFoundError) as e:
+            return ResearchResult(
+                ok=False, backend="feynman", workflow="replicate",
+                topic_or_artifact=inputs.artifact, output_file=None, returncode=None, message=str(e),
+            )
+
+        if returncode != 0:
+            msg = _summarize_feynman_error(stderr_output, configured_model=context.settings.research.feynman_model)
+            return ResearchResult(
+                ok=False, backend="feynman", workflow="replicate",
+                topic_or_artifact=inputs.artifact, output_file=output_file, returncode=returncode, message=msg,
+            )
+
+        if output_file is None:
+            return ResearchResult(
+                ok=True, backend="feynman", workflow="replicate",
+                topic_or_artifact=inputs.artifact, output_file=None, returncode=returncode,
+                message=f"Replicate completed for {inputs.artifact!r}, but no output file was found.",
+            )
+
+        out_path_obj = Path(output_file)
+        notebook_id, vault_path, extra = yield from _route_output(
+            inputs, out_path_obj, None, context, "replicate"
+        )
+        return ResearchResult(
+            ok=True, backend="feynman", workflow="replicate",
+            topic_or_artifact=inputs.artifact, output_file=output_file, returncode=returncode,
+            notebook_id=notebook_id, vault_path=vault_path,
+            message=f"Replicate completed for {inputs.artifact!r}.{extra}",
+        )
+
+    @action(
+        description="Audit a paper (arXiv ID, PDF, or URL) for methodology, claim validity, and reproducibility.",
+        input_schema=AuditInputs,
+        preflight=_preflight_oc_only,
+    )
+    def audit(self, inputs: AuditInputs, context: Context):
+        slug = _slugify(_artifact_slug(inputs.artifact)) + "-audit"
+
+        if inputs.backend == "docent":
+            from .oc_client import OcClient
+            from .pipeline import run_audit
+
+            oc = OcClient(
+                provider=context.settings.research.oc_provider,
+                budget_usd=context.settings.research.oc_budget_usd,
+            )
+            output_dir = context.settings.research.output_dir.expanduser()
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+            try:
+                result_data = yield from run_audit(
+                    inputs.artifact, oc,
+                    model_researcher=context.settings.research.oc_model_researcher,
+                    model_reviewer=context.settings.research.oc_model_reviewer,
+                )
+            except Exception as e:
+                return ResearchResult(
+                    ok=False, backend="docent", workflow="audit",
+                    topic_or_artifact=inputs.artifact, output_file=None, returncode=None,
+                    message=f"Pipeline error: {e}",
+                )
+
+            if not result_data["ok"]:
+                return ResearchResult(
+                    ok=False, backend="docent", workflow="audit",
+                    topic_or_artifact=inputs.artifact, output_file=None, returncode=None,
+                    message=result_data.get("error") or "Audit failed.",
+                )
+
+            out_file = output_dir / f"{slug}.md"
+            review_file = output_dir / f"{slug}-review.md"
+            out_file.write_text(result_data["report"], encoding="utf-8")
+            review_file.write_text(result_data["review"], encoding="utf-8")
+
+            yield ProgressEvent(phase="done", message=f"Output written to {out_file}")
+
+            notebook_id, vault_path, extra = yield from _route_output(
+                inputs, out_file, None, context, "audit"
+            )
+            return ResearchResult(
+                ok=True, backend="docent", workflow="audit",
+                topic_or_artifact=inputs.artifact, output_file=str(out_file), returncode=0,
+                notebook_id=notebook_id, vault_path=vault_path,
+                message=f"Audit complete.{extra}",
+            )
+
+        # Feynman branch
+        yield ProgressEvent(phase="start", message=f"Starting Feynman audit: {inputs.artifact!r}")
+        feynman_cmd = context.settings.research.feynman_command or ["feynman"]
+        output_dir = context.settings.research.output_dir.expanduser()
+        workspace_dir = output_dir / "workspace"
+        guide_ctx = _read_guide_files(inputs.guide_files)
+        feynman_prompt = f"/audit {inputs.artifact}"
+        if guide_ctx:
+            names = ", ".join(Path(p).name for p in inputs.guide_files)
+            feynman_prompt += f"\n\n## Guide context ({names})\n{guide_ctx}"
+        cmd_args = ["--prompt", feynman_prompt]
+        if context.settings.research.feynman_model:
+            cmd_args = ["--model", context.settings.research.feynman_model] + cmd_args
+
+        try:
+            returncode, output_file, stderr_output = _run_feynman(
+                feynman_cmd, cmd_args, workspace_dir, output_dir, slug,
+                budget_usd=context.settings.research.feynman_budget_usd,
+                timeout=context.settings.research.feynman_timeout,
+            )
+        except (FeynmanBudgetExceededError, FeynmanNotFoundError) as e:
+            return ResearchResult(
+                ok=False, backend="feynman", workflow="audit",
+                topic_or_artifact=inputs.artifact, output_file=None, returncode=None, message=str(e),
+            )
+
+        if returncode != 0:
+            msg = _summarize_feynman_error(stderr_output, configured_model=context.settings.research.feynman_model)
+            return ResearchResult(
+                ok=False, backend="feynman", workflow="audit",
+                topic_or_artifact=inputs.artifact, output_file=output_file, returncode=returncode, message=msg,
+            )
+
+        if output_file is None:
+            return ResearchResult(
+                ok=True, backend="feynman", workflow="audit",
+                topic_or_artifact=inputs.artifact, output_file=None, returncode=returncode,
+                message=f"Audit completed for {inputs.artifact!r}, but no output file was found.",
+            )
+
+        out_path_obj = Path(output_file)
+        notebook_id, vault_path, extra = yield from _route_output(
+            inputs, out_path_obj, None, context, "audit"
+        )
+        return ResearchResult(
+            ok=True, backend="feynman", workflow="audit",
+            topic_or_artifact=inputs.artifact, output_file=output_file, returncode=returncode,
+            notebook_id=notebook_id, vault_path=vault_path,
+            message=f"Audit completed for {inputs.artifact!r}.{extra}",
         )
 
     @action(
