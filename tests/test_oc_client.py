@@ -4,8 +4,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import docent.bundled_plugins.research_to_notebook.oc_client as oc_mod
-from docent.bundled_plugins.research_to_notebook.oc_client import (
+import docent.bundled_plugins.studio.oc_client as oc_mod
+from docent.bundled_plugins.studio.oc_client import (
     OcBudgetExceededError,
     OcClient,
     _read_oc_daily_spend,

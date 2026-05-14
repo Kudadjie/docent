@@ -60,7 +60,7 @@ Last updated: 2026-05-13 (CI gap confirmed: tests never run on tag push; #27 alr
 ## Infrastructure / housekeeping
 
 27. ~~**Pin `actions/setup-node` to SHA**~~ — DONE 2026-05-07. All 3 actions SHA-pinned (`checkout`, `setup-uv`, `setup-node`).
-28. **CI test + lint gap** — `publish.yml` has NO test run at all: goes `build UI → pip-audit → uv build → publish` with 340 tests never executed. Fix: (a) add a `pytest` step before the build, (b) add `ruff` check while there. `mypy` deferred — needs type stubs configured first. **Do this before v1.2.0 tag.** ← NEXT SESSION START HERE
+28. ~~**CI test + lint gap**~~ — FIXED 2026-05-14. pytest + ruff steps added to publish.yml before uv build; ruff>=0.9 added to dev deps.
 29. **`mendeley_mcp_command` config-set** — list-typed setting not yet exposed via `config-set`. Deferred since Step 11.4.
 30. **BibTeX export** — needs CrossRef-clean metadata. Deferred since Step 8.
 31. **Semantic Scholar orphan identification** — `--identify-orphans` flag on `sync-status`. Deferred since Step 11.1.

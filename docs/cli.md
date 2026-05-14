@@ -204,29 +204,26 @@ Claude calls `reading__search` to find the entry id, then `reading__move_to` wit
 
 ---
 
-## 6. Research Tool
+## 6. Studio
 
-The research tool runs deep research, literature reviews, and peer reviews, backed by Feynman CLI or the Docent-native 6-stage pipeline.
+Studio runs deep research, literature reviews, and peer reviews, backed by Feynman CLI or the Docent-native 6-stage pipeline.
 
 | Command | Notes |
 |---------|-------|
-| `docent research deep "topic" [--backend feynman|docent]` | Full research pipeline |
-| `docent research lit "topic" [--backend feynman|docent]` | Literature-focused (80% paper search bias) |
-| `docent research review "artifact"` | 3-stage: fetch → researcher → reviewer |
-| `docent research deep "topic" [--backend feynman|docent]` | Full research pipeline |
-| `docent research lit "topic" [--backend feynman|docent]` | Literature-focused (80% paper search bias) |
-| `docent research review "artifact"` | 3-stage: fetch → researcher → reviewer |
-| `docent research to-notebook [--output-file <path>] [--max-sources N]` | Package research sources for NotebookLM + open browser |
-| `docent research usage` | Show today's Feynman/OpenCode spend + Tavily requests |
-| `docent research config-show` | Show current research settings |
-| `docent research config-set --key <k> --value <v>` | Set a research config value |
+| `docent studio deep-research "topic" [--backend feynman\|docent]` | Full research pipeline |
+| `docent studio lit "topic" [--backend feynman\|docent]` | Literature-focused (80% paper search bias) |
+| `docent studio review "artifact"` | 3-stage: fetch → researcher → reviewer |
+| `docent studio to-notebook [--output-file <path>] [--max-sources N] [--notebook-id <id>]` | Push research sources directly to NotebookLM |
+| `docent studio usage` | Show today's Feynman/OpenCode spend + Tavily requests |
+| `docent studio config-show` | Show current Studio settings |
+| `docent studio config-set --key <k> --value <v>` | Set a Studio config value |
 
-**Research config keys:** `output_dir`, `feynman_budget_usd`, `oc_provider`, `oc_model_planner`, `oc_model_writer`, `oc_model_verifier`, `oc_model_reviewer`, `oc_model_researcher`, `oc_budget_usd`, `tavily_api_key`.
+**Studio config keys:** `output_dir`, `feynman_budget_usd`, `oc_provider`, `oc_model_planner`, `oc_model_writer`, `oc_model_verifier`, `oc_model_reviewer`, `oc_model_researcher`, `oc_budget_usd`, `tavily_api_key`.
 
 **Tavily:** Web search in the docent-native backend uses Tavily (free tier: 1,000 calls/month). Set your API key:
 
 ```bash
-docent research config-set --key tavily_api_key --value "tvly-..."
+docent studio config-set --key tavily_api_key --value "tvly-..."
 ```
 
 Or via `DOCENT_RESEARCH__TAVILY_API_KEY` env var.

@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from docent.bundled_plugins.research_to_notebook.oc_client import OcClient
-from docent.bundled_plugins.research_to_notebook.pipeline import (
+from docent.bundled_plugins.studio.oc_client import OcClient
+from docent.bundled_plugins.studio.pipeline import (
     _fetch_artifact,
     _parse_json,
     run_deep,
@@ -85,9 +85,9 @@ class TestParseJson:
 
 
 class TestRunDeep:
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.web_search")
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.paper_search")
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page")
+    @patch("docent.bundled_plugins.studio.pipeline.web_search")
+    @patch("docent.bundled_plugins.studio.pipeline.paper_search")
+    @patch("docent.bundled_plugins.studio.pipeline.fetch_page")
     def test_run_deep_happy_path(self, mock_fetch, mock_paper, mock_web):
         mock_web.return_value = [
             {"title": "Web Result", "url": "https://example.com", "snippet": "A snippet"},
@@ -138,9 +138,9 @@ class TestRunDeep:
         assert result["ok"] is False
         assert "Search planner failed" in result["error"]
 
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.web_search")
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.paper_search")
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page")
+    @patch("docent.bundled_plugins.studio.pipeline.web_search")
+    @patch("docent.bundled_plugins.studio.pipeline.paper_search")
+    @patch("docent.bundled_plugins.studio.pipeline.fetch_page")
     def test_run_deep_writer_failure(self, mock_fetch, mock_paper, mock_web):
         mock_web.return_value = [
             {"title": "Web Result", "url": "https://example.com", "snippet": "A snippet"},
@@ -161,9 +161,9 @@ class TestRunDeep:
         assert result["ok"] is False
         assert "Writer failed" in result["error"]
 
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.web_search")
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.paper_search")
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page")
+    @patch("docent.bundled_plugins.studio.pipeline.web_search")
+    @patch("docent.bundled_plugins.studio.pipeline.paper_search")
+    @patch("docent.bundled_plugins.studio.pipeline.fetch_page")
     def test_run_deep_verifier_failure_falls_back_to_draft(
         self, mock_fetch, mock_paper, mock_web
     ):
@@ -190,9 +190,9 @@ class TestRunDeep:
         # Verifier failed → draft falls back to WRITER_OUTPUT, but refiner succeeds
         assert result["draft"] == REFINER_OUTPUT
 
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.web_search")
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.paper_search")
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page")
+    @patch("docent.bundled_plugins.studio.pipeline.web_search")
+    @patch("docent.bundled_plugins.studio.pipeline.paper_search")
+    @patch("docent.bundled_plugins.studio.pipeline.fetch_page")
     def test_run_deep_gap_eval_loops(self, mock_fetch, mock_paper, mock_web):
         mock_web.return_value = [
             {"title": "Initial", "url": "https://example.com/1", "snippet": "S1"},
@@ -217,9 +217,9 @@ class TestRunDeep:
         assert result["ok"] is True
         assert result["rounds"] == 2
 
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.web_search")
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.paper_search")
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page")
+    @patch("docent.bundled_plugins.studio.pipeline.web_search")
+    @patch("docent.bundled_plugins.studio.pipeline.paper_search")
+    @patch("docent.bundled_plugins.studio.pipeline.fetch_page")
     def test_run_deep_gap_eval_sufficient_stops_loop(
         self, mock_fetch, mock_paper, mock_web
     ):
@@ -245,9 +245,9 @@ class TestRunDeep:
         assert result["ok"] is True
         assert result["rounds"] == 1
 
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.web_search")
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.paper_search")
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page")
+    @patch("docent.bundled_plugins.studio.pipeline.web_search")
+    @patch("docent.bundled_plugins.studio.pipeline.paper_search")
+    @patch("docent.bundled_plugins.studio.pipeline.fetch_page")
     def test_run_deep_deduplicates_sources(self, mock_fetch, mock_paper, mock_web):
         mock_web.return_value = [
             {"title": "Dup", "url": "https://example.com", "snippet": "S1"},
@@ -294,9 +294,9 @@ class TestRunDeep:
         assert len(events) >= 1
         assert events[0].phase == "search_plan"
 
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.web_search")
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.paper_search")
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page")
+    @patch("docent.bundled_plugins.studio.pipeline.web_search")
+    @patch("docent.bundled_plugins.studio.pipeline.paper_search")
+    @patch("docent.bundled_plugins.studio.pipeline.fetch_page")
     def test_second_fetch_round_does_not_refetch_existing_pages(
         self, mock_fetch, mock_paper, mock_web
     ):
@@ -340,9 +340,9 @@ LIT_PLANNER_JSON = """{
 
 
 class TestRunLit:
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.web_search")
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.paper_search")
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page")
+    @patch("docent.bundled_plugins.studio.pipeline.web_search")
+    @patch("docent.bundled_plugins.studio.pipeline.paper_search")
+    @patch("docent.bundled_plugins.studio.pipeline.fetch_page")
     def test_run_lit_happy_path(self, mock_fetch, mock_paper, mock_web):
         mock_web.return_value = [
             {"title": "Web Result", "url": "https://example.com", "snippet": "A snippet"},
@@ -389,9 +389,9 @@ class TestRunLit:
         assert result["ok"] is False
         assert "Search planner failed" in result["error"]
 
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.web_search")
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.paper_search")
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page")
+    @patch("docent.bundled_plugins.studio.pipeline.web_search")
+    @patch("docent.bundled_plugins.studio.pipeline.paper_search")
+    @patch("docent.bundled_plugins.studio.pipeline.fetch_page")
     def test_run_lit_uses_lit_prompts(self, mock_fetch, mock_paper, mock_web):
         mock_web.return_value = [
             {"title": "Web Result", "url": "https://example.com", "snippet": "A snippet"},
@@ -418,9 +418,9 @@ class TestRunLit:
         assert "climate change" in first_prompt
         assert "literature review" in first_prompt.lower()
 
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.web_search")
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.paper_search")
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page")
+    @patch("docent.bundled_plugins.studio.pipeline.web_search")
+    @patch("docent.bundled_plugins.studio.pipeline.paper_search")
+    @patch("docent.bundled_plugins.studio.pipeline.fetch_page")
     def test_run_lit_writer_failure(self, mock_fetch, mock_paper, mock_web):
         mock_web.return_value = [
             {"title": "Web Result", "url": "https://example.com", "snippet": "A snippet"},
@@ -444,27 +444,27 @@ class TestRunLit:
 
 class TestFetchArtifact:
     def test_arxiv_id_fetches_url(self):
-        with patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page") as mock_fetch:
+        with patch("docent.bundled_plugins.studio.pipeline.fetch_page") as mock_fetch:
             mock_fetch.return_value = "ArXiv page content"
             result = _fetch_artifact("2401.12345")
             mock_fetch.assert_called_with("https://arxiv.org/abs/2401.12345", max_chars=6000)
             assert result == "ArXiv page content"
 
     def test_arxiv_id_with_version(self):
-        with patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page") as mock_fetch:
+        with patch("docent.bundled_plugins.studio.pipeline.fetch_page") as mock_fetch:
             mock_fetch.return_value = "Content"
             result = _fetch_artifact("2401.12345v2")
             mock_fetch.assert_called_with("https://arxiv.org/abs/2401.12345v2", max_chars=6000)
 
     def test_url_artifact(self):
-        with patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page") as mock_fetch:
+        with patch("docent.bundled_plugins.studio.pipeline.fetch_page") as mock_fetch:
             mock_fetch.return_value = "Web page content"
             result = _fetch_artifact("https://example.com/paper")
             mock_fetch.assert_called_with("https://example.com/paper", max_chars=6000)
             assert result == "Web page content"
 
     def test_http_url_artifact(self):
-        with patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page") as mock_fetch:
+        with patch("docent.bundled_plugins.studio.pipeline.fetch_page") as mock_fetch:
             mock_fetch.return_value = "Content"
             result = _fetch_artifact("http://example.com/paper")
             mock_fetch.assert_called_with("http://example.com/paper", max_chars=6000)
@@ -475,7 +475,7 @@ class TestFetchArtifact:
 
 
 class TestRunReview:
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page")
+    @patch("docent.bundled_plugins.studio.pipeline.fetch_page")
     def test_run_review_arxiv_id_fetches_url(self, mock_fetch):
         mock_fetch.return_value = "ArXiv page content"
         oc = MagicMock(spec=OcClient)
@@ -487,7 +487,7 @@ class TestRunReview:
         mock_fetch.assert_any_call("https://arxiv.org/abs/2401.12345", max_chars=6000)
         assert result["ok"] is True
 
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page")
+    @patch("docent.bundled_plugins.studio.pipeline.fetch_page")
     def test_run_review_url_artifact(self, mock_fetch):
         mock_fetch.return_value = "Web page content"
         oc = MagicMock(spec=OcClient)
@@ -499,7 +499,7 @@ class TestRunReview:
         mock_fetch.assert_called_with("https://example.com/paper", max_chars=6000)
         assert result["ok"] is True
 
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page")
+    @patch("docent.bundled_plugins.studio.pipeline.fetch_page")
     def test_run_review_happy_path(self, mock_fetch):
         mock_fetch.return_value = "Artifact content here"
         oc = MagicMock(spec=OcClient)
@@ -515,7 +515,7 @@ class TestRunReview:
         assert result["review"] == "Review output"
         assert result["error"] is None
 
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page")
+    @patch("docent.bundled_plugins.studio.pipeline.fetch_page")
     def test_run_review_researcher_failure(self, mock_fetch):
         mock_fetch.return_value = "Some content"
         oc = MagicMock(spec=OcClient)
@@ -527,7 +527,7 @@ class TestRunReview:
         assert result["ok"] is False
         assert "Researcher failed" in result["error"]
 
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page")
+    @patch("docent.bundled_plugins.studio.pipeline.fetch_page")
     def test_run_review_reviewer_failure_returns_ok(self, mock_fetch):
         mock_fetch.return_value = "Some content"
         oc = MagicMock(spec=OcClient)
@@ -543,9 +543,9 @@ class TestRunReview:
 class TestZeroSourceAbort:
     """Tests for the early-abort guard when web_search returns 0 sources."""
 
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.web_search")
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.paper_search")
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page")
+    @patch("docent.bundled_plugins.studio.pipeline.web_search")
+    @patch("docent.bundled_plugins.studio.pipeline.paper_search")
+    @patch("docent.bundled_plugins.studio.pipeline.fetch_page")
     def test_zero_sources_returns_error(self, mock_fetch, mock_paper, mock_web):
         mock_web.return_value = []
         mock_paper.return_value = []
@@ -567,7 +567,7 @@ class TestZeroSourceAbort:
 class TestTavilyResearchPipeline:
     """Tests for the Tavily research path in run_deep / run_lit."""
 
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.tavily_research")
+    @patch("docent.bundled_plugins.studio.pipeline.tavily_research")
     def test_deep_uses_tavily_when_key_provided(self, mock_research):
         def research_gen(*args, **kwargs):
             yield ProgressEvent(phase="research", message="Starting Tavily research")
@@ -592,15 +592,15 @@ class TestTavilyResearchPipeline:
         # Reviewer + refiner both called
         assert oc.call.call_count == 2
 
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.tavily_research")
+    @patch("docent.bundled_plugins.studio.pipeline.tavily_research")
     def test_deep_tavily_failure_falls_back_to_manual(self, mock_research):
         """When tavily_research raises, run_deep falls back to manual pipeline."""
         mock_research.side_effect = RuntimeError("Tavily research start failed: API error")
 
         # Set up manual pipeline mocks
-        with patch("docent.bundled_plugins.research_to_notebook.pipeline.web_search") as mock_web, \
-             patch("docent.bundled_plugins.research_to_notebook.pipeline.paper_search") as mock_paper, \
-             patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page") as mock_fetch:
+        with patch("docent.bundled_plugins.studio.pipeline.web_search") as mock_web, \
+             patch("docent.bundled_plugins.studio.pipeline.paper_search") as mock_paper, \
+             patch("docent.bundled_plugins.studio.pipeline.fetch_page") as mock_fetch:
             mock_web.return_value = [
                 {"title": "Web Result", "url": "https://example.com", "snippet": "A snippet"},
             ]
@@ -624,9 +624,9 @@ class TestTavilyResearchPipeline:
 
     def test_deep_no_tavily_key_uses_manual(self):
         """When no Tavily key, run_deep uses the manual pipeline."""
-        with patch("docent.bundled_plugins.research_to_notebook.pipeline.web_search") as mock_web, \
-             patch("docent.bundled_plugins.research_to_notebook.pipeline.paper_search") as mock_paper, \
-             patch("docent.bundled_plugins.research_to_notebook.pipeline.fetch_page") as mock_fetch:
+        with patch("docent.bundled_plugins.studio.pipeline.web_search") as mock_web, \
+             patch("docent.bundled_plugins.studio.pipeline.paper_search") as mock_paper, \
+             patch("docent.bundled_plugins.studio.pipeline.fetch_page") as mock_fetch:
             mock_web.return_value = [
                 {"title": "Web Result", "url": "https://example.com", "snippet": "A snippet"},
             ]

@@ -9,13 +9,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import docent.bundled_plugins.research_to_notebook as rtn
-from docent.bundled_plugins.research_to_notebook import (
+import docent.bundled_plugins.studio as rtn
+from docent.bundled_plugins.studio import (
     DeepInputs,
     FeynmanBudgetExceededError,
     FeynmanNotFoundError,
     ResearchResult,
-    ResearchTool,
+    StudioTool,
     _extract_feynman_cost,
     _read_daily_spend,
     _run_feynman,
@@ -71,8 +71,8 @@ class TestBudgetGuard:
         mock_result = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr="Cost: $0.43"
         )
-        with patch("docent.bundled_plugins.research_to_notebook.subprocess.run", return_value=mock_result), \
-             patch("docent.bundled_plugins.research_to_notebook._find_feynman", return_value=["echo"]):
+        with patch("docent.bundled_plugins.studio.subprocess.run", return_value=mock_result), \
+             patch("docent.bundled_plugins.studio._find_feynman", return_value=["echo"]):
             rc, out, _ = _run_feynman(
                 ["echo"], [], tmp_path, tmp_path, "slug", budget_usd=0.0,
             )
@@ -82,8 +82,8 @@ class TestBudgetGuard:
         mock_result = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
-        with patch("docent.bundled_plugins.research_to_notebook.subprocess.run", return_value=mock_result), \
-             patch("docent.bundled_plugins.research_to_notebook._find_feynman", return_value=["echo"]):
+        with patch("docent.bundled_plugins.studio.subprocess.run", return_value=mock_result), \
+             patch("docent.bundled_plugins.studio._find_feynman", return_value=["echo"]):
             rc, out, _ = _run_feynman(
                 ["echo"], [], tmp_path, tmp_path, "slug", budget_usd=2.0,
             )
@@ -100,8 +100,8 @@ class TestBudgetGuard:
         mock_result = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr="Cost: $0.50"
         )
-        with patch("docent.bundled_plugins.research_to_notebook.subprocess.run", return_value=mock_result), \
-             patch("docent.bundled_plugins.research_to_notebook._find_feynman", return_value=["echo"]):
+        with patch("docent.bundled_plugins.studio.subprocess.run", return_value=mock_result), \
+             patch("docent.bundled_plugins.studio._find_feynman", return_value=["echo"]):
             _run_feynman(
                 ["echo"], [], tmp_path, tmp_path, "slug", budget_usd=2.0,
             )
@@ -110,13 +110,13 @@ class TestBudgetGuard:
 
 class TestDeepBudgetExceeded:
     def test_deep_feynman_budget_exceeded_returns_error_result(self, tmp_path: Path):
-        tool = ResearchTool()
+        tool = StudioTool()
         ctx = _mock_context(output_dir=tmp_path, budget_usd=1.0)
         with patch(
-            "docent.bundled_plugins.research_to_notebook._run_feynman",
+            "docent.bundled_plugins.studio._run_feynman",
             side_effect=FeynmanBudgetExceededError("over budget"),
         ):
-            result = _drain(tool.deep(DeepInputs(topic="test"), ctx))
+            result = _drain(tool.deep_research(DeepInputs(topic="test"), ctx))
         assert result.ok is False
         assert "over budget" in result.message
 
@@ -125,34 +125,34 @@ class TestFindFeynman:
     """Tests for _find_feynman executable resolution."""
 
     def test_configured_command_found_on_path(self):
-        with patch("docent.bundled_plugins.research_to_notebook.shutil.which", return_value="/usr/local/bin/feynman"):
+        with patch("docent.bundled_plugins.studio.shutil.which", return_value="/usr/local/bin/feynman"):
             result = rtn._find_feynman(["feynman"])
         assert result == ["/usr/local/bin/feynman"]
 
     def test_configured_command_not_found_raises(self):
-        with patch("docent.bundled_plugins.research_to_notebook.shutil.which", return_value=None):
+        with patch("docent.bundled_plugins.studio.shutil.which", return_value=None):
             with pytest.raises(FeynmanNotFoundError) as exc_info:
                 rtn._find_feynman(["feynman"])
             assert "feynman" in str(exc_info.value)
 
     def test_fallback_to_none_command_finds_on_path(self):
-        with patch("docent.bundled_plugins.research_to_notebook.shutil.which", return_value="/usr/bin/feynman"):
+        with patch("docent.bundled_plugins.studio.shutil.which", return_value="/usr/bin/feynman"):
             result = rtn._find_feynman(None)
         assert result == ["/usr/bin/feynman"]
 
     def test_fallback_to_none_command_windows_npm(self, monkeypatch):
-        monkeypatch.setattr("docent.bundled_plugins.research_to_notebook.shutil.which", lambda _: None)
+        monkeypatch.setattr("docent.bundled_plugins.studio.shutil.which", lambda _: None)
         monkeypatch.setenv("APPDATA", "/fake/appdata")
         npm_path = Path("/fake/appdata/npm/feynman.cmd")
         monkeypatch.setattr(
-            "docent.bundled_plugins.research_to_notebook.Path.is_file",
+            "docent.bundled_plugins.studio.Path.is_file",
             lambda self: str(self).endswith("feynman.cmd"),
         )
         result = rtn._find_feynman(None)
         assert result[0].endswith("feynman.cmd")
 
     def test_nothing_found_raises(self, monkeypatch):
-        monkeypatch.setattr("docent.bundled_plugins.research_to_notebook.shutil.which", lambda _: None)
+        monkeypatch.setattr("docent.bundled_plugins.studio.shutil.which", lambda _: None)
         monkeypatch.delenv("APPDATA", raising=False)
         with pytest.raises(FeynmanNotFoundError) as exc_info:
             rtn._find_feynman(None)
@@ -163,20 +163,20 @@ class TestFeynmanNotFoundError:
     """Tests for FeynmanNotFoundError in action methods."""
 
     def test_deep_feynman_not_found_returns_error_result(self, tmp_path: Path):
-        tool = ResearchTool()
+        tool = StudioTool()
         ctx = _mock_context(output_dir=tmp_path)
         with patch(
-            "docent.bundled_plugins.research_to_notebook._run_feynman",
+            "docent.bundled_plugins.studio._run_feynman",
             side_effect=FeynmanNotFoundError(["feynman"]),
         ):
-            result = _drain(tool.deep(DeepInputs(topic="test"), ctx))
+            result = _drain(tool.deep_research(DeepInputs(topic="test"), ctx))
         assert result.ok is False
         assert "not found" in result.message
 
 
 class TestSummarizeFeynmanError:
     def test_quota_exhausted_json_lines(self):
-        from docent.bundled_plugins.research_to_notebook import _summarize_feynman_error
+        from docent.bundled_plugins.studio import _summarize_feynman_error
         stderr = (
             '{"model":"gemini-3.1-pro","errorMessage":"{\\"error\\":{\\"code\\":429,\\"status\\":\\"RESOURCE_EXHAUSTED\\"}}"}\n'
         )
@@ -186,7 +186,7 @@ class TestSummarizeFeynmanError:
         assert "docent research config-set --key feynman_model" in msg
 
     def test_auth_failure(self):
-        from docent.bundled_plugins.research_to_notebook import _summarize_feynman_error
+        from docent.bundled_plugins.studio import _summarize_feynman_error
         stderr = (
             '{"model":"anthropic/claude-sonnet-4-5","errorMessage":"{\\"error\\":{\\"code\\":401}}"}\n'
         )
@@ -195,7 +195,7 @@ class TestSummarizeFeynmanError:
         assert "feynman setup" in msg.lower()
 
     def test_unknown_error(self):
-        from docent.bundled_plugins.research_to_notebook import _summarize_feynman_error
+        from docent.bundled_plugins.studio import _summarize_feynman_error
         stderr = (
             '{"model":"openai/gpt-4o","errorMessage":"{\\"error\\":{\\"code\\":500,\\"message\\":\\"server error\\"}}"}\n'
         )
@@ -204,13 +204,13 @@ class TestSummarizeFeynmanError:
         assert "openai/gpt-4o" in msg
 
     def test_empty_stderr(self):
-        from docent.bundled_plugins.research_to_notebook import _summarize_feynman_error
+        from docent.bundled_plugins.studio import _summarize_feynman_error
         msg = _summarize_feynman_error("")
         assert "feynman" in msg.lower()
         assert "Model attempted" in msg  # model attribution now shown via _model_note
 
     def test_invalid_model(self):
-        from docent.bundled_plugins.research_to_notebook import _summarize_feynman_error
+        from docent.bundled_plugins.studio import _summarize_feynman_error
         stderr = (
             '{"model":"openai/gpt-5","errorMessage":"{\\"error\\":{\\"code\\":400,\\"message\\":\\"model not found\\"}}"}\n'
         )
@@ -219,7 +219,7 @@ class TestSummarizeFeynmanError:
         assert "feynman model list" in msg.lower()
 
     def test_server_error(self):
-        from docent.bundled_plugins.research_to_notebook import _summarize_feynman_error
+        from docent.bundled_plugins.studio import _summarize_feynman_error
         stderr = (
             '{"model":"anthropic/claude-sonnet-4-5","errorMessage":"{\\"error\\":{\\"code\\":503}}"}\n'
         )
@@ -228,7 +228,7 @@ class TestSummarizeFeynmanError:
         assert "anthropic" in msg.lower()
 
     def test_rate_limited(self):
-        from docent.bundled_plugins.research_to_notebook import _summarize_feynman_error
+        from docent.bundled_plugins.studio import _summarize_feynman_error
         stderr = (
             '{"model":"openai/gpt-4o","errorMessage":"{\\"error\\":{\\"code\\":429,\\"message\\":\\"rate limit exceeded\\"}}"}\n'
         )
@@ -236,7 +236,7 @@ class TestSummarizeFeynmanError:
         assert "rate-limited" in msg.lower()
 
     def test_timeout(self):
-        from docent.bundled_plugins.research_to_notebook import _summarize_feynman_error
+        from docent.bundled_plugins.studio import _summarize_feynman_error
         stderr = (
             '{"model":"openai/gpt-4o","errorMessage":"{\\"error\\":{\\"code\\":0,\\"message\\":\\"request timeout\\"}}"}\n'
         )
@@ -244,7 +244,7 @@ class TestSummarizeFeynmanError:
         assert "timed out" in msg.lower()
 
     def test_with_configured_model(self):
-        from docent.bundled_plugins.research_to_notebook import _summarize_feynman_error
+        from docent.bundled_plugins.studio import _summarize_feynman_error
         stderr = (
             '{"model":"gemini-3.1-pro","errorMessage":"{\\"error\\":{\\"code\\":429,\\"status\\":\\"RESOURCE_EXHAUSTED\\"}}"}\n'
         )
@@ -254,7 +254,7 @@ class TestSummarizeFeynmanError:
         assert "gemini-3.1-pro" in msg
 
     def test_raw_text_fallback(self):
-        from docent.bundled_plugins.research_to_notebook import _summarize_feynman_error
+        from docent.bundled_plugins.studio import _summarize_feynman_error
         # Plain text with no recognizable patterns — falls back to showing tail
         stderr = 'Error: something went wrong with the agent runtime'
         msg = _summarize_feynman_error(stderr)
@@ -264,7 +264,7 @@ class TestSummarizeFeynmanError:
 
     def test_footer_includes_feynman_cli_hint(self):
         """Every error message should include the Feynman CLI adjustment hint."""
-        from docent.bundled_plugins.research_to_notebook import _summarize_feynman_error
+        from docent.bundled_plugins.studio import _summarize_feynman_error
         stderr = (
             '{"model":"openai/gpt-4o","errorMessage":"{\\"error\\":{\\"code\\":429,\\"status\\":\\"RESOURCE_EXHAUSTED\\"}}"}\n'
         )
@@ -274,7 +274,7 @@ class TestSummarizeFeynmanError:
 
     def test_regex_fallback_extracts_model(self):
         """Regex fallback should show the model extracted from stderr text."""
-        from docent.bundled_plugins.research_to_notebook import _summarize_feynman_error
+        from docent.bundled_plugins.studio import _summarize_feynman_error
         stderr = 'some log text... {"model":"openai/gpt-4o","code":429} ...traceback...'
         msg = _summarize_feynman_error(stderr)
         assert "openai/gpt-4o" in msg

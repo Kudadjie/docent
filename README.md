@@ -240,21 +240,21 @@ GitHub Actions builds the wheel, publishes to PyPI, and creates a GitHub release
 
 ## 🔬 Research Tool
 
-The `docent research` tool runs AI-powered deep research, literature reviews, and peer reviews:
+The `docent studio` tool runs AI-powered deep research, literature reviews, and peer reviews:
 
 | Action | Description |
 |--------|-------------|
-| `docent research deep "topic"` | Full 6-stage research pipeline |
-| `docent research lit "topic"` | Literature-focused review (80% paper bias) |
-| `docent research review "paper"` | Peer review of an artifact |
-| `docent research usage` | Today's Feynman/OpenCode spend + Tavily requests |
-| `docent research config-show` | Show research settings |
-| `docent research config-set --key <k> --value <v>` | Set config (e.g. `tavily_api_key`) |
+| `docent studio deep-research "topic"` | Full 6-stage research pipeline |
+| `docent studio lit "topic"` | Literature-focused review (80% paper bias) |
+| `docent studio review "paper"` | Peer review of an artifact |
+| `docent studio usage` | Today's Feynman/OpenCode spend + Tavily requests |
+| `docent studio config-show` | Show research settings |
+| `docent studio config-set --key <k> --value <v>` | Set config (e.g. `tavily_api_key`) |
 
 **Backends:** [Feynman CLI](https://www.feynman.is/) (primary) or Docent-native pipeline via OpenCode Go models (fallback).  
 **Web search:** [Tavily](https://tavily.com/) (free tier: 1,000 calls/month). Set your key:
 ```bash
-docent research config-set --key tavily_api_key --value "tvly-..."
+docent studio config-set --key tavily_api_key --value "tvly-..."
 ```
 
 ## 🚀 Coming Soon

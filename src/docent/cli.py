@@ -143,7 +143,7 @@ def _run_setup_flow(*, first_run: bool = False) -> None:
 
     # ── External tools ──
     console.print("[bold]External Tools[/]")
-    from docent.bundled_plugins.research_to_notebook import _find_feynman, FeynmanNotFoundError
+    from docent.bundled_plugins.studio import _find_feynman, FeynmanNotFoundError
     try:
         cmd = _find_feynman(settings.research.feynman_command)
         console.print(f"  [green]Feynman CLI:[/] found at {cmd[0]}")
@@ -435,7 +435,7 @@ def _feynman_version_from_package_json(cmd: list[str]) -> str:
 def _check_feynman(settings: "Settings") -> tuple[str, str, str, str]:
     import os
     import re
-    from docent.bundled_plugins.research_to_notebook import _find_feynman, FeynmanNotFoundError
+    from docent.bundled_plugins.studio import _find_feynman, FeynmanNotFoundError
     from docent.utils.update_check import check_github_release
 
     try:

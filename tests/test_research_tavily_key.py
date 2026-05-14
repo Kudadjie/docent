@@ -31,7 +31,7 @@ class TestResolveTavilyKey:
     """Tests for _resolve_tavily_key()."""
 
     def test_returns_existing_key_when_already_set(self):
-        from docent.bundled_plugins.research_to_notebook import _resolve_tavily_key
+        from docent.bundled_plugins.studio import _resolve_tavily_key
 
         ctx = _make_context(tavily_api_key="existing-key-123")
         result = _resolve_tavily_key(ctx)
@@ -39,7 +39,7 @@ class TestResolveTavilyKey:
 
     def test_returns_none_in_non_tty_context(self):
         """In tests/MCP/cron (non-TTY), return None without prompting."""
-        from docent.bundled_plugins.research_to_notebook import _resolve_tavily_key
+        from docent.bundled_plugins.studio import _resolve_tavily_key
 
         ctx = _make_context(tavily_api_key=None)
         # By default sys.stdin.isatty() is False in pytest
@@ -47,7 +47,7 @@ class TestResolveTavilyKey:
         assert result is None
 
     def test_prompts_and_saves_when_key_is_none(self, _tty, tmp_docent_home):
-        from docent.bundled_plugins.research_to_notebook import _resolve_tavily_key
+        from docent.bundled_plugins.studio import _resolve_tavily_key
         from docent.utils.paths import config_file
 
         ctx = _make_context(tavily_api_key=None)
@@ -60,7 +60,7 @@ class TestResolveTavilyKey:
         assert "my-new-tavily-key" in raw
 
     def test_prompts_and_saves_when_key_is_empty_string(self, _tty, tmp_docent_home):
-        from docent.bundled_plugins.research_to_notebook import _resolve_tavily_key
+        from docent.bundled_plugins.studio import _resolve_tavily_key
         from docent.utils.paths import config_file
 
         ctx = _make_context(tavily_api_key="")
@@ -73,7 +73,7 @@ class TestResolveTavilyKey:
         assert "fresh-key" in raw
 
     def test_returns_none_on_eof_error(self, _tty):
-        from docent.bundled_plugins.research_to_notebook import _resolve_tavily_key
+        from docent.bundled_plugins.studio import _resolve_tavily_key
 
         ctx = _make_context(tavily_api_key=None)
 
@@ -83,7 +83,7 @@ class TestResolveTavilyKey:
         assert result is None
 
     def test_returns_none_on_keyboard_interrupt(self, _tty):
-        from docent.bundled_plugins.research_to_notebook import _resolve_tavily_key
+        from docent.bundled_plugins.studio import _resolve_tavily_key
 
         ctx = _make_context(tavily_api_key=None)
 
@@ -93,7 +93,7 @@ class TestResolveTavilyKey:
         assert result is None
 
     def test_returns_none_when_user_enters_blank(self, _tty, tmp_docent_home):
-        from docent.bundled_plugins.research_to_notebook import _resolve_tavily_key
+        from docent.bundled_plugins.studio import _resolve_tavily_key
 
         ctx = _make_context(tavily_api_key=None)
 
@@ -104,7 +104,7 @@ class TestResolveTavilyKey:
 
     def test_mutates_in_memory_settings_after_prompt(self, _tty, tmp_docent_home):
         """After prompting, the ResearchSettings object should have the key set."""
-        from docent.bundled_plugins.research_to_notebook import _resolve_tavily_key
+        from docent.bundled_plugins.studio import _resolve_tavily_key
 
         ctx = _make_context(tavily_api_key=None)
 
@@ -115,7 +115,7 @@ class TestResolveTavilyKey:
 
     def test_does_not_prompt_when_key_already_set(self):
         """When key is already present, typer.prompt must not be called."""
-        from docent.bundled_plugins.research_to_notebook import _resolve_tavily_key
+        from docent.bundled_plugins.studio import _resolve_tavily_key
 
         ctx = _make_context(tavily_api_key="pre-set-key")
 

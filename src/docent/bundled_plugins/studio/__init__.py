@@ -803,19 +803,19 @@ def _preflight_oc_only(inputs: BaseModel, context: Context) -> None:
 
 
 @register_tool
-class ResearchTool(Tool):
+class StudioTool(Tool):
     """Run research workflows (deep research, literature review, peer review) via Feynman."""
 
-    name = "research"
+    name = "studio"
     description = "Run research workflows (deep research, literature review, peer review) via Feynman."
-    category = "research"
+    category = "studio"
 
     @action(
         description="Deep research on a topic.",
         input_schema=DeepInputs,
         preflight=_preflight_docent,
     )
-    def deep(self, inputs: DeepInputs, context: Context):
+    def deep_research(self, inputs: DeepInputs, context: Context):
         if inputs.backend == "docent":
             from .oc_client import OcClient
             from .pipeline import run_deep

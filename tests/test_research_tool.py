@@ -14,7 +14,7 @@ import typer
 from docent.config.settings import ResearchSettings, Settings
 from docent.core.context import Context
 from docent.core.shapes import ErrorShape, LinkShape, MessageShape
-from docent.bundled_plugins.research_to_notebook import (
+from docent.bundled_plugins.studio import (
     ConfigSetInputs,
     ConfigShowInputs,
     ConfigShowResult,
@@ -23,7 +23,7 @@ from docent.bundled_plugins.research_to_notebook import (
     LitInputs,
     ReviewInputs,
     ResearchResult,
-    ResearchTool,
+    StudioTool,
     ToNotebookInputs,
     ToNotebookResult,
     UsageInputs,
@@ -99,7 +99,7 @@ class TestStripReferencesSection:
     """Tests for _strip_references_section and _append_references."""
 
     def test_strip_removes_trailing_references(self):
-        from docent.bundled_plugins.research_to_notebook import (
+        from docent.bundled_plugins.studio import (
             _strip_references_section,
         )
         draft = "Introduction\n\n## References\n1. **Paper A** — https://example.com [web]"
@@ -109,7 +109,7 @@ class TestStripReferencesSection:
         assert "Paper A" not in result
 
     def test_strip_preserves_draft_without_references(self):
-        from docent.bundled_plugins.research_to_notebook import (
+        from docent.bundled_plugins.studio import (
             _strip_references_section,
         )
         draft = "Just a regular draft with no references section."
@@ -117,7 +117,7 @@ class TestStripReferencesSection:
         assert result == draft
 
     def test_append_references_strips_existing(self):
-        from docent.bundled_plugins.research_to_notebook import (
+        from docent.bundled_plugins.studio import (
             _append_references,
         )
         sources = [
@@ -134,7 +134,7 @@ class TestStripReferencesSection:
         assert "Tavily source" not in result
 
     def test_append_references_adds_to_draft_without(self):
-        from docent.bundled_plugins.research_to_notebook import (
+        from docent.bundled_plugins.studio import (
             _append_references,
         )
         sources = [
@@ -149,15 +149,15 @@ class TestStripReferencesSection:
 class TestDeepFeynman:
     def test_deep_feynman_happy_path(self, tmp_path):
         output_dir = tmp_path / "research"
-        tool = ResearchTool()
+        tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir, feynman_command=["feynman"])
 
         fake_output = str(output_dir / "storm-surge-ghana-deep.md")
         with patch(
-            "docent.bundled_plugins.research_to_notebook._run_feynman",
+            "docent.bundled_plugins.studio._run_feynman",
             return_value=(0, fake_output, ""),
         ):
-            result = _drain(tool.deep(DeepInputs(topic="storm surge Ghana"), ctx))
+            result = _drain(tool.deep_research(DeepInputs(topic="storm surge Ghana"), ctx))
 
         assert result.ok is True
         assert result.backend == "feynman"
@@ -169,14 +169,14 @@ class TestDeepFeynman:
 
     def test_deep_feynman_no_output_file(self, tmp_path):
         output_dir = tmp_path / "research"
-        tool = ResearchTool()
+        tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir, feynman_command=["feynman"])
 
         with patch(
-            "docent.bundled_plugins.research_to_notebook._run_feynman",
+            "docent.bundled_plugins.studio._run_feynman",
             return_value=(0, None, ""),
         ):
-            result = _drain(tool.deep(DeepInputs(topic="storm surge Ghana"), ctx))
+            result = _drain(tool.deep_research(DeepInputs(topic="storm surge Ghana"), ctx))
 
         assert result.ok is True
         assert result.output_file is None
@@ -184,14 +184,14 @@ class TestDeepFeynman:
 
     def test_deep_feynman_nonzero_exit(self, tmp_path):
         output_dir = tmp_path / "research"
-        tool = ResearchTool()
+        tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir, feynman_command=["feynman"])
 
         with patch(
-            "docent.bundled_plugins.research_to_notebook._run_feynman",
+            "docent.bundled_plugins.studio._run_feynman",
             return_value=(1, None, "quota exceeded"),
         ):
-            result = _drain(tool.deep(DeepInputs(topic="storm surge Ghana"), ctx))
+            result = _drain(tool.deep_research(DeepInputs(topic="storm surge Ghana"), ctx))
 
         assert result.ok is False
         assert result.returncode == 1
@@ -203,7 +203,7 @@ class TestDeepFeynman:
         ctx = _mock_context(output_dir=output_dir)
 
         with patch(
-            "docent.bundled_plugins.research_to_notebook.oc_client.OcClient"
+            "docent.bundled_plugins.studio.oc_client.OcClient"
         ) as MockOc:
             mock_oc_instance = MagicMock()
             mock_oc_instance.is_available.return_value = False
@@ -216,12 +216,12 @@ class TestDeepFeynman:
 class TestLitFeynman:
     def test_lit_feynman_happy_path(self, tmp_path):
         output_dir = tmp_path / "research"
-        tool = ResearchTool()
+        tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir, feynman_command=["feynman"])
 
         fake_output = str(output_dir / "climate-change-lit.md")
         with patch(
-            "docent.bundled_plugins.research_to_notebook._run_feynman",
+            "docent.bundled_plugins.studio._run_feynman",
             return_value=(0, fake_output, ""),
         ):
             result = _drain(tool.lit(LitInputs(topic="climate change"), ctx))
@@ -236,12 +236,12 @@ class TestLitFeynman:
 class TestReviewFeynman:
     def test_review_feynman_happy_path(self, tmp_path):
         output_dir = tmp_path / "research"
-        tool = ResearchTool()
+        tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir, feynman_command=["feynman"])
 
         fake_output = str(output_dir / "2401-12345-review.md")
         with patch(
-            "docent.bundled_plugins.research_to_notebook._run_feynman",
+            "docent.bundled_plugins.studio._run_feynman",
             return_value=(0, fake_output, ""),
         ):
             result = _drain(tool.review(ReviewInputs(artifact="2401.12345"), ctx))
@@ -255,7 +255,7 @@ class TestReviewFeynman:
 
 class TestConfigActions:
     def test_config_show(self, tmp_path):
-        tool = ResearchTool()
+        tool = StudioTool()
         ctx = _mock_context(
             output_dir=Path("~/Documents/Docent/research"),
             feynman_command=["feynman"],
@@ -270,7 +270,7 @@ class TestConfigActions:
         assert result.feynman_command == ["feynman"]
 
     def test_config_set_unknown_key(self, tmp_path):
-        tool = ResearchTool()
+        tool = StudioTool()
         ctx = _mock_context(output_dir=tmp_path)
 
         with patch("docent.utils.paths.config_file", return_value=Path("/fake/config.toml")):
@@ -282,11 +282,11 @@ class TestConfigActions:
         assert "bad_key" in result.message
 
     def test_config_set_output_dir_happy_path(self, tmp_path):
-        tool = ResearchTool()
+        tool = StudioTool()
         ctx = _mock_context(output_dir=tmp_path)
         fake_config = Path("/fake/config.toml")
 
-        with patch("docent.bundled_plugins.research_to_notebook.write_setting", return_value=fake_config) as mock_ws, \
+        with patch("docent.bundled_plugins.studio.write_setting", return_value=fake_config) as mock_ws, \
              patch("docent.utils.paths.config_file", return_value=fake_config):
             result = tool.config_set(ConfigSetInputs(key="output_dir", value="/new/path"), ctx)
 
@@ -348,7 +348,7 @@ class TestLitDocent:
         ctx = _mock_context(output_dir=output_dir)
 
         with patch(
-            "docent.bundled_plugins.research_to_notebook.oc_client.OcClient"
+            "docent.bundled_plugins.studio.oc_client.OcClient"
         ) as MockOc:
             mock_oc_instance = MagicMock()
             mock_oc_instance.is_available.return_value = False
@@ -357,10 +357,10 @@ class TestLitDocent:
             with pytest.raises(typer.Exit):
                 _preflight_docent(LitInputs(topic="test", backend="docent"), ctx)
 
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.run_lit")
+    @patch("docent.bundled_plugins.studio.pipeline.run_lit")
     def test_lit_docent_happy_path(self, mock_run_lit, tmp_path):
         output_dir = tmp_path / "research"
-        tool = ResearchTool()
+        tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir, tavily_api_key="test-key")
 
         mock_run_lit.return_value = _fake_pipeline_gen({
@@ -374,7 +374,7 @@ class TestLitDocent:
         })
 
         with patch(
-            "docent.bundled_plugins.research_to_notebook.oc_client.OcClient"
+            "docent.bundled_plugins.studio.oc_client.OcClient"
         ) as MockOc:
             mock_oc_instance = MagicMock()
             mock_oc_instance.is_available.return_value = True
@@ -396,7 +396,7 @@ class TestReviewDocent:
         ctx = _mock_context(output_dir=output_dir)
 
         with patch(
-            "docent.bundled_plugins.research_to_notebook.oc_client.OcClient"
+            "docent.bundled_plugins.studio.oc_client.OcClient"
         ) as MockOc:
             mock_oc_instance = MagicMock()
             mock_oc_instance.is_available.return_value = False
@@ -405,10 +405,10 @@ class TestReviewDocent:
             with pytest.raises(typer.Exit):
                 _preflight_oc_only(ReviewInputs(artifact="2401.12345", backend="docent"), ctx)
 
-    @patch("docent.bundled_plugins.research_to_notebook.pipeline.run_review")
+    @patch("docent.bundled_plugins.studio.pipeline.run_review")
     def test_review_docent_happy_path(self, mock_run_review, tmp_path):
         output_dir = tmp_path / "research"
-        tool = ResearchTool()
+        tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
 
         mock_run_review.return_value = _fake_pipeline_gen({
@@ -421,7 +421,7 @@ class TestReviewDocent:
         })
 
         with patch(
-            "docent.bundled_plugins.research_to_notebook.oc_client.OcClient"
+            "docent.bundled_plugins.studio.oc_client.OcClient"
         ) as MockOc:
             mock_oc_instance = MagicMock()
             mock_oc_instance.is_available.return_value = True
@@ -459,7 +459,7 @@ class TestToNotebook:
         return _drain(tool.to_notebook(inputs, ctx))
 
     def test_to_notebook_no_output_dir(self, tmp_path):
-        tool = ResearchTool()
+        tool = StudioTool()
         ctx = _mock_context(output_dir=tmp_path / "nonexistent")
         result = self._run(tool, ToNotebookInputs(), ctx)
         assert result.ok is False
@@ -468,7 +468,7 @@ class TestToNotebook:
     def test_to_notebook_no_md_files(self, tmp_path):
         output_dir = tmp_path / "research"
         output_dir.mkdir()
-        tool = ResearchTool()
+        tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
         result = self._run(tool, ToNotebookInputs(), ctx)
         assert result.ok is False
@@ -478,7 +478,7 @@ class TestToNotebook:
         output_dir = tmp_path / "research"
         output_dir.mkdir()
         (output_dir / "test-deep.md").write_text("# Draft", encoding="utf-8")
-        tool = ResearchTool()
+        tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
         result = self._run(tool, ToNotebookInputs(), ctx)
         assert result.ok is False
@@ -487,7 +487,7 @@ class TestToNotebook:
     def test_to_notebook_no_notebook_id_opens_browser(self, tmp_path):
         output_dir = tmp_path / "research"
         md_file, _ = self._write_research_files(output_dir)
-        tool = ResearchTool()
+        tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
         with patch("webbrowser.open") as mock_browser:
             result = self._run(tool, ToNotebookInputs(), ctx)
@@ -503,7 +503,7 @@ class TestToNotebook:
     def test_to_notebook_uses_specified_output_file(self, tmp_path):
         output_dir = tmp_path / "research"
         md_file, _ = self._write_research_files(output_dir, slug="climate-lit")
-        tool = ResearchTool()
+        tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
         with patch("webbrowser.open"):
             result = self._run(tool, ToNotebookInputs(output_file=str(md_file)), ctx)
@@ -513,7 +513,7 @@ class TestToNotebook:
     def test_to_notebook_ranks_papers_first(self, tmp_path):
         output_dir = tmp_path / "research"
         self._write_research_files(output_dir)
-        tool = ResearchTool()
+        tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
         with patch("webbrowser.open"):
             result = self._run(tool, ToNotebookInputs(), ctx)
@@ -524,7 +524,7 @@ class TestToNotebook:
     def test_to_notebook_respects_max_sources(self, tmp_path):
         output_dir = tmp_path / "research"
         self._write_research_files(output_dir)
-        tool = ResearchTool()
+        tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
         with patch("webbrowser.open"):
             result = self._run(tool, ToNotebookInputs(max_sources=2), ctx)
@@ -535,11 +535,11 @@ class TestToNotebook:
     def test_to_notebook_pushes_when_cli_available(self, tmp_path):
         output_dir = tmp_path / "research"
         self._write_research_files(output_dir)
-        tool = ResearchTool()
+        tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
         with (
-            patch("docent.bundled_plugins.research_to_notebook._check_notebooklm_cli", return_value=True),
-            patch("docent.bundled_plugins.research_to_notebook._nlm_add_source", return_value=(0, "")) as mock_add,
+            patch("docent.bundled_plugins.studio._check_notebooklm_cli", return_value=True),
+            patch("docent.bundled_plugins.studio._nlm_add_source", return_value=(0, "")) as mock_add,
         ):
             result = self._run(tool, ToNotebookInputs(notebook_id="nb-abc123"), ctx)
         assert result.ok is True
@@ -550,10 +550,10 @@ class TestToNotebook:
     def test_to_notebook_cli_unavailable_falls_back(self, tmp_path):
         output_dir = tmp_path / "research"
         self._write_research_files(output_dir)
-        tool = ResearchTool()
+        tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
         with (
-            patch("docent.bundled_plugins.research_to_notebook._check_notebooklm_cli", return_value=False),
+            patch("docent.bundled_plugins.studio._check_notebooklm_cli", return_value=False),
             patch("webbrowser.open") as mock_browser,
         ):
             result = self._run(tool, ToNotebookInputs(notebook_id="nb-abc123"), ctx)
@@ -565,12 +565,12 @@ class TestToNotebook:
     def test_to_notebook_tracks_partial_failures(self, tmp_path):
         output_dir = tmp_path / "research"
         self._write_research_files(output_dir)
-        tool = ResearchTool()
+        tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
         responses = [(0, "")] + [(1, "error")] * 10  # first succeeds, rest fail
         with (
-            patch("docent.bundled_plugins.research_to_notebook._check_notebooklm_cli", return_value=True),
-            patch("docent.bundled_plugins.research_to_notebook._nlm_add_source", side_effect=responses),
+            patch("docent.bundled_plugins.studio._check_notebooklm_cli", return_value=True),
+            patch("docent.bundled_plugins.studio._nlm_add_source", side_effect=responses),
         ):
             result = self._run(tool, ToNotebookInputs(notebook_id="nb-abc123"), ctx)
         assert result.ok is True
@@ -580,11 +580,11 @@ class TestToNotebook:
     def test_to_notebook_notebook_id_from_config(self, tmp_path):
         output_dir = tmp_path / "research"
         self._write_research_files(output_dir)
-        tool = ResearchTool()
+        tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir, notebooklm_notebook_id="config-nb-id")
         with (
-            patch("docent.bundled_plugins.research_to_notebook._check_notebooklm_cli", return_value=True),
-            patch("docent.bundled_plugins.research_to_notebook._nlm_add_source", return_value=(0, "")),
+            patch("docent.bundled_plugins.studio._check_notebooklm_cli", return_value=True),
+            patch("docent.bundled_plugins.studio._nlm_add_source", return_value=(0, "")),
         ):
             result = self._run(tool, ToNotebookInputs(), ctx)
         assert result.ok is True
@@ -593,12 +593,12 @@ class TestToNotebook:
 
 class TestUsageAction:
     def test_usage_zero_spend(self, tmp_path, monkeypatch):
-        import docent.bundled_plugins.research_to_notebook as mod
-        import docent.bundled_plugins.research_to_notebook.oc_client as oc_mod
+        import docent.bundled_plugins.studio as mod
+        import docent.bundled_plugins.studio.oc_client as oc_mod
         monkeypatch.setattr(mod, "_read_daily_spend", lambda: 0.0)
         monkeypatch.setattr(oc_mod, "_read_oc_daily_spend", lambda: 0.0)
 
-        tool = ResearchTool()
+        tool = StudioTool()
         ctx = _mock_context()
         result = tool.usage(UsageInputs(), ctx)
         assert isinstance(result, UsageResult)
@@ -606,12 +606,12 @@ class TestUsageAction:
         assert result.oc_spend_usd == 0.0
 
     def test_usage_shows_correct_spend(self, tmp_path, monkeypatch):
-        import docent.bundled_plugins.research_to_notebook as mod
-        import docent.bundled_plugins.research_to_notebook.oc_client as oc_mod
+        import docent.bundled_plugins.studio as mod
+        import docent.bundled_plugins.studio.oc_client as oc_mod
         monkeypatch.setattr(mod, "_read_daily_spend", lambda: 1.23)
         monkeypatch.setattr(oc_mod, "_read_oc_daily_spend", lambda: 0.45)
 
-        tool = ResearchTool()
+        tool = StudioTool()
         ctx = _mock_context()
         result = tool.usage(UsageInputs(), ctx)
         assert isinstance(result, UsageResult)
