@@ -34,6 +34,9 @@ Docent is a Python CLI "control center" for grad-school workflows. Design lives 
 - [x] Medium debt: `edit --status` bypasses `_set_status` lifecycle — DONE 2026-05-13 (`_apply_status_transition` helper; 308 tests green)
 - [x] Plan D: `docent doctor` + `docent setup` — DONE 2026-05-13 (doctor: 10-check table with GitHub update checks for feynman + uv; setup: re-runnable guided config; 327 tests green)
 - [x] CI gap fix: pytest + ruff added to publish.yml before `uv build` (item #28) — 2026-05-14
+- [x] Phase 1.5: Research tool renamed → `studio` plugin; `deep` action → `deep-research` — 2026-05-14 (commit 42ccba7)
+- [x] Phase 1.5: `studio search-papers` + `studio get-paper` (alphaxiv-py SDK, async→sync wrapper); `alphaxiv-py>=0.5.0` dep; Python bumped 3.11→3.13 — 2026-05-14 (398 tests green)
+- [x] `docent doctor` extended: checks `alphaxiv-py` + `notebooklm-py` with PyPI update hints (`check_pypi()`) — 2026-05-14
 - [ ] Real-life tests #10–#19 (can happen in parallel; #10 blocked on feynman reinstall + credits)
 - [ ] Next: Tag v1.2.0 release (AFTER all of the above)
 

@@ -22,10 +22,8 @@
 - [OpenCode for Docent agentic tools](feedback_opencode_for_agentic_tools.md) — route LLM calls in Docent's agentic tools through OpenCode (not Anthropic API); design as single-shot briefs
 - [Release plan](release_plan.md) — single bundled track (CLI + UI ship together); v1.1.0 shipped 2026-05-08; v1.2.0 (Tavily Research API + pipeline fixes + preflight)
 - [UI bundling strategy](project_ui_bundling.md) — decided: FastAPI + Next.js static export; `docent ui` command; two-file sync cost per new endpoint; deferred to next release
-- [Research tool real-life tests](tasks/research_tool_real_life_tests.md) — 19-item manual test checklist for the research-to-notebook tool; tests 1-8 PASSED, 9-19 remaining before v1.2.0 release
+- [Studio real-life tests](tasks/research_tool_real_life_tests.md) — 19-item manual test checklist for the studio tool; tests 1–9 PASSED, 10–19 remaining before v1.2.0 release
 - [Master todo list](project_todos.md) — comprehensive ordered todos across all tracks: v1.2.0 blockers → hardening sprint → skill ports → Phase 2 UI → infrastructure; update each session
-- [Codex review blockers](project_codex_review_blockers.md) — ordered pre-v1.2.0 release blockers (1-5 ALL DONE 2026-05-08) + medium/architectural debt (6-12); consulted for debt items
-- [Research test blockers](project_research_test_blockers.md) — ALL FIXED 2026-05-11: dupe registration, DDG→Tavily, 0-sources garbage output, Windows venv; pipeline quality: timeout/S2/verifier guard/refiner stage; 280 tests green
 - [Zotero integration design](project_zotero_integration.md) — ReferenceManagerClient protocol, Mendeley OR Zotero toggle (not both), pyzotero vs zotero-mcp open question; v1.3+ work
 - [Obsidian integration design](project_obsidian_integration.md) — to-vault output, literature notes on done, Dataview-compatible frontmatter, daily notes, Templater; v1.4+ work
 - [Academic workstation vision analysis](vision_academic_workstation_analysis.md) — Hermes analysis of `txt/docent in the near future.txt`; maps the 4-phase "All-Around Academic Workstation" vision against current roadmap, flags 6 gaps/risks, recommends sequencing

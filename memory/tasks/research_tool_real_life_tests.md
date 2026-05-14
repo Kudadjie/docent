@@ -1,10 +1,10 @@
 ---
-name: Research tool real-life tests
-description: Full checklist of manual real-life tests to run on the research-to-notebook tool. Tests 1-8 passing as of 2026-05-12.
+name: Studio real-life tests
+description: Full checklist of manual real-life tests for the studio tool (renamed from research-to-notebook). Tests 1–9 PASSED; 10–19 remaining before v1.2.0 tag.
 type: project
 ---
 
-# Research-to-Notebook: Real-Life Test Checklist
+# Studio: Real-Life Test Checklist
 
 All commands assume the global `docent` install is current (`uv tool install --reinstall --editable .`).
 Run from any directory unless a test specifies otherwise.
@@ -14,9 +14,9 @@ Run from any directory unless a test specifies otherwise.
 ## 1. Smoke: CLI surface
 
 ```
-docent research --help
+docent studio --help
 ```
-**Expect:** `deep`, `lit`, `review`, `to-notebook`, `usage`, `config-show`, `config-set` all listed.
+**Expect:** `deep-research`, `get-paper`, `lit`, `review`, `search-papers`, `to-notebook`, `usage`, `config-show`, `config-set` all listed.
 **Result (2026-05-08): PASSED**
 
 ---
@@ -24,15 +24,15 @@ docent research --help
 ## 2. Config: show and set
 
 ```
-docent research config-show
+docent studio config-show
 ```
 **Expect:** Prints `output_dir`, `feynman_command`, `feynman_budget_usd`, all `oc_model_*` fields, `oc_budget_usd`, `oc_provider`.
 
 ```
-docent research config-set --key output_dir --value ~/Documents/Docent/research
-docent research config-show
+docent studio config-set --key output_dir --value ~/Documents/Docent/research
+docent studio config-show
 ```
-**Expect:** `output_dir` updated. Verify persisted in `~/.docent/config.toml` under `[research]`.
+**Expect:** `output_dir` updated. Verify persisted in `~/.docent/config.toml` under `[studio]`.
 **Result (2026-05-08): PASSED**
 
 ---
@@ -40,7 +40,7 @@ docent research config-show
 ## 3. Usage: baseline zero
 
 ```
-docent research usage
+docent studio usage
 ```
 **Expect:** Today's date, Feynman spend $0.0000, OC spend $0.0000 (both "(no limit)" if budgets unset).
 If a spend file exists from today, spend may be non-zero — that's correct.
@@ -51,7 +51,7 @@ If a spend file exists from today, spend may be non-zero — that's correct.
 ## 4. Docent pipeline — deep research
 
 ```
-docent research deep "storm surge Ghana" --backend docent
+docent studio deep-research "storm surge Ghana" --backend docent
 ```
 **Expect (watch terminal):**
 - Progress events for pipeline stages: `research → review → refine` (Tavily path) or `planner → fetch → gap → writer → verifier → reviewer → refiner` (manual fallback)
@@ -72,7 +72,7 @@ docent research deep "storm surge Ghana" --backend docent
 ## 5. `to-notebook` — after docent deep research
 
 ```
-docent research to-notebook
+docent studio to-notebook
 ```
 **Expect:**
 - Auto-detects `storm-surge-ghana-deep.md` as the most recent output
@@ -91,7 +91,7 @@ docent research to-notebook
 ## 6. `to-notebook` — with explicit file
 
 ```
-docent research to-notebook --output-file storm-surge-ghana-deep.md
+docent studio to-notebook --output-file storm-surge-ghana-deep.md
 ```
 **Expect:** Same result as #5 but using the explicit path.
 **Result (2026-05-12): PASSED**
@@ -103,7 +103,7 @@ docent research to-notebook --output-file storm-surge-ghana-deep.md
 If you have a `.md` file in output_dir with no matching `-sources.json`:
 ```
 touch ~/Documents/Docent/research/orphan-test.md
-docent research to-notebook --output-file orphan-test.md
+docent studio to-notebook --output-file orphan-test.md
 ```
 **Expect:** `ok=False`, message says "No sources file found… Sources are only saved when using backend='docent'. The Feynman backend does not expose individual sources."
 **Result (2026-05-12): PASSED**
@@ -113,10 +113,10 @@ docent research to-notebook --output-file orphan-test.md
 ## 8. `to-notebook` — error: empty output dir
 
 ```
-docent research config-set --key output_dir --value /tmp/empty-research-dir
-docent research to-notebook
+docent studio config-set --key output_dir --value /tmp/empty-research-dir
+docent studio to-notebook
 ```
-**Expect:** `ok=False`, message says "No research output found… Run `docent research deep` or `docent research lit` first."
+**Expect:** `ok=False`, message says "No research output found… Run `docent studio deep-research` or `docent studio lit` first."
 (Reset output_dir to your real path afterward.)
 **Result (2026-05-12): PASSED**
 
@@ -125,7 +125,7 @@ docent research to-notebook
 ## 9. Literature review — docent backend
 
 ```
-docent research lit "coastal erosion West Africa" --backend docent
+docent studio lit "coastal erosion West Africa" --backend docent
 ```
 **Expect:**
 - Same pipeline stages but with lit-specific planner/writer prompts
@@ -143,13 +143,13 @@ docent research lit "coastal erosion West Africa" --backend docent
 
 Requires Feynman installed globally (`npm install -g feynman`).
 ```
-docent research deep "sea level rise adaptation" --backend feynman
+docent studio deep-research "sea level rise adaptation" --backend feynman
 ```
 **Expect:**
 - Feynman starts up (its progress is printed directly to terminal — you see it running)
 - After completion: `<output_dir>/sea-level-rise-adaptation-deep.md` created (copy of Feynman's output)
 - NO sources file created (Feynman backend doesn't expose sources)
-- `docent research to-notebook --output-file sea-level-rise-adaptation-deep.md` → fails with "No sources file found"
+- `docent studio to-notebook --output-file sea-level-rise-adaptation-deep.md` → fails with "No sources file found"
 
 **Result (2026-05-12): FAILED — FileNotFoundError.** Feynman not on PATH gave raw traceback. Fixed: new `_find_feynman()` resolves PATH + Windows npm fallback, `FeynmanNotFoundError` gives install instructions. Pending: user needs to reinstall feynman (npm only) and set up Anthropic API credits before re-testing.
 
@@ -158,11 +158,11 @@ docent research deep "sea level rise adaptation" --backend feynman
 ## 11. Feynman backend — budget guard
 
 ```
-docent research config-set --key feynman_budget_usd --value 0.01
-docent research deep "test topic" --backend feynman
+docent studio config-set --key feynman_budget_usd --value 0.01
+docent studio deep-research "test topic" --backend feynman
 ```
 **Expect:** Guard fires immediately (0.01 limit, session spend at 90% = $0.009 threshold) OR runs and hits the guard after the first call.
-Message: "Feynman budget nearly exhausted ($X.XX of $0.01 spent). Increase with `docent research config-set feynman_budget_usd <amount>` or use backend='docent'."
+Message: "Feynman budget nearly exhausted ($X.XX of $0.01 spent). Increase with `docent studio config-set feynman_budget_usd <amount>` or use backend='docent'."
 (Reset budget to 0.0 afterward.)
 
 ---
@@ -184,7 +184,7 @@ To test when already up to date: delete the update cache file under `~/.docent/c
 
 After running a docent-backend research (test #4 or #9):
 ```
-docent research usage
+docent studio usage
 ```
 **Expect:** OC spend > $0.0000 (some amount was tracked from the pipeline calls).
 Verify the spend file directly:
@@ -198,16 +198,16 @@ Should show today's date and a non-zero `spend_usd`.
 ## 14. BYOK / provider config
 
 ```
-docent research config-set --key oc_provider --value anthropic
-docent research config-set --key oc_model_planner --value claude-sonnet-4-5
-docent research config-show
+docent studio config-set --key oc_provider --value anthropic
+docent studio config-set --key oc_model_planner --value claude-sonnet-4-5
+docent studio config-show
 ```
 **Expect:** Config-show shows updated `oc_provider` and `oc_model_planner`.
 Then run a short research to confirm the pipeline uses the new model (check that it doesn't crash with an unknown model error on the OpenCode side).
 Reset to defaults afterward:
 ```
-docent research config-set --key oc_provider --value opencode-go
-docent research config-set --key oc_model_planner --value glm-5.1
+docent studio config-set --key oc_provider --value opencode-go
+docent studio config-set --key oc_model_planner --value glm-5.1
 ```
 
 ---
@@ -215,7 +215,7 @@ docent research config-set --key oc_model_planner --value glm-5.1
 ## 15. Peer review — Feynman backend
 
 ```
-docent research review "2401.12345" --backend feynman
+docent studio review "2401.12345" --backend feynman
 ```
 **Expect:** Feynman starts review workflow for the given arXiv ID. Output: `<output_dir>/2401-12345-review.md`.
 
@@ -227,13 +227,15 @@ docent research review "2401.12345" --backend feynman
 docent serve &
 ```
 Then in another terminal, check the tool list (e.g. via Claude Desktop or a curl to the MCP stdio server). The following tools should appear:
-- `research__deep`
-- `research__lit`
-- `research__review`
-- `research__to_notebook`
-- `research__usage`
-- `research__config_show`
-- `research__config_set`
+- `studio__deep_research`
+- `studio__get_paper`
+- `studio__lit`
+- `studio__review`
+- `studio__search_papers`
+- `studio__to_notebook`
+- `studio__usage`
+- `studio__config_show`
+- `studio__config_set`
 
 ---
 
@@ -251,8 +253,8 @@ When the Tavily monthly free tier (1,000 calls) is exhausted, the pipeline shoul
 
 To test without actually burning quota, temporarily set an invalid Tavily key:
 ```
-docent research config-set --key tavily_api_key --value tvly-invalid-key-for-testing
-docent research deep "test topic" --backend docent
+docent studio config-set --key tavily_api_key --value tvly-invalid-key-for-testing
+docent studio deep-research "test topic" --backend docent
 ```
 **Expect:** An error message about invalid API key (not a silent fallthrough). The error should mention "Tavily" and suggest checking the key.
 
@@ -261,7 +263,7 @@ For quota-specific testing (only possible when quota is actually exhausted):
 - Should NOT fall back to manual pipeline (which would also fail with Tavily)
 - `backend='feynman'` should still work normally
 
-(Reset key to real value afterward: `docent research config-set --key tavily_api_key --value <real_key>`)
+(Reset key to real value afterward: `docent studio config-set --key tavily_api_key --value <real_key>`)
 
 ---
 
