@@ -1140,6 +1140,7 @@ class StudioTool(Tool):
                     model_reviewer=context.settings.research.oc_model_reviewer,
                     tavily_api_key=tavily_key,
                     semantic_scholar_api_key=context.settings.research.semantic_scholar_api_key,
+                    alphaxiv_api_key=context.settings.research.alphaxiv_api_key,
                     tavily_research_timeout=context.settings.research.tavily_research_timeout,
                 )
             except Exception as e:
@@ -1306,6 +1307,7 @@ class StudioTool(Tool):
                     model_reviewer=context.settings.research.oc_model_reviewer,
                     tavily_api_key=tavily_key,
                     semantic_scholar_api_key=context.settings.research.semantic_scholar_api_key,
+                    alphaxiv_api_key=context.settings.research.alphaxiv_api_key,
                     tavily_research_timeout=context.settings.research.tavily_research_timeout,
                 )
             except Exception as e:

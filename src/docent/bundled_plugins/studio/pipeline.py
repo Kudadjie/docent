@@ -10,7 +10,7 @@ from typing import Generator
 from docent.core import ProgressEvent
 
 from .oc_client import OcClient
-from .search import fetch_page, paper_search, web_search, tavily_research
+from .search import academic_search_parallel, fetch_page, paper_search, web_search, tavily_research
 
 try:
     from tavily.errors import UsageLimitExceededError
@@ -64,6 +64,8 @@ def _run_tavily_pipeline(
     model_reviewer: str = "deepseek-v4-pro",
     research_prefix: str = "",
     tavily_research_timeout: float = 600.0,
+    semantic_scholar_api_key: str | None = None,
+    alphaxiv_api_key: str | None = None,
 ) -> Generator[ProgressEvent, None, dict]:
     """Run Tavily research + OpenCode adversarial review.
 
@@ -106,7 +108,7 @@ def _run_tavily_pipeline(
         }
 
     content = research_result.get("content", "")
-    sources = research_result.get("sources", [])
+    sources: list[dict] = list(research_result.get("sources", []))
 
     if not content:
         return {
@@ -118,6 +120,20 @@ def _run_tavily_pipeline(
             "ok": False,
             "error": "Tavily research returned empty content.",
         }
+
+    # Augment: scholarly + arXiv in parallel alongside Tavily's web sources
+    yield ProgressEvent(phase="fetch", message="Augmenting with academic sources (scholarly + arXiv)...")
+    academic = academic_search_parallel(
+        [topic],
+        semantic_scholar_api_key=semantic_scholar_api_key,
+        alphaxiv_api_key=alphaxiv_api_key,
+    )
+    if academic:
+        sources.extend(academic)
+        yield ProgressEvent(
+            phase="fetch",
+            message=f"Added {len(academic)} academic source(s) from scholarly/arXiv.",
+        )
 
     # Phase 2: OpenCode adversarial review
     yield ProgressEvent(phase="review", message="Running adversarial review...")
@@ -178,6 +194,7 @@ def _run_pipeline(
     model_reviewer: str = "deepseek-v4-pro",
     tavily_api_key: str | None = None,
     semantic_scholar_api_key: str | None = None,
+    alphaxiv_api_key: str | None = None,
 ) -> Generator[ProgressEvent, None, dict]:
     """Shared search-fetch-write-verify-review pipeline (manual mode).
 
@@ -232,20 +249,39 @@ def _run_pipeline(
                 r["query"] = q
                 r["source_type"] = "web"
                 sources.append(r)
-        for q in paper_qs:
-            idx += 1
+        if paper_qs:
             yield ProgressEvent(
                 phase="fetch",
-                message=f"Searching papers: {q}",
+                message=f"Searching {len(paper_qs)} paper queries (Semantic Scholar + scholarly + arXiv in parallel)...",
                 current=idx,
                 total=total,
-                item=f"paper: {q[:50]}",
             )
-            results = paper_search(q, max_results=4, api_key=semantic_scholar_api_key)
-            for r in results:
-                r["query"] = q
-                r["source_type"] = "paper"
-                sources.append(r)
+            # Semantic Scholar direct (existing path) + scholarly/arXiv (new) — all parallel
+            from concurrent.futures import ThreadPoolExecutor, as_completed as _as_completed
+
+            def _ss_query(q: str) -> list[dict]:
+                results = paper_search(q, max_results=4, api_key=semantic_scholar_api_key)
+                for r in results:
+                    r["query"] = q
+                    r["source_type"] = "paper"
+                return results
+
+            ss_futures_map: dict = {}
+            academic_future = None
+            with ThreadPoolExecutor(max_workers=len(paper_qs) + 1) as pool:
+                for q in paper_qs:
+                    ss_futures_map[pool.submit(_ss_query, q)] = q
+                academic_future = pool.submit(
+                    academic_search_parallel, paper_qs,
+                    semantic_scholar_api_key=semantic_scholar_api_key,
+                    alphaxiv_api_key=alphaxiv_api_key,
+                )
+                for f in _as_completed(list(ss_futures_map) + [academic_future]):
+                    try:
+                        sources.extend(f.result())
+                    except Exception:
+                        pass
+            idx += len(paper_qs)
         # Fetch full text for top web results (first 5 unique URLs not yet fetched).
         seen_urls: set[str] = set()
         fetched = 0
@@ -451,6 +487,7 @@ def _run_with_tavily_fallback(
     model_reviewer: str = "deepseek-v4-pro",
     tavily_api_key: str | None = None,
     semantic_scholar_api_key: str | None = None,
+    alphaxiv_api_key: str | None = None,
     tavily_research_timeout: float = 600.0,
 ) -> Generator[ProgressEvent, None, dict]:
     """Tavily Research API primary path with manual pipeline fallback.
@@ -470,6 +507,8 @@ def _run_with_tavily_fallback(
             model_reviewer=model_reviewer,
             research_prefix=research_prefix,
             tavily_research_timeout=tavily_research_timeout,
+            semantic_scholar_api_key=semantic_scholar_api_key,
+            alphaxiv_api_key=alphaxiv_api_key,
         )
         if result.get("ok"):
             return result
@@ -493,6 +532,7 @@ def _run_with_tavily_fallback(
                 model_verifier=model_verifier, model_reviewer=model_reviewer,
                 tavily_api_key=tavily_api_key,
                 semantic_scholar_api_key=semantic_scholar_api_key,
+                alphaxiv_api_key=alphaxiv_api_key,
             )
         return result
 
@@ -503,6 +543,7 @@ def _run_with_tavily_fallback(
         model_verifier=model_verifier, model_reviewer=model_reviewer,
         tavily_api_key=tavily_api_key,
         semantic_scholar_api_key=semantic_scholar_api_key,
+        alphaxiv_api_key=alphaxiv_api_key,
     )
     return result
 
@@ -517,6 +558,7 @@ def run_deep(
     model_reviewer: str = "deepseek-v4-pro",
     tavily_api_key: str | None = None,
     semantic_scholar_api_key: str | None = None,
+    alphaxiv_api_key: str | None = None,
     tavily_research_timeout: float = 600.0,
 ) -> Generator[ProgressEvent, None, dict]:
     """Run the full deep research pipeline. Yields ProgressEvent, returns result dict."""
@@ -528,6 +570,7 @@ def run_deep(
         model_verifier=model_verifier, model_reviewer=model_reviewer,
         tavily_api_key=tavily_api_key,
         semantic_scholar_api_key=semantic_scholar_api_key,
+        alphaxiv_api_key=alphaxiv_api_key,
         tavily_research_timeout=tavily_research_timeout,
     ))
 
@@ -542,6 +585,7 @@ def run_lit(
     model_reviewer: str = "deepseek-v4-pro",
     tavily_api_key: str | None = None,
     semantic_scholar_api_key: str | None = None,
+    alphaxiv_api_key: str | None = None,
     tavily_research_timeout: float = 600.0,
 ) -> Generator[ProgressEvent, None, dict]:
     """Run the literature review pipeline. Yields ProgressEvent, returns result dict."""
@@ -553,6 +597,7 @@ def run_lit(
         model_verifier=model_verifier, model_reviewer=model_reviewer,
         tavily_api_key=tavily_api_key,
         semantic_scholar_api_key=semantic_scholar_api_key,
+        alphaxiv_api_key=alphaxiv_api_key,
         tavily_research_timeout=tavily_research_timeout,
     ))
 

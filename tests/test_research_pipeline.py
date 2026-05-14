@@ -546,7 +546,8 @@ class TestZeroSourceAbort:
     @patch("docent.bundled_plugins.studio.pipeline.web_search")
     @patch("docent.bundled_plugins.studio.pipeline.paper_search")
     @patch("docent.bundled_plugins.studio.pipeline.fetch_page")
-    def test_zero_sources_returns_error(self, mock_fetch, mock_paper, mock_web):
+    @patch("docent.bundled_plugins.studio.pipeline.academic_search_parallel", return_value=[])
+    def test_zero_sources_returns_error(self, mock_academic, mock_fetch, mock_paper, mock_web):
         mock_web.return_value = []
         mock_paper.return_value = []
         mock_fetch.return_value = ""
@@ -567,8 +568,9 @@ class TestZeroSourceAbort:
 class TestTavilyResearchPipeline:
     """Tests for the Tavily research path in run_deep / run_lit."""
 
+    @patch("docent.bundled_plugins.studio.pipeline.academic_search_parallel", return_value=[])
     @patch("docent.bundled_plugins.studio.pipeline.tavily_research")
-    def test_deep_uses_tavily_when_key_provided(self, mock_research):
+    def test_deep_uses_tavily_when_key_provided(self, mock_research, mock_academic):
         def research_gen(*args, **kwargs):
             yield ProgressEvent(phase="research", message="Starting Tavily research")
             return {
@@ -589,6 +591,7 @@ class TestTavilyResearchPipeline:
         assert result["draft"] == "Refined Tavily research result"
         assert len(result["sources"]) == 1
         mock_research.assert_called_once()
+        mock_academic.assert_called_once()
         # Reviewer + refiner both called
         assert oc.call.call_count == 2
 

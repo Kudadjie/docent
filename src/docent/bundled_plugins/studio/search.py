@@ -162,6 +162,99 @@ def paper_search(
     return results
 
 
+def _scholarly_to_source(paper: dict, query: str) -> dict:
+    authors = ", ".join(paper.get("authors", [])[:3])
+    doi = paper.get("doi", "")
+    url = paper.get("url") or (f"https://doi.org/{doi}" if doi else "")
+    return {
+        "title": paper.get("title", ""),
+        "url": url,
+        "snippet": (paper.get("abstract") or "")[:500],
+        "authors": authors,
+        "year": paper.get("year"),
+        "source_type": "paper",
+        "query": query,
+    }
+
+
+def _alphaxiv_to_source(paper: dict, query: str) -> dict:
+    authors = ", ".join(paper.get("authors", [])[:3])
+    return {
+        "title": paper.get("title", ""),
+        "url": paper.get("arxiv_url") or "",
+        "snippet": (paper.get("abstract") or "")[:500],
+        "authors": authors,
+        "year": (paper.get("published") or "")[:4],
+        "source_type": "paper",
+        "query": query,
+    }
+
+
+def academic_search_parallel(
+    queries: list[str],
+    *,
+    max_per_query: int = 5,
+    semantic_scholar_api_key: str | None = None,
+    alphaxiv_api_key: str | None = None,
+) -> list[dict]:
+    """Search academic papers via Google Scholar and arXiv in parallel.
+
+    Fires one scholarly-search task and one alphaxiv task per query
+    concurrently. Scholarly uses the GS→Semantic Scholar→CrossRef fallback
+    chain; alphaxiv targets arXiv preprints. Results are deduplicated by URL
+    and returned in pipeline source-dict format.
+
+    Errors in any individual task are swallowed — academic augmentation is
+    best-effort and should never fail the calling pipeline.
+    """
+    if not queries:
+        return []
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    from .scholarly_client import search_scholarly
+    from .alphaxiv_client import AlphaXivAuthError, search_papers as alphaxiv_search
+
+    def _scholarly(q: str) -> list[dict]:
+        try:
+            papers, _ = search_scholarly(
+                q, max_per_query,
+                semantic_scholar_api_key=semantic_scholar_api_key,
+            )
+            return [_scholarly_to_source(p, q) for p in papers]
+        except Exception:
+            return []
+
+    def _alphaxiv(q: str) -> list[dict]:
+        try:
+            papers = alphaxiv_search(
+                q, api_key=alphaxiv_api_key, max_results=max_per_query,
+            )
+            return [_alphaxiv_to_source(p, q) for p in papers]
+        except (AlphaXivAuthError, Exception):
+            return []
+
+    tasks = [(fn, q) for q in queries for fn in (_scholarly, _alphaxiv)]
+    raw: list[dict] = []
+    with ThreadPoolExecutor(max_workers=min(len(tasks), 8)) as pool:
+        futures = {pool.submit(fn, q): (fn.__name__, q) for fn, q in tasks}
+        for future in as_completed(futures):
+            try:
+                raw.extend(future.result())
+            except Exception:
+                pass
+
+    # Deduplicate by URL (papers without a URL are dropped)
+    seen: set[str] = set()
+    unique: list[dict] = []
+    for r in raw:
+        key = r.get("url", "")
+        if key and key not in seen:
+            seen.add(key)
+            unique.append(r)
+    return unique
+
+
 def fetch_page(url: str, max_chars: int = 3000) -> str:
     """Fetch a URL, strip HTML tags, return first *max_chars* chars of text."""
     if not url:
