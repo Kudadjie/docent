@@ -154,7 +154,7 @@ class TestFindFeynman:
         monkeypatch.delenv("APPDATA", raising=False)
         with pytest.raises(FeynmanNotFoundError) as exc_info:
             rtn._find_feynman(None)
-        assert "npm install -g feynman" in str(exc_info.value)
+        assert "npm install -g @companion-ai/feynman" in str(exc_info.value)
 
 
 class TestFeynmanNotFoundError:

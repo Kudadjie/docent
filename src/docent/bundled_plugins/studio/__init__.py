@@ -802,6 +802,42 @@ class GetPaperResult(BaseModel):
         return shapes
 
 
+class ScholarlySearchInputs(BaseModel):
+    query: str = Field(..., description="Search query for academic papers (Google Scholar / Semantic Scholar / CrossRef).")
+    max_results: int = Field(10, description="Maximum results to return (default 10).")
+
+
+class ScholarlySearchResult(BaseModel):
+    ok: bool
+    query: str
+    papers: list[dict]
+    count: int
+    backend_used: str
+    message: str
+
+    def to_shapes(self) -> list[Shape]:
+        if not self.ok:
+            return [ErrorShape(reason=self.message)]
+        shapes: list[Shape] = [
+            MessageShape(text=self.message, level="success"),
+            MetricShape(label="Backend", value=self.backend_used),
+        ]
+        for p in self.papers:
+            authors = ", ".join(p.get("authors", [])[:3])
+            if len(p.get("authors", [])) > 3:
+                authors += " et al."
+            year = p.get("year") or "?"
+            shapes.append(MetricShape(
+                label=f"{p['title']} ({year})",
+                value=authors or "Unknown authors",
+            ))
+            url = p.get("url") or (f"https://doi.org/{p['doi']}" if p.get("doi") else None)
+            if url:
+                label = p.get("doi") or url[:60]
+                shapes.append(LinkShape(url=url, label=label))
+        return shapes
+
+
 class UsageInputs(BaseModel):
     pass
 
@@ -1786,6 +1822,44 @@ class StudioTool(Tool):
             abstract=data["abstract"],
             overview=data["overview"],
             message=f"Retrieved overview for {arxiv_id}.",
+        )
+
+    @action(
+        description="Search academic papers via Google Scholar (with Semantic Scholar and CrossRef as fallbacks).",
+        input_schema=ScholarlySearchInputs,
+        name="scholarly-search",
+    )
+    def scholarly_search(self, inputs: ScholarlySearchInputs, context: Context) -> ScholarlySearchResult:
+        from .scholarly_client import search_scholarly
+        try:
+            papers, backend = search_scholarly(
+                inputs.query,
+                inputs.max_results,
+                semantic_scholar_api_key=context.settings.research.semantic_scholar_api_key,
+            )
+        except RuntimeError as e:
+            return ScholarlySearchResult(
+                ok=False, query=inputs.query, papers=[], count=0,
+                backend_used="none", message=str(e),
+            )
+        except Exception as e:
+            return ScholarlySearchResult(
+                ok=False, query=inputs.query, papers=[], count=0,
+                backend_used="none", message=f"Search failed: {e}",
+            )
+        if not papers:
+            return ScholarlySearchResult(
+                ok=False, query=inputs.query, papers=[], count=0,
+                backend_used=backend,
+                message=f"No results found for '{inputs.query}' (via {backend}).",
+            )
+        return ScholarlySearchResult(
+            ok=True,
+            query=inputs.query,
+            papers=papers,
+            count=len(papers),
+            backend_used=backend,
+            message=f"Found {len(papers)} paper(s) for '{inputs.query}' (via {backend}).",
         )
 
     @action(

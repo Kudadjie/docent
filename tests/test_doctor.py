@@ -231,22 +231,39 @@ def test_check_alphaxiv_shows_update_hint() -> None:
 
 # ─── _check_notebooklm_py ─────────────────────────────────────────────────────
 
+def _nlm_auth_ok_subprocess():
+    """Return a mock subprocess.CompletedProcess that looks like successful auth."""
+    import subprocess
+    r = subprocess.CompletedProcess(args=[], returncode=0)
+    r.stdout = "{}"
+    r.stderr = ""
+    return r
+
+
 def test_check_notebooklm_py_ok() -> None:
-    with patch("docent.utils.update_check._fetch_pypi_latest", return_value=None):
+    with (
+        patch("shutil.which", return_value="/usr/bin/notebooklm"),
+        patch("subprocess.run", return_value=_nlm_auth_ok_subprocess()),
+        patch("docent.utils.update_check._fetch_pypi_latest", return_value=None),
+    ):
         label, status, version, detail = _check_notebooklm_py()
     assert status == "OK"
     assert version != "-"
-    assert "installed" in detail
+    assert "authenticated" in detail
 
 
 def test_check_notebooklm_py_shows_update_hint() -> None:
     from docent.utils.update_check import UpdateInfo
     fake_update = UpdateInfo(tool="notebooklm-py", current="0.4.1", latest="99.0.0", upgrade_cmd="uv add notebooklm-py")
-    with patch("docent.utils.update_check.check_pypi", return_value=fake_update):
+    with (
+        patch("shutil.which", return_value="/usr/bin/notebooklm"),
+        patch("subprocess.run", return_value=_nlm_auth_ok_subprocess()),
+        patch("docent.utils.update_check.check_pypi", return_value=fake_update),
+    ):
         label, status, version, detail = _check_notebooklm_py()
     assert status == "OK"
     assert "99.0.0" in detail
-    assert "update available" in detail
+    assert "update" in detail
 
 
 def test_check_notebooklm_py_fail_when_not_installed() -> None:

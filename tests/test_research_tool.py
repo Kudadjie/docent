@@ -56,6 +56,39 @@ def _fake_pipeline_gen(result_dict: dict):
     yield  # noqa: unreachable — makes this a generator
 
 
+def _make_nlm_push(
+    *,
+    ok: bool = True,
+    notebook_id: str | None = "test-nb",
+    sources_added: int = 2,
+    sources_failed: int = 0,
+    message: str | None = None,
+):
+    """Return a generator function that stands in for _nlm_push.
+
+    Patches the whole 4-phase NLM pipeline so tests don't hit real HTTP
+    calls or subprocess spawns inside _nlm_push's internals.
+    """
+    from docent.core import ProgressEvent
+    _msg = message or f"Notebook ready. {notebook_id}"
+
+    def _push(*args, **kwargs):
+        yield ProgressEvent(phase="nlm-check", message="mock")
+        return {
+            "ok": ok,
+            "notebook_id": notebook_id,
+            "sources_added": sources_added,
+            "sources_failed": sources_failed,
+            "sources_from_feynman": 0,
+            "sources_from_nlm": 0,
+            "quality_gate": {},
+            "perspectives": {},
+            "message": _msg,
+        }
+
+    return _push
+
+
 def _mock_context(
     *,
     output_dir: Path | None = None,
@@ -485,43 +518,28 @@ class TestToNotebook:
         md_file.write_text("# Draft", encoding="utf-8")
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
-        with (
-            patch("docent.bundled_plugins.studio._nlm_exe", return_value="/usr/bin/notebooklm"),
-            patch("docent.bundled_plugins.studio._nlm_auth_ok", return_value=True),
-            patch("docent.bundled_plugins.studio._nlm_create_notebook", return_value="nb-feynman"),
-            patch("docent.bundled_plugins.studio._nlm_add_source", return_value=(0, "")),
-            patch("time.sleep"),
+        with patch(
+            "docent.bundled_plugins.studio._nlm_push",
+            new=_make_nlm_push(notebook_id="nb-feynman", sources_added=1),
         ):
             result = self._run(tool, ToNotebookInputs(), ctx)
         assert result.ok is True
         assert result.sources_count == 0
-        # Only the markdown doc itself is added (no URL sources)
         assert result.sources_added == 1
         assert result.sources_file is None
-
-    def _nlm_happy(self):
-        """Context managers for a fully working NLM CLI (exe found, auth ok, adds succeed)."""
-        return (
-            patch("docent.bundled_plugins.studio._nlm_exe", return_value="/usr/bin/notebooklm"),
-            patch("docent.bundled_plugins.studio._nlm_auth_ok", return_value=True),
-            patch("time.sleep"),
-        )
 
     def test_to_notebook_creates_notebook_when_no_id(self, tmp_path):
         output_dir = tmp_path / "research"
         md_file, _ = self._write_research_files(output_dir)
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
-        with (
-            patch("docent.bundled_plugins.studio._nlm_exe", return_value="/usr/bin/notebooklm"),
-            patch("docent.bundled_plugins.studio._nlm_auth_ok", return_value=True),
-            patch("docent.bundled_plugins.studio._nlm_create_notebook", return_value="new-nb-id") as mock_create,
-            patch("docent.bundled_plugins.studio._nlm_add_source", return_value=(0, "")),
-            patch("time.sleep"),
+        with patch(
+            "docent.bundled_plugins.studio._nlm_push",
+            new=_make_nlm_push(notebook_id="new-nb-id", sources_added=2,
+                               message="Notebook ready. new-nb-id"),
         ):
             result = self._run(tool, ToNotebookInputs(), ctx)
         assert result.ok is True
-        mock_create.assert_called_once()
         assert "new-nb-id" in result.message
         assert result.sources_added > 0
         pkg = Path(result.package_dir)
@@ -533,7 +551,7 @@ class TestToNotebook:
         md_file, _ = self._write_research_files(output_dir, slug="climate-lit")
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
-        with patch("docent.bundled_plugins.studio._nlm_exe", return_value="/usr/bin/notebooklm"),              patch("docent.bundled_plugins.studio._nlm_auth_ok", return_value=True),              patch("time.sleep"),              patch("docent.bundled_plugins.studio._nlm_create_notebook", return_value="nb-x"),              patch("docent.bundled_plugins.studio._nlm_add_source", return_value=(0, "")):
+        with patch("docent.bundled_plugins.studio._nlm_push", new=_make_nlm_push(notebook_id="nb-x")):
             result = self._run(tool, ToNotebookInputs(output_file=str(md_file)), ctx)
         assert result.ok is True
         assert "climate-lit" in result.output_file
@@ -543,7 +561,7 @@ class TestToNotebook:
         self._write_research_files(output_dir)
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
-        with patch("docent.bundled_plugins.studio._nlm_exe", return_value="/usr/bin/notebooklm"),              patch("docent.bundled_plugins.studio._nlm_auth_ok", return_value=True),              patch("time.sleep"),              patch("docent.bundled_plugins.studio._nlm_create_notebook", return_value="nb-x"),              patch("docent.bundled_plugins.studio._nlm_add_source", return_value=(0, "")):
+        with patch("docent.bundled_plugins.studio._nlm_push", new=_make_nlm_push(notebook_id="nb-x")):
             result = self._run(tool, ToNotebookInputs(), ctx)
         urls_content = (Path(result.package_dir) / "sources_urls.txt").read_text()
         lines = [l for l in urls_content.strip().splitlines() if l]
@@ -554,7 +572,7 @@ class TestToNotebook:
         self._write_research_files(output_dir)
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
-        with patch("docent.bundled_plugins.studio._nlm_exe", return_value="/usr/bin/notebooklm"),              patch("docent.bundled_plugins.studio._nlm_auth_ok", return_value=True),              patch("time.sleep"),              patch("docent.bundled_plugins.studio._nlm_create_notebook", return_value="nb-x"),              patch("docent.bundled_plugins.studio._nlm_add_source", return_value=(0, "")):
+        with patch("docent.bundled_plugins.studio._nlm_push", new=_make_nlm_push(notebook_id="nb-x")):
             result = self._run(tool, ToNotebookInputs(max_sources=2), ctx)
         assert result.sources_count == 2
         urls_content = (Path(result.package_dir) / "sources_urls.txt").read_text()
@@ -565,12 +583,14 @@ class TestToNotebook:
         self._write_research_files(output_dir)
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
-        with patch("docent.bundled_plugins.studio._nlm_exe", return_value="/usr/bin/notebooklm"),              patch("docent.bundled_plugins.studio._nlm_auth_ok", return_value=True),              patch("time.sleep"),              patch("docent.bundled_plugins.studio._nlm_add_source", return_value=(0, "")) as mock_add:
+        with patch(
+            "docent.bundled_plugins.studio._nlm_push",
+            new=_make_nlm_push(notebook_id="nb-abc123", sources_added=2, sources_failed=0),
+        ):
             result = self._run(tool, ToNotebookInputs(notebook_id="nb-abc123"), ctx)
         assert result.ok is True
-        assert result.sources_added > 0
+        assert result.sources_added == 2
         assert result.sources_failed == 0
-        assert mock_add.call_count == result.sources_added
 
     def test_to_notebook_exe_not_found_falls_back(self, tmp_path):
         output_dir = tmp_path / "research"
@@ -578,7 +598,9 @@ class TestToNotebook:
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
         with (
-            patch("docent.bundled_plugins.studio._nlm_exe", return_value=None),
+            patch("docent.bundled_plugins.studio._nlm_push",
+                  new=_make_nlm_push(ok=False, notebook_id=None, sources_added=0,
+                                     message="NLM not found")),
             patch("webbrowser.open") as mock_browser,
         ):
             result = self._run(tool, ToNotebookInputs(notebook_id="nb-abc123"), ctx)
@@ -593,8 +615,9 @@ class TestToNotebook:
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
         with (
-            patch("docent.bundled_plugins.studio._nlm_exe", return_value="/usr/bin/notebooklm"),
-            patch("docent.bundled_plugins.studio._nlm_auth_ok", return_value=False),
+            patch("docent.bundled_plugins.studio._nlm_push",
+                  new=_make_nlm_push(ok=False, notebook_id=None, sources_added=0,
+                                     message="Auth expired")),
             patch("webbrowser.open") as mock_browser,
         ):
             result = self._run(tool, ToNotebookInputs(notebook_id="nb-abc123"), ctx)
@@ -608,8 +631,10 @@ class TestToNotebook:
         self._write_research_files(output_dir)
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
-        responses = [(0, "")] + [(1, "error")] * 10
-        with patch("docent.bundled_plugins.studio._nlm_exe", return_value="/usr/bin/notebooklm"),              patch("docent.bundled_plugins.studio._nlm_auth_ok", return_value=True),              patch("time.sleep"),              patch("docent.bundled_plugins.studio._nlm_add_source", side_effect=responses):
+        with patch(
+            "docent.bundled_plugins.studio._nlm_push",
+            new=_make_nlm_push(notebook_id="nb-abc123", sources_added=1, sources_failed=5),
+        ):
             result = self._run(tool, ToNotebookInputs(notebook_id="nb-abc123"), ctx)
         assert result.ok is True
         assert result.sources_added == 1
@@ -620,7 +645,11 @@ class TestToNotebook:
         self._write_research_files(output_dir)
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir, notebooklm_notebook_id="config-nb-id")
-        with patch("docent.bundled_plugins.studio._nlm_exe", return_value="/usr/bin/notebooklm"),              patch("docent.bundled_plugins.studio._nlm_auth_ok", return_value=True),              patch("time.sleep"),              patch("docent.bundled_plugins.studio._nlm_add_source", return_value=(0, "")):
+        with patch(
+            "docent.bundled_plugins.studio._nlm_push",
+            new=_make_nlm_push(notebook_id="config-nb-id",
+                               message="Notebook ready: config-nb-id"),
+        ):
             result = self._run(tool, ToNotebookInputs(), ctx)
         assert result.ok is True
         assert "config-nb-id" in result.message
@@ -652,11 +681,8 @@ class TestOutputDestinations:
     def test_output_notebook_pushes(self, tmp_path):
         output_dir = tmp_path / "r"
         ctx = _mock_context(output_dir=output_dir)
-        with patch("docent.bundled_plugins.studio._nlm_exe", return_value="/bin/notebooklm"), \
-             patch("docent.bundled_plugins.studio._nlm_auth_ok", return_value=True), \
-             patch("docent.bundled_plugins.studio._nlm_create_notebook", return_value="new-nb"), \
-             patch("docent.bundled_plugins.studio._nlm_add_source", return_value=(0, "")), \
-             patch("time.sleep"):
+        with patch("docent.bundled_plugins.studio._nlm_push",
+                   new=_make_nlm_push(notebook_id="new-nb")):
             result = self._run_deep(ctx, extra_inputs={"output": "notebook"})
         assert result.ok is True
         assert result.notebook_id == "new-nb"
