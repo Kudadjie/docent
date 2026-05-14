@@ -232,3 +232,48 @@ Or via `DOCENT_RESEARCH__TAVILY_API_KEY` env var.
 ## 7. Plugin System
 
 Drop a `.py` file (or a Python package folder) into `~/.docent/plugins/` and Docent auto-discovers it on next run. Each plugin registers its own `@register_tool` class and gets its own MCP tools automatically.
+
+**Install a plugin:**
+```bash
+cp myplugin.py ~/.docent/plugins/
+docent list   # your tool appears immediately
+```
+
+**What you get automatically:**
+- CLI sub-commands: `docent <toolname> <action>`
+- MCP tools via `docent serve`: `<toolname>__<action>`
+- `--help` output from action descriptions and field names
+
+For the full plugin contract (Tool ABC, `@action`, `to_shapes()`, `on_startup`), see [`docs/plugin-guide.md`](plugin-guide.md).
+
+---
+
+## 8. Maintenance
+
+### `docent doctor`
+
+Check environment health: Python version, Docent version, external tools (feynman, mendeley-mcp), API key presence, and GitHub update availability.
+
+```bash
+docent doctor
+```
+
+Outputs a table with `OK` / `WARN` / `FAIL` / `SKIP` status for each check. Run this first when something isn't working.
+
+### `docent setup`
+
+Interactive guided setup: Mendeley connection, PDF database directory, API keys (Tavily, Semantic Scholar). Safe to re-run — existing values are shown as defaults.
+
+```bash
+docent setup
+```
+
+### `docent update`
+
+Upgrade to the latest PyPI release.
+
+```bash
+docent update
+```
+
+Equivalent to `uv tool upgrade docent-cli`. Only works if Docent was installed via `uv tool install`.
