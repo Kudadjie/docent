@@ -97,7 +97,7 @@ class FeynmanNotFoundError(RuntimeError):
         self.cmd = cmd
         msg = (
             f"Feynman executable not found: {cmd[0]!r}. "
-            f"Install with: npm install -g feynman\n"
+            f"Install with: npm install -g @companion-ai/feynman\n"
             f"Or set the full path via: "
             f"docent studio config-set --key feynman_command --value <path-to-feynman>"
         )
@@ -142,6 +142,36 @@ def _find_feynman(configured_command: list[str] | None) -> list[str]:
             return [str(npm_feynman)]
 
     raise FeynmanNotFoundError(["feynman"])
+
+
+def _feynman_version_from_package_json(cmd: list[str]) -> str:
+    """Read feynman version from its npm package.json — no subprocess, instant.
+
+    Checks both the bare ``feynman`` and scoped ``@companion-ai/feynman`` layouts.
+    Returns "?" if the file cannot be found or parsed.
+    """
+    import json as _json
+    path = Path(cmd[0]).resolve()
+    npm_roots = [
+        path.parent / "node_modules",
+        path.parent.parent / "lib" / "node_modules",
+    ]
+    appdata = os.environ.get("APPDATA", "")
+    if appdata:
+        npm_roots.append(Path(appdata) / "npm" / "node_modules")
+    for root in npm_roots:
+        for pkg_path in (
+            root / "feynman" / "package.json",
+            root / "@companion-ai" / "feynman" / "package.json",
+        ):
+            try:
+                data = _json.loads(pkg_path.read_text(encoding="utf-8"))
+                v = data.get("version")
+                if v:
+                    return str(v)
+            except Exception:
+                pass
+    return "?"
 
 
 def _extract_feynman_cost(output: str) -> float:
@@ -431,7 +461,7 @@ def _run_feynman(
             resolved_cmd,
             "The feynman executable was found but could not be started. "
             "This may indicate a corrupt installation. Try reinstalling: "
-            "npm install -g feynman",
+            "npm install -g @companion-ai/feynman",
         )
 
     try:
@@ -1843,12 +1873,22 @@ class StudioTool(Tool):
 
 def on_startup(context) -> None:  # noqa: ARG001
     """Check for Feynman updates once per day and notify the user."""
+    import re
     from docent.utils.update_check import check_github_release
     from docent.ui import get_console
 
+    try:
+        cmd = _find_feynman(context.settings.research.feynman_command)
+        raw = _feynman_version_from_package_json(cmd)
+        m = re.search(r"\d+\.\d+(?:\.\d+)?", raw)
+        current = m.group() if m else None
+    except FeynmanNotFoundError:
+        return  # not installed — doctor handles that; no update nag needed
+
     info = check_github_release(
         "companion-inc/feynman",
-        upgrade_cmd="npm install -g @companion-ai/feynman",
+        current_version=current,
+        upgrade_cmd="npm install -g @companion-ai/feynman@latest",
     )
     if info:
         get_console().print(

@@ -286,6 +286,242 @@ cat ~/Documents/Docent/research/storm-surge-ghana-deep.md | tail -30
 
 ---
 
+## 20. `to-notebook` full pipeline — phase progress
+
+After test #4 (deep research done), run:
+```
+docent studio to-notebook
+```
+**Expect (watch terminal phase tags — all must appear in order):**
+- `nlm-check` — "Checking NotebookLM auth..."
+- `nlm-research` — "Starting NLM web research: '...'" (NLM web research arm fires non-blocking)
+- `nlm-push` — "Adding synthesis document..." then "[1/N] https://..."
+- `nlm-research` — "Polling NLM research status..." then "NLM research found N new source(s). Adding..."
+- `nlm-stabilise` — "Waiting for sources to stabilise..." then "Stable after Xs: ready: N, error: N, preparing: 0"
+- `nlm-quality` — "Running quality gate (validation + contradictions + gaps)..."
+- `nlm-quality` — "Quality gate: clean/issues found, N contradiction(s), N gap(s) identified."
+- `nlm-perspectives` — "Generating practitioner / skeptic / beginner summaries..."
+- `nlm-perspectives` — "Perspectives generated."
+
+**Expect final success message:** "Notebook ready: N source(s) added, N from NLM research, quality gate: ..., perspectives generated, notebook: <id>"
+
+---
+
+## 21. `to-notebook` quality gate — shape output
+
+After test #20, check the rendered shapes in the output:
+```
+docent studio to-notebook
+```
+**Expect metric shapes:**
+- `Notebook ID` — a non-empty string
+- `Sources added` — non-zero integer
+- `From NLM research` — non-zero integer (if NLM research found sources)
+- `Validation` — either `clean` or `issues found`
+- `Contradictions` — integer (0 or more)
+- `Gaps filled` — integer (only shown if > 0)
+- `Local package` — link to the `<stem>-notebook/` directory
+
+---
+
+## 22. `to-notebook` — skip quality gate and perspectives
+
+```
+docent studio to-notebook --no-run-quality-gate --no-run-perspectives
+```
+**Expect:**
+- No `nlm-quality` phase events in terminal
+- No `nlm-perspectives` phase events in terminal
+- Final message does NOT contain "quality gate:" or "perspectives generated"
+- Completes noticeably faster (no NLM ask calls)
+
+---
+
+## 23. `to-notebook` — skip NLM web research arm
+
+```
+docent studio to-notebook --no-run-nlm-research
+```
+**Expect:**
+- No `nlm-research` phase events at all
+- Goes straight from `nlm-push` (synthesis doc + Feynman URLs) to `nlm-stabilise`
+- Final message does NOT contain "from NLM research"
+
+---
+
+## 24. `to-notebook` with `--guide-file`
+
+Create a small guide file first:
+```
+echo "Focus on sea-level rise adaptation strategies in low-lying coastal zones." > ~/Documents/guide.txt
+docent studio to-notebook --guide-file ~/Documents/guide.txt
+```
+**Expect:**
+- Progress event: `nlm-push` — "Adding guide file: guide.txt..."
+- Guide file is added as a source (source count increments)
+- NLM web research query is enriched — should reflect the guide content in the research query
+- If guide file path doesn't exist: progress event "Guide file not found: ... -- ignoring." (no crash)
+
+**Edge case — missing guide file:**
+```
+docent studio to-notebook --guide-file /tmp/nonexistent-guide.txt
+```
+**Expect:** "Guide file not found" warning printed, pipeline continues normally.
+
+---
+
+## 25. `to-notebook` with `--notebook-id`
+
+Find the notebook ID from test #20 (shown in the final message or Metric shape).
+Then run with a fresh research file:
+```
+docent studio to-notebook --notebook-id <id-from-test-20>
+```
+**Expect:**
+- No "Creating notebook..." event (skips create step)
+- Goes straight to auth check → push sources into the existing notebook
+- Deduplication is active: sources already in the notebook are not re-added
+- Final message shows the same notebook ID
+
+---
+
+## 26. `to-notebook` self-learning — run-log.jsonl writeback
+
+After any successful `to-notebook` run (test #20 or later):
+```
+Get-Content $env:USERPROFILE\.claude\skills\research-to-notebook\run-log.jsonl | Select-Object -Last 1 | python -m json.tool
+```
+**Expect (in the last JSON line):**
+- `"timestamp"` — ISO format, today's date
+- `"mode"` — `"research"`
+- `"topic"` — non-empty string matching your research topic
+- `"notebook_id"` — non-empty string
+- `"duration_min"` — positive number
+- `"sources_final"` — positive integer
+- `"quality_gate"` — dict with `"validation"`, `"contradictions"`, `"gaps_filled"`, `"multi_perspective_combined": true`
+- `"guide_file"` — `null` (or path if you used `--guide-file`)
+
+---
+
+## 27. `to-notebook` self-learning — source-compat.json domain update
+
+After any `to-notebook` run that adds URL sources:
+```
+python -m json.tool $env:USERPROFILE\.claude\skills\research-to-notebook\source-compat.json
+```
+**Expect:**
+- `"last_updated"` equals today's date (YYYY-MM-DD)
+- `"domains"` section has entries for domains from added URLs, each with:
+  - `"success"` — count of successful adds from this domain
+  - `"fail"` — count of failed adds
+  - `"rate"` — float between 0 and 1 (rounded to 2 decimals)
+
+**Expect NOT:**
+- File should NOT be overwritten from scratch — it accumulates across runs
+- `"always_skip"` and any pre-existing domain entries should be preserved
+
+---
+
+## 28. `to-notebook` active overrides — skip_gap_analysis
+
+```
+$json = '{"skip_gap_analysis": true}'
+$dir = "$env:USERPROFILE\.claude\skills\research-to-notebook"
+$json | Set-Content "$dir\active-overrides.json" -Encoding utf8
+docent studio to-notebook
+```
+**Expect:**
+- Progress event: "Gap analysis disabled by active-overrides (skip_gap_analysis=true)."
+- Quality gate STILL runs (validation + contradictions sections)
+- But no "Filling gap: '...'" events
+- `gaps_filled` = 0 in run-log.jsonl
+
+**Clean up afterward:**
+```
+Remove-Item "$env:USERPROFILE\.claude\skills\research-to-notebook\active-overrides.json"
+```
+
+---
+
+## 29. `to-local` — happy path
+
+After test #4 (deep research done):
+```
+docent studio to-local
+```
+**Expect:**
+- Creates `<output_dir>/storm-surge-ghana-deep-local/` directory
+- Contains `storm-surge-ghana-deep.md` (copy of synthesis doc)
+- Contains `sources_urls.txt` with one URL per line (if sources file exists)
+- Message: "Local package: .../storm-surge-ghana-deep-local -- N source URL(s)"
+- Shape output: `Local package` link pointing to the directory
+
+**Edge case — run again immediately:** should overwrite (no crash).
+
+---
+
+## 30. `to-local` with explicit file
+
+```
+docent studio to-local --output-file storm-surge-ghana-deep.md
+```
+**Expect:** Same result as #29 but using the explicit path.
+
+---
+
+## 31. `to-local` with `--guide-file`
+
+```
+echo "Focus on adaptation policy." > ~/Documents/guide.txt
+docent studio to-local --guide-file ~/Documents/guide.txt
+```
+**Expect:**
+- Package directory created as in #29
+- `guide.txt` is ALSO copied into the `<stem>-local/` directory alongside the synthesis doc
+
+---
+
+## 32. `to-local` error — no research output
+
+```
+docent studio config-set --key output_dir --value /tmp/empty-to-local-test
+docent studio to-local
+```
+**Expect:** `ok=False`, message: "No research output found in ... Run `docent studio deep-research` or `docent studio lit` first."
+(Reset output_dir to your real path afterward.)
+
+---
+
+## 33. `guide_file` in `deep-research` and `lit`
+
+Create a guide file with focused context:
+```
+echo "Prioritise peer-reviewed studies from 2018-2024. Focus on West Africa." > ~/Documents/research-guide.txt
+docent studio deep-research "coastal flooding" --guide-file ~/Documents/research-guide.txt --backend docent
+```
+**Expect:**
+- Pipeline runs normally
+- The guide context is prepended to the research brief sent to OpenCode/Tavily
+- Output markdown should reflect the guide's framing (check that West Africa / peer-reviewed framing appears in the introduction)
+
+Repeat for `lit`:
+```
+docent studio lit "coastal flooding" --guide-file ~/Documents/research-guide.txt --backend docent
+```
+**Expect:** Same — guide context shapes the literature search.
+
+---
+
+## 34. MCP tool list — `to_local` exposed
+
+```
+docent serve &
+```
+Then via Claude Desktop or MCP client, check that `studio__to_local` appears in the tool list alongside the existing tools from test #16.
+(This is a delta check on top of #16 — the full expected list now includes `studio__to_local`.)
+
+---
+
 ## Priority order for testing
 
 Given time constraints, run in this order:
@@ -299,8 +535,23 @@ Given time constraints, run in this order:
 7. **#9** — lit review (secondary happy path)
 8. **#19** — verify references section in output markdown
 9. **#18** — Tavily quota exhaustion (use invalid key test)
-10. **#10** — Feynman backend (if Feynman is installed)
-11. **#11** — budget guard (if you have time)
-12. **#12** — update notification (check cache file)
 
-**Why:** #4 → #5 → #13 is the core pipeline and validates the most shipped code. Error cases (#7, #8) are quick and confirm graceful failure paths. New #18 and #19 validate the latest changes (quota handling + references in markdown).
+**New pipeline port tests (run after credits reset ~2026-05-17):**
+
+10. **#20** — full pipeline phase progress (most important new test — validates all 4 phases fire)
+11. **#21** — quality gate shape output (validate metric shapes)
+12. **#29** — to-local happy path (fast, no NLM needed)
+13. **#26 + #27** — run-log + source-compat writeback (verify self-learning side effects)
+14. **#22** — skip quality gate/perspectives (fast negative path)
+15. **#23** — skip NLM research arm
+16. **#24** — guide-file in to-notebook
+17. **#28** — active-overrides skip_gap_analysis
+18. **#25** — explicit notebook-id
+19. **#31 + #32** — to-local guide-file + error case
+20. **#33** — guide-file in deep-research and lit
+21. **#34** — MCP to_local exposed
+22. **#10** — Feynman backend (if Feynman is installed)
+23. **#11** — budget guard (if you have time)
+24. **#12** — update notification (check cache file)
+
+**Why:** #20 is the critical new test — it validates that all 4 phases of the pipeline fire in order. #29 is the quickest new win (to-local is fast and self-contained). #26 + #27 confirm self-learning writes happen without interfering with the run. Error paths (#22, #23, #31, #32) are cheap. Guide-file and overrides tests (#24, #28, #33) validate the new params. MCP exposure (#34) is the only delta check on the existing #16.

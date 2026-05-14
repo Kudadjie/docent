@@ -101,6 +101,30 @@ def _is_setup_complete() -> bool:
         return False
 
 
+def _run_tool_install(console: Any, cmd: list[str]) -> bool:
+    """Run an install command streaming output to the terminal. Returns True on success."""
+    import shutil
+    import subprocess
+
+    # Resolve executable so Windows .cmd wrappers (npm.cmd) work without shell=True
+    resolved = shutil.which(cmd[0]) or cmd[0]
+    run_cmd = [resolved] + cmd[1:]
+
+    console.print(f"  [dim]$ {' '.join(cmd)}[/]")
+    try:
+        result = subprocess.run(run_cmd, check=False)
+        if result.returncode != 0:
+            console.print(f"  [red]Command failed (exit {result.returncode}).[/] Try running it manually.")
+            return False
+        return True
+    except FileNotFoundError:
+        console.print(f"  [red]{cmd[0]!r} not found.[/] Make sure it is installed and on PATH.")
+        return False
+    except Exception as exc:
+        console.print(f"  [red]Error:[/] {exc}")
+        return False
+
+
 def _run_setup_flow(*, first_run: bool = False) -> None:
     """Full interactive Docent setup. Called on first run and by `docent setup`."""
     console = get_console()
@@ -192,15 +216,91 @@ def _run_setup_flow(*, first_run: bool = False) -> None:
     console.print()
 
     # ── External tools ──
+    import platform as _platform
+    import shutil
     console.print("[bold]External Tools[/]")
     from docent.bundled_plugins.studio import _find_feynman, FeynmanNotFoundError
+
+    # ── Node.js / npm (prerequisite for Feynman + OpenCode) ─────────────────
+    npm_exe = shutil.which("npm")
+    if npm_exe:
+        console.print("  [green]Node.js / npm:[/] found")
+    else:
+        console.print("  [yellow]Node.js / npm:[/] not installed  (required for Feynman and OpenCode)")
+        _sys = _platform.system()
+        if _sys == "Windows":
+            console.print("    winget install OpenJS.NodeJS.LTS")
+        elif _sys == "Darwin":
+            console.print("    brew install node")
+        else:
+            console.print("    nvm install --lts    # see https://nodejs.org")
+    console.print()
+
+    # ── Feynman ──────────────────────────────────────────────────────────────
     try:
-        cmd = _find_feynman(settings.research.feynman_command)
-        console.print(f"  [green]Feynman CLI:[/] found at {cmd[0]}")
+        _find_feynman(settings.research.feynman_command)
+        console.print("  [green]Feynman:[/] installed")
     except FeynmanNotFoundError:
-        console.print("  [yellow]Feynman CLI:[/] not installed")
-        console.print("  [dim]Feynman runs deep research sessions. To install (~2 GB disk space):[/]")
-        console.print("    npm install -g feynman")
+        console.print("  [yellow]Feynman:[/] not installed  (~2 GB disk space)")
+        if npm_exe:
+            if typer.confirm("  Install Feynman now?", default=False):
+                _run_tool_install(console, ["npm", "install", "-g", "@companion-ai/feynman"])
+        else:
+            console.print("  [dim]Install Node.js first, then run:[/]")
+            console.print("    npm install -g @companion-ai/feynman")
+    console.print()
+
+    # ── OpenCode ─────────────────────────────────────────────────────────────
+    oc_exe = shutil.which("opencode")
+    if oc_exe:
+        console.print("  [green]OpenCode:[/] installed")
+        console.print("  [dim]Start the server when needed:[/] opencode serve --port 4096")
+    else:
+        console.print("  [yellow]OpenCode:[/] not installed  (required for docent backend research)")
+        if npm_exe:
+            if typer.confirm("  Install OpenCode now?", default=False):
+                _run_tool_install(console, ["npm", "install", "-g", "opencode-ai"])
+                console.print("  [dim]Start the server with:[/] opencode serve --port 4096")
+        else:
+            console.print("  [dim]Install Node.js first, then run:[/]")
+            console.print("    npm install -g opencode-ai")
+            console.print("  [dim]Then start with:[/] opencode serve --port 4096")
+    console.print()
+
+    # ── NotebookLM ───────────────────────────────────────────────────────────
+    nlm_exe = shutil.which("notebooklm")
+    try:
+        import notebooklm as _nlm_mod  # noqa: F401
+        _nlm_pkg_ok = True
+    except ImportError:
+        _nlm_pkg_ok = False
+
+    if nlm_exe and _nlm_pkg_ok:
+        console.print("  [green]NotebookLM:[/] installed")
+        # Quick auth check — if not authenticated, nudge the user
+        import subprocess as _sp
+        try:
+            _auth = _sp.run([nlm_exe, "list", "--json"], capture_output=True, text=True, timeout=10)
+            import json as _j
+            _auth_ok = _auth.returncode == 0 and not _j.loads(_auth.stdout or "{}").get("error")
+        except Exception:
+            _auth_ok = False
+        if not _auth_ok:
+            console.print("  [yellow]NotebookLM:[/] not authenticated — run: notebooklm login")
+    else:
+        console.print("  [yellow]NotebookLM:[/] not installed  (required for `docent studio to-notebook`)")
+        if typer.confirm("  Install notebooklm-py now?", default=False):
+            pip_ok = _run_tool_install(console, ["pip", "install", "notebooklm-py[browser]"])
+            if pip_ok:
+                # playwright comes with notebooklm-py[browser]; run its browser install
+                pw_exe = shutil.which("playwright") or "playwright"
+                _run_tool_install(console, [pw_exe, "install", "chromium"])
+            console.print("  [dim]Authenticate with:[/] notebooklm login")
+        else:
+            console.print("  [dim]To install:[/]")
+            console.print('    pip install "notebooklm-py[browser]"')
+            console.print("    playwright install chromium")
+            console.print("    notebooklm login")
     console.print()
 
     console.print("[bold green]Setup complete![/]  Run [cyan]docent doctor[/] to verify.")
@@ -451,47 +551,16 @@ def _dir_size_gb(path: Path) -> float | None:
         return None
 
 
-def _feynman_version_from_package_json(cmd: list[str]) -> str:
-    """Read feynman version from its npm package.json — no subprocess, instant.
-
-    Checks both the bare name ``feynman`` and the scoped ``@companion-ai/feynman``
-    package layout used by the current official release.
-    """
-    import json
-    import os
-    path = Path(cmd[0]).resolve()
-    npm_roots = [
-        path.parent / "node_modules",
-        path.parent.parent / "lib" / "node_modules",
-    ]
-    appdata = os.environ.get("APPDATA", "")
-    if appdata:
-        npm_roots.append(Path(appdata) / "npm" / "node_modules")
-    for root in npm_roots:
-        for pkg_path in (
-            root / "feynman" / "package.json",
-            root / "@companion-ai" / "feynman" / "package.json",
-        ):
-            try:
-                data = json.loads(pkg_path.read_text(encoding="utf-8"))
-                v = data.get("version")
-                if v:
-                    return str(v)
-            except Exception:
-                pass
-    return "?"
-
-
 def _check_feynman(settings: "Settings") -> tuple[str, str, str, str]:
     import os
     import re
-    from docent.bundled_plugins.studio import _find_feynman, FeynmanNotFoundError
+    from docent.bundled_plugins.studio import _find_feynman, FeynmanNotFoundError, _feynman_version_from_package_json
     from docent.utils.update_check import check_github_release
 
     try:
         cmd = _find_feynman(settings.research.feynman_command)
     except FeynmanNotFoundError:
-        return "Feynman CLI", "WARN", "-", "Not installed (~2 GB needed) - npm install -g feynman"
+        return "Feynman CLI", "WARN", "-", "Not installed (~2 GB needed) - npm install -g @companion-ai/feynman"
 
     # Read version from package.json — avoids spawning a Node.js subprocess
     # which can hang on Windows when capture_output+timeout is used.
@@ -501,7 +570,7 @@ def _check_feynman(settings: "Settings") -> tuple[str, str, str, str]:
     m = re.search(r"\d+\.\d+(?:\.\d+)?", version)
     bare = m.group() if m else None
     update_info = check_github_release("companion-inc/feynman", current_version=bare,
-                                       upgrade_cmd="npm install -g @companion-ai/feynman")
+                                       upgrade_cmd="npm install -g @companion-ai/feynman@latest")
     if update_info:
         detail_parts.append(f"update: {update_info.latest}")
 
@@ -567,16 +636,54 @@ def _check_alphaxiv(settings: "Settings") -> tuple[str, str, str, str]:
 
 
 def _check_notebooklm_py() -> tuple[str, str, str, str]:
+    import shutil
+    import subprocess
+
+    # 1. Python package
     try:
         import notebooklm as nlm_mod
         nlm_version = getattr(nlm_mod, "__version__", None) or "-"
     except ImportError:
-        return "notebooklm-py", "FAIL", "-", "notebooklm-py not installed (uv add notebooklm-py)"
+        return (
+            "NotebookLM",
+            "FAIL",
+            "-",
+            'not installed — run: pip install "notebooklm-py[browser]"  then: playwright install chromium && notebooklm login',
+        )
+
+    # 2. CLI binary on PATH
+    exe = shutil.which("notebooklm")
+    if not exe:
+        return (
+            "NotebookLM",
+            "WARN",
+            nlm_version,
+            'CLI not on PATH — try reinstalling: pip install "notebooklm-py[browser]"',
+        )
+
+    # 3. Auth check (short timeout so doctor stays fast)
+    try:
+        result = subprocess.run(
+            [exe, "list", "--json"],
+            capture_output=True, text=True, timeout=10,
+        )
+        import json as _json
+        data = _json.loads(result.stdout or "{}")
+        auth_ok = result.returncode == 0 and not data.get("error")
+    except Exception:
+        auth_ok = False
+
+    if not auth_ok:
+        return "NotebookLM", "WARN", nlm_version, "Not authenticated — run: notebooklm login"
+
     from docent.utils.update_check import check_pypi
-    update = check_pypi("notebooklm-py", current_version=nlm_version if nlm_version != "-" else None,
-                        upgrade_cmd="uv add notebooklm-py")
-    update_hint = f"  (update available: {update.latest}  run: {update.upgrade_cmd})" if update else ""
-    return "notebooklm-py", "OK", nlm_version, f"installed{update_hint}"
+    update = check_pypi(
+        "notebooklm-py",
+        current_version=nlm_version if nlm_version != "-" else None,
+        upgrade_cmd="uv add notebooklm-py",
+    )
+    update_hint = f"  (update: {update.latest}  run: {update.upgrade_cmd})" if update else ""
+    return "NotebookLM", "OK", nlm_version, f"authenticated{update_hint}"
 
 
 def _check_opencode(settings: "Settings") -> tuple[str, str, str, str]:
