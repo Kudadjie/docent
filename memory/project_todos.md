@@ -39,7 +39,7 @@ Last updated: 2026-05-13 (CI gap confirmed: tests never run on tag push; #27 alr
 
 ## Phase 1.5 — Remaining skill ports
 
-17. **`to-notebook` action (Phase D)** — NotebookLM integration: take research output, push sources into a NotebookLM notebook. Completes the "research-to-notebook" name.
+17. ~~**`to-notebook` polish**~~ — DONE 2026-05-14. Fixed `docent research` → `docent studio` in all error messages (3 files); relaxed Feynman-output guard (no sources.json no longer fatal); 19 new NLM helper tests; 369 green.
 18. **`alpha-research` port** — paper search/read via alphaXiv; pairs with reading queue (search → add).
 19. **`scholarly-search` port** — Google Scholar wrapper with Semantic Scholar/CrossRef fallback. Cheap once alpha-research lands.
 20. **`literature-review` port** — multi-source synthesis consuming alpha + scholarly outputs.

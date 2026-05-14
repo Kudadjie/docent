@@ -214,6 +214,8 @@ Studio runs deep research, literature reviews, and peer reviews, backed by Feynm
 | `docent studio lit "topic" [--backend feynman\|docent] [--output local\|notebook\|vault]` | Literature-focused (80% paper search bias) |
 | `docent studio review "artifact" [--output local\|notebook\|vault]` | 3-stage: fetch → researcher → reviewer |
 | `docent studio to-notebook [--output-file <path>] [--max-sources N] [--notebook-id <id>]` | Post-process: push existing research output to NotebookLM |
+| `docent studio search-papers "query" [--max-results N]` | Search alphaXiv for academic papers |
+| `docent studio get-paper "arxiv-id"` | Fetch AI-generated overview for a paper |
 | `docent studio usage` | Show today's Feynman/OpenCode spend + Tavily requests |
 | `docent studio config-show` | Show current Studio settings |
 | `docent studio config-set --key <k> --value <v>` | Set a Studio config value |
@@ -226,7 +228,15 @@ Studio runs deep research, literature reviews, and peer reviews, backed by Feynm
 | `notebook` | Save locally, then create a new NotebookLM notebook and push all sources. Requires `notebooklm-py` and `notebooklm login`. |
 | `vault` | Save locally, then copy to `{obsidian_vault}/Studio/` with YAML frontmatter. Requires `obsidian_vault` config key. |
 
-**Studio config keys:** `output_dir`, `feynman_budget_usd`, `oc_provider`, `oc_model_planner`, `oc_model_writer`, `oc_model_verifier`, `oc_model_reviewer`, `oc_model_researcher`, `oc_budget_usd`, `tavily_api_key`, `notebooklm_notebook_id`, `obsidian_vault`.
+**Studio config keys:** `output_dir`, `feynman_budget_usd`, `oc_provider`, `oc_model_planner`, `oc_model_writer`, `oc_model_verifier`, `oc_model_reviewer`, `oc_model_researcher`, `oc_budget_usd`, `tavily_api_key`, `notebooklm_notebook_id`, `obsidian_vault`, `alphaxiv_api_key`.
+
+**alphaXiv paper search:** `search-papers` and `get-paper` use the `alphaxiv-py` SDK. Get a free API key at [alphaxiv.org/settings](https://alphaxiv.org/settings) and set it:
+
+```bash
+docent studio config-set --key alphaxiv_api_key --value "<key>"
+```
+
+Or via `DOCENT_RESEARCH__ALPHAXIV_API_KEY` env var.
 
 **Tavily:** Web search in the docent-native backend uses Tavily (free tier: 1,000 calls/month). Set your API key:
 

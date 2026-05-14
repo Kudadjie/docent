@@ -106,7 +106,7 @@ class OcClient:
                 raise OcBudgetExceededError(
                     f"OpenCode daily budget nearly exhausted "
                     f"(${current:.2f} of ${self.budget_usd:.2f} today). "
-                    f"Increase with `docent research config-set oc_budget_usd <amount>` "
+                    f"Increase with `docent studio config-set oc_budget_usd <amount>` "
                     f"or set oc_budget_usd=0 to remove the limit."
                 )
 

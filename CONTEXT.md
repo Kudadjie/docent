@@ -1,15 +1,13 @@
 # CONTEXT - resume hint for next session
 
-**Current Task:** Studio output destinations + notebooklm-py integration landed. Pre-v1.2.0 tag work.
+**Current Task:** Phase 1.5 alpha-research port + PyPI update checks landed. Pre-v1.2.0 tag work.
 
 **Key Decisions:**
-- `research` tool renamed → `studio`; `deep` → `deep-research`; plugin dir renamed with git history
-- `to-notebook` now creates new NLM notebooks via `notebooklm-py` CLI (package: `notebooklm-py`)
-- `--output local|notebook|vault` added to `deep-research`, `lit`, `review`
-- `config.toml [research]` section intentionally NOT renamed (breaking change deferred)
-- uv.lock not updated for `notebooklm-py` (file lock on docent.exe); will resolve on next free sync
+- Python bumped 3.11 → 3.13; `alphaxiv-py>=0.5.0` added; 398 tests green
+- `studio search-papers` + `get-paper` actions added (alphaxiv-py SDK, async→sync wrapper)
+- `docent doctor` now checks `alphaxiv-py` + `notebooklm-py` with PyPI update hints (`check_pypi()`)
 
 **Next Steps:**
-1. Real-life tests #10–#19 (Feynman/OpenCode credits reset ~2026-05-17 17:00) — still blocked
-2. UI spec for Studio tool (`/ui-spec-writer studio`)
-3. Tag v1.2.0 (after real-life tests pass)
+1. Real-life tests #10–#19 (credits reset ~2026-05-17 17:00) — still blocked
+2. Tag v1.2.0 (after real-life tests pass)
+3. `scholarly-search` port (#19) and `literature-review` port (#20)

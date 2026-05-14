@@ -9,8 +9,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from docent.cli import (
+    _check_alphaxiv,
     _check_cli_tool,
     _check_mendeley_mcp,
+    _check_notebooklm_py,
     _check_profile,
     _check_reading_db,
     _check_semantic_scholar,
@@ -26,10 +28,15 @@ def _make_settings(
     *,
     tavily_key: str | None = None,
     ss_key: str | None = None,
+    alphaxiv_key: str | None = None,
     db_dir: str | None = None,
     mendeley_cmd: list[str] | None = None,
 ) -> Settings:
-    rs = ResearchSettings(tavily_api_key=tavily_key, semantic_scholar_api_key=ss_key)
+    rs = ResearchSettings(
+        tavily_api_key=tavily_key,
+        semantic_scholar_api_key=ss_key,
+        alphaxiv_api_key=alphaxiv_key,
+    )
     reading = ReadingSettings(
         database_dir=Path(db_dir) if db_dir else None,
         mendeley_mcp_command=mendeley_cmd,
@@ -183,3 +190,67 @@ def test_dir_size_gb_with_files(tmp_path: Path) -> None:
     result = _dir_size_gb(tmp_path)
     assert result is not None
     assert result == pytest.approx(3072 / (1024 ** 3), rel=0.01)
+
+
+# ─── _check_alphaxiv ──────────────────────────────────────────────────────────
+
+def test_check_alphaxiv_skip_when_no_key() -> None:
+    settings = _make_settings()
+    label, status, version, detail = _check_alphaxiv(settings)
+    assert status == "SKIP"
+    assert "optional" in detail.lower()
+    assert version != "-"  # package is installed, so version shows
+
+
+def test_check_alphaxiv_ok_when_key_set() -> None:
+    settings = _make_settings(alphaxiv_key="ax-abcdefghijklmnop")
+    label, status, version, detail = _check_alphaxiv(settings)
+    assert status == "OK"
+    assert "configured" in detail
+    assert version != "-"
+
+
+def test_check_alphaxiv_fail_when_not_installed() -> None:
+    settings = _make_settings()
+    with patch.dict("sys.modules", {"alphaxiv": None}):
+        label, status, version, detail = _check_alphaxiv(settings)
+    assert status == "FAIL"
+    assert "not installed" in detail
+
+
+def test_check_alphaxiv_shows_update_hint() -> None:
+    from docent.utils.update_check import UpdateInfo
+    settings = _make_settings(alphaxiv_key="ax-abcdefghijklmnop")
+    fake_update = UpdateInfo(tool="alphaxiv-py", current="0.5.0", latest="99.0.0", upgrade_cmd="uv add alphaxiv-py")
+    with patch("docent.utils.update_check.check_pypi", return_value=fake_update):
+        label, status, version, detail = _check_alphaxiv(settings)
+    assert status == "OK"
+    assert "99.0.0" in detail
+    assert "update available" in detail
+
+
+# ─── _check_notebooklm_py ─────────────────────────────────────────────────────
+
+def test_check_notebooklm_py_ok() -> None:
+    with patch("docent.utils.update_check._fetch_pypi_latest", return_value=None):
+        label, status, version, detail = _check_notebooklm_py()
+    assert status == "OK"
+    assert version != "-"
+    assert "installed" in detail
+
+
+def test_check_notebooklm_py_shows_update_hint() -> None:
+    from docent.utils.update_check import UpdateInfo
+    fake_update = UpdateInfo(tool="notebooklm-py", current="0.4.1", latest="99.0.0", upgrade_cmd="uv add notebooklm-py")
+    with patch("docent.utils.update_check.check_pypi", return_value=fake_update):
+        label, status, version, detail = _check_notebooklm_py()
+    assert status == "OK"
+    assert "99.0.0" in detail
+    assert "update available" in detail
+
+
+def test_check_notebooklm_py_fail_when_not_installed() -> None:
+    with patch.dict("sys.modules", {"notebooklm": None}):
+        label, status, version, detail = _check_notebooklm_py()
+    assert status == "FAIL"
+    assert "not installed" in detail

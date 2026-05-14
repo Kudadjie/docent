@@ -198,7 +198,7 @@ class TestDeepFeynman:
         assert result.ok is False
         assert result.returncode == 1
         assert "quota exhausted" in result.message.lower()
-        assert "docent research config-set" in result.message
+        assert "docent studio config-set" in result.message
 
     def test_deep_docent_backend_server_unavailable(self, tmp_path):
         output_dir = tmp_path / "research"
@@ -476,15 +476,28 @@ class TestToNotebook:
         assert result.ok is False
         assert "No research output found" in result.message
 
-    def test_to_notebook_no_sources_json(self, tmp_path):
+    def test_to_notebook_no_sources_json_feynman_output(self, tmp_path):
+        # Feynman outputs have no -sources.json; to-notebook should still proceed
+        # (just push the markdown doc, no URL sources).
         output_dir = tmp_path / "research"
         output_dir.mkdir()
-        (output_dir / "test-deep.md").write_text("# Draft", encoding="utf-8")
+        md_file = output_dir / "test-deep.md"
+        md_file.write_text("# Draft", encoding="utf-8")
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
-        result = self._run(tool, ToNotebookInputs(), ctx)
-        assert result.ok is False
-        assert "No sources file" in result.message
+        with (
+            patch("docent.bundled_plugins.studio._nlm_exe", return_value="/usr/bin/notebooklm"),
+            patch("docent.bundled_plugins.studio._nlm_auth_ok", return_value=True),
+            patch("docent.bundled_plugins.studio._nlm_create_notebook", return_value="nb-feynman"),
+            patch("docent.bundled_plugins.studio._nlm_add_source", return_value=(0, "")),
+            patch("time.sleep"),
+        ):
+            result = self._run(tool, ToNotebookInputs(), ctx)
+        assert result.ok is True
+        assert result.sources_count == 0
+        # Only the markdown doc itself is added (no URL sources)
+        assert result.sources_added == 1
+        assert result.sources_file is None
 
     def _nlm_happy(self):
         """Context managers for a fully working NLM CLI (exe found, auth ok, adds succeed)."""

@@ -32,6 +32,7 @@ class ResearchSettings(BaseModel):
     semantic_scholar_api_key: str | None = None
     notebooklm_notebook_id: str | None = None  # NotebookLM notebook ID from the URL (e.g. abc123...)
     obsidian_vault: Path | None = None  # Absolute path to Obsidian vault root (or target subfolder)
+    alphaxiv_api_key: str | None = None  # API key from alphaxiv.org (env: ALPHAXIV_API_KEY)
 
 
 class ReadingSettings(BaseModel):

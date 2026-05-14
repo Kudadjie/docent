@@ -247,9 +247,11 @@ The `docent studio` tool runs AI-powered deep research, literature reviews, and 
 | `docent studio deep-research "topic"` | Full 6-stage research pipeline |
 | `docent studio lit "topic"` | Literature-focused review (80% paper bias) |
 | `docent studio review "paper"` | Peer review of an artifact |
+| `docent studio search-papers "query"` | Search alphaXiv for academic papers |
+| `docent studio get-paper "arxiv-id"` | AI-generated overview for a paper |
 | `docent studio usage` | Today's Feynman/OpenCode spend + Tavily requests |
 | `docent studio config-show` | Show research settings |
-| `docent studio config-set --key <k> --value <v>` | Set config (e.g. `tavily_api_key`) |
+| `docent studio config-set --key <k> --value <v>` | Set config (e.g. `tavily_api_key`, `alphaxiv_api_key`) |
 
 **Backends:** [Feynman CLI](https://www.feynman.is/) (primary) or Docent-native pipeline via OpenCode Go models (fallback).  
 **Web search:** [Tavily](https://tavily.com/) (free tier: 1,000 calls/month). Set your key:

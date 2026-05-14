@@ -15,6 +15,7 @@ from docent.utils.update_check import (
     _save_cache,
     check_npm,
     check_github_release,
+    check_pypi,
 )
 
 
@@ -85,3 +86,47 @@ def test_check_npm_silent_on_network_failure(tmp_path: Path):
     with patch("docent.utils.update_check._fetch_npm_latest", return_value=None):
         result = check_npm("feynman", current_version="1.0.0", cache_dir=tmp_path)
     assert result is None
+
+
+# ─── check_pypi ───────────────────────────────────────────────────────────────
+
+def test_check_pypi_returns_update_when_newer(tmp_path: Path):
+    with patch("docent.utils.update_check._fetch_pypi_latest", return_value="9.9.9"):
+        result = check_pypi("alphaxiv-py", current_version="0.5.0", cache_dir=tmp_path)
+    assert result is not None
+    assert result.latest == "9.9.9"
+    assert result.current == "0.5.0"
+    assert result.tool == "alphaxiv-py"
+
+
+def test_check_pypi_returns_none_when_current(tmp_path: Path):
+    with patch("docent.utils.update_check._fetch_pypi_latest", return_value="0.5.0"):
+        result = check_pypi("alphaxiv-py", current_version="0.5.0", cache_dir=tmp_path)
+    assert result is None
+
+
+def test_check_pypi_uses_cache(tmp_path: Path):
+    today = datetime.date.today().isoformat()
+    cache_dir = tmp_path / "updates"
+    cache_dir.mkdir()
+    (cache_dir / "pypi__alphaxiv-py.json").write_text(
+        json.dumps({"latest": "2.0.0", "fetched": today}), encoding="utf-8"
+    )
+    with patch("docent.utils.update_check._fetch_pypi_latest") as mock_fetch:
+        result = check_pypi("alphaxiv-py", current_version="0.5.0", cache_dir=cache_dir)
+        mock_fetch.assert_not_called()
+    assert result is not None
+    assert result.latest == "2.0.0"
+
+
+def test_check_pypi_silent_on_network_failure(tmp_path: Path):
+    with patch("docent.utils.update_check._fetch_pypi_latest", return_value=None):
+        result = check_pypi("alphaxiv-py", current_version="0.5.0", cache_dir=tmp_path)
+    assert result is None
+
+
+def test_check_pypi_default_upgrade_cmd(tmp_path: Path):
+    with patch("docent.utils.update_check._fetch_pypi_latest", return_value="9.9.9"):
+        result = check_pypi("alphaxiv-py", current_version="0.5.0", cache_dir=tmp_path)
+    assert result is not None
+    assert "alphaxiv-py" in result.upgrade_cmd

@@ -94,6 +94,46 @@ def check_github_release(
     return None
 
 
+def check_pypi(
+    package: str,
+    *,
+    current_version: str | None = None,
+    upgrade_cmd: str | None = None,
+    cache_dir: Path | None = None,
+) -> UpdateInfo | None:
+    """Check PyPI for a newer version of `package`.
+
+    Returns UpdateInfo if a newer version is available, None otherwise.
+    Silent on any network or parse failure. Results cached for 24 hours.
+
+    Args:
+        package: PyPI package name (e.g. "alphaxiv-py").
+        current_version: installed version string, or None (always reports latest).
+        upgrade_cmd: command to show in the notification. Defaults to
+                     "pip install --upgrade {package}".
+        cache_dir: override for the cache directory (used in tests).
+    """
+    import datetime
+
+    cmd = upgrade_cmd or f"pip install --upgrade {package}"
+    cache_path = _cache_path(f"pypi__{package}", cache_dir)
+
+    cached = _load_cache(cache_path)
+    if cached:
+        latest = cached.get("latest")
+        if latest:
+            if _is_newer(current_version, latest):
+                return UpdateInfo(tool=package, current=current_version, latest=latest, upgrade_cmd=cmd)
+            return None
+
+    latest = _fetch_pypi_latest(package)
+    if latest:
+        _save_cache(cache_path, {"latest": latest, "fetched": datetime.date.today().isoformat()})
+        if _is_newer(current_version, latest):
+            return UpdateInfo(tool=package, current=current_version, latest=latest, upgrade_cmd=cmd)
+    return None
+
+
 def _default_cache_dir() -> Path:
     from docent.utils.paths import cache_dir
     return cache_dir() / "updates"
@@ -137,6 +177,21 @@ def _fetch_npm_latest(package: str) -> str | None:
         )
         resp.raise_for_status()
         return resp.json().get("version")
+    except Exception:
+        return None
+
+
+def _fetch_pypi_latest(package: str) -> str | None:
+    """Query PyPI JSON API for latest version. Returns version string or None."""
+    try:
+        import httpx
+        resp = httpx.get(
+            f"https://pypi.org/pypi/{package}/json",
+            timeout=5,
+            headers={"Accept": "application/json"},
+        )
+        resp.raise_for_status()
+        return resp.json().get("info", {}).get("version")
     except Exception:
         return None
 

@@ -54,7 +54,7 @@ def web_search(query: str, max_results: int = 8, api_key: str | None = None) -> 
     """Search the web via Tavily. Returns list of {title, url, snippet}.
 
     Requires a Tavily API key (free tier: 1,000 calls/month).
-    Set via config: docent research config-set tavily_api_key <key>
+    Set via config: docent studio config-set tavily_api_key <key>
     Or env: DOCENT_RESEARCH__TAVILY_API_KEY
     """
     if not api_key:

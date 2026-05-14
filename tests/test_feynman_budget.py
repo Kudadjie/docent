@@ -183,7 +183,7 @@ class TestSummarizeFeynmanError:
         msg = _summarize_feynman_error(stderr)
         assert "quota exhausted" in msg.lower()
         assert "gemini-3.1-pro" in msg
-        assert "docent research config-set --key feynman_model" in msg
+        assert "docent studio config-set --key feynman_model" in msg
 
     def test_auth_failure(self):
         from docent.bundled_plugins.studio import _summarize_feynman_error

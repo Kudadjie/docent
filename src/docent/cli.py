@@ -501,6 +501,34 @@ def _check_semantic_scholar(settings: "Settings") -> tuple[str, str, str, str]:
     return "Semantic Scholar", "SKIP", "-", "No key (optional - raises rate limits)"
 
 
+def _check_alphaxiv(settings: "Settings") -> tuple[str, str, str, str]:
+    try:
+        from alphaxiv import __version__ as ax_version
+    except ImportError:
+        return "alphaXiv", "FAIL", "-", "alphaxiv-py not installed (uv add alphaxiv-py)"
+    from docent.utils.update_check import check_pypi
+    update = check_pypi("alphaxiv-py", current_version=ax_version, upgrade_cmd="uv add alphaxiv-py")
+    update_hint = f"  (update available: {update.latest}  run: {update.upgrade_cmd})" if update else ""
+    key = settings.research.alphaxiv_api_key
+    if key:
+        masked = (key[:4] + "..." + key[-4:]) if len(key) > 8 else "set"
+        return "alphaXiv", "OK", ax_version, f"API key configured ({masked}){update_hint}"
+    return "alphaXiv", "SKIP", ax_version, f"No key (optional - get free key at alphaxiv.org/settings){update_hint}"
+
+
+def _check_notebooklm_py() -> tuple[str, str, str, str]:
+    try:
+        import notebooklm as nlm_mod
+        nlm_version = getattr(nlm_mod, "__version__", None) or "-"
+    except ImportError:
+        return "notebooklm-py", "FAIL", "-", "notebooklm-py not installed (uv add notebooklm-py)"
+    from docent.utils.update_check import check_pypi
+    update = check_pypi("notebooklm-py", current_version=nlm_version if nlm_version != "-" else None,
+                        upgrade_cmd="uv add notebooklm-py")
+    update_hint = f"  (update available: {update.latest}  run: {update.upgrade_cmd})" if update else ""
+    return "notebooklm-py", "OK", nlm_version, f"installed{update_hint}"
+
+
 def _check_reading_db(settings: "Settings") -> tuple[str, str, str, str]:
     db = settings.reading.database_dir
     if db is None:
@@ -756,6 +784,8 @@ def doctor_command(ctx: typer.Context) -> None:
         lambda: _check_mendeley_mcp(settings),
         lambda: _check_tavily(settings),
         lambda: _check_semantic_scholar(settings),
+        lambda: _check_alphaxiv(settings),
+        lambda: _check_notebooklm_py(),
         lambda: _check_reading_db(settings),
     ]
     with ThreadPoolExecutor(max_workers=len(check_fns)) as pool:

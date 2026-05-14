@@ -99,7 +99,7 @@ class FeynmanNotFoundError(RuntimeError):
             f"Feynman executable not found: {cmd[0]!r}. "
             f"Install with: npm install -g feynman\n"
             f"Or set the full path via: "
-            f"docent research config-set --key feynman_command --value <path-to-feynman>"
+            f"docent studio config-set --key feynman_command --value <path-to-feynman>"
         )
         if details:
             msg += f"\nDetails: {details}"
@@ -228,7 +228,7 @@ def _summarize_feynman_error(stderr: str, configured_model: str | None = None) -
                 "To fix:\n"
                 "  1. Add API credits to your provider account, or\n"
                 "  2. Switch to a model with available credits:\n"
-                f"     docent research config-set --key feynman_model --value <provider/model>\n"
+                f"     docent studio config-set --key feynman_model --value <provider/model>\n"
                 "  (e.g. anthropic/claude-sonnet-4-5, openai/gpt-4o)\n"
                 f"{_DOCS_FOOTER}"
             )
@@ -273,7 +273,7 @@ def _summarize_feynman_error(stderr: str, configured_model: str | None = None) -
         return (
             f"Feynman API rate-limited.{model_note}\n"
             "Wait 30-60 seconds and retry, or switch to a different model:\n"
-            f"  docent research config-set --key feynman_model --value <provider/model>\n"
+            f"  docent studio config-set --key feynman_model --value <provider/model>\n"
             f"{_DOCS_FOOTER}"
         )
 
@@ -283,7 +283,7 @@ def _summarize_feynman_error(stderr: str, configured_model: str | None = None) -
             "To fix:\n"
             "  1. Add API credits to your provider account, or\n"
             "  2. Switch to a model with available credits:\n"
-            f"     docent research config-set --key feynman_model --value <provider/model>\n"
+            f"     docent studio config-set --key feynman_model --value <provider/model>\n"
             "  (e.g. anthropic/claude-sonnet-4-5, openai/gpt-4o)\n"
             f"{_DOCS_FOOTER}"
         )
@@ -313,7 +313,7 @@ def _summarize_feynman_error(stderr: str, configured_model: str | None = None) -
         return (
             f"Feynman received a server error from {provider} (code {code}).{model_note}\n"
             "This is usually temporary. Wait a minute and retry, or switch models:\n"
-            f"  docent research config-set --key feynman_model --value <provider/model>\n"
+            f"  docent studio config-set --key feynman_model --value <provider/model>\n"
             f"{_DOCS_FOOTER}"
         )
 
@@ -372,7 +372,7 @@ def _run_feynman(
             raise FeynmanBudgetExceededError(
                 f"Feynman daily budget nearly exhausted "
                 f"(${current_spend:.2f} of ${budget_usd:.2f} today). "
-                f"Increase with `docent research config-set feynman_budget_usd <amount>` "
+                f"Increase with `docent studio config-set feynman_budget_usd <amount>` "
                 f"or use backend='docent'."
             )
 
@@ -412,7 +412,7 @@ def _run_feynman(
             f"Feynman timed out after {timeout:.0f}s. "
             "The research task may still be running in the background. "
             "Try increasing the timeout with: "
-            "docent research config-set --key feynman_timeout --value <seconds>"
+            "docent studio config-set --key feynman_timeout --value <seconds>"
         )
 
     # Post-run cost capture — persist to daily store
@@ -600,6 +600,7 @@ class ConfigShowResult(BaseModel):
     feynman_timeout: float = 900.0
     notebooklm_notebook_id: str | None = None
     obsidian_vault: str | None = None
+    alphaxiv_api_key: str | None = None
 
     def to_shapes(self) -> list[Shape]:
         # Mask sensitive API keys for display
@@ -628,6 +629,7 @@ class ConfigShowResult(BaseModel):
             MetricShape(label="feynman_timeout", value=f"{self.feynman_timeout:.0f}s"),
             MetricShape(label="notebooklm_notebook_id", value=self.notebooklm_notebook_id or "(not set)"),
             MetricShape(label="obsidian_vault", value=self.obsidian_vault or "(not set)"),
+            MetricShape(label="alphaxiv_api_key", value=_mask(self.alphaxiv_api_key)),
         ]
 
 
@@ -668,6 +670,63 @@ class ToNotebookResult(BaseModel):
             shapes.append(LinkShape(url=self.package_dir, label="Local package"))
         return shapes
 
+
+
+class SearchPapersInputs(BaseModel):
+    query: str = Field(..., description="Search query for academic papers on alphaXiv.")
+    max_results: int = Field(10, description="Maximum number of results to return (default 10).")
+
+
+class SearchPapersResult(BaseModel):
+    ok: bool
+    query: str
+    papers: list[dict]
+    count: int
+    message: str
+
+    def to_shapes(self) -> list[Shape]:
+        if not self.ok:
+            return [ErrorShape(reason=self.message)]
+        shapes: list[Shape] = [MessageShape(text=self.message, level="success")]
+        for p in self.papers:
+            authors = ", ".join(p.get("authors", [])[:3])
+            if len(p.get("authors", [])) > 3:
+                authors += " et al."
+            year = (p.get("published") or "")[:4] or "?"
+            shapes.append(MetricShape(
+                label=f"{p['title']} ({year})",
+                value=authors or "Unknown authors",
+            ))
+            if p.get("arxiv_url"):
+                shapes.append(LinkShape(url=p["arxiv_url"], label=p["arxiv_id"]))
+        return shapes
+
+
+class GetPaperInputs(BaseModel):
+    arxiv_id: str = Field(..., description="arXiv paper ID (e.g. '2401.12345') or arXiv URL.")
+
+
+class GetPaperResult(BaseModel):
+    ok: bool
+    arxiv_id: str
+    title: str | None
+    abstract: str
+    overview: str
+    message: str
+
+    def to_shapes(self) -> list[Shape]:
+        if not self.ok:
+            return [ErrorShape(reason=self.message)]
+        shapes: list[Shape] = [MessageShape(text=self.message, level="success")]
+        if self.title:
+            shapes.append(MetricShape(label="Title", value=self.title))
+        shapes.append(LinkShape(
+            url=f"https://arxiv.org/abs/{self.arxiv_id}",
+            label=self.arxiv_id,
+        ))
+        preview = self.overview[:600] + ("…" if len(self.overview) > 600 else "")
+        shapes.append(MessageShape(text=preview, level="info"))
+        return shapes
 
 
 class UsageInputs(BaseModel):
@@ -936,6 +995,7 @@ _KNOWN_RESEARCH_KEYS = {
     "semantic_scholar_api_key",
     "notebooklm_notebook_id",
     "obsidian_vault",
+    "alphaxiv_api_key",
 }
 
 
@@ -1483,19 +1543,13 @@ class StudioTool(Tool):
         stem = out_path.stem
         sources_path = out_path.parent / f"{stem}-sources.json"
 
-        if not sources_path.exists():
-            return ToNotebookResult(
-                ok=False, output_file=str(out_path), sources_file=None,
-                package_dir=None, sources_count=0,
-                message=(
-                    f"No sources file found at {sources_path}. "
-                    "Sources are only saved when using backend='docent'. "
-                    "The Feynman backend does not expose individual sources."
-                ),
-            )
-
-        sources: list[dict] = json.loads(sources_path.read_text(encoding="utf-8"))
-        selected = _rank_sources(sources, inputs.max_sources)
+        has_sources = sources_path.exists()
+        if has_sources:
+            sources: list[dict] = json.loads(sources_path.read_text(encoding="utf-8"))
+            selected = _rank_sources(sources, inputs.max_sources)
+        else:
+            sources = []
+            selected = []
 
         # ── Write local package (always — useful as a local record) ──────────
         package_dir = out_path.parent / f"{stem}-notebook"
@@ -1512,14 +1566,18 @@ class StudioTool(Tool):
             context.settings.research.notebooklm_notebook_id = inputs.notebook_id
 
         # ── Push to NotebookLM via shared helper ─────────────────────────────
-        nlm = yield from _nlm_push(out_path, sources_path, context, inputs.max_sources)
+        nlm = yield from _nlm_push(
+            out_path, sources_path if has_sources else None, context, inputs.max_sources
+        )
+
+        sources_file_str = str(sources_path) if has_sources else None
 
         if not nlm["ok"]:
             import webbrowser
             webbrowser.open("https://notebooklm.google.com")
             return ToNotebookResult(
                 ok=True,
-                output_file=str(out_path), sources_file=str(sources_path),
+                output_file=str(out_path), sources_file=sources_file_str,
                 package_dir=str(package_dir), sources_count=len(selected),
                 sources_added=0, sources_failed=0,
                 message=f"{nlm['message']} — opened browser. Local package at {package_dir}.",
@@ -1533,12 +1591,66 @@ class StudioTool(Tool):
         return ToNotebookResult(
             ok=True,
             output_file=str(out_path),
-            sources_file=str(sources_path),
+            sources_file=sources_file_str,
             package_dir=str(package_dir),
             sources_count=len(selected),
             sources_added=nlm["sources_added"],
             sources_failed=nlm["sources_failed"],
             message=nlm["message"] + save_hint,
+        )
+
+    @action(
+        description="Search academic papers on alphaXiv by topic or keyword.",
+        input_schema=SearchPapersInputs,
+        name="search-papers",
+    )
+    def search_papers(self, inputs: SearchPapersInputs, context: Context) -> SearchPapersResult:
+        from .alphaxiv_client import AlphaXivAuthError, search_papers as _search
+        try:
+            papers = _search(
+                inputs.query,
+                api_key=context.settings.research.alphaxiv_api_key,
+                max_results=inputs.max_results,
+            )
+        except AlphaXivAuthError as e:
+            return SearchPapersResult(ok=False, query=inputs.query, papers=[], count=0, message=str(e))
+        except Exception as e:
+            return SearchPapersResult(ok=False, query=inputs.query, papers=[], count=0, message=f"Search failed: {e}")
+        return SearchPapersResult(
+            ok=True,
+            query=inputs.query,
+            papers=papers,
+            count=len(papers),
+            message=f"Found {len(papers)} paper(s) for '{inputs.query}'.",
+        )
+
+    @action(
+        description="Get AI-generated overview and abstract for an arXiv paper.",
+        input_schema=GetPaperInputs,
+        name="get-paper",
+    )
+    def get_paper(self, inputs: GetPaperInputs, context: Context) -> GetPaperResult:
+        from .alphaxiv_client import AlphaXivAuthError, get_paper_overview
+        # Normalize: strip arXiv URL to bare ID
+        arxiv_id = inputs.arxiv_id.strip().rstrip("/")
+        if "/" in arxiv_id:
+            arxiv_id = arxiv_id.rsplit("/", 1)[-1]
+        try:
+            data = get_paper_overview(
+                arxiv_id,
+                api_key=context.settings.research.alphaxiv_api_key,
+            )
+        except AlphaXivAuthError as e:
+            return GetPaperResult(ok=False, arxiv_id=arxiv_id, title=None, abstract="", overview="", message=str(e))
+        except Exception as e:
+            return GetPaperResult(ok=False, arxiv_id=arxiv_id, title=None, abstract="", overview="", message=f"Failed to fetch paper: {e}")
+        return GetPaperResult(
+            ok=True,
+            arxiv_id=arxiv_id,
+            title=data["title"],
+            abstract=data["abstract"],
+            overview=data["overview"],
+            message=f"Retrieved overview for {arxiv_id}.",
         )
 
     @action(
@@ -1567,6 +1679,7 @@ class StudioTool(Tool):
             feynman_timeout=rs.feynman_timeout,
             notebooklm_notebook_id=rs.notebooklm_notebook_id,
             obsidian_vault=str(rs.obsidian_vault) if rs.obsidian_vault else None,
+            alphaxiv_api_key=rs.alphaxiv_api_key,
         )
 
     @action(
