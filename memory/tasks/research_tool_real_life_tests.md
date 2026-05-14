@@ -53,6 +53,9 @@ If a spend file exists from today, spend may be non-zero — that's correct.
 ```
 docent studio deep-research "storm surge Ghana" --backend docent
 ```
+
+User: Opencode usage Checker: When opencode usage is back, try again and see if it works
+
 **Expect (watch terminal):**
 - Progress events for pipeline stages: `research → review → refine` (Tavily path) or `planner → fetch → gap → writer → verifier → reviewer → refiner` (manual fallback)
 - No crash; may take 3–10 minutes depending on Tavily + OpenCode server speed

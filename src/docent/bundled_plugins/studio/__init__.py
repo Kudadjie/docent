@@ -160,6 +160,26 @@ def _slugify(text: str) -> str:
     return s.strip("-")[:60]
 
 
+def _read_guide_file(path: str | None) -> str:
+    """Read a guide file and return its text content, or '' if missing/unreadable."""
+    if not path:
+        return ""
+    p = Path(path).expanduser()
+    if not p.exists():
+        return ""
+    try:
+        if p.suffix.lower() == ".pdf":
+            # Best-effort PDF text via pdfminer; fall back to empty string
+            try:
+                from pdfminer.high_level import extract_text
+                return extract_text(str(p))
+            except ImportError:
+                return ""
+        return p.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
 def _artifact_slug(artifact: str) -> str:
     """Derive a slug from an artifact identifier (URL, arXiv ID, or path)."""
     s = artifact.strip()
@@ -466,26 +486,13 @@ def _run_feynman(
     return returncode, str(dest), stderr_output
 
 
-def _rank_sources(sources: list[dict], max_sources: int) -> list[dict]:
-    """Rank sources: papers first (have abstracts), then web with full_text, then rest."""
-    papers = [s for s in sources if s.get("source_type") == "paper" and s.get("url")]
-    web_with_text = [
-        s for s in sources
-        if s.get("source_type") == "web" and s.get("url") and s.get("full_text")
-    ]
-    web_snippet_only = [
-        s for s in sources
-        if s.get("source_type") == "web" and s.get("url") and not s.get("full_text")
-    ]
-    ranked = papers + web_with_text + web_snippet_only
-    seen: set[str] = set()
-    unique: list[dict] = []
-    for s in ranked:
-        url = s.get("url", "")
-        if url and url not in seen:
-            seen.add(url)
-            unique.append(s)
-    return unique[:max_sources]
+from ._notebook import (
+    _nlm_auth_ok,
+    _nlm_push,
+    _rank_sources,
+    ToNotebookInputs,
+    ToNotebookResult,
+)
 
 
 def _build_references_section(sources: list[dict]) -> str:
@@ -537,22 +544,34 @@ def _append_references(draft: str, sources: list[dict]) -> str:
 _OUTPUT_CHOICES = "'local' (default), 'notebook' (push to NotebookLM), 'vault' (write to Obsidian vault)."
 
 
+_GUIDE_FILE_FIELD = Field(
+    None,
+    description=(
+        "Optional path to a file (.md, .txt, PDF) that guides the research — "
+        "its content is injected into the research brief to focus the output."
+    ),
+)
+
+
 class DeepInputs(BaseModel):
     topic: str = Field(..., description="Research topic or question.")
     backend: str = Field("feynman", description="Research backend: 'feynman' (default) or 'docent'.")
     output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
+    guide_file: str | None = _GUIDE_FILE_FIELD
 
 
 class LitInputs(BaseModel):
     topic: str = Field(..., description="Research topic or question.")
     backend: str = Field("feynman", description="Research backend: 'feynman' (default) or 'docent'.")
     output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
+    guide_file: str | None = _GUIDE_FILE_FIELD
 
 
 class ReviewInputs(BaseModel):
     artifact: str = Field(..., description="arXiv ID, local PDF path, or URL to review.")
     backend: str = Field("feynman", description="Research backend: 'feynman' (default) or 'docent'.")
     output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
+    guide_file: str | None = _GUIDE_FILE_FIELD
 
 
 class ConfigShowInputs(BaseModel):
@@ -562,28 +581,6 @@ class ConfigShowInputs(BaseModel):
 class ConfigSetInputs(BaseModel):
     key: str = Field(..., description="Setting key under [research]: 'output_dir'.")
     value: str = Field(..., description="New value.")
-
-
-class ToNotebookInputs(BaseModel):
-    output_file: str | None = Field(
-        None,
-        description=(
-            "Path to a research output .md file (e.g. 'storm-surge-ghana-deep.md'). "
-            "If omitted, the most recent output in research.output_dir is used."
-        ),
-    )
-    max_sources: int = Field(
-        20,
-        description="Maximum number of sources to include (default 20).",
-    )
-    notebook_id: str | None = Field(
-        None,
-        description=(
-            "NotebookLM notebook ID (from the URL when viewing the notebook). "
-            "Overrides research.notebooklm_notebook_id in config. "
-            "If neither is set, falls back to package export + browser open."
-        ),
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -681,28 +678,41 @@ class ConfigSetResult(BaseModel):
 
 
 
-class ToNotebookResult(BaseModel):
+class ToLocalInputs(BaseModel):
+    output_file: str | None = Field(
+        None,
+        description=(
+            "Path to a research output .md file. "
+            "If omitted, the most recent output in research.output_dir is used."
+        ),
+    )
+    guide_file: str | None = _GUIDE_FILE_FIELD
+    to_vault: bool = Field(
+        False,
+        description="Also copy to Obsidian vault if research.obsidian_vault is configured.",
+    )
+
+
+class ToLocalResult(BaseModel):
     ok: bool
     output_file: str | None
     sources_file: str | None
     package_dir: str | None
     sources_count: int
-    sources_added: int = 0
-    sources_failed: int = 0
+    vault_path: str | None = None
     message: str
 
     def to_shapes(self) -> list[Shape]:
         if not self.ok:
             return [ErrorShape(reason=self.message)]
         shapes: list[Shape] = [MessageShape(text=self.message, level="success")]
-        if self.sources_added:
-            shapes.append(MetricShape(label="Sources pushed to NotebookLM", value=self.sources_added))
-        if self.sources_failed:
-            shapes.append(MetricShape(label="Sources failed", value=self.sources_failed))
         if self.package_dir:
             shapes.append(LinkShape(url=self.package_dir, label="Local package"))
+        if self.vault_path:
+            shapes.append(LinkShape(url=self.vault_path, label="Obsidian note"))
+        if self.sources_count:
+            shapes.append(MetricShape(label="Sources in package", value=str(self.sources_count)))
         return shapes
-
 
 
 class SearchPapersInputs(BaseModel):
@@ -786,164 +796,7 @@ class UsageResult(BaseModel):
 
 
 
-# ---------------------------------------------------------------------------
-# NotebookLM CLI helpers
-# ---------------------------------------------------------------------------
-
-def _nlm_exe() -> str | None:
-    """Return the path to the notebooklm executable, or None if not on PATH."""
-    return shutil.which("notebooklm")
-
-
-def _nlm_run(args: list[str], timeout: float = 30) -> tuple[int, str, str]:
-    """Run a notebooklm command. Returns (returncode, stdout, stderr)."""
-    import os
-    exe = _nlm_exe()
-    if not exe:
-        return -1, "", "notebooklm not found on PATH"
-    env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
-    try:
-        result = subprocess.run(
-            [exe] + args, capture_output=True, text=True, timeout=timeout, env=env
-        )
-        return result.returncode, result.stdout or "", result.stderr or ""
-    except subprocess.TimeoutExpired:
-        return -1, "", f"Timeout after {timeout:.0f}s"
-    except OSError as e:
-        return -1, "", str(e)
-
-
-def _nlm_auth_ok() -> bool:
-    """Return True if notebooklm is installed and authenticated."""
-    exe = _nlm_exe()
-    if not exe:
-        return False
-    rc, stdout, _ = _nlm_run(["list", "--json"], timeout=20)
-    if rc != 0:
-        return False
-    try:
-        data = json.loads(stdout)
-        # Auth failure returns {"error": true, ...}
-        return not (isinstance(data, dict) and data.get("error"))
-    except (json.JSONDecodeError, ValueError):
-        return False
-
-
-def _nlm_create_notebook(title: str) -> str | None:
-    """Create a new NotebookLM notebook. Returns notebook ID on success, None on failure."""
-    rc, stdout, _ = _nlm_run(["create", title, "--json"], timeout=30)
-    if rc != 0:
-        return None
-    try:
-        data = json.loads(stdout)
-        return data.get("id") or data.get("notebook_id")
-    except (json.JSONDecodeError, ValueError):
-        return None
-
-
-def _nlm_add_source(source: str, notebook_id: str) -> tuple[int, str]:
-    """Add a single source (URL or file path) to a NotebookLM notebook.
-
-    Returns (returncode, error_message). returncode 0 = success.
-    """
-    rc, _, stderr = _nlm_run(
-        ["source", "add", source, "-n", notebook_id, "--json"], timeout=30
-    )
-    return rc, stderr
-
-
-def _nlm_push(
-    out_path: Path,
-    sources_path: Path | None,
-    context: "Context",
-    max_sources: int = 20,
-):
-    """Shared generator: push a research output file + sources to NotebookLM.
-
-    Checks exe, auth, creates or reuses a notebook, adds the doc then URLs.
-    Yields ProgressEvents. Returns dict with keys:
-      ok, notebook_id, sources_added, sources_failed, message
-    """
-    import time
-
-    if not _nlm_exe():
-        return {
-            "ok": False,
-            "notebook_id": None,
-            "sources_added": 0,
-            "sources_failed": 0,
-            "message": "notebooklm not found on PATH. Install with: pip install notebooklm-py",
-        }
-
-    yield ProgressEvent(phase="nlm-check", message="Checking NotebookLM auth...")
-    if not _nlm_auth_ok():
-        return {
-            "ok": False,
-            "notebook_id": None,
-            "sources_added": 0,
-            "sources_failed": 0,
-            "message": "NotebookLM auth expired. Run `notebooklm login` then retry.",
-        }
-
-    notebook_id = context.settings.research.notebooklm_notebook_id
-    if not notebook_id:
-        title = f"Studio: {out_path.stem}"
-        yield ProgressEvent(phase="nlm-notebook", message=f"Creating notebook '{title}'...")
-        notebook_id = _nlm_create_notebook(title)
-        if not notebook_id:
-            return {
-                "ok": False,
-                "notebook_id": None,
-                "sources_added": 0,
-                "sources_failed": 0,
-                "message": "Failed to create NotebookLM notebook.",
-            }
-        yield ProgressEvent(phase="nlm-notebook", message=f"Created notebook {notebook_id}")
-
-    added = 0
-    failed = 0
-
-    yield ProgressEvent(phase="nlm-push", message="Adding synthesis document...")
-    rc, _ = _nlm_add_source(str(out_path), notebook_id)
-    if rc == 0:
-        added += 1
-    else:
-        failed += 1
-    time.sleep(1)
-
-    if sources_path and sources_path.exists():
-        raw: list[dict] = json.loads(sources_path.read_text(encoding="utf-8"))
-        selected = _rank_sources(raw, max_sources)
-        url_sources = [s for s in selected if s.get("url")]
-        total = len(url_sources)
-        for i, s in enumerate(url_sources, 1):
-            url = s["url"]
-            title_short = s.get("title", url)[:60]
-            yield ProgressEvent(
-                phase="nlm-push",
-                message=f"[{i}/{total}] {title_short}",
-                current=i,
-                total=total,
-            )
-            rc, _ = _nlm_add_source(url, notebook_id)
-            if rc == 0:
-                added += 1
-            else:
-                failed += 1
-            time.sleep(1)
-
-    msg = f"Notebook ready: {added} source(s) added"
-    if failed:
-        msg += f" ({failed} failed)"
-    msg += f" — notebook {notebook_id}"
-
-    return {
-        "ok": True,
-        "notebook_id": notebook_id,
-        "sources_added": added,
-        "sources_failed": failed,
-        "message": msg,
-    }
+# NLM helpers live in _notebook.py (imported above)
 
 
 def _route_output(inputs: Any, out_path: Path, sources_path: Path | None, context: "Context", workflow: str):
@@ -953,7 +806,13 @@ def _route_output(inputs: Any, out_path: Path, sources_path: Path | None, contex
     Returns (notebook_id, vault_path, extra_message) as a tuple.
     """
     if inputs.output == "notebook":
-        result = yield from _nlm_push(out_path, sources_path, context)
+        topic = getattr(inputs, "topic", None)
+        gf_str = getattr(inputs, "guide_file", None)
+        result = yield from _nlm_push(
+            out_path, sources_path, context,
+            topic=topic,
+            guide_file=Path(gf_str).expanduser() if gf_str else None,
+        )
         if result["ok"]:
             return result["notebook_id"], None, f" {result['message']}"
         return None, None, f" (NotebookLM push failed: {result['message']})"
@@ -1198,9 +1057,17 @@ class StudioTool(Tool):
             output_dir.mkdir(parents=True, exist_ok=True)
             slug = _slugify(inputs.topic) + "-deep"
 
+            guide_ctx = _read_guide_file(inputs.guide_file)
+            effective_topic = inputs.topic
+            if guide_ctx:
+                effective_topic = (
+                    f"{inputs.topic}\n\n"
+                    f"## Guide context ({Path(inputs.guide_file).name})\n{guide_ctx}"
+                )
+
             try:
                 result_data = yield from run_deep(
-                    inputs.topic, oc,
+                    effective_topic, oc,
                     model_planner=context.settings.research.oc_model_planner,
                     model_writer=context.settings.research.oc_model_writer,
                     model_verifier=context.settings.research.oc_model_verifier,
@@ -1274,7 +1141,11 @@ class StudioTool(Tool):
         output_dir = context.settings.research.output_dir.expanduser()
         workspace_dir = output_dir / "workspace"
         slug = _slugify(inputs.topic) + "-deep"
-        cmd_args = ["--prompt", f"/deepresearch {inputs.topic}"]
+        guide_ctx = _read_guide_file(inputs.guide_file)
+        feynman_prompt = f"/deepresearch {inputs.topic}"
+        if guide_ctx:
+            feynman_prompt += f"\n\n## Guide context ({Path(inputs.guide_file).name})\n{guide_ctx}"
+        cmd_args = ["--prompt", feynman_prompt]
         if context.settings.research.feynman_model:
             cmd_args = ["--model", context.settings.research.feynman_model] + cmd_args
 
@@ -1352,9 +1223,17 @@ class StudioTool(Tool):
             output_dir.mkdir(parents=True, exist_ok=True)
             slug = _slugify(inputs.topic) + "-lit"
 
+            guide_ctx = _read_guide_file(inputs.guide_file)
+            effective_topic = inputs.topic
+            if guide_ctx:
+                effective_topic = (
+                    f"{inputs.topic}\n\n"
+                    f"## Guide context ({Path(inputs.guide_file).name})\n{guide_ctx}"
+                )
+
             try:
                 result_data = yield from run_lit(
-                    inputs.topic, oc,
+                    effective_topic, oc,
                     model_planner=context.settings.research.oc_model_planner,
                     model_writer=context.settings.research.oc_model_writer,
                     model_verifier=context.settings.research.oc_model_verifier,
@@ -1426,7 +1305,11 @@ class StudioTool(Tool):
         output_dir = context.settings.research.output_dir.expanduser()
         workspace_dir = output_dir / "workspace"
         slug = _slugify(inputs.topic) + "-lit"
-        cmd_args = ["--prompt", f"/lit {inputs.topic}"]
+        guide_ctx = _read_guide_file(inputs.guide_file)
+        feynman_prompt = f"/lit {inputs.topic}"
+        if guide_ctx:
+            feynman_prompt += f"\n\n## Guide context ({Path(inputs.guide_file).name})\n{guide_ctx}"
+        cmd_args = ["--prompt", feynman_prompt]
         if context.settings.research.feynman_model:
             cmd_args = ["--model", context.settings.research.feynman_model] + cmd_args
 
@@ -1617,15 +1500,16 @@ class StudioTool(Tool):
 
     @action(
         description=(
-            "Create a new NotebookLM notebook and populate it with research sources. "
-            "Creates the notebook automatically; no prior setup needed. "
-            "Falls back to local package export + browser if the CLI is unavailable or unauthenticated."
+            "Populate a new or existing NotebookLM notebook with research sources, then run "
+            "the full quality pipeline: NLM web research arm, source stabilisation, quality "
+            "gate (validation + contradictions + gap-fill), and 3-perspective summaries "
+            "(practitioner / skeptic / beginner). Mirrors the research-to-notebook skill. "
+            "Falls back to local package export + browser open if NLM is unavailable."
         ),
         input_schema=ToNotebookInputs,
         name="to-notebook",
     )
     def to_notebook(self, inputs: ToNotebookInputs, context: Context):
-        import time
         output_dir = context.settings.research.output_dir.expanduser()
 
         # ── Resolve output file ──────────────────────────────────────────────
@@ -1653,14 +1537,14 @@ class StudioTool(Tool):
         sources_path = out_path.parent / f"{stem}-sources.json"
 
         has_sources = sources_path.exists()
-        if has_sources:
-            sources: list[dict] = json.loads(sources_path.read_text(encoding="utf-8"))
-            selected = _rank_sources(sources, inputs.max_sources)
-        else:
-            sources = []
-            selected = []
+        selected = (
+            _rank_sources(
+                json.loads(sources_path.read_text(encoding="utf-8")), inputs.max_sources
+            )
+            if has_sources else []
+        )
 
-        # ── Write local package (always — useful as a local record) ──────────
+        # ── Write local package ───────────────────────────────────────────────
         package_dir = out_path.parent / f"{stem}-notebook"
         package_dir.mkdir(parents=True, exist_ok=True)
         (package_dir / "sources_urls.txt").write_text(
@@ -1674,9 +1558,17 @@ class StudioTool(Tool):
         if inputs.notebook_id:
             context.settings.research.notebooklm_notebook_id = inputs.notebook_id
 
-        # ── Push to NotebookLM via shared helper ─────────────────────────────
+        # ── Full pipeline ─────────────────────────────────────────────────────
         nlm = yield from _nlm_push(
-            out_path, sources_path if has_sources else None, context, inputs.max_sources
+            out_path=out_path,
+            sources_path=sources_path if has_sources else None,
+            context=context,
+            max_sources=inputs.max_sources,
+            topic=inputs.topic,
+            guide_file=Path(inputs.guide_file).expanduser() if inputs.guide_file else None,
+            run_nlm_research=inputs.run_nlm_research,
+            run_quality_gate=inputs.run_quality_gate,
+            run_perspectives=inputs.run_perspectives,
         )
 
         sources_file_str = str(sources_path) if has_sources else None
@@ -1705,7 +1597,111 @@ class StudioTool(Tool):
             sources_count=len(selected),
             sources_added=nlm["sources_added"],
             sources_failed=nlm["sources_failed"],
+            sources_from_feynman=nlm["sources_from_feynman"],
+            sources_from_nlm=nlm["sources_from_nlm"],
+            notebook_id=nb_id,
+            quality_gate=nlm["quality_gate"],
+            perspectives=nlm["perspectives"],
             message=nlm["message"] + save_hint,
+        )
+
+    @action(
+        description=(
+            "Package an existing research output as a local directory: copies the synthesis "
+            "document, writes a sources URL list, and optionally copies to your Obsidian vault. "
+            "Use this when you want a self-contained local record without pushing to NotebookLM."
+        ),
+        input_schema=ToLocalInputs,
+        name="to-local",
+    )
+    def to_local(self, inputs: ToLocalInputs, context: Context) -> ToLocalResult:
+        output_dir = context.settings.research.output_dir.expanduser()
+
+        # ── Resolve output file ──────────────────────────────────────────────
+        if inputs.output_file:
+            out_path = Path(inputs.output_file)
+            if not out_path.is_absolute():
+                out_path = output_dir / inputs.output_file
+        else:
+            candidates = [
+                p for p in output_dir.glob("*.md")
+                if not p.name.endswith("-review.md")
+            ] if output_dir.is_dir() else []
+            if not candidates:
+                return ToLocalResult(
+                    ok=False, output_file=None, sources_file=None,
+                    package_dir=None, sources_count=0,
+                    message=(
+                        f"No research output found in {output_dir}. "
+                        "Run `docent studio deep-research` or `docent studio lit` first."
+                    ),
+                )
+            out_path = max(candidates, key=lambda p: p.stat().st_mtime)
+
+        stem = out_path.stem
+        sources_path = out_path.parent / f"{stem}-sources.json"
+
+        has_sources = sources_path.exists()
+        selected = (
+            _rank_sources(
+                json.loads(sources_path.read_text(encoding="utf-8")), 200
+            )
+            if has_sources else []
+        )
+
+        # ── Build local package ───────────────────────────────────────────────
+        package_dir = out_path.parent / f"{stem}-local"
+        package_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(out_path, package_dir / out_path.name)
+
+        urls_text = "\n".join(s["url"] for s in selected if s.get("url"))
+        (package_dir / "sources_urls.txt").write_text(urls_text, encoding="utf-8")
+
+        if has_sources:
+            shutil.copy2(sources_path, package_dir / sources_path.name)
+
+        # ── Include guide file in package ────────────────────────────────────
+        if inputs.guide_file:
+            gf = Path(inputs.guide_file).expanduser()
+            if gf.exists():
+                shutil.copy2(gf, package_dir / gf.name)
+
+        # ── Optional Obsidian vault copy ─────────────────────────────────────
+        vault_path: str | None = None
+        if inputs.to_vault:
+            vault = context.settings.research.obsidian_vault
+            if vault:
+                vault_dir = Path(vault).expanduser()
+                vault_dir.mkdir(parents=True, exist_ok=True)
+                dest = vault_dir / out_path.name
+                shutil.copy2(out_path, dest)
+                vault_path = str(dest)
+            else:
+                return ToLocalResult(
+                    ok=True,
+                    output_file=str(out_path),
+                    sources_file=str(sources_path) if has_sources else None,
+                    package_dir=str(package_dir),
+                    sources_count=len(selected),
+                    message=(
+                        f"Package written to {package_dir}. "
+                        "Vault copy skipped: obsidian_vault not configured "
+                        "(set with: docent studio config-set --key obsidian_vault --value <path>)."
+                    ),
+                )
+
+        parts = [f"Local package: {package_dir}", f"{len(selected)} source URL(s)"]
+        if vault_path:
+            parts.append(f"vault: {vault_path}")
+
+        return ToLocalResult(
+            ok=True,
+            output_file=str(out_path),
+            sources_file=str(sources_path) if has_sources else None,
+            package_dir=str(package_dir),
+            sources_count=len(selected),
+            vault_path=vault_path,
+            message=" — ".join(parts),
         )
 
     @action(
