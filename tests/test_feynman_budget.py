@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import docent.bundled_plugins.studio as rtn
+import docent.bundled_plugins.studio.feynman as feynman_mod
 from docent.bundled_plugins.studio import (
     DeepInputs,
     FeynmanBudgetExceededError,
@@ -50,7 +51,7 @@ def _mock_context(*, output_dir: Path, budget_usd: float = 0.0) -> Context:
 def reset_spend(tmp_path, monkeypatch):
     """Redirect the spend file to tmp_path so tests don't touch real cache."""
     spend_file = tmp_path / "feynman_spend.json"
-    monkeypatch.setattr(rtn, "_spend_file", lambda: spend_file)
+    monkeypatch.setattr(feynman_mod, "_spend_file", lambda: spend_file)
     yield spend_file
 
 
@@ -75,16 +76,16 @@ class TestBudgetGuard:
 
     def test_no_budget_no_guard(self, tmp_path: Path):
         _write_daily_spend(9999.0)
-        with patch("docent.bundled_plugins.studio.subprocess.Popen", return_value=self._mock_proc(stderr="Cost: $0.43")), \
-             patch("docent.bundled_plugins.studio._find_feynman", return_value=["echo"]):
+        with patch("docent.bundled_plugins.studio.feynman.subprocess.Popen", return_value=self._mock_proc(stderr="Cost: $0.43")), \
+             patch("docent.bundled_plugins.studio.feynman._find_feynman", return_value=["echo"]):
             rc, out, _ = _run_feynman(
                 ["echo"], [], tmp_path, tmp_path, "slug", budget_usd=0.0,
             )
         assert rc == 0
 
     def test_budget_not_exceeded_runs(self, tmp_path: Path):
-        with patch("docent.bundled_plugins.studio.subprocess.Popen", return_value=self._mock_proc()), \
-             patch("docent.bundled_plugins.studio._find_feynman", return_value=["echo"]):
+        with patch("docent.bundled_plugins.studio.feynman.subprocess.Popen", return_value=self._mock_proc()), \
+             patch("docent.bundled_plugins.studio.feynman._find_feynman", return_value=["echo"]):
             rc, out, _ = _run_feynman(
                 ["echo"], [], tmp_path, tmp_path, "slug", budget_usd=2.0,
             )
@@ -98,8 +99,8 @@ class TestBudgetGuard:
             )
 
     def test_budget_accumulates_after_run(self, tmp_path: Path):
-        with patch("docent.bundled_plugins.studio.subprocess.Popen", return_value=self._mock_proc(stderr="Cost: $0.50")), \
-             patch("docent.bundled_plugins.studio._find_feynman", return_value=["echo"]):
+        with patch("docent.bundled_plugins.studio.feynman.subprocess.Popen", return_value=self._mock_proc(stderr="Cost: $0.50")), \
+             patch("docent.bundled_plugins.studio.feynman._find_feynman", return_value=["echo"]):
             _run_feynman(
                 ["echo"], [], tmp_path, tmp_path, "slug", budget_usd=2.0,
             )
@@ -123,23 +124,23 @@ class TestFindFeynman:
     """Tests for _find_feynman executable resolution."""
 
     def test_configured_command_found_on_path(self):
-        with patch("docent.bundled_plugins.studio.shutil.which", return_value="/usr/local/bin/feynman"):
+        with patch("docent.bundled_plugins.studio.feynman.shutil.which", return_value="/usr/local/bin/feynman"):
             result = rtn._find_feynman(["feynman"])
         assert result == ["/usr/local/bin/feynman"]
 
     def test_configured_command_not_found_raises(self):
-        with patch("docent.bundled_plugins.studio.shutil.which", return_value=None):
+        with patch("docent.bundled_plugins.studio.feynman.shutil.which", return_value=None):
             with pytest.raises(FeynmanNotFoundError) as exc_info:
                 rtn._find_feynman(["feynman"])
             assert "feynman" in str(exc_info.value)
 
     def test_fallback_to_none_command_finds_on_path(self):
-        with patch("docent.bundled_plugins.studio.shutil.which", return_value="/usr/bin/feynman"):
+        with patch("docent.bundled_plugins.studio.feynman.shutil.which", return_value="/usr/bin/feynman"):
             result = rtn._find_feynman(None)
         assert result == ["/usr/bin/feynman"]
 
     def test_fallback_to_none_command_windows_npm(self, monkeypatch):
-        monkeypatch.setattr("docent.bundled_plugins.studio.shutil.which", lambda _: None)
+        monkeypatch.setattr("docent.bundled_plugins.studio.feynman.shutil.which", lambda _: None)
         monkeypatch.setenv("APPDATA", "/fake/appdata")
         npm_path = Path("/fake/appdata/npm/feynman.cmd")
         monkeypatch.setattr(
@@ -150,7 +151,7 @@ class TestFindFeynman:
         assert result[0].endswith("feynman.cmd")
 
     def test_nothing_found_raises(self, monkeypatch):
-        monkeypatch.setattr("docent.bundled_plugins.studio.shutil.which", lambda _: None)
+        monkeypatch.setattr("docent.bundled_plugins.studio.feynman.shutil.which", lambda _: None)
         monkeypatch.delenv("APPDATA", raising=False)
         with pytest.raises(FeynmanNotFoundError) as exc_info:
             rtn._find_feynman(None)
