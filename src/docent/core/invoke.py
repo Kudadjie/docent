@@ -92,6 +92,13 @@ def run_action(
             )
         method_name, meta = actions[action_cli_name]
         inputs = meta.input_schema(**arguments)
+        if meta.preflight is not None:
+            try:
+                meta.preflight(inputs, ctx)
+            except SystemExit as exc:
+                raise RuntimeError(
+                    f"Preflight check failed for '{tool_name} {action_cli_name}'"
+                ) from exc
         return getattr(tool_cls(), method_name)(inputs, ctx)
 
     # Single-action tool — exposed over MCP as "{tool}__run".

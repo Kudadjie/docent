@@ -206,6 +206,7 @@ def sync_from_mendeley_run(
     # doc_with_category: {mendeley_id: (doc, category_path)} — deepest path wins.
     doc_with_category: dict[str, tuple[dict, str | None]] = {}
     _no_id_failed: list[dict[str, str]] = []
+    _maybe_truncated = bool(docs_resp.get("maybe_truncated"))
 
     for doc in [d for d in (docs_resp.get("items") or []) if isinstance(d, dict)]:
         mid = extract_mendeley_id(doc)
@@ -223,6 +224,8 @@ def sync_from_mendeley_run(
             yield ProgressEvent(phase="discover", level="warn",
                                 message=f"Could not read '{sf_name}': {sf_resp['error']}")
             continue
+        if sf_resp.get("maybe_truncated"):
+            _maybe_truncated = True
         for doc in [d for d in (sf_resp.get("items") or []) if isinstance(d, dict)]:
             mid = extract_mendeley_id(doc)
             if not mid:
@@ -239,6 +242,15 @@ def sync_from_mendeley_run(
 
     docs_to_process = list(doc_with_category.items())
     yield ProgressEvent(phase="discover", message=f"Found {len(docs_to_process)} doc(s) total.")
+    if _maybe_truncated:
+        yield ProgressEvent(
+            phase="discover", level="warn",
+            message=(
+                "Mendeley returned the maximum number of documents — collection may be larger "
+                "than the fetch limit. Removal pass skipped to avoid falsely marking entries "
+                "as removed. Run with a smaller collection or contact support to raise the limit."
+            ),
+        )
 
     added: list[dict[str, str]] = []
     unchanged: list[str] = []
@@ -285,16 +297,17 @@ def sync_from_mendeley_run(
             new_entries.append(entry.model_dump())
             added.append({"id": entry.id, "mendeley_id": mid, "title": entry.title})
 
-    for e in queue:
-        mid = e.get("mendeley_id")
-        if not mid or mid in in_collection:
-            continue
-        if e.get("status") == "removed":
-            continue
-        if dry_run:
-            dry_run_removed.append(e.get("id", mid))
-        else:
-            removed.append(e.get("id", mid))
+    if not _maybe_truncated:
+        for e in queue:
+            mid = e.get("mendeley_id")
+            if not mid or mid in in_collection:
+                continue
+            if e.get("status") == "removed":
+                continue
+            if dry_run:
+                dry_run_removed.append(e.get("id", mid))
+            else:
+                removed.append(e.get("id", mid))
 
     if not dry_run and (new_entries or removed or category_updates):
         with store.lock():

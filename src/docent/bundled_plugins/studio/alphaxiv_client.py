@@ -9,7 +9,6 @@ import asyncio
 from typing import Any
 
 from alphaxiv import AlphaXivClient
-from alphaxiv.exceptions import APIError
 
 
 class AlphaXivAuthError(RuntimeError):

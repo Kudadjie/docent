@@ -257,7 +257,6 @@ def _summarize_feynman_error(stderr: str, configured_model: str | None = None) -
 
     last_model = None
     last_error_raw = None
-    last_code = None
 
     for line in reversed(stderr.splitlines()):
         line = line.strip()
@@ -504,7 +503,8 @@ def _run_feynman(
         # Explicitly kill feynman — it's in its own process group on Windows
         # so it did not receive the CTRL_C_EVENT from the console.
         if platform.system() == "Windows":
-            import os, signal as _signal
+            import os
+            import signal as _signal
             try:
                 os.kill(proc.pid, _signal.CTRL_BREAK_EVENT)
             except Exception:
@@ -535,8 +535,7 @@ def _run_feynman(
     return returncode, str(dest), stderr_output
 
 
-from ._notebook import (
-    _nlm_auth_ok,
+from ._notebook import (  # noqa: E402
     _nlm_push,
     _rank_sources,
     ToNotebookInputs,

@@ -7,12 +7,6 @@ from rich.text import Text
 
 from docent.core.shapes import (
     DataTableShape,
-    ErrorShape,
-    LinkShape,
-    MarkdownShape,
-    MessageShape,
-    MetricShape,
-    ProgressShape,
     Shape,
 )
 

@@ -56,7 +56,7 @@ async def _call_tool(launch_command: list[str], tool_name: str, arguments: dict[
     from mcp.client.stdio import stdio_client
 
     if not launch_command:
-        return {"items": [], "error": "transport: empty launch command"}
+        return {"items": [], "error": "transport: empty launch command", "maybe_truncated": False}
 
     params = StdioServerParameters(
         command=launch_command[0],
@@ -70,9 +70,9 @@ async def _call_tool(launch_command: list[str], tool_name: str, arguments: dict[
                 await session.initialize()
                 result = await session.call_tool(tool_name, arguments)
     except FileNotFoundError as e:
-        return {"items": [], "error": f"transport: launch command not found ({e})"}
+        return {"items": [], "error": f"transport: launch command not found ({e})", "maybe_truncated": False}
     except Exception as e:  # noqa: BLE001 — surfaces stdio_client / session errors uniformly.
-        return {"items": [], "error": f"transport: {type(e).__name__}: {e}"}
+        return {"items": [], "error": f"transport: {type(e).__name__}: {e}", "maybe_truncated": False}
 
     parsed = _parse_text_payload(result)
 
@@ -81,15 +81,15 @@ async def _call_tool(launch_command: list[str], tool_name: str, arguments: dict[
             msg = str(parsed["error"])
         else:
             msg = "tool returned error"
-        return {"items": [], "error": f"{_classify_error(msg)}: {msg}"}
+        return {"items": [], "error": f"{_classify_error(msg)}: {msg}", "maybe_truncated": False}
 
     if parsed is None:
-        return {"items": [], "error": "tool: unparseable response"}
+        return {"items": [], "error": "tool: unparseable response", "maybe_truncated": False}
 
     # Some tool error paths return a JSON dict with an `error` key but no isError flag.
     if isinstance(parsed, dict) and "error" in parsed and len(parsed) == 1:
         msg = str(parsed["error"])
-        return {"items": [], "error": f"{_classify_error(msg)}: {msg}"}
+        return {"items": [], "error": f"{_classify_error(msg)}: {msg}", "maybe_truncated": False}
 
     if isinstance(parsed, list):
         items = parsed
@@ -99,7 +99,8 @@ async def _call_tool(launch_command: list[str], tool_name: str, arguments: dict[
     else:
         items = [parsed]
 
-    return {"items": items, "error": None}
+    maybe_truncated = isinstance(arguments.get("limit"), int) and len(items) >= arguments["limit"]
+    return {"items": items, "error": None, "maybe_truncated": maybe_truncated}
 
 
 def _run(coro: Any) -> dict[str, Any]:

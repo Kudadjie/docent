@@ -1,6 +1,5 @@
 """Reading queue models — Pydantic schemas for inputs and results."""
 
-from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 

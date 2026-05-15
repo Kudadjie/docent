@@ -30,10 +30,11 @@ class ProcessExecutionError(RuntimeError):
 
 
 # On Windows, launch child processes in their own process group so that a
-# timeout can kill the entire tree (including grandchildren like pandoc workers)
-# rather than only the direct child.  On POSIX, no special flag is needed —
-# proc.kill() sends SIGKILL to the process which the kernel propagates.
+# timeout can kill the entire tree (including grandchildren like pandoc workers).
+# On POSIX, start_new_session=True creates a new session (and process group)
+# so os.killpg can signal the entire tree.
 _CREATION_FLAGS = subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0
+_START_NEW_SESSION = sys.platform != "win32"
 
 
 def _kill_tree(proc: subprocess.Popen) -> None:
@@ -45,7 +46,10 @@ def _kill_tree(proc: subprocess.Popen) -> None:
         except (OSError, AttributeError):
             proc.kill()
     else:
-        proc.kill()
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except (ProcessLookupError, OSError, AttributeError):
+            proc.kill()
 
 
 class Executor:
@@ -75,6 +79,7 @@ class Executor:
             cwd=cwd,
             env=env,
             creationflags=_CREATION_FLAGS,
+            start_new_session=_START_NEW_SESSION,
         ) as proc:
             try:
                 stdout, stderr = proc.communicate(timeout=timeout)

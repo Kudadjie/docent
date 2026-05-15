@@ -167,7 +167,7 @@ class Echo(Tool):
 
 Then `docent echo --msg hi --count 3` just works. No CLI edits, no registration code — the decorator is enough.
 
-For tools with several related operations on shared state, use the multi-action shape — decorate methods with `@action(...)`. See `src/docent/tools/reading.py` for the reference implementation.
+For tools with several related operations on shared state, use the multi-action shape — decorate methods with `@action(...)`. See `src/docent/bundled_plugins/reading/__init__.py` for the reference implementation.
 
 ## 🧑‍💻 Development
 

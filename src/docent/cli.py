@@ -1,3 +1,4 @@
+# ruff: noqa: E402 — imports after _patch_rich_unicode_loader() call are intentional
 from __future__ import annotations
 
 import inspect
@@ -71,7 +72,7 @@ from rich.progress import (
 from rich.table import Table
 
 from docent import __version__
-from docent.config import load_settings, write_setting
+from docent.config import Settings, load_settings, write_setting
 from docent.core import (
     Context,
     ProgressEvent,
@@ -86,15 +87,16 @@ from docent.llm import LLMClient
 from docent.tools import discover_tools
 from docent.ui import configure_console, get_console
 
-_DOCENT_DIR = Path.home() / ".docent"
-_USER_FILE = _DOCENT_DIR / "user.json"
+def _user_file() -> Path:
+    from docent.utils.paths import root_dir
+    return root_dir() / "user.json"
 _LEVEL_CHOICES = ["Undergraduate", "Masters", "PhD", "Postdoc", "Faculty", "Other"]
 
 
 def _is_setup_complete() -> bool:
     """Return True when the user profile has a non-empty name."""
     try:
-        data = json.loads(_USER_FILE.read_text(encoding="utf-8"))
+        data = json.loads(_user_file().read_text(encoding="utf-8"))
         name = (data.get("name") or "").strip()
         return bool(name and name != "You")
     except Exception:
@@ -140,7 +142,7 @@ def _run_setup_flow(*, first_run: bool = False) -> None:
     console.print("[bold]Profile[/]")
     existing: dict = {}
     try:
-        existing = json.loads(_USER_FILE.read_text(encoding="utf-8"))
+        existing = json.loads(_user_file().read_text(encoding="utf-8"))
     except Exception:
         pass
 
@@ -164,8 +166,9 @@ def _run_setup_flow(*, first_run: bool = False) -> None:
             level = raw_level.title()
 
     if name:
-        _DOCENT_DIR.mkdir(parents=True, exist_ok=True)
-        _USER_FILE.write_text(
+        from docent.utils.paths import root_dir
+        root_dir().mkdir(parents=True, exist_ok=True)
+        _user_file().write_text(
             json.dumps({"name": name, "program": program, "level": level}, indent=2),
             encoding="utf-8",
         )
@@ -474,9 +477,10 @@ def _format_field(fname: str, finfo: Any) -> str:
 _STATUS_STYLE: dict[str, str] = {"OK": "green", "WARN": "yellow", "FAIL": "red", "SKIP": "dim"}
 
 
-def _check_profile(user_file: Path = _USER_FILE) -> tuple[str, str, str, str]:
+def _check_profile(user_file: Path | None = None) -> tuple[str, str, str, str]:
     try:
-        data = json.loads(user_file.read_text(encoding="utf-8"))
+        resolved = user_file if user_file is not None else _user_file()
+        data = json.loads(resolved.read_text(encoding="utf-8"))
         name = (data.get("name") or "").strip()
         if name and name != "You":
             return "Profile", "OK", "-", f"{name} | {data.get('level', '?')} | {data.get('program', '?')}"
@@ -555,7 +559,7 @@ def _dir_size_gb(path: Path) -> float | None:
         return None
 
 
-def _check_feynman(settings: "Settings") -> tuple[str, str, str, str]:
+def _check_feynman(settings: Settings) -> tuple[str, str, str, str]:
     import os
     import re
     from docent.bundled_plugins.studio import _find_feynman, FeynmanNotFoundError, _feynman_version_from_package_json
@@ -600,7 +604,7 @@ def _check_feynman(settings: "Settings") -> tuple[str, str, str, str]:
     return "Feynman CLI", status, version, "  ".join(detail_parts) or "-"
 
 
-def _check_mendeley_mcp(settings: "Settings") -> tuple[str, str, str, str]:
+def _check_mendeley_mcp(settings: Settings) -> tuple[str, str, str, str]:
     """Check Mendeley MCP prerequisites via PATH lookup — no subprocess spawn."""
     import shutil
     cmd = list(settings.reading.mendeley_mcp_command or ["uvx", "mendeley-mcp"])
@@ -610,7 +614,7 @@ def _check_mendeley_mcp(settings: "Settings") -> tuple[str, str, str, str]:
     return "Mendeley MCP", "FAIL", "-", f"{runner} not found - install uv: https://docs.astral.sh/uv/"
 
 
-def _check_tavily(settings: "Settings") -> tuple[str, str, str, str]:
+def _check_tavily(settings: Settings) -> tuple[str, str, str, str]:
     key = settings.research.tavily_api_key
     if key:
         masked = (key[:4] + "..." + key[-4:]) if len(key) > 8 else "set"
@@ -618,13 +622,13 @@ def _check_tavily(settings: "Settings") -> tuple[str, str, str, str]:
     return "Tavily key", "WARN", "-", "Not set - free at tavily.com  (docent setup to configure)"
 
 
-def _check_semantic_scholar(settings: "Settings") -> tuple[str, str, str, str]:
+def _check_semantic_scholar(settings: Settings) -> tuple[str, str, str, str]:
     if settings.research.semantic_scholar_api_key:
         return "Semantic Scholar", "OK", "-", "API key set"
     return "Semantic Scholar", "SKIP", "-", "No key (optional - raises rate limits)"
 
 
-def _check_alphaxiv(settings: "Settings") -> tuple[str, str, str, str]:
+def _check_alphaxiv(settings: Settings) -> tuple[str, str, str, str]:
     try:
         from alphaxiv import __version__ as ax_version
     except ImportError:
@@ -690,7 +694,7 @@ def _check_notebooklm_py() -> tuple[str, str, str, str]:
     return "NotebookLM", "OK", nlm_version, f"authenticated{update_hint}"
 
 
-def _check_opencode(settings: "Settings") -> tuple[str, str, str, str]:
+def _check_opencode(settings: Settings) -> tuple[str, str, str, str]:
     """Check OpenCode server availability (fast — no model call)."""
     from docent.utils.model_health import check_opencode_server
     return check_opencode_server(
@@ -699,7 +703,7 @@ def _check_opencode(settings: "Settings") -> tuple[str, str, str, str]:
     )
 
 
-def _check_reading_db(settings: "Settings") -> tuple[str, str, str, str]:
+def _check_reading_db(settings: Settings) -> tuple[str, str, str, str]:
     db = settings.reading.database_dir
     if db is None:
         return "Reading DB", "WARN", "-", "Not configured - run: docent reading config-set --key database_dir --value <path>"

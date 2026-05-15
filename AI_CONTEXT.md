@@ -61,10 +61,10 @@ location; do not search ad-hoc before consulting this.
 | Reading queue persistence | [`src/docent/bundled_plugins/reading/reading_store.py`](src/docent/bundled_plugins/reading/reading_store.py) |
 | Mendeley MCP client (sync facade) | [`src/docent/bundled_plugins/reading/mendeley_client.py`](src/docent/bundled_plugins/reading/mendeley_client.py) |
 | Mendeley read-through cache | [`src/docent/bundled_plugins/reading/mendeley_cache.py`](src/docent/bundled_plugins/reading/mendeley_cache.py) |
-| Research tool (deep/lit/review/usage) | [`src/docent/bundled_plugins/research_to_notebook/__init__.py`](src/docent/bundled_plugins/research_to_notebook/__init__.py) |
-| Research 6-stage pipeline | [`src/docent/bundled_plugins/research_to_notebook/pipeline.py`](src/docent/bundled_plugins/research_to_notebook/pipeline.py) |
-| Web/paper search helpers | [`src/docent/bundled_plugins/research_to_notebook/search.py`](src/docent/bundled_plugins/research_to_notebook/search.py) |
-| OpenCode REST client | [`src/docent/bundled_plugins/research_to_notebook/oc_client.py`](src/docent/bundled_plugins/research_to_notebook/oc_client.py) |
+| Studio tool (deep/lit/review/usage) | [`src/docent/bundled_plugins/studio/__init__.py`](src/docent/bundled_plugins/studio/__init__.py) |
+| Feynman subprocess control | [`src/docent/bundled_plugins/studio/__init__.py`](src/docent/bundled_plugins/studio/__init__.py) |
+| NotebookLM pipeline | [`src/docent/bundled_plugins/studio/_notebook.py`](src/docent/bundled_plugins/studio/_notebook.py) |
+| OpenCode REST client | [`src/docent/bundled_plugins/studio/oc_client.py`](src/docent/bundled_plugins/studio/oc_client.py) |
 | File path helpers (data_dir, cache_dir) | [`src/docent/utils/paths.py`](src/docent/utils/paths.py) |
 | Output Shape types (MarkdownShape, etc.) | [`src/docent/core/shapes.py`](src/docent/core/shapes.py) |
 | ProgressEvent (streaming actions) | [`src/docent/core/events.py`](src/docent/core/events.py) |
@@ -306,20 +306,15 @@ FastAPI endpoints on `localhost:7432`:
 
 | Method + path | What it does |
 |---------------|-------------|
-| `GET /api/queue` | Reads `queue.json` directly (does NOT apply Mendeley overlay — bug) |
-| `POST /api/actions` | Dispatches reading actions by spawning `docent` subprocess (bug) |
-| `GET /api/config` | Reads `~/.docent/config.toml` |
-| `POST /api/config` | Writes config values |
+| `GET /api/queue` | Reads `queue.json` + `state.json` via `root_dir()` (no Mendeley overlay) |
+| `POST /api/actions` | Dispatches reading actions via `invoke_action()` from `mcp_server.py` |
+| `GET /api/config` | Reads `config.toml` via `root_dir()` |
+| `POST /api/config` | Writes config values via `run_action("reading", "config-set", ...)` |
 | `GET /api/tooling` | Checks for `@companion-ai/feynman` npm update |
 
-**Known bug:** the `POST /api/actions` and `GET /api/queue` endpoints bypass
-`invoke_action()` and read files/spawn subprocesses directly. This means:
-- Titles shown in the UI are stale (no Mendeley overlay)
-- ~100ms overhead per mutation
-- No test coverage over the invocation path
-
-Fix: wire these endpoints to call `invoke_action()` from `mcp_server.py` directly.
-This is post-v1.2.0 item #4 in [`memory/project_todos.md`](memory/project_todos.md).
+**Note:** `GET /api/queue` reads `queue.json` directly and does not apply the
+Mendeley metadata overlay (which `reading next/show/search/export` apply). Titles
+and authors shown in the UI reflect stored values, not live Mendeley metadata.
 
 To rebuild the UI after frontend changes:
 ```bash

@@ -15,13 +15,29 @@ from pydantic import BaseModel
 
 from docent.core.invoke import run_action
 from docent.mcp_server import invoke_action
+from docent.utils.paths import root_dir
 
 UI_DIST = Path(__file__).parent / "ui_dist"
-DOCENT_DIR = Path.home() / ".docent"
-QUEUE_FILE = DOCENT_DIR / "data" / "reading" / "queue.json"
-STATE_FILE = DOCENT_DIR / "data" / "reading" / "state.json"
-CONFIG_FILE = DOCENT_DIR / "config.toml"
-USER_FILE = DOCENT_DIR / "user.json"
+
+
+def _docent_dir() -> Path:
+    return root_dir()
+
+
+def _queue_file() -> Path:
+    return root_dir() / "data" / "reading" / "queue.json"
+
+
+def _state_file() -> Path:
+    return root_dir() / "data" / "reading" / "state.json"
+
+
+def _config_file() -> Path:
+    return root_dir() / "config.toml"
+
+
+def _user_file() -> Path:
+    return root_dir() / "user.json"
 
 app = FastAPI(docs_url=None, redoc_url=None)
 
@@ -35,7 +51,7 @@ def _read_json(path: Path, default: Any) -> Any:
 
 def _read_config_reading() -> dict:
     try:
-        with open(CONFIG_FILE, "rb") as f:
+        with open(_config_file(), "rb") as f:
             data = tomllib.load(f)
         return data.get("reading", {})
     except Exception:
@@ -107,8 +123,8 @@ async def _get_npm_installed(package: str) -> Optional[str]:
 
 @app.get("/api/queue")
 async def get_queue() -> JSONResponse:
-    entries = _read_json(QUEUE_FILE, [])
-    state = _read_json(STATE_FILE, {})
+    entries = _read_json(_queue_file(), [])
+    state = _read_json(_state_file(), {})
     banner = {
         "queued": state.get("queued", 0),
         "reading": state.get("reading", 0),
@@ -133,6 +149,7 @@ class ActionBody(BaseModel):
     deadline: Optional[str] = None
     notes: Optional[str] = None
     tags: Optional[list[str]] = None
+    confirmed: bool = False
 
 
 _ACTION_MAP: dict[str, tuple[str, str]] = {
@@ -173,6 +190,11 @@ async def post_action(body: ActionBody) -> JSONResponse:
         if body.tags is not None:
             args["tags"] = body.tags
     elif action == "queue-clear":
+        if not body.confirmed:
+            return JSONResponse(
+                {"ok": False, "error": "queue-clear requires confirmed=true"},
+                status_code=400,
+            )
         args["yes"] = True
 
     try:
@@ -221,7 +243,7 @@ async def post_config(body: ConfigBody) -> JSONResponse:
 
 @app.get("/api/user")
 async def get_user() -> JSONResponse:
-    data = _read_json(USER_FILE, {})
+    data = _read_json(_user_file(), {})
     name = data.get("name", "")
     program = data.get("program", "")
     level = data.get("level", "")
@@ -238,8 +260,8 @@ class UserBody(BaseModel):
 
 @app.post("/api/user")
 async def post_user(body: UserBody) -> JSONResponse:
-    DOCENT_DIR.mkdir(parents=True, exist_ok=True)
-    USER_FILE.write_text(json.dumps({"name": body.name, "program": body.program, "level": body.level}), encoding="utf-8")
+    _docent_dir().mkdir(parents=True, exist_ok=True)
+    _user_file().write_text(json.dumps({"name": body.name, "program": body.program, "level": body.level}), encoding="utf-8")
     return JSONResponse({"ok": True})
 
 

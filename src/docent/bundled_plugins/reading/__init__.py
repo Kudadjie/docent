@@ -7,15 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from docent.config import write_setting
-from docent.core import Context, ProgressEvent, Tool, action, register_tool
-from docent.core.shapes import (
-    DataTableShape,
-    ErrorShape,
-    MarkdownShape,
-    MessageShape,
-    MetricShape,
-    Shape,
-)
+from docent.core import Context, Tool, action, register_tool
 from docent.learning import RunLog
 from docent.utils.paths import cache_dir, data_dir
 from docent.utils.prompt import NoInteractiveError, prompt_for_path
@@ -43,7 +35,7 @@ from .models import (
     StatsInputs,
     StatsResult,
     SyncFromMendeleyInputs,
-    SyncFromMendeleyResult,
+    SyncFromMendeleyResult as SyncFromMendeleyResult,
     SyncStatusInputs,
     SyncStatusResult,
 )
@@ -51,7 +43,7 @@ from .mendeley_sync import (
     normalize_mendeley_authors,
     sync_from_mendeley_run,
 )
-from .reading_store import BannerCounts, ReadingQueueStore
+from .reading_store import ReadingQueueStore
 from .mendeley_cache import MendeleyCache
 from .mendeley_client import (
     list_documents as mendeley_list_documents,
