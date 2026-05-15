@@ -388,6 +388,10 @@ def main(
 
     configure_console(no_color=settings.no_color)
 
+    from docent.utils.logging import configure_logging
+    from docent.utils.paths import logs_dir
+    configure_logging(verbose=settings.verbose, log_dir=logs_dir())
+
     # Skip startup prompts when the user is explicitly running setup or doctor —
     # those commands manage their own output.
     _skip_startup = ctx.invoked_subcommand in ("setup", "doctor")
@@ -778,13 +782,25 @@ def _build_callback(
     """
 
     def callback(**kwargs: Any) -> None:
+        from docent.errors import DocentError
+        from docent.utils.logging import get_logger
+        _log = get_logger("docent.cli")
+
         ctx: typer.Context = kwargs.pop("ctx")
         inputs = schema(**kwargs)
         context: Context = ctx.obj
-        if preflight is not None:
-            preflight(inputs, context)
-        maybe = invoke(inputs, context)
-        result = _drive_progress(maybe) if inspect.isgenerator(maybe) else maybe
+        try:
+            if preflight is not None:
+                preflight(inputs, context)
+            maybe = invoke(inputs, context)
+            result = _drive_progress(maybe) if inspect.isgenerator(maybe) else maybe
+        except DocentError as exc:
+            _log.error("%s", exc, exc_info=exc)
+            get_console().print(f"[red]Error:[/] {exc.formatted()}")
+            raise typer.Exit(1)
+        except Exception:
+            _log.exception("Unhandled exception in action callback")
+            raise
         if result is not None:
             console = get_console()
             if hasattr(result, "to_shapes"):
@@ -929,6 +945,26 @@ def serve_command() -> None:
     run_server()
 
 
+_AUTO_INSTALL: dict[str, tuple[list[str], str]] = {
+    "Feynman CLI": (["npm", "install", "-g", "@companion-ai/feynman"], "~2 GB, requires Node.js"),
+    "Mendeley MCP": (["uv", "tool", "install", "mendeley-mcp"], "requires uv"),
+}
+
+
+def _collect_install_offers(
+    checks: list[tuple[str, str, str, str]],
+) -> list[tuple[str, list[str], str]]:
+    """Return (name, cmd, note) for installable tools that are missing/failed."""
+    offers = []
+    for label, status, _ver, detail in checks:
+        if label not in _AUTO_INSTALL:
+            continue
+        if status == "FAIL" or (status == "WARN" and "Not installed" in detail):
+            cmd, note = _AUTO_INSTALL[label]
+            offers.append((label, cmd, note))
+    return offers
+
+
 @app.command("doctor", help="Check environment, tooling versions, and auth status.")
 def doctor_command(ctx: typer.Context) -> None:
     """Run diagnostics on Docent's environment and third-party tooling."""
@@ -983,6 +1019,25 @@ def doctor_command(ctx: typer.Context) -> None:
     else:
         noun = "issue" if issues == 1 else "issues"
         console.print(f"\n[yellow]{issues} {noun} found.[/]  Run [cyan]docent setup[/] to configure missing items.")
+
+    # Offer to install missing CLI tools (feynman, mendeley-mcp only).
+    installable = _collect_install_offers(checks)
+    if installable:
+        import shutil
+        import subprocess as _sp
+        console.print()
+        for name, cmd, note in installable:
+            runner = shutil.which(cmd[0])
+            if runner is None:
+                console.print(f"[dim]  {name}: {cmd[0]} not on PATH, install manually: {' '.join(cmd)}[/]")
+                continue
+            if typer.confirm(f"  Install {name} ({note})  via: {' '.join(cmd)}?", default=False):
+                console.print(f"  Running: {' '.join(cmd)} ...")
+                result = _sp.run([runner] + cmd[1:], check=False)
+                if result.returncode == 0:
+                    console.print(f"  [green]{name} installed.[/]  Re-run [cyan]docent doctor[/] to verify.")
+                else:
+                    console.print(f"  [red]{name} install failed (exit {result.returncode}).[/]  Run manually: {' '.join(cmd)}")
 
 
 @app.command("setup", help="Interactive setup: profile, database folder, and API keys.")

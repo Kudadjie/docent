@@ -8,6 +8,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from docent.errors import AuthError, ServiceUnavailableError, UsageLimitError
+
 _BASE_URL = "http://127.0.0.1:4096"
 _DEFAULT_PROVIDER = "opencode-go"
 
@@ -70,21 +72,21 @@ def _write_oc_daily_spend(spend: float) -> None:
     )
 
 
-class OcUnavailableError(RuntimeError):
+class OcUnavailableError(ServiceUnavailableError):
     """Raised when OpenCode server is not reachable."""
 
 
-class OcBudgetExceededError(RuntimeError):
+class OcBudgetExceededError(UsageLimitError):
     """Raised when daily OC spend reaches 90% of the configured budget."""
 
 
-class OcModelError(RuntimeError):
+class OcModelError(AuthError):
     """Raised for upstream model-level failures (quota, auth, rate-limit).
 
-    Check ``self.code`` for the HTTP status (0 if unknown).
+    Check ``self.http_code`` for the HTTP status (0 if unknown).
     """
-    def __init__(self, message: str, code: int = 0) -> None:
-        self.code = code
+    def __init__(self, message: str, http_code: int = 0) -> None:
+        self.http_code = http_code
         super().__init__(message)
 
 
@@ -220,22 +222,22 @@ class OcClient:
                         f"Model quota/usage limit exceeded for {model!r}: {msg}\n"
                         "Add credits to your provider account, or switch models with:\n"
                         "  docent studio config-set --key oc_model_planner --value <model>",
-                        code=code,
+                        http_code=code,
                     )
                 if any(k in msg_lower for k in ("auth", "unauthorized", "forbidden", "invalid key")):
                     raise OcModelError(
                         f"Model authentication failed for {model!r}: {msg}\n"
                         "Run `feynman setup` or check your provider API keys.",
-                        code=code,
+                        http_code=code,
                     )
                 if "rate" in msg_lower or code == 429:
                     raise OcModelError(
                         f"Model rate-limited for {model!r}: {msg}\n"
                         "Wait a moment and retry, or switch models with:\n"
                         "  docent studio config-set --key oc_model_planner --value <model>",
-                        code=code,
+                        http_code=code,
                     )
-                raise OcModelError(f"Model error for {model!r} (code {code}): {msg}", code=code)
+                raise OcModelError(f"Model error for {model!r} (code {code}): {msg}", http_code=code)
 
         try:
             cost = float((response.get("info") or {}).get("cost") or 0.0)
@@ -267,13 +269,13 @@ class OcClient:
                 raise OcModelError(
                     "Model rate-limited (HTTP 429). Wait a moment and retry, or "
                     "switch models with: docent studio config-set --key oc_model_planner --value <model>",
-                    code=429,
+                    http_code=429,
                 ) from e
             if e.code in (401, 403):
                 raise OcModelError(
                     f"Model authentication failed (HTTP {e.code}). "
                     "Check your provider API keys or run `feynman setup`.",
-                    code=e.code,
+                    http_code=e.code,
                 ) from e
             raise OcUnavailableError(
                 f"OpenCode server returned HTTP {e.code}: {body_str[:200]}"

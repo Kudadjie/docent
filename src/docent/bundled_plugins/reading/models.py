@@ -111,12 +111,15 @@ class ConfigShowResult(BaseModel):
     config_path: str
     database_dir: str | None
     queue_collection: str
+    mendeley_mcp_command: list[str] | None = None
 
     def to_shapes(self) -> list[Shape]:
+        mmc = " ".join(self.mendeley_mcp_command) if self.mendeley_mcp_command else "(default: uvx mendeley-mcp)"
         return [
             MetricShape(label="Config", value=self.config_path),
             MetricShape(label="database_dir", value=self.database_dir or "(not set)"),
             MetricShape(label="queue_collection", value=self.queue_collection),
+            MetricShape(label="mendeley_mcp_command", value=mmc),
         ]
 
 

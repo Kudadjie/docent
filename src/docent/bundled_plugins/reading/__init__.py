@@ -60,7 +60,7 @@ from .mendeley_client import (
 
 
 _DEFAULT_DATABASE_DIR = "~/Documents/Papers"
-_KNOWN_READING_KEYS = {"database_dir", "queue_collection"}
+_KNOWN_READING_KEYS = {"database_dir", "queue_collection", "mendeley_mcp_command"}
 
 @register_tool
 class ReadingQueue(Tool):
@@ -391,10 +391,16 @@ class ReadingQueue(Tool):
             config_path=str(config_file()),
             database_dir=db,
             queue_collection=rs.queue_collection,
+            mendeley_mcp_command=rs.mendeley_mcp_command,
         )
 
-    @action(description="Set a reading setting (database_dir, queue_collection).", input_schema=ConfigSetInputs, name="config-set")
+    @action(
+        description="Set a reading setting (database_dir, queue_collection, mendeley_mcp_command).",
+        input_schema=ConfigSetInputs,
+        name="config-set",
+    )
     def config_set(self, inputs: ConfigSetInputs, context: Context) -> ConfigSetResult:
+        import shlex
         from docent.utils.paths import config_file
         if inputs.key not in _KNOWN_READING_KEYS:
             return ConfigSetResult(
@@ -402,7 +408,12 @@ class ReadingQueue(Tool):
                 config_path=str(config_file()),
                 message=f"Unknown key {inputs.key!r}. Known: {sorted(_KNOWN_READING_KEYS)}.",
             )
-        path = write_setting(f"reading.{inputs.key}", inputs.value)
+        if inputs.key == "mendeley_mcp_command":
+            # Store as a TOML array; empty string clears to None (use default).
+            parsed: list[str] | None = shlex.split(inputs.value) if inputs.value.strip() else None
+            path = write_setting(f"reading.{inputs.key}", parsed)
+        else:
+            path = write_setting(f"reading.{inputs.key}", inputs.value)
         return ConfigSetResult(
             ok=True, key=inputs.key, value=inputs.value,
             config_path=str(path),

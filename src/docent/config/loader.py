@@ -70,7 +70,10 @@ def write_setting(key_path: str, value: Any) -> Path:
             next_cursor = {}
             cursor[seg] = next_cursor
         cursor = next_cursor
-    cursor[segments[-1]] = value
+    if value is None:
+        cursor.pop(segments[-1], None)
+    else:
+        cursor[segments[-1]] = value
     with path.open("wb") as f:
         tomli_w.dump(data, f)
     return path

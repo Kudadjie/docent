@@ -4,7 +4,7 @@ description: Comprehensive ordered todo list across all active tracks; update af
 type: project
 ---
 
-Last updated: 2026-05-14 (breaking changes policy decided; #19/#20/#21 done; /audit-memory command added)
+Last updated: 2026-05-15 (hardening sprint: §4 executor process-group kill, §9 error codes D001-D007, §10 confirmed done; #29 mendeley_mcp_command config-set, #32 utils/logging.py, #33 eval harness, #37 doctor auto-install all shipped)
 
 ---
 
@@ -34,6 +34,9 @@ Last updated: 2026-05-14 (breaking changes policy decided; #19/#20/#21 done; /au
 14. ~~**Move Rich rendering out of tool result models**~~ — DONE 2026-05-13. 15 `__rich_console__` methods removed.
 15. ~~**File locking on reading queue writes**~~ — DONE 2026-05-13.
 16. ~~**Schema-generated docs**~~ — DONE 2026-05-13. `tests/test_doc_flags.py` contract test.
+17. ~~**§4 CLI robustness — subprocess process-group kill**~~ — DONE 2026-05-15. `Executor` rewritten with `Popen` + `CREATE_NEW_PROCESS_GROUP` on Windows; `_kill_tree()` sends `CTRL_BREAK_EVENT`. Pathlib audit: already clean. Binary preflight: negligible, skipped. 9 new tests.
+18. ~~**§9 Error codes**~~ — DONE 2026-05-15. `src/docent/errors.py` — `DocentError` + D001-D007 hierarchy. `FeynmanNotFoundError`/`FeynmanBudgetExceededError`/`OcUnavailableError`/`OcBudgetExceededError`/`OcModelError` all subclass hierarchy. CLI `callback()` catches `DocentError` → `[red]Error:[/] [Dxxx] …` + logs to file. `OcModelError.http_code` replaces old `.code`. 13 new tests.
+19. ~~**§10 Atomic-write verification**~~ — CONFIRMED already done. `reading_store.py` has `_atomic_write_json` (temp+rename) + `FileLock`. No action needed.
 
 ---
 
@@ -61,11 +64,11 @@ Last updated: 2026-05-14 (breaking changes policy decided; #19/#20/#21 done; /au
 
 27. ~~**Pin `actions/setup-node` to SHA**~~ — DONE 2026-05-07. All 3 actions SHA-pinned (`checkout`, `setup-uv`, `setup-node`).
 28. ~~**CI test + lint gap**~~ — FIXED 2026-05-14. pytest + ruff steps added to publish.yml before uv build; ruff>=0.9 added to dev deps.
-29. **`mendeley_mcp_command` config-set** — list-typed setting not yet exposed via `config-set`. Deferred since Step 11.4.
+29. ~~**`mendeley_mcp_command` config-set**~~ — DONE 2026-05-15. `shlex.split()` parses string→list; `write_setting(None)` deletes key; `config-show` displays it. 7 new tests.
 30. **BibTeX export** — needs CrossRef-clean metadata. Deferred since Step 8.
 31. **Semantic Scholar orphan identification** — `--identify-orphans` flag on `sync-status`. Deferred since Step 11.1.
-32. **`utils/logging.py`** — defer until a step needs logged output.
-33. **Eval harness** — trigger: first production LLM call tool that needs golden sets + scoring. Deferred per `harness_principles.md`.
+32. ~~**`utils/logging.py`**~~ — DONE 2026-05-15. Rotating file handler (5 MB, 3 backups, UTF-8) always on; stderr mirror when `--verbose`. `get_logger(__name__)` available to all modules. Wired into `cli.py` `main()`. 8 new tests.
+33. ~~**Eval harness**~~ — DONE 2026-05-15. `tests/golden/studio/` — 2 JSON fixtures (deep + lit Tavily path); `scorer.py` (0-1 score, 0.8 threshold); `@pytest.mark.eval` parametrized suite + 7 pure-function unit tests for `_append_references`/`_strip_references_section`. New fixtures = new tests automatically.
 34. ~~**Breaking changes policy**~~ — DECIDED 2026-05-14. See `memory/project_breaking_changes_policy.md`. Semver with 1-MINOR deprecation window; external tools are WARN in doctor, not Docent MAJOR bumps.
 
 ---
@@ -76,7 +79,7 @@ Last updated: 2026-05-14 (breaking changes policy decided; #19/#20/#21 done; /au
 
 35. **Plugin developer docs** — formal guide for external plugin authors. API is stable; no docs exist. Prerequisite for community-built integrations (Zotero bridge, Overleaf sync, etc.). Short doc covering: `@register_tool`, `@action`, `input_schema`, `to_shapes()`, plugin directory layout, and how to publish.
 36. **Zotero SQLite bridge** — monitor `zotero.sqlite` for new entries; auto-insert into reading queue with status "queued". `ReferenceManagerClient` protocol, `pyzotero` vs `zotero-mcp` question open. See `project_zotero_integration.md`. Gate on coexistence decision above.
-37. **`docent doctor` auto-install** — extend current doctor (status-only) to offer guided install for missing tools: `feynman`, `mendeley-mcp`, `zotero-mcp`. Not fully automated (user confirms each); just eliminates copy-pasting npm/uvx commands.
+37. ~~**`docent doctor` auto-install**~~ — DONE 2026-05-15. `_collect_install_offers()` + `_AUTO_INSTALL` dict; feynman + mendeley-mcp only (Zotero held). Per-tool confirmation; resolves runner via `shutil.which` before attempting. 5 new tests.
 38. **ASReview agentic screening** — expose an automated screening pipeline: Docent feeds paper abstracts + inclusion/exclusion criteria to Hermes; Hermes tags relevant/irrelevant autonomously. Targets the systematic review use case. Low priority until Zotero bridge lands (needs bulk ingestion to be useful).
 
 ---

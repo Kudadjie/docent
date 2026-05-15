@@ -1,0 +1,28 @@
+{
+  "id": "deep_tavily_ok",
+  "action": "run_deep",
+  "topic": "storm surge adaptation West Africa",
+  "mock": {
+    "tavily_content": "# Storm Surge Adaptation in West Africa\n\nStorm surges represent one of the most destructive coastal hazards affecting West African nations. Ghana, Benin, Togo, and Nigeria face increasing exposure as sea-level rise amplifies surge heights.\n\n## Key Findings\n\n1. Ghana's Volta Delta is particularly vulnerable, with over 500,000 people at risk from 1-in-100-year surge events.\n2. Mangrove loss (estimated 65% decline since 1990) has eliminated natural surge attenuation along critical stretches.\n3. Early warning systems exist but face last-mile communication challenges in rural coastal communities.\n\n## Adaptation Pathways\n\n- **Ecosystem-based**: Mangrove and wetland restoration can reduce surge heights by 0.1-0.5m.\n- **Engineering**: Seawalls and breakwaters provide hard protection but require ongoing maintenance.\n- **Community-based**: Evacuation planning and relocation programs address residual risk.\n\n## Policy Context\n\nThe 2015 Accra Declaration committed Ghana to coastal resilience targets, though implementation funding remains a gap.\n\n## References\n1. [IPCC AR6 WGII Chapter 15](https://www.ipcc.ch/report/ar6/wg2/) Africa [web]\n2. [Ghana EPA Coastal Strategy 2022](https://epa.gov.gh/coastal) [web]\n",
+    "tavily_sources": [
+      {"title": "IPCC AR6 WGII Chapter 15 — Africa", "url": "https://www.ipcc.ch/report/ar6/wg2/", "source_type": "web"},
+      {"title": "Ghana EPA Coastal Strategy 2022", "url": "https://epa.gov.gh/coastal", "source_type": "web"}
+    ],
+    "academic_sources": [
+      {"title": "Quantifying storm surge risk along Ghana's coast", "url": "https://arxiv.org/abs/2312.01234", "source_type": "arxiv"},
+      {"title": "Mangrove restoration and coastal resilience in West Africa", "url": "https://doi.org/10.1016/j.coastaleng.2023.01.005", "source_type": "crossref"}
+    ],
+    "oc_review": "### FATAL\nNone identified.\n\n### MAJOR\n- Limited quantitative risk projections for specific coastal segments\n- Policy implementation gap analysis could be strengthened\n\n### Minor\n- Could include more community-level case studies from the region",
+    "oc_refiner": "# Storm Surge Adaptation in West Africa\n\nStorm surges represent one of the most destructive coastal hazards affecting West African nations. Ghana, Benin, Togo, and Nigeria face increasing exposure as sea-level rise — projected at 0.3-0.9m by 2100 — amplifies surge heights and inundation extent.\n\n## Key Findings\n\n1. Ghana's Volta Delta is particularly vulnerable, with over 500,000 people at risk from 1-in-100-year surge events under current conditions.\n2. Mangrove loss (estimated 65% decline since 1990) has eliminated natural surge attenuation along critical stretches of coastline.\n3. Early warning systems exist but face last-mile communication challenges in rural coastal communities.\n4. Sea-level rise projections suggest a doubling of surge frequency by 2050 under RCP 4.5 scenarios.\n\n## Adaptation Pathways\n\n### Ecosystem-Based Adaptation\nMangrove and wetland restoration can reduce surge heights by 0.1-0.5m, depending on stand density and coastal morphology. Pilot projects in Pra Estuary (Ghana) have demonstrated measurable attenuation.\n\n### Engineering Solutions\nSeawalls and breakwaters provide hard protection but require significant capital investment and ongoing maintenance. Cost-benefit analyses typically favour hybrid approaches.\n\n### Community-Based Approaches\nEvacuation planning and phased relocation programs address residual risk where hard protection is infeasible. Community-level participatory mapping has improved targeting of at-risk households.\n\n## Policy Context\n\nThe 2015 Accra Declaration committed Ghana to coastal resilience targets, though implementation funding remains a significant gap. The Global Shield financing facility offers potential co-financing.\n\n## Conclusion\n\nEffective adaptation requires integrated approaches combining ecosystem restoration, engineering, and community-level programming, underpinned by sustained financing mechanisms."
+  },
+  "expected": {
+    "ok": true,
+    "min_draft_length": 500,
+    "review_non_empty": true,
+    "min_sources_count": 3,
+    "sources_have_url": true,
+    "contains_keywords": ["storm surge", "West Africa", "adaptation"],
+    "error_is_none": true,
+    "min_rounds": 1
+  }
+}

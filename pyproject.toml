@@ -66,3 +66,6 @@ default-groups = ["dev"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+    "eval: slow golden-set eval tests (deselect with '-m not eval')",
+]

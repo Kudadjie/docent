@@ -115,7 +115,7 @@ def test_api_raises_model_error_on_429(monkeypatch):
     with patch("urllib.request.urlopen", side_effect=err):
         with pytest.raises(OcModelError) as exc_info:
             client._api("GET", "/test")
-    assert exc_info.value.code == 429
+    assert exc_info.value.http_code == 429
     assert "rate-limited" in str(exc_info.value).lower()
 
 
@@ -127,7 +127,7 @@ def test_api_raises_model_error_on_401(monkeypatch):
     with patch("urllib.request.urlopen", side_effect=err):
         with pytest.raises(OcModelError) as exc_info:
             client._api("GET", "/test")
-    assert exc_info.value.code == 401
+    assert exc_info.value.http_code == 401
     assert "authentication" in str(exc_info.value).lower()
 
 

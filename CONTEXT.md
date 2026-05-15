@@ -1,13 +1,13 @@
 # CONTEXT - resume hint for next session
 
-**Current Task:** Phase E studio actions shipped; session closed 2026-05-14.
+**Current Task:** Hardening sprint + pre-v1.2.0 todos; session closed 2026-05-15.
 
 **Key Decisions:**
-- Breaking changes policy: semver + 1-MINOR deprecation window; external tools (feynman, mendeley-mcp) are doctor WARNs, not Docent MAJOR bumps
-- Phase E complete: compare, draft, replicate, audit on both feynman + docent backends; watch deferred (scheduling concern)
-- #19 scholarly-search and #20 lit-review confirmed already done (studio lit uses Tavily + academic_search_parallel: GS→SS→CrossRef + arXiv)
+- Error codes D001-D007 shipped (`src/docent/errors.py`); `OcModelError.code` renamed to `.http_code`
+- Eval harness lives in `tests/golden/studio/` — add JSON fixture = add test automatically
+- #22 (schema-driven forms) and #23 (live telemetry SSE) are the only remaining batch items
 
 **Next Steps:**
-1. Run studio real-life tests #10–#19 (credits reset ~2026-05-17 17:00)
-2. Write `docs/studio_spec.md` (no credits needed — can do anytime)
-3. Tag v1.2.0 after real-life tests pass
+1. Run studio real-life tests #10–#19 (OpenCode credits reset ~2026-05-17 17:00; feynman needs reinstall for #10)
+2. Tag v1.2.0 after real-life tests pass
+3. Then: #22 schema-driven forms + #23 live telemetry pane (Phase 2 UI)

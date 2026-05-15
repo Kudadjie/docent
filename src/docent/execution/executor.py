@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
+import signal
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,6 +29,25 @@ class ProcessExecutionError(RuntimeError):
         )
 
 
+# On Windows, launch child processes in their own process group so that a
+# timeout can kill the entire tree (including grandchildren like pandoc workers)
+# rather than only the direct child.  On POSIX, no special flag is needed —
+# proc.kill() sends SIGKILL to the process which the kernel propagates.
+_CREATION_FLAGS = subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0
+
+
+def _kill_tree(proc: subprocess.Popen) -> None:
+    """Kill `proc` and its entire process subtree."""
+    if sys.platform == "win32":
+        try:
+            # CTRL_BREAK_EVENT targets the whole console process group.
+            os.kill(proc.pid, signal.CTRL_BREAK_EVENT)
+        except (OSError, AttributeError):
+            proc.kill()
+    else:
+        proc.kill()
+
+
 class Executor:
     """Run external commands and return structured results.
 
@@ -44,26 +66,33 @@ class Executor:
         check: bool = True,
     ) -> ProcessResult:
         start = time.perf_counter()
-        completed = subprocess.run(
+
+        with subprocess.Popen(
             args,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=timeout,
             cwd=cwd,
             env=env,
-            check=False,
-        )
-        duration = time.perf_counter() - start
+            creationflags=_CREATION_FLAGS,
+        ) as proc:
+            try:
+                stdout, stderr = proc.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                _kill_tree(proc)
+                proc.communicate()  # drain so the Popen context manager can clean up
+                raise
 
+        duration = time.perf_counter() - start
         result = ProcessResult(
             args=list(args),
-            returncode=completed.returncode,
-            stdout=completed.stdout,
-            stderr=completed.stderr,
+            returncode=proc.returncode,
+            stdout=stdout,
+            stderr=stderr,
             duration=duration,
         )
 
-        if check and completed.returncode != 0:
+        if check and proc.returncode != 0:
             raise ProcessExecutionError(result)
 
         return result

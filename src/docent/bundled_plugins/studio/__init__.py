@@ -20,6 +20,7 @@ from docent.core.shapes import (
     MetricShape,
     Shape,
 )
+from docent.errors import ToolNotFoundError, UsageLimitError
 
 
 def _spend_file() -> Path:
@@ -86,14 +87,14 @@ def _resolve_tavily_key(context: Context) -> str | None:
     return key
 
 
-class FeynmanBudgetExceededError(RuntimeError):
+class FeynmanBudgetExceededError(UsageLimitError):
     """Raised when Feynman session spend reaches 90% of the configured budget."""
 
 
-class FeynmanNotFoundError(RuntimeError):
+class FeynmanNotFoundError(ToolNotFoundError):
     """Raised when the feynman executable cannot be found on PATH or known locations."""
 
-    def __init__(self, cmd: list[str], details: str = ""):
+    def __init__(self, cmd: list[str], details: str = "") -> None:
         self.cmd = cmd
         msg = (
             f"Feynman executable not found: {cmd[0]!r}. "

@@ -17,6 +17,7 @@ from docent.cli import (
     _check_reading_db,
     _check_semantic_scholar,
     _check_tavily,
+    _collect_install_offers,
     _dir_size_gb,
 )
 from docent.config.settings import ReadingSettings, ResearchSettings, Settings
@@ -271,3 +272,50 @@ def test_check_notebooklm_py_fail_when_not_installed() -> None:
         label, status, version, detail = _check_notebooklm_py()
     assert status == "FAIL"
     assert "not installed" in detail
+
+
+# ─── _collect_install_offers ──────────────────────────────────────────────────
+
+def test_collect_install_offers_feynman_not_installed() -> None:
+    checks = [("Feynman CLI", "WARN", "-", "Not installed (~2 GB needed) - npm install ...")]
+    offers = _collect_install_offers(checks)
+    assert len(offers) == 1
+    name, cmd, note = offers[0]
+    assert name == "Feynman CLI"
+    assert "npm" in cmd[0]
+    assert "@companion-ai/feynman" in cmd
+
+
+def test_collect_install_offers_mendeley_mcp_fail() -> None:
+    checks = [("Mendeley MCP", "FAIL", "-", "uvx not found - install uv")]
+    offers = _collect_install_offers(checks)
+    assert len(offers) == 1
+    name, cmd, note = offers[0]
+    assert name == "Mendeley MCP"
+    assert "mendeley-mcp" in cmd
+
+
+def test_collect_install_offers_nothing_when_ok() -> None:
+    checks = [
+        ("Feynman CLI", "OK", "1.2.3", "-"),
+        ("Mendeley MCP", "OK", "-", "uvx found"),
+    ]
+    assert _collect_install_offers(checks) == []
+
+
+def test_collect_install_offers_feynman_warn_but_installed() -> None:
+    # WARN for disk-size reason, not "Not installed" — should NOT appear.
+    checks = [("Feynman CLI", "WARN", "1.2.3", "2.1 GB installed")]
+    assert _collect_install_offers(checks) == []
+
+
+def test_collect_install_offers_both_missing() -> None:
+    checks = [
+        ("Feynman CLI", "WARN", "-", "Not installed (~2 GB needed) - npm install ..."),
+        ("Mendeley MCP", "FAIL", "-", "uvx not found"),
+    ]
+    offers = _collect_install_offers(checks)
+    assert len(offers) == 2
+    names = [o[0] for o in offers]
+    assert "Feynman CLI" in names
+    assert "Mendeley MCP" in names
