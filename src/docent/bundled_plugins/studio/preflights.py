@@ -232,7 +232,10 @@ def _preflight_docent(inputs: BaseModel, context: Context) -> None:
     if not oc.is_available():
         get_console().print(
             "[red]Error:[/] OpenCode server is not running. "
-            "Start it with: [cyan]opencode serve --port 4096[/]"
+            "Start it with: [cyan]opencode serve --port 4096[/]\n"
+            "Alternatives (no OpenCode required):\n"
+            "  • [cyan]--backend free[/]    — Tavily + DuckDuckGo, no API key needed\n"
+            "  • [cyan]--backend feynman[/] — Feynman agent (API credits required)"
         )
         raise typer.Exit(1)
 
@@ -245,14 +248,19 @@ def _preflight_docent(inputs: BaseModel, context: Context) -> None:
     except OcModelError as e:
         console.print(
             f"[red]✗[/] Model [cyan]{planner}[/] is not usable: {e}\n"
-            "Use [cyan]--backend feynman[/] to run without OpenCode, or "
-            "fix the model issue above then retry."
+            "Alternatives (no OpenCode required):\n"
+            "  • [cyan]--backend free[/]    — Tavily + DuckDuckGo, no API key needed\n"
+            "  • [cyan]--backend feynman[/] — Feynman agent (API credits required)\n"
+            "Or fix the model issue above then retry."
         )
         raise typer.Exit(1)
     except OcUnavailableError as e:
         console.print(
             f"[red]✗[/] OpenCode server became unreachable during model check: {e}\n"
-            "Use [cyan]--backend feynman[/] or restart the OpenCode server."
+            "Alternatives (no OpenCode required):\n"
+            "  • [cyan]--backend free[/]    — Tavily + DuckDuckGo, no API key needed\n"
+            "  • [cyan]--backend feynman[/] — Feynman agent (API credits required)\n"
+            "Or restart the OpenCode server and retry."
         )
         raise typer.Exit(1)
     except Exception as e:
@@ -262,7 +270,8 @@ def _preflight_docent(inputs: BaseModel, context: Context) -> None:
             "silently drop requests rather than returning an explicit error.\n"
             "Diagnose with: [cyan]opencode stats[/]\n"
             "Options:\n"
-            "  • Switch to [cyan]--backend feynman[/] (no OpenCode required)\n"
+            "  • Switch to [cyan]--backend free[/] (no OpenCode or API key required)\n"
+            "  • Switch to [cyan]--backend feynman[/] (no OpenCode required; AI API credits required)\n"
             "  • Change model: [cyan]docent studio config-set --key oc_model_planner --value <model>[/]\n"
             "  • Top up your OpenCode subscription and retry"
         )
@@ -271,8 +280,9 @@ def _preflight_docent(inputs: BaseModel, context: Context) -> None:
     tavily_key = _resolve_tavily_key(context)
     if not tavily_key:
         get_console().print(
-            "[red]Error:[/] Tavily API key is required for web search. "
-            "Get one at https://tavily.com (free tier: 1,000 calls/month)."
+            "[red]Error:[/] Tavily API key is required for the [cyan]docent[/] backend.\n"
+            "Get one at https://tavily.com (free tier: 1,000 calls/month).\n"
+            "Or switch to [cyan]--backend free[/] — uses DuckDuckGo when no Tavily key is set."
         )
         raise typer.Exit(1)
 
@@ -307,14 +317,14 @@ def _preflight_oc_only(inputs: BaseModel, context: Context) -> None:
     except OcModelError as e:
         console.print(
             f"[red]✗[/] Model [cyan]{reviewer}[/] is not usable: {e}\n"
-            "Use [cyan]--backend feynman[/] to run without OpenCode, or "
+            "Use [cyan]--backend feynman[/] (AI API credits required) to run without OpenCode, or "
             "fix the model issue above then retry."
         )
         raise typer.Exit(1)
     except OcUnavailableError as e:
         console.print(
             f"[red]✗[/] OpenCode server became unreachable during model check: {e}\n"
-            "Use [cyan]--backend feynman[/] or restart the OpenCode server."
+            "Use [cyan]--backend feynman[/] (AI API credits required) or restart the OpenCode server."
         )
         raise typer.Exit(1)
     except Exception as e:
@@ -324,8 +334,246 @@ def _preflight_oc_only(inputs: BaseModel, context: Context) -> None:
             "silently drop requests rather than returning an explicit error.\n"
             "Diagnose with: [cyan]opencode stats[/]\n"
             "Options:\n"
-            "  • Switch to [cyan]--backend feynman[/] (no OpenCode required)\n"
+            "  • Switch to [cyan]--backend feynman[/] (no OpenCode required; AI API credits required)\n"
             "  • Change model: [cyan]docent studio config-set --key oc_model_reviewer --value <model>[/]\n"
             "  • Top up your OpenCode subscription and retry"
         )
         raise typer.Exit(1)
+
+
+# ---------------------------------------------------------------------------
+# to-notebook preflight — file picker
+# ---------------------------------------------------------------------------
+
+def _suggest_rename(out_path: Path, console: Any, typer: Any) -> Path:
+    """If the file heading implies a different name, offer to rename file + sources.
+
+    Returns the (possibly renamed) path so the caller can update inputs.output_file.
+    """
+    from docent.bundled_plugins.studio._notebook import _derive_topic, _find_sources_path
+    from docent.bundled_plugins.studio.helpers import _slugify
+
+    # Derive topic two ways
+    heading_topic = _derive_topic(out_path)               # reads heading from content
+    stem = out_path.stem
+    # Filename topic: strip backend/workflow suffixes the same way, ignoring content
+    from docent.bundled_plugins.studio._notebook import _BACKEND_SUFFIXES, _WORKFLOW_SUFFIXES
+    fname_stem = stem
+    for suf in _BACKEND_SUFFIXES:
+        if fname_stem.endswith(suf):
+            fname_stem = fname_stem[: -len(suf)]
+            break
+    for suf in _WORKFLOW_SUFFIXES:
+        if fname_stem.endswith(suf):
+            fname_stem = fname_stem[: -len(suf)]
+            break
+    filename_topic = fname_stem.replace("-", " ").replace("_", " ")
+
+    # Normalize both for comparison: lowercase, strip non-alphanumeric
+    def _norm(t: str) -> str:
+        import re as _re
+        return _re.sub(r"[^a-z0-9]", "", t.lower())
+
+    if _norm(heading_topic) == _norm(filename_topic):
+        return out_path  # already consistent
+
+    new_slug = _slugify(heading_topic)
+    new_name = f"{new_slug}.md"
+    new_path = out_path.parent / new_name
+
+    if new_path == out_path or new_path.exists():
+        return out_path  # would be a no-op or collision
+
+    console.print(
+        f"\n[yellow]File/topic mismatch:[/]\n"
+        f"  File:  [dim]{out_path.name}[/]\n"
+        f"  Topic: [cyan]{heading_topic}[/]\n"
+        f"  Suggested name: [cyan]{new_name}[/]"
+    )
+    try:
+        if not typer.confirm("  Rename the file to match its topic?", default=True):
+            return out_path
+    except (EOFError, KeyboardInterrupt):
+        return out_path
+
+    # Rename synthesis doc
+    out_path.rename(new_path)
+    console.print(f"  [green]Renamed:[/] {out_path.name} → {new_name}")
+
+    # Rename sources file if found, standardising on the dash form
+    old_src = _find_sources_path(out_path)
+    if old_src and old_src.exists():
+        new_src = out_path.parent / f"{new_slug}-sources.json"
+        if new_src != old_src and not new_src.exists():
+            old_src.rename(new_src)
+            console.print(f"  [green]Renamed:[/] {old_src.name} → {new_src.name}")
+
+    return new_path
+
+
+def _check_synthesis_doc(out_path: Path, console: Any, typer: Any) -> None:
+    """Refuse or confirm when the synthesis document is empty or suspiciously short."""
+    try:
+        content = out_path.read_text(encoding="utf-8", errors="ignore").strip()
+    except OSError:
+        return  # unreadable — caught elsewhere
+
+    if not content:
+        console.print(
+            f"\n[red]Error:[/] [cyan]{out_path.name}[/] is empty. "
+            "Nothing to add as a synthesis document."
+        )
+        raise typer.Exit(1)
+
+    # Warn if there's a sources JSON but almost no synthesis text
+    # (likely a blank template or accidental copy without content)
+    if len(content) < 200:
+        console.print(
+            f"\n[yellow]Warning:[/] [cyan]{out_path.name}[/] has very little content "
+            f"({len(content)} chars). It may not be a real synthesis document."
+        )
+        try:
+            if not typer.confirm("Proceed anyway?", default=False):
+                raise typer.Exit(1)
+        except (EOFError, KeyboardInterrupt):
+            raise typer.Exit(1)
+
+
+def _warn_no_sources(out_path: Path, console: Any, typer: Any) -> None:
+    """Warn and confirm when no matching sources JSON exists for an output file."""
+    from docent.bundled_plugins.studio._notebook import _find_sources_path
+    if _find_sources_path(out_path):
+        return
+    sources_path = out_path.parent / f"{out_path.stem}-sources.json"  # for display only
+    console.print(
+        f"\n[yellow]Warning:[/] No sources file found for [cyan]{out_path.name}[/] "
+        f"(expected: [dim]{sources_path.name}[/]).\n"
+        "Only the synthesis document itself will be added to NotebookLM — "
+        "the original research sources won't be included.\n"
+        "This typically happens when the file has been renamed."
+    )
+    try:
+        if not typer.confirm("Proceed anyway?", default=False):
+            raise typer.Exit(1)
+    except (EOFError, KeyboardInterrupt):
+        raise typer.Exit(1)
+
+
+def _preflight_to_notebook(inputs: BaseModel, context: Context) -> None:
+    """Interactive file picker when multiple research outputs exist in output_dir.
+
+    If output_file is already set, just validates it exists.
+    If multiple .md outputs are found and none is specified, shows a numbered
+    list with an "all" option.  If topics appear different across selected files,
+    warns the user before continuing.
+
+    Mutates inputs.output_file (single pick) and inputs.output_files (extras for
+    the "all" / multi case) so the generator body receives resolved paths.
+    """
+    import typer
+    from docent.ui.console import get_console
+
+    console = get_console()
+    output_dir = context.settings.research.output_dir.expanduser()
+
+    # ── Already specified: validate ───────────────────────────────────────
+    if getattr(inputs, "output_file", None):
+        p = Path(inputs.output_file)
+        if not p.is_absolute():
+            p = output_dir / inputs.output_file
+        if not p.exists():
+            console.print(f"[red]Error:[/] Research output not found: {p}")
+            raise typer.Exit(1)
+        if p.suffix.lower() != ".md":
+            console.print(
+                f"[red]Error:[/] [cyan]{p.name}[/] is not a Markdown file. "
+                "--output-file must point to a synthesis document (.md), "
+                "not a sources JSON or any other file type."
+            )
+            raise typer.Exit(1)
+        p = _suggest_rename(p, console, typer)
+        inputs.output_file = str(p)
+        _check_synthesis_doc(p, console, typer)
+        if not getattr(inputs, "sources_file", None):
+            _warn_no_sources(p, console, typer)
+        return
+
+    # ── Discover candidates ───────────────────────────────────────────────
+    candidates = sorted(
+        [
+            p for p in output_dir.glob("*.md")
+            if not p.name.endswith("-review.md") and not p.name.endswith("-sources.json")
+        ],
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    ) if output_dir.is_dir() else []
+
+    if not candidates:
+        console.print(
+            f"[red]Error:[/] No research output found in {output_dir}. "
+            "Run [cyan]docent studio deep-research[/] or [cyan]docent studio lit[/] first."
+        )
+        raise typer.Exit(1)
+
+    if len(candidates) == 1:
+        inputs.output_file = str(candidates[0])
+        return
+
+    # ── Multi-file picker ─────────────────────────────────────────────────
+    console.print(
+        f"\n[bold]Found {len(candidates)} research output(s) in {output_dir}:[/]"
+    )
+    for i, p in enumerate(candidates, 1):
+        import datetime
+        mtime = datetime.datetime.fromtimestamp(p.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+        console.print(f"  [cyan]{i}[/]) {p.stem}  [dim]({mtime})[/]")
+    console.print(f"  [cyan]a[/]) All of the above")
+
+    try:
+        raw = typer.prompt(
+            "\nSelect file(s) [1 / a]",
+            default="1",
+        ).strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        raise typer.Exit(1)
+
+    if raw == "a" or raw == "all":
+        selected = candidates
+    else:
+        try:
+            idx = int(raw) - 1
+            if not (0 <= idx < len(candidates)):
+                raise ValueError
+            selected = [candidates[idx]]
+        except ValueError:
+            console.print(f"[red]Invalid selection '{raw}'.[/]")
+            raise typer.Exit(1)
+
+    # ── Topic-diversity warning ───────────────────────────────────────────
+    if len(selected) > 1:
+        def _slug_prefix(p: Path) -> str:
+            words = p.stem.replace("-", " ").replace("_", " ").split()
+            return " ".join(words[:2]).lower()
+
+        prefixes = {_slug_prefix(p) for p in selected}
+        if len(prefixes) > 1:
+            console.print(
+                "\n[yellow]Warning:[/] The selected files appear to cover different topics:\n"
+                + "\n".join(f"  • {p.stem}" for p in selected)
+                + "\nThey will all be added as sources to the same notebook."
+            )
+            try:
+                if not typer.confirm("Proceed anyway?", default=True):
+                    raise typer.Exit(1)
+            except (EOFError, KeyboardInterrupt):
+                raise typer.Exit(1)
+
+    selected = [_suggest_rename(p, console, typer) for p in selected]
+    inputs.output_file = str(selected[0])
+    # Extras stored in output_files; generator body handles them
+    inputs.output_files = [str(p) for p in selected[1:]]
+    _explicit_sources = getattr(inputs, "sources_file", None)
+    for _sel in selected:
+        _check_synthesis_doc(_sel, console, typer)
+        if not _explicit_sources:
+            _warn_no_sources(_sel, console, typer)

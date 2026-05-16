@@ -36,6 +36,24 @@ _SKILL_COMPAT_PATH = _SKILL_DIR / "source-compat.json"
 _SKILL_RUN_LOG_PATH = _SKILL_DIR / "run-log.jsonl"
 _SKILL_OVERRIDES_PATH = _SKILL_DIR / "active-overrides.json"
 
+_NOTEBOOK_MAP_FILENAME = ".notebook-map.json"
+
+
+def _find_sources_path(out_path: Path) -> Path | None:
+    """Return the sources JSON path for a research output file, or None.
+
+    Checks both naming conventions used by different Docent backends:
+      • Docent/Feynman: {stem}-sources.json
+      • Free-tier:      {stem}.sources.json  (via Path.with_suffix)
+    """
+    dash_form = out_path.parent / f"{out_path.stem}-sources.json"
+    dot_form = out_path.with_suffix(".sources.json")
+    if dash_form.exists():
+        return dash_form
+    if dot_form.exists():
+        return dot_form
+    return None
+
 _QUALITY_GATE_PROMPT = (
     "Analyze this notebook and answer in THREE clearly-headed sections.\n\n"
     "### VALIDATION\n"
@@ -87,7 +105,14 @@ def _nlm_run(args: list[str], timeout: float = 30) -> tuple[int, str, str]:
 
 
 def _nlm_login(timeout: float = 120) -> tuple[bool, str]:
-    """Run `notebooklm login` interactively (inherits terminal). Returns (success, message)."""
+    """Run `notebooklm login` interactively (inherits terminal). Returns (success, message).
+
+    We do NOT capture output — the user needs to see what notebooklm prints
+    and interact with the browser it opens.  Whether login truly succeeded is
+    determined by the caller via a follow-up _nlm_auth_ok() check, so an
+    exit code of 1 (e.g. the Playwright redirect-on-already-logged-in case)
+    is handled there rather than here.
+    """
     exe = _nlm_exe()
     if not exe:
         return False, "notebooklm not found on PATH"
@@ -103,19 +128,28 @@ def _nlm_login(timeout: float = 120) -> tuple[bool, str]:
         return False, str(e)
 
 
-def _nlm_auth_ok() -> bool:
-    """Return True if notebooklm is installed and authenticated."""
+def _nlm_auth_ok(retries: int = 2, retry_delay: float = 2.0) -> bool:
+    """Return True if notebooklm is installed and authenticated.
+
+    Retries once to guard against a transient CLI hiccup, but keeps the
+    total wait short (2 × 15 s = 30 s max) so a genuine auth failure doesn't
+    block the pipeline for a minute.
+    """
     exe = _nlm_exe()
     if not exe:
         return False
-    rc, stdout, _ = _nlm_run(["list", "--json"], timeout=20)
-    if rc != 0:
-        return False
-    try:
-        data = json.loads(stdout)
-        return not (isinstance(data, dict) and data.get("error"))
-    except (json.JSONDecodeError, ValueError):
-        return False
+    for attempt in range(retries):
+        rc, stdout, _ = _nlm_run(["list", "--json"], timeout=15)
+        if rc == 0:
+            try:
+                data = json.loads(stdout)
+                if not (isinstance(data, dict) and data.get("error")):
+                    return True
+            except (json.JSONDecodeError, ValueError):
+                pass
+        if attempt < retries - 1:
+            time.sleep(retry_delay)
+    return False
 
 
 def _nlm_create_notebook(title: str) -> str | None:
@@ -227,6 +261,53 @@ def _nlm_poll_research(notebook_id: str, poll_timeout: float = 300) -> list[str]
                     return []
             except (json.JSONDecodeError, ValueError):
                 pass
+        time.sleep(10)
+    return []
+
+
+def _poll_research_gen(
+    notebook_id: str,
+    poll_timeout: float = 300,
+    phase: str = "nlm-research",
+    label: str = "",
+) -> Iterator[ProgressEvent]:
+    """Generator version of _nlm_poll_research.
+
+    Yields a ProgressEvent every poll cycle so the UI stays alive during long waits.
+    Returns the found URL list via StopIteration.value — use with ``yield from``:
+
+        urls = yield from _poll_research_gen(notebook_id, ...)
+    """
+    deadline = time.monotonic() + poll_timeout
+    start = time.monotonic()
+    prefix = f"{label}: " if label else ""
+    while time.monotonic() < deadline:
+        rc, stdout, _ = _nlm_run(
+            ["research", "status", "-n", notebook_id, "--json"], timeout=30
+        )
+        if rc == 0:
+            try:
+                data = json.loads(stdout)
+                status = data.get("status", "")
+                if status == "completed":
+                    sources = data.get("sources", [])
+                    urls = []
+                    for s in sources:
+                        url = (
+                            s.get("url")
+                            or s.get("link")
+                            or s.get("href")
+                            or (s.get("metadata") or {}).get("url")
+                        )
+                        if url and url.startswith("http"):
+                            urls.append(url)
+                    return list(dict.fromkeys(urls))
+                elif status == "no_research":
+                    return []
+            except (json.JSONDecodeError, ValueError):
+                pass
+        elapsed = round(time.monotonic() - start)
+        yield ProgressEvent(phase=phase, message=f"{prefix}Polling ({elapsed}s elapsed)...")
         time.sleep(10)
     return []
 
@@ -359,6 +440,33 @@ def _nlm_deduplicate(urls: list[str], notebook_id: str) -> list[str]:
 # Quality-gate parsing
 # ---------------------------------------------------------------------------
 
+_FOLLOWUP_PATTERN = re.compile(
+    r"\n+\s*(?:Would you like(?: me)? to|Do you (?:want|need)(?: me)? to|"
+    r"Shall I|Is there anything else|Let me know if|Can I help you|"
+    r"If you(?:'d like| want)|Feel free to ask)[\s\S]*$",
+    re.IGNORECASE,
+)
+
+
+def _strip_followup(text: str) -> str:
+    """Remove trailing conversational follow-up questions from a NLM response."""
+    return _FOLLOWUP_PATTERN.sub("", text).rstrip()
+
+
+def _extract_section(answer: str, section_name: str, max_chars: int = 500) -> str:
+    """Extract the body of a ### SECTION_NAME block, truncated to max_chars."""
+    m = re.search(
+        rf"###\s*{re.escape(section_name)}\s*\n(.*?)(?=###|\Z)",
+        answer, re.DOTALL | re.IGNORECASE,
+    )
+    if not m:
+        return ""
+    text = m.group(1).strip()
+    if len(text) > max_chars:
+        text = text[:max_chars].rsplit(" ", 1)[0] + "…"
+    return text
+
+
 def _extract_gaps(answer: str) -> list[str]:
     """Extract gap items from the GAPS section of a quality gate answer."""
     match = re.search(r"###\s*GAPS\s*\n(.*?)(?=###|\Z)", answer, re.DOTALL | re.IGNORECASE)
@@ -371,6 +479,7 @@ def _extract_gaps(answer: str) -> list[str]:
 
 def _parse_quality_gate(answer: str) -> dict[str, Any]:
     """Parse quality gate answer into a structured dict."""
+    answer = _strip_followup(answer)
     validation = "unknown"
     val_m = re.search(r"###\s*VALIDATION\s*\n(.*?)(?=###|\Z)", answer, re.DOTALL | re.IGNORECASE)
     if val_m:
@@ -401,6 +510,7 @@ def _parse_quality_gate(answer: str) -> dict[str, Any]:
 
 def _parse_perspectives(answer: str) -> dict[str, str]:
     """Parse multi-perspective answer into {practitioner, skeptic, beginner}."""
+    answer = _strip_followup(answer)
     out: dict[str, str] = {}
     for key in ("PRACTITIONER", "SKEPTIC", "BEGINNER"):
         m = re.search(
@@ -414,36 +524,196 @@ def _parse_perspectives(answer: str) -> dict[str, str]:
 # Topic / source helpers
 # ---------------------------------------------------------------------------
 
+_BACKEND_SUFFIXES = ("-free", "-feynman", "-docent")
+_WORKFLOW_SUFFIXES = ("-deep", "-lit", "-review", "-compare", "-replicate", "-audit", "-draft", "-update", "-verify", "-analysis")
+
+
 def _derive_topic(out_path: Path) -> str:
-    """Derive a human-readable topic from a research output filename."""
+    """Derive a human-readable topic from a research output file.
+
+    Reads the first # heading from the file content when available — this is
+    always more accurate than the filename, especially for renamed or generic
+    files (e.g. "test 2.md" whose heading is "Plastic Pollution in Coastal
+    West Africa").  Strips Docent's own workflow/tier prefixes from the heading
+    (e.g. "Deep Research (Free Tier): " → bare topic).  Falls back to
+    stripping backend/workflow suffixes from the stem when no heading is found.
+    """
+    _HEADING_PREFIX = re.compile(
+        r"^(?:Deep Research|Literature Review|Peer Review|Research|Analysis)"
+        r"(?:\s*\([^)]*\))?\s*:\s*",
+        re.IGNORECASE,
+    )
+
+    # Prefer heading from file content
+    try:
+        for line in out_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                heading = stripped.lstrip("#").strip()
+                heading = _HEADING_PREFIX.sub("", heading).strip()
+                if heading:
+                    return heading
+    except OSError:
+        pass
+
+    # Fallback: derive from filename
     stem = out_path.stem
-    for suffix in ("-deep", "-lit", "-review", "-update", "-verify", "-analysis"):
+    for suffix in _BACKEND_SUFFIXES:
+        if stem.endswith(suffix):
+            stem = stem[: -len(suffix)]
+            break
+    for suffix in _WORKFLOW_SUFFIXES:
         if stem.endswith(suffix):
             stem = stem[: -len(suffix)]
             break
     return stem.replace("-", " ").replace("_", " ")
 
 
+# ---------------------------------------------------------------------------
+# Source scoring helpers
+# ---------------------------------------------------------------------------
+
+# Domains whose content is treated as inherently authoritative.
+# Score 1.0 = top tier (intergovernmental, peer-reviewed journals, major health agencies).
+# Score 0.6 = reputable tier (established journalism, policy think-tanks).
+# Anything else defaults to 0.3.
+_AUTHORITY_TOP = frozenset({
+    # Health / science agencies
+    "who.int", "cdc.gov", "nih.gov", "ncbi.nlm.nih.gov", "pubmed.ncbi.nlm.nih.gov",
+    "emro.who.int", "afro.who.int", "euro.who.int",
+    # Intergovernmental
+    "un.org", "undp.org", "unep.org", "worldbank.org", "imf.org", "oecd.org",
+    "ipcc.ch", "iea.org", "fao.org", "ifad.org", "wfp.org",
+    # Peer-reviewed journals
+    "nature.com", "science.org", "thelancet.com", "nejm.org", "cell.com",
+    "bmj.com", "jamanetwork.com", "plos.org", "plosone.org",
+    "mdpi.com", "frontiersin.org", "wiley.com", "springer.com", "elsevier.com",
+    "oxfordjournals.org", "cambridge.org", "tandfonline.com",
+    # Preprint / open access
+    "arxiv.org", "biorxiv.org", "medrxiv.org", "ssrn.com",
+    "researchgate.net", "semanticscholar.org",
+})
+
+_AUTHORITY_REPUTABLE = frozenset({
+    "reuters.com", "apnews.com", "bbc.com", "bbc.co.uk",
+    "theguardian.com", "ft.com", "economist.com",
+    "nytimes.com", "washingtonpost.com", "theatlantic.com",
+    "brookings.edu", "cfr.org", "rand.org", "chathamhouse.org",
+    "pewresearch.org", "statista.com",
+})
+
+_CURRENT_YEAR = 2026
+_MAX_PER_DOMAIN = 3  # never allocate more than this many slots to one domain
+
+
+def _parse_year(year_val: Any) -> int | None:
+    """Return an integer year or None."""
+    if isinstance(year_val, int):
+        return year_val
+    if isinstance(year_val, str) and year_val[:4].isdigit():
+        return int(year_val[:4])
+    return None
+
+
+def _domain_authority(domain: str) -> float:
+    """Return 0.0–1.0 authority score for a bare domain (no www.)."""
+    bare = domain.removeprefix("www.")
+    if bare in _AUTHORITY_TOP:
+        return 1.0
+    # .gov and .edu TLDs are unconditionally authoritative
+    if bare.endswith(".gov") or bare.endswith(".edu") or bare.endswith(".ac.uk"):
+        return 1.0
+    if bare in _AUTHORITY_REPUTABLE:
+        return 0.6
+    return 0.3
+
+
+def _score_source(source: dict, year_min: int | None, year_range: int) -> float:
+    """Compute a ranking score for one source.
+
+    Tier boundaries are wide apart so tier order never flips, but within each
+    tier sources are ordered by *relative* recency (papers) or domain authority
+    (web).
+
+    Recency is computed relative to the year spread of the current paper batch,
+    not against today — so a 2013 paper in a 2005–2015 query scores the same
+    as a 2023 paper in a 2015–2025 query.  This respects explicit year-range
+    searches and avoids penalising foundational older work.
+
+    Score bands:
+      Papers             100 – 120  (+ up to 20 for relative recency)
+      Web with full text  50 –  80  (+ up to 30 for domain authority)
+      Web snippet          0 –  30  (+ up to 30 for domain authority)
+    """
+    stype = source.get("source_type")
+    url = source.get("url", "")
+    domain = _domain_from_url(url).removeprefix("www.")
+
+    if stype == "paper":
+        base = 100.0
+        if year_min is not None and year_range > 0:
+            year = _parse_year(source.get("year"))
+            if year is not None:
+                relative_recency = (year - year_min) / year_range
+                base += relative_recency * 20.0
+        return base
+
+    if stype == "web":
+        base = 50.0 if source.get("full_text") else 0.0
+        base += _domain_authority(domain) * 30.0
+        return base
+
+    return 0.0
+
+
 def _rank_sources(sources: list[dict], max_sources: int) -> list[dict]:
-    """Rank sources: papers first, then web with full text, then snippets."""
-    papers = [s for s in sources if s.get("source_type") == "paper" and s.get("url")]
-    web_full = [
-        s for s in sources
-        if s.get("source_type") == "web" and s.get("url") and s.get("full_text")
-    ]
-    web_snippet = [
-        s for s in sources
-        if s.get("source_type") == "web" and s.get("url") and not s.get("full_text")
-    ]
-    ranked = papers + web_full + web_snippet
-    seen: set[str] = set()
+    """Rank sources by tier, recency, and domain authority; deduplicate by domain.
+
+    Priority order:
+      1. Papers (peer-reviewed / preprint) — sorted by relative recency within
+         the batch's own year range (honours explicit year-range queries).
+      2. Web sources with full page text — sorted by domain authority.
+      3. Web sources with snippet only — sorted by domain authority.
+
+    Within each tier, no single domain supplies more than _MAX_PER_DOMAIN slots
+    so one over-represented source doesn't crowd out everything else.
+    """
+    # URL-level deduplication first
+    seen_urls: set[str] = set()
     unique: list[dict] = []
-    for s in ranked:
-        url = s.get("url", "")
-        if url and url not in seen:
-            seen.add(url)
+    for s in sources:
+        url = (s.get("url") or "").rstrip("/")
+        if url and url not in seen_urls:
+            seen_urls.add(url)
             unique.append(s)
-    return unique[:max_sources]
+
+    # Compute year range across all papers in this batch for relative recency
+    paper_years = [
+        y for s in unique
+        if s.get("source_type") == "paper"
+        for y in [_parse_year(s.get("year"))]
+        if y is not None
+    ]
+    year_min = min(paper_years) if paper_years else None
+    year_max = max(paper_years) if paper_years else None
+    year_range = (year_max - year_min) if (year_min is not None and year_max is not None) else 0
+
+    # Score and sort
+    scored = sorted(unique, key=lambda s: _score_source(s, year_min, year_range), reverse=True)
+
+    # Domain-level deduplication: keep at most _MAX_PER_DOMAIN per domain
+    domain_counts: dict[str, int] = {}
+    result: list[dict] = []
+    for s in scored:
+        if len(result) >= max_sources:
+            break
+        domain = _domain_from_url(s.get("url", "")).removeprefix("www.")
+        if domain_counts.get(domain, 0) >= _MAX_PER_DOMAIN:
+            continue
+        domain_counts[domain] = domain_counts.get(domain, 0) + 1
+        result.append(s)
+
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -458,11 +728,19 @@ class ToNotebookInputs(BaseModel):
             "If omitted, the most recent output in research.output_dir is used."
         ),
     )
+    sources_file: str | None = Field(
+        None,
+        description=(
+            "Path to a sources JSON file (e.g. 'my-research.sources.json'). "
+            "If omitted, Docent looks for a matching file next to output_file. "
+            "Use this when the sources file has a different name from the output file."
+        ),
+    )
     topic: str | None = Field(
         None,
         description=(
             "Research topic for NotebookLM's web research arm and quality gate prompts. "
-            "Derived from the output filename if omitted."
+            "Derived from the output file heading if omitted."
         ),
     )
     max_sources: int = Field(
@@ -505,6 +783,14 @@ class ToNotebookInputs(BaseModel):
             "After the quality gate, generate 3 summaries: practitioner, skeptic, beginner."
         ),
     )
+    output_files: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Additional research output files to add as sources alongside output_file. "
+            "Populated by the interactive picker when the user selects multiple files; "
+            "not normally set directly."
+        ),
+    )
 
 
 class ToNotebookResult(BaseModel):
@@ -523,9 +809,12 @@ class ToNotebookResult(BaseModel):
     message: str
 
     def to_shapes(self) -> list[Shape]:
+        from docent.core.shapes import MarkdownShape
         if not self.ok:
             return [ErrorShape(reason=self.message)]
         shapes: list[Shape] = [MessageShape(text=self.message, level="success")]
+
+        # ── Metrics ──────────────────────────────────────────────────────────
         if self.notebook_id:
             shapes.append(MetricShape(label="Notebook ID", value=self.notebook_id))
         if self.sources_added:
@@ -534,12 +823,61 @@ class ToNotebookResult(BaseModel):
             shapes.append(MetricShape(label="From NLM research", value=str(self.sources_from_nlm)))
         if self.sources_failed:
             shapes.append(MetricShape(label="Sources failed", value=str(self.sources_failed)))
+
+        # ── Quality gate detail ───────────────────────────────────────────────
         if self.quality_gate:
-            shapes.append(MetricShape(label="Validation", value=self.quality_gate.get("validation", "?")))
-            shapes.append(MetricShape(label="Contradictions", value=str(self.quality_gate.get("contradictions", 0))))
-            gf = self.quality_gate.get("gaps_filled", 0)
-            if gf:
-                shapes.append(MetricShape(label="Gaps filled", value=str(gf)))
+            qg = self.quality_gate
+            validation = qg.get("validation", "?")
+            contradictions = qg.get("contradictions", 0)
+            gaps: list[str] = qg.get("gaps", [])
+            gaps_filled: int = qg.get("gaps_filled", 0)
+            raw: str = qg.get("raw", "")
+
+            shapes.append(MetricShape(label="Validation", value=validation))
+            shapes.append(MetricShape(label="Contradictions", value=str(contradictions)))
+            if gaps_filled:
+                shapes.append(MetricShape(label="Gaps filled", value=str(gaps_filled)))
+
+            md: list[str] = []
+
+            # Validation issues snippet
+            if validation == "issues found" and raw:
+                snippet = _extract_section(raw, "VALIDATION", max_chars=400)
+                if snippet:
+                    md.append(f"**Validation issues:**\n\n{snippet}")
+
+            # Contradictions snippet
+            if contradictions and raw:
+                snippet = _extract_section(raw, "CONTRADICTIONS", max_chars=400)
+                if snippet:
+                    md.append(f"**Contradictions ({contradictions}):**\n\n{snippet}")
+
+            # Gaps list
+            if gaps:
+                bullets = "\n".join(f"- {g[:120]}" for g in gaps)
+                filled_note = f" ({gaps_filled} filled by follow-up research)" if gaps_filled else ""
+                md.append(f"**Gaps identified{filled_note}:**\n\n{bullets}")
+
+            if md:
+                shapes.append(MarkdownShape(content="\n\n---\n\n".join(md)))
+
+        # ── Perspectives ──────────────────────────────────────────────────────
+        if self.perspectives:
+            persp = self.perspectives
+            md_persp: list[str] = []
+            for key, label in (
+                ("practitioner", "Practitioner takeaways"),
+                ("skeptic", "Skeptic's view"),
+                ("beginner", "Beginner overview"),
+            ):
+                text = (persp.get(key) or "").strip()
+                if text:
+                    if len(text) > 350:
+                        text = text[:350].rsplit(" ", 1)[0] + "…"
+                    md_persp.append(f"**{label}:**\n\n{text}")
+            if md_persp:
+                shapes.append(MarkdownShape(content="\n\n---\n\n".join(md_persp)))
+
         if self.package_dir:
             shapes.append(LinkShape(url=self.package_dir, label="Local package"))
         return shapes
@@ -558,6 +896,38 @@ _EMPTY_PIPELINE_RESULT: dict[str, Any] = {
 }
 
 
+def _notebook_remaining_capacity(notebook_id: str, limit: int) -> tuple[int, int]:
+    """Return (current_source_count, remaining_slots) for a notebook.
+
+    Uses the live source list so the count is always accurate even on re-runs
+    where sources were already added in a previous session.
+    """
+    current = len(_nlm_source_list(notebook_id))
+    return current, max(0, limit - current)
+
+
+def _read_notebook_map(output_dir: Path) -> dict[str, str]:
+    """Read stem→notebook_id map from output_dir/.notebook-map.json."""
+    p = output_dir / _NOTEBOOK_MAP_FILENAME
+    if not p.exists():
+        return {}
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _save_notebook_map(output_dir: Path, stem: str, notebook_id: str) -> None:
+    """Persist stem→notebook_id into output_dir/.notebook-map.json."""
+    p = output_dir / _NOTEBOOK_MAP_FILENAME
+    nmap = _read_notebook_map(output_dir)
+    nmap[stem] = notebook_id
+    try:
+        p.write_text(json.dumps(nmap, indent=2, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        pass
+
+
 def _nlm_push(
     out_path: Path,
     sources_path: Path | None,
@@ -565,6 +935,7 @@ def _nlm_push(
     max_sources: int = 20,
     topic: str | None = None,
     guide_files: list[Path] | None = None,
+    extra_synthesis_docs: list[Path] | None = None,
     run_nlm_research: bool = True,
     run_quality_gate: bool = True,
     run_perspectives: bool = True,
@@ -579,7 +950,9 @@ def _nlm_push(
     if not _nlm_auth_ok():
         yield ProgressEvent(phase="nlm-login", message="Auth expired -- running notebooklm login...")
         login_ok, login_err = _nlm_login()
-        if not login_ok or not _nlm_auth_ok():
+        # Always re-check auth after login regardless of exit code — a code-1
+        # exit can mean "already authenticated" (Playwright redirect case).
+        if not _nlm_auth_ok(retries=1, retry_delay=1.0):
             detail = f": {login_err}" if login_err else ""
             return {
                 **_EMPTY_PIPELINE_RESULT,
@@ -590,10 +963,26 @@ def _nlm_push(
             }
         yield ProgressEvent(phase="nlm-login", message="Login successful.")
 
+    # ── Resolve topic early (needed for notebook title + quality-gate) ───────
+    effective_topic = topic or _derive_topic(out_path)
+
     # ── Resolve / create notebook ──────────────────────────────────────────
     notebook_id = context.settings.research.notebooklm_notebook_id
+    _stem = out_path.stem
+    _output_dir = out_path.parent
+
     if not notebook_id:
-        title = f"Studio: {out_path.stem}"
+        # Check per-file map before creating a new notebook
+        _nmap = _read_notebook_map(_output_dir)
+        notebook_id = _nmap.get(_stem)
+        if notebook_id:
+            yield ProgressEvent(
+                phase="nlm-notebook",
+                message=f"Reusing existing notebook '{effective_topic}': {notebook_id}",
+            )
+
+    if not notebook_id:
+        title = f"Docent Studio: {effective_topic}"
         yield ProgressEvent(phase="nlm-notebook", message=f"Creating notebook '{title}'...")
         notebook_id = _nlm_create_notebook(title)
         if not notebook_id:
@@ -603,7 +992,33 @@ def _nlm_push(
             }
         yield ProgressEvent(phase="nlm-notebook", message=f"Created notebook {notebook_id}")
 
-    effective_topic = topic or _derive_topic(out_path)
+    # ── Source capacity check ─────────────────────────────────────────────
+    _source_limit = context.settings.research.notebooklm_source_limit
+    _current_count, _remaining = _notebook_remaining_capacity(notebook_id, _source_limit)
+    if _current_count > 0:
+        yield ProgressEvent(
+            phase="nlm-notebook",
+            message=f"Notebook has {_current_count}/{_source_limit} sources — {_remaining} slot(s) remaining.",
+        )
+    if _remaining == 0:
+        tier_hint = (
+            "If you're on NotebookLM Plus (100 sources), run `docent setup` to update your plan."
+            if _source_limit == 50 else
+            f"Notebook is at the {_source_limit}-source limit for your plan."
+        )
+        return {
+            **_EMPTY_PIPELINE_RESULT,
+            "notebook_id": notebook_id,
+            "message": f"Notebook is full ({_current_count}/{_source_limit} sources). {tier_hint}",
+        }
+    if _remaining <= 10:
+        yield ProgressEvent(
+            phase="nlm-notebook",
+            message=(
+                f"[Warning] Only {_remaining} slot(s) left (limit: {_source_limit}). "
+                "On NotebookLM Plus? Run `docent setup` to update your plan."
+            ),
+        )
 
     # ── Read active overrides (auto-tune from past run history) ───────────
     overrides = _read_overrides()
@@ -663,24 +1078,51 @@ def _nlm_push(
     failed = 0
     feynman_added = 0
 
-    yield ProgressEvent(phase="nlm-push", message="Adding synthesis document...")
-    rc, err = _nlm_add_source(str(out_path), notebook_id)
-    if rc == 0:
-        added += 1
-        feynman_added += 1
-    else:
-        failed += 1
-        yield ProgressEvent(
-            phase="nlm-push", message=f"Warning: synthesis doc failed: {err[:80]}"
-        )
-    time.sleep(1)
+    if _remaining > 0:
+        yield ProgressEvent(phase="nlm-push", message="Adding synthesis document...")
+        rc, err = _nlm_add_source(str(out_path), notebook_id)
+        if rc == 0:
+            added += 1
+            feynman_added += 1
+            _remaining -= 1
+        else:
+            failed += 1
+            yield ProgressEvent(
+                phase="nlm-push", message=f"Warning: synthesis doc failed: {err[:80]}"
+            )
+        time.sleep(1)
+
+    # ── Extra synthesis docs (from multi-file picker) ─────────────────────
+    for _extra in (extra_synthesis_docs or []):
+        if _remaining <= 0:
+            yield ProgressEvent(
+                phase="nlm-push",
+                message=f"Source limit reached ({_source_limit}) — skipping {_extra.name}.",
+            )
+            break
+        yield ProgressEvent(phase="nlm-push", message=f"Adding synthesis document: {_extra.name}...")
+        rc, err = _nlm_add_source(str(_extra), notebook_id)
+        if rc == 0:
+            added += 1
+            feynman_added += 1
+            _remaining -= 1
+        else:
+            yield ProgressEvent(phase="nlm-push", message=f"Warning: {_extra.name} failed: {err[:80]}")
+        time.sleep(1)
 
     # ── Guide files as sources ────────────────────────────────────────────
     for guide_path in _guide_paths:
+        if _remaining <= 0:
+            yield ProgressEvent(
+                phase="nlm-push",
+                message=f"Source limit reached ({_source_limit}) — skipping guide file {guide_path.name}.",
+            )
+            break
         yield ProgressEvent(phase="nlm-push", message=f"Adding guide file: {guide_path.name}...")
         rc, err = _nlm_add_source(str(guide_path), notebook_id)
         if rc == 0:
             added += 1
+            _remaining -= 1
         else:
             yield ProgressEvent(phase="nlm-push", message=f"Guide file add failed: {err[:80]}")
         time.sleep(1)
@@ -695,6 +1137,7 @@ def _nlm_push(
         urls = [_strip_utm(s["url"]) for s in url_sources]
         urls = _nlm_compat_filter(urls)
         urls = _nlm_deduplicate(urls, notebook_id)
+        urls = urls[:_remaining]  # never exceed remaining capacity
 
         total = len(urls)
         for i, url in enumerate(urls, 1):
@@ -711,6 +1154,7 @@ def _nlm_push(
             if ok:
                 added += 1
                 feynman_added += 1
+                _remaining -= 1
             else:
                 failed += 1
             time.sleep(1)
@@ -720,12 +1164,14 @@ def _nlm_push(
     nlm_sources_found = 0
     snap: dict[str, Any] = {}  # will be set by wait_stable; init here for run-log safety
     if run_nlm_research and nlm_research_started:
-        yield ProgressEvent(phase="nlm-research", message="Polling NLM research status...")
-        nlm_urls = _nlm_poll_research(notebook_id, poll_timeout=300)
+        nlm_urls = yield from _poll_research_gen(
+            notebook_id, poll_timeout=300, phase="nlm-research", label="NLM research"
+        )
         nlm_sources_found = len(nlm_urls)
         if nlm_urls:
             nlm_urls = _nlm_compat_filter(nlm_urls)
             nlm_urls = _nlm_deduplicate(nlm_urls, notebook_id)
+            nlm_urls = nlm_urls[:_remaining]  # cap to remaining capacity
             total_nlm = len(nlm_urls)
             yield ProgressEvent(
                 phase="nlm-research",
@@ -744,9 +1190,15 @@ def _nlm_push(
                 if ok:
                     added += 1
                     nlm_added += 1
+                    _remaining -= 1
                 else:
                     failed += 1
                 time.sleep(1)
+            # Clear the progress bar — emit a final summary without current/total
+            yield ProgressEvent(
+                phase="nlm-research",
+                message=f"NLM research done: {nlm_added} source(s) added.",
+            )
         else:
             yield ProgressEvent(
                 phase="nlm-research", message="NLM research completed (no additional sources)."
@@ -805,22 +1257,32 @@ def _nlm_push(
                 yield ProgressEvent(phase="nlm-quality", message="Gap analysis skipped (active-overrides).")
                 gaps = []
 
-            for gap in gaps:
+            total_gaps = len(gaps)
+            for gap_idx, gap in enumerate(gaps, 1):
                 yield ProgressEvent(
-                    phase="nlm-quality", message=f"Filling gap: '{gap[:60]}'..."
+                    phase="nlm-quality",
+                    message=f"Gap {gap_idx}/{total_gaps}: '{gap[:60]}'...",
+                    current=gap_idx,
+                    total=total_gaps,
                 )
                 started = _nlm_start_research(gap, notebook_id)
                 if started:
-                    gap_urls = _nlm_poll_research(notebook_id, poll_timeout=180)
+                    gap_urls = yield from _poll_research_gen(
+                        notebook_id,
+                        poll_timeout=180,
+                        phase="nlm-quality",
+                        label=f"Gap {gap_idx}/{total_gaps}",
+                    )
                     gap_urls = _nlm_compat_filter(gap_urls)
                     gap_urls = _nlm_deduplicate(gap_urls, notebook_id)
-                    for url in gap_urls[:5]:  # cap per-gap to avoid bloat
+                    for url in gap_urls[:min(5, _remaining)]:  # cap per-gap and respect limit
                         rc, _ = _nlm_add_source(url, notebook_id)
                         ok = rc == 0
                         _url_outcomes.append((_domain_from_url(url), ok))
                         if ok:
                             added += 1
                             nlm_added += 1
+                            _remaining -= 1
                         time.sleep(1)
                     if gap_urls:
                         gaps_filled += 1
@@ -875,6 +1337,9 @@ def _nlm_push(
     if perspectives:
         parts.append("perspectives generated")
     parts.append(f"notebook: {notebook_id}")
+
+    # ── Persist stem→notebook_id mapping for future runs ─────────────────
+    _save_notebook_map(_output_dir, _stem, notebook_id)
 
     # ── Post-run: update source-compat.json + write run log ───────────────
     _update_compat(_url_outcomes)

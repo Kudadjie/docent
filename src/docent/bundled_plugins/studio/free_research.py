@@ -43,7 +43,7 @@ FREE_TIER_DISCLAIMER = """\
 
   • [bold]This is a starting point, not a finished report.[/] For AI-synthesised
     research briefs, configure any major LLM provider API key and use
-    [cyan]--backend feynman[/] or [cyan]--backend docent[/]:
+    [cyan]--backend feynman[/] or [cyan]--backend docent[/] (both require AI API credits):
 
       Anthropic (Claude)  →  ANTHROPIC_API_KEY
       OpenAI (GPT)        →  OPENAI_API_KEY
@@ -76,7 +76,7 @@ _MCP_NOTE_HUMAN = (
     "and ask it to synthesise a research brief — your existing subscription covers "
     "the AI step. Docent handled the search and organisation.\n\n"
     "> **Want full AI synthesis inside Docent?** Configure any LLM provider API key "
-    "and rerun with `--backend feynman` or `--backend docent`. "
+    "and rerun with `--backend feynman` or `--backend docent` (both require AI API credits). "
     "Supported: Anthropic, OpenAI, Google Gemini, Mistral, Groq, Together AI, "
     "and 100+ more via litellm. Local LLMs (Ollama, LM Studio) — coming soon."
 )

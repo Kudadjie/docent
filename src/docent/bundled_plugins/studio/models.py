@@ -181,6 +181,7 @@ class ConfigShowResult(BaseModel):
     feynman_model: str | None = None
     feynman_timeout: float = 900.0
     notebooklm_notebook_id: str | None = None
+    notebooklm_source_limit: int = 50
     obsidian_vault: str | None = None
     alphaxiv_api_key: str | None = None
 
@@ -209,6 +210,7 @@ class ConfigShowResult(BaseModel):
             MetricShape(label="feynman_model", value=self.feynman_model or "(feynman default)"),
             MetricShape(label="feynman_timeout", value=f"{self.feynman_timeout:.0f}s"),
             MetricShape(label="notebooklm_notebook_id", value=self.notebooklm_notebook_id or "(not set)"),
+            MetricShape(label="notebooklm_source_limit", value=str(self.notebooklm_source_limit)),
             MetricShape(label="obsidian_vault", value=self.obsidian_vault or "(not set)"),
             MetricShape(label="alphaxiv_api_key", value=_mask(self.alphaxiv_api_key)),
         ]

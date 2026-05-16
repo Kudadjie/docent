@@ -280,25 +280,60 @@ def _run_setup_flow(*, first_run: bool = False) -> None:
 
     if nlm_exe and _nlm_pkg_ok:
         console.print("  [green]NotebookLM:[/] installed")
-        # Quick auth check — if not authenticated, nudge the user
         import subprocess as _sp
-        try:
-            _auth = _sp.run([nlm_exe, "list", "--json"], capture_output=True, text=True, timeout=10)
-            import json as _j
-            _auth_ok = _auth.returncode == 0 and not _j.loads(_auth.stdout or "{}").get("error")
-        except Exception:
-            _auth_ok = False
+        import json as _j
+
+        def _nlm_auth_check() -> bool:
+            try:
+                _r = _sp.run([nlm_exe, "list", "--json"], capture_output=True, text=True, timeout=10)
+                return _r.returncode == 0 and not _j.loads(_r.stdout or "{}").get("error")
+            except Exception:
+                return False
+
+        _auth_ok = _nlm_auth_check()
         if not _auth_ok:
-            console.print("  [yellow]NotebookLM:[/] not authenticated — run: notebooklm login")
+            console.print("  [yellow]NotebookLM:[/] not authenticated")
+            if typer.confirm("  Log in to NotebookLM now? (opens a browser)", default=True):
+                _sp.run([nlm_exe, "login"])
+                _auth_ok = _nlm_auth_check()
+                if _auth_ok:
+                    console.print("  [green]NotebookLM:[/] authenticated successfully!")
+                else:
+                    console.print(
+                        "  [yellow]NotebookLM:[/] authentication may not have completed.\n"
+                        "  Re-run [cyan]docent setup[/] or run [cyan]notebooklm login[/] manually."
+                    )
+        else:
+            console.print("  [green]NotebookLM:[/] authenticated")
+
+        if _auth_ok:
+            # Tier / source-limit config (notebooklm-py doesn't expose this, so we ask once)
+            _current_limit = settings.research.notebooklm_source_limit
+            _default_tier = "2" if _current_limit >= 100 else "1"
+            console.print(
+                f"  [dim]Source limit: {_current_limit} per notebook[/]  "
+                "[dim](free tier = 50 · NotebookLM Plus = 100)[/]"
+            )
+            _tier_raw = typer.prompt(
+                "  Your NotebookLM plan  [1] Free · [2] Plus",
+                default=_default_tier,
+                show_default=True,
+            ).strip()
+            _new_limit = 100 if _tier_raw == "2" else 50
+            if _new_limit != _current_limit:
+                write_setting("research.notebooklm_source_limit", _new_limit)
+                console.print(f"  [green]Source limit set to {_new_limit}.[/]")
     else:
         console.print("  [yellow]NotebookLM:[/] not installed  (required for `docent studio to-notebook`)")
         if typer.confirm("  Install notebooklm-py now?", default=False):
             pip_ok = _run_tool_install(console, ["pip", "install", "notebooklm-py[browser]"])
             if pip_ok:
-                # playwright comes with notebooklm-py[browser]; run its browser install
                 pw_exe = shutil.which("playwright") or "playwright"
                 _run_tool_install(console, [pw_exe, "install", "chromium"])
-            console.print("  [dim]Authenticate with:[/] notebooklm login")
+                console.print("  [dim]Next: log in with[/] notebooklm login")
+                if typer.confirm("  Log in to NotebookLM now? (opens a browser)", default=True):
+                    import subprocess as _sp2
+                    _sp2.run([shutil.which("notebooklm") or "notebooklm", "login"])
         else:
             console.print("  [dim]To install:[/]")
             console.print('    pip install "notebooklm-py[browser]"')
@@ -682,7 +717,7 @@ def _check_notebooklm_py() -> tuple[str, str, str, str]:
         auth_ok = False
 
     if not auth_ok:
-        return "NotebookLM", "WARN", nlm_version, "Not authenticated — run: notebooklm login"
+        return "NotebookLM", "WARN", nlm_version, "Not authenticated — run: docent setup  (or: notebooklm login)"
 
     from docent.utils.update_check import check_pypi
     update = check_pypi(

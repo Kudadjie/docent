@@ -8,7 +8,7 @@ from pathlib import Path
 from docent.config import write_setting
 from docent.core import Context, ProgressEvent, Tool, action, register_tool
 
-from ._notebook import _nlm_push, _rank_sources, ToNotebookInputs, ToNotebookResult  # noqa: F401
+from ._notebook import _nlm_push, _rank_sources, _find_sources_path, ToNotebookInputs, ToNotebookResult  # noqa: F401
 from .feynman import (
     FeynmanBudgetExceededError,
     FeynmanNotFoundError,
@@ -55,6 +55,7 @@ from .models import (
 from .preflights import (  # noqa: F401
     _preflight_docent,
     _preflight_oc_only,
+    _preflight_to_notebook,
     _resolve_tavily_key,
     _route_output,
     _write_to_vault,
@@ -77,6 +78,7 @@ _KNOWN_RESEARCH_KEYS = {
     "tavily_research_timeout",
     "semantic_scholar_api_key",
     "notebooklm_notebook_id",
+    "notebooklm_source_limit",
     "obsidian_vault",
     "alphaxiv_api_key",
 }
@@ -635,40 +637,62 @@ class StudioTool(Tool):
         ),
         input_schema=ToNotebookInputs,
         name="to-notebook",
+        preflight=_preflight_to_notebook,
     )
     def to_notebook(self, inputs: ToNotebookInputs, context: Context):
         output_dir = context.settings.research.output_dir.expanduser()
 
-        if inputs.output_file:
-            out_path = Path(inputs.output_file)
-            if not out_path.is_absolute():
-                out_path = output_dir / inputs.output_file
-        else:
-            candidates = [
-                p for p in output_dir.glob("*.md")
-                if not p.name.endswith("-review.md")
-            ] if output_dir.is_dir() else []
-            if not candidates:
-                return ToNotebookResult(
-                    ok=False, output_file=None, sources_file=None,
-                    package_dir=None, sources_count=0,
-                    message=(
-                        f"No research output found in {output_dir}. "
-                        "Run `docent studio deep-research` or `docent studio lit` first."
-                    ),
-                )
-            out_path = max(candidates, key=lambda p: p.stat().st_mtime)
+        # Preflight has already resolved output_file; just build the Path.
+        out_path = Path(inputs.output_file)
+        if not out_path.is_absolute():
+            out_path = output_dir / inputs.output_file
+
+        # Extra synthesis docs selected by the multi-file picker
+        extra_synthesis_docs: list[Path] = []
+        for extra_str in (inputs.output_files or []):
+            ep = Path(extra_str)
+            if not ep.is_absolute():
+                ep = output_dir / extra_str
+            if ep.exists():
+                extra_synthesis_docs.append(ep)
 
         stem = out_path.stem
-        sources_path = out_path.parent / f"{stem}-sources.json"
+        if inputs.sources_file:
+            _explicit_src = Path(inputs.sources_file)
+            if not _explicit_src.is_absolute():
+                _explicit_src = output_dir / inputs.sources_file
+            sources_path = _explicit_src
+        else:
+            sources_path = _find_sources_path(out_path) or (out_path.parent / f"{stem}-sources.json")
 
         has_sources = sources_path.exists()
-        selected = (
-            _rank_sources(
-                json.loads(sources_path.read_text(encoding="utf-8")), inputs.max_sources
-            )
-            if has_sources else []
+
+        # Merge sources JSON from extra files (multi-file picker "all" case)
+        extra_sources_raw: list[dict] = []
+        for extra_doc in extra_synthesis_docs:
+            extra_src = _find_sources_path(extra_doc)
+            if extra_src and extra_src.exists():
+                try:
+                    extra_sources_raw.extend(
+                        json.loads(extra_src.read_text(encoding="utf-8"))
+                    )
+                except (json.JSONDecodeError, OSError):
+                    pass
+
+        primary_raw = (
+            json.loads(sources_path.read_text(encoding="utf-8")) if has_sources else []
         )
+        all_raw = primary_raw + extra_sources_raw
+        selected = _rank_sources(all_raw, inputs.max_sources) if all_raw else []
+
+        # Write merged sources to a combined sources file for the package
+        if extra_sources_raw and all_raw:
+            merged_src_path = out_path.parent / f"{stem}-combined-sources.json"
+            merged_src_path.write_text(
+                json.dumps(all_raw, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            sources_path = merged_src_path
+            has_sources = True
 
         package_dir = out_path.parent / f"{stem}-notebook"
         package_dir.mkdir(parents=True, exist_ok=True)
@@ -689,12 +713,35 @@ class StudioTool(Tool):
             max_sources=inputs.max_sources,
             topic=inputs.topic,
             guide_files=[Path(p).expanduser() for p in inputs.guide_files],
+            extra_synthesis_docs=extra_synthesis_docs or None,
             run_nlm_research=inputs.run_nlm_research,
             run_quality_gate=inputs.run_quality_gate,
             run_perspectives=inputs.run_perspectives,
         )
 
         sources_file_str = str(sources_path) if has_sources else None
+
+        # ── Write quality report to package dir ───────────────────────────────
+        qg = nlm.get("quality_gate")
+        persp = nlm.get("perspectives")
+        if qg or persp:
+            report_parts: list[str] = ["# Docent Studio — Quality Report\n"]
+            if qg and qg.get("raw"):
+                report_parts.append(qg["raw"])
+            if persp:
+                report_parts.append("\n## Perspectives\n")
+                for key, label in (
+                    ("practitioner", "Practitioner"),
+                    ("skeptic", "Skeptic"),
+                    ("beginner", "Beginner"),
+                ):
+                    if persp.get(key):
+                        report_parts.append(f"### {label}\n\n{persp[key]}\n")
+            report_path = package_dir / "quality-report.md"
+            report_path.write_text("\n".join(report_parts), encoding="utf-8")
+            yield ProgressEvent(
+                phase="package", message=f"Quality report: {report_path}"
+            )
 
         if not nlm["ok"]:
             import webbrowser

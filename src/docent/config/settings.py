@@ -31,6 +31,7 @@ class ResearchSettings(BaseModel):
     tavily_research_timeout: float = 600.0  # seconds to wait for Tavily Research API results
     semantic_scholar_api_key: str | None = None
     notebooklm_notebook_id: str | None = None  # NotebookLM notebook ID from the URL (e.g. abc123...)
+    notebooklm_source_limit: int = 50  # 50 = free tier; set to 100 for NotebookLM Plus
     obsidian_vault: Path | None = None  # Absolute path to Obsidian vault root (or target subfolder)
     alphaxiv_api_key: str | None = None  # API key from alphaxiv.org (env: ALPHAXIV_API_KEY)
 
