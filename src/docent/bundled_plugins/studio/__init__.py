@@ -40,6 +40,10 @@ from .models import (
     GetPaperInputs,
     GetPaperResult,
     LitInputs,
+    ReadOutputInputs,
+    ReadOutputResult,
+    SaveSynthesisInputs,
+    SaveSynthesisResult,
     ReplicateInputs,
     ResearchResult,
     ReviewInputs,
@@ -868,6 +872,74 @@ class StudioTool(Tool):
             sources_count=len(selected),
             vault_path=vault_path,
             message=" -- ".join(parts),
+        )
+
+    @action(
+        description=(
+            "Read the full content of a Docent research output file for AI synthesis. "
+            "Call this after studio__deep_research or studio__lit returns a synthesis_hint, "
+            "then use the content to write a synthesised research brief."
+        ),
+        input_schema=ReadOutputInputs,
+        name="read-output",
+    )
+    def read_output(self, inputs: ReadOutputInputs, context: Context) -> ReadOutputResult:  # noqa: ARG002
+        from pathlib import Path
+        p = Path(inputs.output_file)
+        if not p.exists():
+            return ReadOutputResult(
+                ok=False,
+                output_file=inputs.output_file,
+                content="",
+                word_count=0,
+                message=f"File not found: {inputs.output_file}",
+            )
+        content = p.read_text(encoding="utf-8")
+        words = len(content.split())
+        return ReadOutputResult(
+            ok=True,
+            output_file=inputs.output_file,
+            content=content,
+            word_count=words,
+            message=(
+                f"Document saved at: {inputs.output_file} — "
+                f"{words} words. Tell the user this path so they can open it. "
+                "Now synthesise the content field into a research brief."
+            ),
+        )
+
+    @action(
+        description=(
+            "Save an AI-synthesised research brief to the same folder as the Docent source "
+            "compilation. Returns the saved file path and the summary for display in chat. "
+            "Always call this after synthesising free-tier research — never paste the full "
+            "synthesis into chat directly."
+        ),
+        input_schema=SaveSynthesisInputs,
+        name="save-synthesis",
+    )
+    def save_synthesis(self, inputs: SaveSynthesisInputs, context: Context) -> SaveSynthesisResult:  # noqa: ARG002
+        from pathlib import Path
+        import datetime
+
+        source = Path(inputs.source_output_file)
+        folder = source.parent if source.parent.exists() else Path.cwd()
+        stem = source.stem.removesuffix("-free") if source.stem.endswith("-free") else source.stem
+        timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
+        save_path = folder / f"{stem}-synthesis-{timestamp}.md"
+
+        save_path.write_text(inputs.content, encoding="utf-8")
+        words = len(inputs.content.split())
+
+        return SaveSynthesisResult(
+            ok=True,
+            saved_file=str(save_path),
+            summary=inputs.summary,
+            word_count=words,
+            message=(
+                f"Synthesis saved to: {save_path} ({words} words). "
+                "Display only the summary field to the user, then mention the saved path."
+            ),
         )
 
     @action(

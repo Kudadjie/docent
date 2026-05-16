@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from docent.config import Settings
 from docent.execution import Executor
@@ -13,3 +13,4 @@ class Context:
     llm: LLMClient
     executor: Executor
     via_mcp: bool = False
+    mcp_notes: list[str] = field(default_factory=list)

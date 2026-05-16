@@ -128,15 +128,65 @@ def _preflight_free_backend(inputs: BaseModel, context: Context) -> None:
 
     Must be called before Rich Progress starts (it steals stdin).
     Raises typer.Exit(1) if the user declines to proceed.
+
+    In MCP mode: skips printing and interactive prompts; instead appends
+    structured notes to context.mcp_notes so the caller can include them
+    in the JSON result.
     """
     if getattr(inputs, "backend", None) != "free":
         return
 
+    from .free_research import FREE_TIER_DISCLAIMER, TAVILY_SIGNUP_GUIDE
+
+    if context.via_mcp:
+        # ── MCP path: two-turn confirmation pattern ───────────────────────────
+        # Turn 1 (confirmed=False): surface all info as structured notes and
+        #   raise ConfirmationRequired so invoke_action returns them without
+        #   running the research.
+        # Turn 2 (confirmed=True): add notes to context and proceed normally.
+        import re
+        from docent.core.exceptions import ConfirmationRequired
+
+        strip_markup = lambda s: re.sub(r"\[/?[^\]]+\]", "", s).strip()
+
+        notes: list[str] = [strip_markup(FREE_TIER_DISCLAIMER)]
+
+        tavily_key = context.settings.research.tavily_api_key
+        if not tavily_key:
+            notes.append(
+                strip_markup(
+                    "No Tavily API key found. Web search results will be skipped — "
+                    "only academic papers from Semantic Scholar and CrossRef will be included.\n\n"
+                    + TAVILY_SIGNUP_GUIDE
+                )
+            )
+        else:
+            notes.append("Tavily API key is configured — web search will be included.")
+
+        notes.append(
+            "MODEL RECOMMENDATION for free-tier research:\n"
+            "With this backend, the AI assistant (you, Claude) does the synthesis — "
+            "so the model you are running on directly affects output quality.\n"
+            "  • Sonnet — good for everyday research and exploration.\n"
+            "  • Opus   — recommended for thesis-quality output, highly technical topics, "
+            "or when you need deep critical analysis across many sources.\n"
+            "The user can switch models in Claude Desktop before confirming. "
+            "Present this note to them now."
+        )
+
+        confirmed = getattr(inputs, "confirmed", False)
+        if not confirmed:
+            raise ConfirmationRequired(notes=notes)
+
+        # confirmed=True: add notes to context so they appear in the response, then proceed.
+        context.mcp_notes.extend(notes)
+        return
+
+    # ── CLI path: original interactive behaviour ──────────────────────────────
     import sys
     import typer
     from docent.ui.console import get_console
     from docent.config import write_setting
-    from .free_research import FREE_TIER_DISCLAIMER, TAVILY_SIGNUP_GUIDE
 
     console = get_console()
     console.print(FREE_TIER_DISCLAIMER)

@@ -100,6 +100,7 @@ def run_action(
                 raise RuntimeError(
                     f"Preflight check failed for '{tool_name} {action_cli_name}'"
                 ) from exc
+            # ConfirmationRequired is intentional — let it bubble to the caller.
         return getattr(tool_cls(), method_name)(inputs, ctx)
 
     # Single-action tool — exposed over MCP as "{tool}__run".

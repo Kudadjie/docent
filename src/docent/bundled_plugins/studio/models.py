@@ -34,10 +34,22 @@ _GUIDE_FILES_FIELD = Field(
 # ---------------------------------------------------------------------------
 
 _BACKEND_DEEP_DESC = (
-    "Research backend: 'feynman' (default, requires Feynman CLI), "
-    "'docent' (requires OpenCode + API credits), or "
-    "'free' (no AI — Tavily + Semantic Scholar + CrossRef only; "
-    "output is a raw literature dump, not a synthesised report)."
+    "Research backend — ask the user which to use before calling this tool, "
+    "and include the model recommendation for each option so they can switch if needed:\n\n"
+    "  'free' — Docent aggregates sources (Tavily + Semantic Scholar + CrossRef) then YOU "
+    "do parallel research and synthesise both streams into a full brief. No extra API cost. "
+    "MODEL: Sonnet for everyday research; switch to Opus for thesis-quality synthesis or "
+    "highly technical topics where deeper reasoning matters.\n\n"
+    "  'docent' — 6-stage AI pipeline via OpenCode (requires OpenCode server running + API credits). "
+    "The synthesis happens inside OpenCode, not in this conversation — so your current Claude "
+    "model does not affect output quality. MODEL: any model is fine.\n\n"
+    "  'feynman' — full AI deep research via Feynman CLI (10–30 min; requires Feynman installed). "
+    "WARNING: via MCP the connection will time out before Feynman finishes. "
+    "If the user picks feynman, tell them to run it in the terminal instead: "
+    "`docent studio deep-research --backend feynman`. "
+    "Model does not apply — Feynman runs independently.\n\n"
+    "Present all three options with their model notes so the user can make an informed choice "
+    "and switch model in Claude Desktop before proceeding."
 )
 
 class DeepInputs(BaseModel):
@@ -45,6 +57,14 @@ class DeepInputs(BaseModel):
     backend: str = Field("feynman", description=_BACKEND_DEEP_DESC)
     output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
     guide_files: list[str] = _GUIDE_FILES_FIELD
+    confirmed: bool = Field(
+        False,
+        description=(
+            "Set to true on a retry after the user has acknowledged the disclaimer "
+            "and any warnings returned in a previous confirmation_required response. "
+            "Only relevant for the 'free' backend via MCP."
+        ),
+    )
 
 
 class LitInputs(BaseModel):
@@ -52,13 +72,69 @@ class LitInputs(BaseModel):
     backend: str = Field("feynman", description=_BACKEND_DEEP_DESC)
     output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
     guide_files: list[str] = _GUIDE_FILES_FIELD
+    confirmed: bool = Field(
+        False,
+        description=(
+            "Set to true on a retry after the user has acknowledged the disclaimer "
+            "and any warnings returned in a previous confirmation_required response. "
+            "Only relevant for the 'free' backend via MCP."
+        ),
+    )
 
 
 class ReviewInputs(BaseModel):
     artifact: str = Field(..., description="arXiv ID, local PDF path, or URL to review.")
-    backend: str = Field("feynman", description="Research backend: 'feynman' (default) or 'docent'.")
+    backend: str = Field("feynman", description="Research backend — ask the user which to use. Options: 'feynman' (requires Feynman CLI; slow via MCP — suggest terminal instead), 'docent' (requires OpenCode server + API credits).")
     output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
     guide_files: list[str] = _GUIDE_FILES_FIELD
+
+
+class ReadOutputInputs(BaseModel):
+    output_file: str = Field(
+        ...,
+        description=(
+            "Absolute path to a Docent research output file (.md). "
+            "Returns the full content for AI synthesis. "
+            "Use the output_file path returned by studio__deep_research or studio__lit."
+        ),
+    )
+
+
+class ReadOutputResult(BaseModel):
+    ok: bool
+    output_file: str
+    content: str
+    word_count: int
+    message: str
+
+
+class SaveSynthesisInputs(BaseModel):
+    source_output_file: str = Field(
+        ...,
+        description=(
+            "Absolute path to the Docent research output file this synthesis is based on. "
+            "Used to determine the save folder and derive the synthesis filename."
+        ),
+    )
+    content: str = Field(
+        ...,
+        description="The full synthesised research brief to save.",
+    )
+    summary: str = Field(
+        ...,
+        description=(
+            "A concise summary (3–5 paragraphs) to display in chat. "
+            "The full content is saved to file; only this summary is shown to the user."
+        ),
+    )
+
+
+class SaveSynthesisResult(BaseModel):
+    ok: bool
+    saved_file: str
+    summary: str
+    word_count: int
+    message: str
 
 
 class ConfigShowInputs(BaseModel):
@@ -102,7 +178,7 @@ class ScholarlySearchInputs(BaseModel):
 class CompareInputs(BaseModel):
     artifact_a: str = Field(..., description="First artifact: arXiv ID, PDF path, or URL.")
     artifact_b: str = Field(..., description="Second artifact: arXiv ID, PDF path, or URL.")
-    backend: str = Field("feynman", description="Research backend: 'feynman' (default) or 'docent'.")
+    backend: str = Field("feynman", description="Research backend — ask the user which to use. Options: 'feynman' (requires Feynman CLI; slow via MCP — suggest terminal instead), 'docent' (requires OpenCode server + API credits).")
     output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
     guide_files: list[str] = _GUIDE_FILES_FIELD
 
@@ -113,21 +189,21 @@ class CompareInputs(BaseModel):
 
 class DraftInputs(BaseModel):
     topic: str = Field(..., description="Topic or section title to draft.")
-    backend: str = Field("feynman", description="Research backend: 'feynman' (default) or 'docent'.")
+    backend: str = Field("feynman", description="Research backend — ask the user which to use. Options: 'feynman' (requires Feynman CLI; slow via MCP — suggest terminal instead), 'docent' (requires OpenCode server + API credits).")
     output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
     guide_files: list[str] = _GUIDE_FILES_FIELD
 
 
 class ReplicateInputs(BaseModel):
     artifact: str = Field(..., description="arXiv ID, PDF path, or URL of the paper to replicate.")
-    backend: str = Field("feynman", description="Research backend: 'feynman' (default) or 'docent'.")
+    backend: str = Field("feynman", description="Research backend — ask the user which to use. Options: 'feynman' (requires Feynman CLI; slow via MCP — suggest terminal instead), 'docent' (requires OpenCode server + API credits).")
     output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
     guide_files: list[str] = _GUIDE_FILES_FIELD
 
 
 class AuditInputs(BaseModel):
     artifact: str = Field(..., description="arXiv ID, PDF path, or URL of the paper to audit.")
-    backend: str = Field("feynman", description="Research backend: 'feynman' (default) or 'docent'.")
+    backend: str = Field("feynman", description="Research backend — ask the user which to use. Options: 'feynman' (requires Feynman CLI; slow via MCP — suggest terminal instead), 'docent' (requires OpenCode server + API credits).")
     output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
     guide_files: list[str] = _GUIDE_FILES_FIELD
 

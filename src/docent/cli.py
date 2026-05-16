@@ -430,15 +430,16 @@ def main(
     from docent.utils.paths import logs_dir
     configure_logging(verbose=settings.verbose, log_dir=logs_dir())
 
-    # Skip startup prompts when the user is explicitly running setup or doctor —
-    # those commands manage their own output.
-    _skip_startup = ctx.invoked_subcommand in ("setup", "doctor")
+    # Skip startup prompts for commands that manage their own output or that run
+    # as a stdio server (serve) where stdout must be pure JSON-RPC.
+    _skip_startup = ctx.invoked_subcommand in ("setup", "doctor", "serve")
     if not _skip_startup:
         _run_setup_if_needed()
         _startup_doctor_check(settings)
 
     ctx.obj = Context(settings=settings, llm=LLMClient(settings), executor=Executor())
-    run_startup_hooks(ctx.obj)
+    if not _skip_startup:
+        run_startup_hooks(ctx.obj)
 
 
 @app.command("list", help="List all registered tools.")

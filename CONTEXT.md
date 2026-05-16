@@ -1,13 +1,13 @@
 # CONTEXT - resume hint for next session
 
-**Current Task:** Free-tier studio backend + guide-files UX; MCP synthesis prompt; real-life test checklist updated.
+**Current Task:** to-notebook hardening sprint — committed and pushed to dev (897a2d7).
 
 **Key Decisions:**
-- `--backend free`: Tavily → DuckDuckGo fallback chain; academic papers always paired; full disclaimer + confirm before running
-- `Context.via_mcp=True` injected by MCP server; free-tier output uses `_MCP_SYNTHESIS_PROMPT` footer (AI-directed) vs `_MCP_NOTE_HUMAN` footer (CLI)
-- `guide-files` supports individual files and folder expansion; unreadable files warn + confirm before running (preflight)
+- Source ranking: relative recency within batch year range, domain authority tiers, per-domain cap (3); _find_sources_path checks both naming conventions
+- NotebookLM tier (free=50 / Plus=100) set once in `docent setup`; notebook reuse via per-file .notebook-map.json
+- Preflight guards: .md-only check, empty-file check, heading/filename mismatch → rename offer, sources-missing confirm
 
 **Next Steps:**
-1. Run studio real-life tests (all results cleared; 45-item checklist in memory/tasks/studio_real_life_tests.md)
+1. Run remaining studio real-life tests (checklist in memory/tasks/studio_real_life_tests.md)
 2. Tag v1.2.0 after real-life tests pass
-3. HTTP + SSE MCP transport added to roadmap (item #44 in project_todos.md) — prerequisite for mobile/remote access
+3. HTTP + SSE MCP transport still on roadmap (item #44 in project_todos.md)
