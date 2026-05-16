@@ -53,6 +53,14 @@ Last updated: 2026-05-15 (hardening sprint: §4 executor process-group kill, §9
 ## Phase 2 — UI
 
 22. **Schema-driven forms** — backend exposes `input_schema` as JSON Schema; React generates forms dynamically. No hard-coded per-tool components.
+
+---
+
+## Remote access / HTTP transport
+
+> **Context:** Docent currently uses stdio MCP transport only. This blocks mobile use cases (Claude mobile app doesn't support MCP) and shared-server deployments. The roadmap item below is the foundational piece that unlocks both.
+
+44. **HTTP + SSE MCP transport** — add a `/mcp` HTTP endpoint alongside the existing stdio transport so Docent can run as a persistent network service. Enables: (a) shared team/lab Docent server, (b) mobile access once Claude mobile adds MCP support, (c) always-on research server without a laptop. Implementation: MCP spec already defines HTTP+SSE transport; FastAPI is already a dependency. Auth (API key or token) required before exposing to the network. File outputs land on the server filesystem — `to-local` and `to-notebook` write there, not the client machine. SSH tunnel (`ssh user@server docent serve`) works today with zero code changes as a stopgap.
 23. **Live Telemetry pane** — consume `ProgressEvent` stream from generator actions via SSE/WebSocket.
 24. **Artifact Viewer** — render Output Shapes as React components (one per shape type).
 25. **Omnibox Mode 1** — NL → existing action ("summarize my queue" → `docent reading stats`). Small classifier + `all_tools()` registry.

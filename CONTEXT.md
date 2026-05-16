@@ -10,4 +10,4 @@
 **Next Steps:**
 1. Run studio real-life tests (all results cleared; 45-item checklist in memory/tasks/studio_real_life_tests.md)
 2. Tag v1.2.0 after real-life tests pass
-3. Add more LLM provider API keys to settings (Gemini, Mistral, Groq) so litellm coverage is explicit in config
+3. HTTP + SSE MCP transport added to roadmap (item #44 in project_todos.md) — prerequisite for mobile/remote access
