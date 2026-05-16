@@ -123,15 +123,100 @@ def _route_output(inputs: Any, out_path: Path, sources_path: Path | None, contex
 # Preflight checks
 # ---------------------------------------------------------------------------
 
+def _preflight_free_backend(inputs: BaseModel, context: Context) -> None:
+    """Show free-tier disclaimer, guide Tavily signup if key is missing, and confirm.
+
+    Must be called before Rich Progress starts (it steals stdin).
+    Raises typer.Exit(1) if the user declines to proceed.
+    """
+    if getattr(inputs, "backend", None) != "free":
+        return
+
+    import sys
+    import typer
+    from docent.ui.console import get_console
+    from docent.config import write_setting
+    from .free_research import FREE_TIER_DISCLAIMER, TAVILY_SIGNUP_GUIDE
+
+    console = get_console()
+    console.print(FREE_TIER_DISCLAIMER)
+
+    try:
+        if not typer.confirm("I understand the limitations. Proceed with the free tier?", default=False):
+            raise typer.Exit(0)
+    except (EOFError, KeyboardInterrupt):
+        raise typer.Exit(0)
+
+    # ── Tavily key guidance ───────────────────────────────────────────────────
+    tavily_key = context.settings.research.tavily_api_key
+    if not tavily_key:
+        console.print(
+            "\n[yellow]No Tavily API key found.[/] Web search results will be skipped.\n"
+        )
+        console.print(TAVILY_SIGNUP_GUIDE)
+
+        if sys.stdin.isatty():
+            try:
+                raw = typer.prompt(
+                    "Enter your Tavily API key to enable web search (Enter to skip)",
+                    default="",
+                    show_default=False,
+                ).strip()
+            except (EOFError, KeyboardInterrupt):
+                raw = ""
+
+            if raw:
+                write_setting("research.tavily_api_key", raw)
+                context.settings.research.tavily_api_key = raw
+                console.print("[green]✓[/] Tavily key saved.")
+            else:
+                console.print("[dim]Continuing without Tavily — only academic papers will be included.[/]")
+
+
+def _preflight_guide_files(inputs: BaseModel) -> None:
+    """Warn about unreadable/missing guide files and ask the user to confirm.
+
+    Must be called before Rich Progress starts (it steals stdin).
+    Raises typer.Exit(1) if the user declines to proceed.
+    """
+    raw_paths: list[str] = getattr(inputs, "guide_files", None) or []
+    if not raw_paths:
+        return
+
+    from .helpers import _check_guide_files
+    from docent.ui.console import get_console
+    import typer
+
+    _, problems = _check_guide_files(raw_paths)
+    if not problems:
+        return
+
+    console = get_console()
+    console.print("[yellow]Warning:[/] The following guide file(s) could not be read:")
+    for p in problems:
+        console.print(f"  [red]✗[/] {p}")
+
+    try:
+        if not typer.confirm("\nProceed anyway (skipping the files above)?", default=False):
+            raise typer.Exit(1)
+    except (EOFError, KeyboardInterrupt):
+        raise typer.Exit(1)
+
+
 def _preflight_docent(inputs: BaseModel, context: Context) -> None:
-    """Pre-flight check for deep/lit actions with ``backend='docent'``.
+    """Pre-flight check for deep/lit actions (all backends).
 
     Runs *before* the generator is created (and therefore before Rich
     Progress takes over stdin).  Checks:
-      1. OpenCode server is running.
-      2. The planner model is usable (has credits, valid auth).
-      3. Tavily API key is available.
+      0. Guide files are readable (all backends).
+      1. Free-tier disclaimer + Tavily key guidance (backend='free').
+      2. OpenCode server is running (backend='docent').
+      3. The planner model is usable — credits, valid auth (backend='docent').
+      4. Tavily API key is available (backend='docent').
     """
+    _preflight_guide_files(inputs)
+    _preflight_free_backend(inputs, context)
+
     if getattr(inputs, "backend", None) != "docent":
         return
 

@@ -25,18 +25,19 @@ from docent.core.context import Context
 from docent.core.registry import all_tools, collect_actions
 
 
-def make_context() -> Context:
+def make_context(*, via_mcp: bool = False) -> Context:
     """Create a fresh Context with default settings, LLM client, and executor.
 
     Used by MCP and FastAPI, which have no persistent ctx.obj.
     CLI surfaces should use the Context already on ctx.obj.
+    Pass via_mcp=True when building a context for the MCP server.
     """
     from docent.config import load_settings
     from docent.execution import Executor
     from docent.llm import LLMClient
 
     settings = load_settings()
-    return Context(settings=settings, llm=LLMClient(settings), executor=Executor())
+    return Context(settings=settings, llm=LLMClient(settings), executor=Executor(), via_mcp=via_mcp)
 
 
 def run_action(

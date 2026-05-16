@@ -186,6 +186,43 @@ class StudioTool(Tool):
                 message=f"Deep research complete. {result_data['rounds']} search round(s), {len(result_data['sources'])} sources.{extra}",
             )
 
+        # Free-tier branch
+        if inputs.backend == "free":
+            from .free_research import run_free_deep
+
+            output_dir = context.settings.research.output_dir.expanduser()
+            output_dir.mkdir(parents=True, exist_ok=True)
+            slug = _slugify(inputs.topic) + "-deep-free"
+            out_file = output_dir / f"{slug}.md"
+            guide_ctx = _read_guide_files(inputs.guide_files)
+
+            try:
+                result_data = yield from run_free_deep(
+                    inputs.topic,
+                    guide_ctx,
+                    tavily_key=context.settings.research.tavily_api_key,
+                    ss_key=context.settings.research.semantic_scholar_api_key,
+                    output_path=out_file,
+                    via_mcp=context.via_mcp,
+                )
+            except Exception as e:
+                return ResearchResult(
+                    ok=False, backend="free", workflow="deep",
+                    topic_or_artifact=inputs.topic, output_file=None,
+                    returncode=None, message=f"Free-tier pipeline error: {e}",
+                )
+
+            sources_file = Path(result_data.get("sources_file", "")) if result_data.get("sources_file") else None
+            notebook_id, vault_path, extra = yield from _route_output(
+                inputs, out_file, sources_file, context, "deep-research"
+            )
+            return ResearchResult(
+                ok=True, backend="free", workflow="deep",
+                topic_or_artifact=inputs.topic, output_file=str(out_file),
+                returncode=0, notebook_id=notebook_id, vault_path=vault_path,
+                message=f"Free-tier deep research complete.{extra}",
+            )
+
         # Feynman branch
         yield ProgressEvent(
             phase="start",
@@ -348,6 +385,42 @@ class StudioTool(Tool):
                 notebook_id=notebook_id,
                 vault_path=vault_path,
                 message=f"Literature review complete. {result_data['rounds']} search round(s), {len(result_data['sources'])} sources.{extra}",
+            )
+
+        # Free-tier branch
+        if inputs.backend == "free":
+            from .free_research import run_free_lit
+
+            output_dir = context.settings.research.output_dir.expanduser()
+            output_dir.mkdir(parents=True, exist_ok=True)
+            slug = _slugify(inputs.topic) + "-lit-free"
+            out_file = output_dir / f"{slug}.md"
+            guide_ctx = _read_guide_files(inputs.guide_files)
+
+            try:
+                result_data = yield from run_free_lit(
+                    inputs.topic,
+                    guide_ctx,
+                    ss_key=context.settings.research.semantic_scholar_api_key,
+                    output_path=out_file,
+                    via_mcp=context.via_mcp,
+                )
+            except Exception as e:
+                return ResearchResult(
+                    ok=False, backend="free", workflow="lit",
+                    topic_or_artifact=inputs.topic, output_file=None,
+                    returncode=None, message=f"Free-tier pipeline error: {e}",
+                )
+
+            sources_file = Path(result_data.get("sources_file", "")) if result_data.get("sources_file") else None
+            notebook_id, vault_path, extra = yield from _route_output(
+                inputs, out_file, sources_file, context, "lit"
+            )
+            return ResearchResult(
+                ok=True, backend="free", workflow="lit",
+                topic_or_artifact=inputs.topic, output_file=str(out_file),
+                returncode=0, notebook_id=notebook_id, vault_path=vault_path,
+                message=f"Free-tier literature review complete.{extra}",
             )
 
         # Feynman branch

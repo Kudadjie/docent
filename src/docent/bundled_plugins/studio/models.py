@@ -19,9 +19,12 @@ _OUTPUT_CHOICES = "'local' (default), 'notebook' (push to NotebookLM), 'vault' (
 _GUIDE_FILES_FIELD = Field(
     default_factory=list,
     description=(
-        "Optional path(s) to files (.md, .txt, PDF) that guide the research — "
+        "Optional path(s) to files (.md, .txt, PDF) or a folder that guide the research — "
         "their content is injected into the research brief to focus the output. "
-        "Pass the flag multiple times to supply several files."
+        "Pass the flag multiple times for individual files "
+        "(e.g. --guide-files notes.md --guide-files outline.txt), "
+        "or pass a folder path once to include all .md/.txt/.pdf files inside it "
+        "(e.g. --guide-files my_notes/)."
     ),
 )
 
@@ -30,16 +33,23 @@ _GUIDE_FILES_FIELD = Field(
 # Input models
 # ---------------------------------------------------------------------------
 
+_BACKEND_DEEP_DESC = (
+    "Research backend: 'feynman' (default, requires Feynman CLI), "
+    "'docent' (requires OpenCode + API credits), or "
+    "'free' (no AI — Tavily + Semantic Scholar + CrossRef only; "
+    "output is a raw literature dump, not a synthesised report)."
+)
+
 class DeepInputs(BaseModel):
     topic: str = Field(..., description="Research topic or question.")
-    backend: str = Field("feynman", description="Research backend: 'feynman' (default) or 'docent'.")
+    backend: str = Field("feynman", description=_BACKEND_DEEP_DESC)
     output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
     guide_files: list[str] = _GUIDE_FILES_FIELD
 
 
 class LitInputs(BaseModel):
     topic: str = Field(..., description="Research topic or question.")
-    backend: str = Field("feynman", description="Research backend: 'feynman' (default) or 'docent'.")
+    backend: str = Field("feynman", description=_BACKEND_DEEP_DESC)
     output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
     guide_files: list[str] = _GUIDE_FILES_FIELD
 

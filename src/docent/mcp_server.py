@@ -124,7 +124,9 @@ def invoke_action(
     ProgressEvent messages as a prefix followed by the final JSON result —
     so MCP callers see the full execution trace in a single response.
     """
-    raw = run_action(tool_name, action_cli_name, arguments)
+    from docent.core.invoke import make_context
+    mcp_context = make_context(via_mcp=True)
+    raw = run_action(tool_name, action_cli_name, arguments, context=mcp_context)
 
     if inspect.isgenerator(raw):
         lines: list[str] = []

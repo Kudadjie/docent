@@ -12,3 +12,4 @@ class Context:
     settings: Settings
     llm: LLMClient
     executor: Executor
+    via_mcp: bool = False

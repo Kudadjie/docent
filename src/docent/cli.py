@@ -821,7 +821,12 @@ def _build_callback(
     for fname, finfo in schema.model_fields.items():
         cli_flag = "--" + fname.replace("_", "-")
         help_text = finfo.description or ""
-        option_default = ... if finfo.is_required() else finfo.default
+        if finfo.is_required():
+            option_default = ...
+        elif finfo.default_factory is not None:
+            option_default = finfo.default_factory()
+        else:
+            option_default = finfo.default
         option = typer.Option(option_default, cli_flag, help=help_text)
         params.append(
             inspect.Parameter(

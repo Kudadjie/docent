@@ -1,13 +1,13 @@
 # CONTEXT - resume hint for next session
 
-**Current Task:** Studio plugin split complete (2460→1379 lines in __init__.py); performance profiling done.
+**Current Task:** Free-tier studio backend + guide-files UX; MCP synthesis prompt; real-life test checklist updated.
 
 **Key Decisions:**
-- Studio split: feynman.py (415L), helpers.py (88L), models.py (336L), preflights.py (246L); 316 tests green
-- Warm-cache reader path is fast (2.7ms avg); cold cache (~10s Mendeley MCP) is the real UX problem
-- Pre-existing test failure: test_output_notebook_pushes (Playwright not installed on Windows)
+- `--backend free`: Tavily → DuckDuckGo fallback chain; academic papers always paired; full disclaimer + confirm before running
+- `Context.via_mcp=True` injected by MCP server; free-tier output uses `_MCP_SYNTHESIS_PROMPT` footer (AI-directed) vs `_MCP_NOTE_HUMAN` footer (CLI)
+- `guide-files` supports individual files and folder expansion; unreadable files warn + confirm before running (preflight)
 
 **Next Steps:**
-1. Run studio real-life tests #10–#19 (OpenCode credits reset ~2026-05-17 17:00)
+1. Run studio real-life tests (all results cleared; 45-item checklist in memory/tasks/studio_real_life_tests.md)
 2. Tag v1.2.0 after real-life tests pass
-3. Cold cache UX: add spinner/message when Mendeley MCP is warming up on first call
+3. Add more LLM provider API keys to settings (Gemini, Mistral, Groq) so litellm coverage is explicit in config

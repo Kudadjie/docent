@@ -58,7 +58,10 @@ def search_scholarly(
 # ── Google Scholar ────────────────────────────────────────────────────────────
 
 def _search_google_scholar(query: str, max_results: int) -> list[dict[str, Any]]:
-    from scholarly import scholarly  # lazy: ~200 ms import, only when needed
+    import warnings
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=SyntaxWarning, module="scholarly")
+        from scholarly import scholarly  # lazy: ~200 ms import, only when needed
     scholarly.set_timeout(5)
     gen = scholarly.search_pubs(query)
     results: list[dict[str, Any]] = []

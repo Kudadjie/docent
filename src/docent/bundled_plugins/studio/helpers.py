@@ -38,18 +38,93 @@ def _read_guide_file(path: str | None) -> str:
         return ""
 
 
-def _read_guide_files(paths: list[str]) -> str:
-    """Read one or more guide files and concatenate their content.
+_GUIDE_EXTS = {".md", ".txt", ".pdf"}
 
+
+def _expand_guide_paths(paths: list[str]) -> list[str]:
+    """Expand any directory paths to their contained .md/.txt/.pdf files."""
+    expanded: list[str] = []
+    for raw in paths:
+        p = Path(raw).expanduser()
+        if p.is_dir():
+            expanded.extend(
+                str(f) for f in sorted(p.iterdir())
+                if f.is_file() and f.suffix.lower() in _GUIDE_EXTS
+            )
+        else:
+            expanded.append(raw)
+    return expanded
+
+
+def _check_guide_files(paths: list[str]) -> tuple[list[str], list[str]]:
+    """Check guide file paths and return (readable, problems).
+
+    A path is a problem if: it doesn't exist, is a directory with no matching
+    files, or exists but cannot be read (permissions, encoding, corrupt PDF).
+    Directories are expanded first.
+    """
+    readable: list[str] = []
+    problems: list[str] = []
+
+    for raw in paths:
+        p = Path(raw).expanduser()
+        if p.is_dir():
+            matches = [
+                f for f in sorted(p.iterdir())
+                if f.is_file() and f.suffix.lower() in _GUIDE_EXTS
+            ]
+            if not matches:
+                problems.append(f"{raw}  (folder contains no .md/.txt/.pdf files)")
+            else:
+                for f in matches:
+                    if _is_readable(f):
+                        readable.append(str(f))
+                    else:
+                        problems.append(str(f))
+        elif not p.exists():
+            problems.append(f"{raw}  (not found)")
+        elif not p.suffix.lower() in _GUIDE_EXTS:
+            problems.append(f"{raw}  (unsupported type — use .md, .txt, or .pdf)")
+        elif _is_readable(p):
+            readable.append(str(p))
+        else:
+            problems.append(f"{raw}  (unreadable or corrupted)")
+
+    return readable, problems
+
+
+def _is_readable(p: Path) -> bool:
+    """Return True if the file can be successfully opened and read."""
+    try:
+        if p.suffix.lower() == ".pdf":
+            try:
+                from pdfminer.high_level import extract_text
+                extract_text(str(p))
+                return True
+            except Exception:
+                return False
+        p.read_text(encoding="utf-8", errors="strict")
+        return True
+    except (OSError, UnicodeDecodeError):
+        return False
+
+
+def _read_guide_files(paths: list[str]) -> str:
+    """Read one or more guide files (or folder) and concatenate their content.
+
+    Directories are expanded to all .md/.txt/.pdf files inside them.
     Each file's content is prefixed with a header so the LLM can distinguish
     sources. Files that are missing or unreadable are silently skipped.
     """
     if not paths:
         return ""
-    if len(paths) == 1:
-        return _read_guide_file(paths[0])
+    resolved = _expand_guide_paths(paths)
+    if not resolved:
+        return ""
+    if len(resolved) == 1:
+        return _read_guide_file(resolved[0])
     parts: list[str] = []
-    for path in paths:
+    for path in resolved:
         text = _read_guide_file(path)
         if text:
             name = Path(path).name
