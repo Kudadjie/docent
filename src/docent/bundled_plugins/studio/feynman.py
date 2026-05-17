@@ -194,6 +194,63 @@ def _summarize_feynman_error(stderr: str, configured_model: str | None = None) -
             f"{_DOCS_FOOTER}"
         )
 
+    def _extract_retry_delay(text: str) -> str | None:
+        """Extract retry delay in seconds from various error formats."""
+        patterns = [
+            # JSON "retryDelay": "14s" (with possibly escaped quotes)
+            r'retryDelay\\?"?\s*:\s*\\?"?(\d+(?:\.\d+)?)\s*s',
+            # Text: "Please retry in 14.068081295s"
+            r'retry in\s+(\d+(?:\.\d+)?)\s*s',
+            # HTTP-style: Retry-After: 14
+            r'[Rr]etry-?[Aa]fter\D+(\d+(?:\.\d+)?)',
+        ]
+        for pat in patterns:
+            m = re.search(pat, text)
+            if m:
+                return m.group(1)
+        return None
+
+    def _quota_msg(text: str, model_note: str, model_hint: str | None) -> str:
+        """Build a quota-exhausted message with retry delay, free-tier detection, billing link."""
+        retry = _extract_retry_delay(text)
+        try:
+            retry_secs = int(float(retry)) + 1 if retry else None
+        except ValueError:
+            retry_secs = None
+        is_free_tier = bool(re.search(r'free.?tier|FreeTier', text))
+        provider, url = _billing_link(model_hint)
+
+        lines = [f"{provider} quota exhausted.{model_note}"]
+        if retry_secs is not None:
+            lines.append(f"  Retry available in ~{retry_secs}s.")
+
+        # Avoid "your your model provider" when provider name already starts with "your"
+        provider_possessive = (
+            provider if provider.lower().startswith("your") else f"your {provider}"
+        )
+
+        lines.append("To fix:")
+        step = 1
+        if retry_secs is not None:
+            lines.append(f"  {step}. Wait for the retry window above and re-run, OR")
+            step += 1
+        if is_free_tier:
+            if url:
+                lines.append(f"  {step}. Upgrade {provider_possessive} account to a paid tier: {url}")
+            else:
+                lines.append(f"  {step}. Upgrade {provider_possessive} account to a paid tier")
+        else:
+            if url:
+                lines.append(f"  {step}. Add API credits at: {url}")
+            else:
+                lines.append(f"  {step}. Add API credits to {provider_possessive} account")
+        step += 1
+        lines.append(f"  {step}. Or switch to a different provider/model:")
+        lines.append("     docent studio config-set --key feynman_model --value <provider/model>")
+        lines.append("     (e.g. anthropic/claude-sonnet-4-5, openai/gpt-4o, google/gemini-2.0-flash)")
+
+        return "\n".join(lines) + f"\n{_DOCS_FOOTER}"
+
     last_model = None
     last_error_raw = None
 
@@ -225,15 +282,7 @@ def _summarize_feynman_error(stderr: str, configured_model: str | None = None) -
         if "credit balance" in stderr_lower or "credit_balance_too_low" in stderr_lower:
             return _credit_balance_msg(model_note, configured_model or found_model)
         if "quota" in stderr_lower or "RESOURCE_EXHAUSTED" in stderr or code == 429:
-            return (
-                f"Feynman API quota exhausted.{model_note}\n"
-                "To fix:\n"
-                "  1. Add API credits to your provider account, or\n"
-                "  2. Switch to a model with available credits:\n"
-                f"     docent studio config-set --key feynman_model --value <provider/model>\n"
-                "  (e.g. anthropic/claude-sonnet-4-5, openai/gpt-4o)\n"
-                f"{_DOCS_FOOTER}"
-            )
+            return _quota_msg(stderr, model_note, configured_model or found_model)
         if "auth" in stderr_lower or "unauthorized" in stderr_lower or code in (401, 403):
             return (
                 f"Feynman API authentication failed.{model_note}\n"
@@ -271,22 +320,17 @@ def _summarize_feynman_error(stderr: str, configured_model: str | None = None) -
     if "credit balance" in msg.lower() or "credit_balance_too_low" in msg.lower():
         return _credit_balance_msg(model_note, configured_model or last_model)
 
+    # Quota check FIRST — "RESOURCE_EXHAUSTED" / code 429 is more specific than
+    # the generic "rate/limit" matcher below (which would otherwise grab Gemini's
+    # "exceeded ... limit: 0" text and mis-classify it as plain rate-limiting).
+    if code == 429 or "RESOURCE_EXHAUSTED" in str(status):
+        return _quota_msg(stderr, model_note, configured_model or last_model)
+
     if "rate" in msg.lower() or "limit" in msg.lower():
         return (
             f"Feynman API rate-limited.{model_note}\n"
             "Wait 30-60 seconds and retry, or switch to a different model:\n"
             f"  docent studio config-set --key feynman_model --value <provider/model>\n"
-            f"{_DOCS_FOOTER}"
-        )
-
-    if code == 429 or "RESOURCE_EXHAUSTED" in str(status):
-        return (
-            f"Feynman API quota exhausted.{model_note}\n"
-            "To fix:\n"
-            "  1. Add API credits to your provider account, or\n"
-            "  2. Switch to a model with available credits:\n"
-            f"     docent studio config-set --key feynman_model --value <provider/model>\n"
-            "  (e.g. anthropic/claude-sonnet-4-5, openai/gpt-4o)\n"
             f"{_DOCS_FOOTER}"
         )
 
