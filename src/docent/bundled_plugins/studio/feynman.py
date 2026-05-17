@@ -341,7 +341,18 @@ def _run_feynman(
     workspace_dir.mkdir(parents=True, exist_ok=True)
     outputs_dir = workspace_dir / "outputs"
 
-    before: set[Path] = set(outputs_dir.glob("*.md")) if outputs_dir.is_dir() else set()
+    def _md_snapshot(d: Path) -> dict[Path, float]:
+        if not d.is_dir():
+            return {}
+        snap: dict[Path, float] = {}
+        for p in d.rglob("*.md"):
+            try:
+                snap[p] = p.stat().st_mtime
+            except OSError:
+                pass
+        return snap
+
+    before_snap = _md_snapshot(outputs_dir)
 
     stderr_output = ""
     returncode: int
@@ -355,7 +366,9 @@ def _run_feynman(
     try:
         proc = subprocess.Popen(
             full_cmd, cwd=workspace_dir,
+            stdin=subprocess.DEVNULL,
             stderr=subprocess.PIPE, text=True,
+            encoding="utf-8", errors="replace",
             **popen_kwargs,
         )
     except FileNotFoundError:
@@ -366,19 +379,92 @@ def _run_feynman(
             "npm install -g @companion-ai/feynman",
         )
 
+    import sys as _sys
+    import threading
+
+    _TASK_ESTIMATES: dict[str, tuple[str, int]] = {
+        "summary": ("1-3 minutes", 300),
+        "draft": ("5-10 minutes", 900),
+        "compare": ("10-15 minutes", 1200),
+        "audit": ("10-20 minutes", 1500),
+        "review": ("15-25 minutes", 1800),
+        "lit": ("15-25 minutes", 1800),
+        "replicate": ("15-25 minutes", 1800),
+        "deep": ("20-30 minutes", 2400),
+        "deepresearch": ("20-30 minutes", 2400),
+    }
+    task_name = None
+    for i, arg in enumerate(subcommand_args):
+        if arg == "--prompt" and i + 1 < len(subcommand_args):
+            m = re.match(r"^/(\w+)", subcommand_args[i + 1])
+            if m:
+                task_name = m.group(1)
+            break
+
+    if task_name and task_name in _TASK_ESTIMATES:
+        estimate, recommended = _TASK_ESTIMATES[task_name]
+        task_line = f"  /{task_name} typically takes {estimate} (recommended timeout: {recommended}s)."
+        if timeout < recommended:
+            task_line += (
+                f"\n  WARNING: Your timeout is {timeout:.0f}s, below recommended. Increase with:"
+                f"\n    docent studio config-set --key feynman_timeout --value {recommended}"
+            )
+    else:
+        task_line = f"  Current timeout: {timeout:.0f}s."
+
+    print(
+        f"\n  Feynman is running - output will stream below.\n"
+        f"{task_line}\n"
+        f"  Press Ctrl+C to cancel.\n",
+        file=_sys.stderr, flush=True,
+    )
+
+    stderr_lines: list[str] = []
+    stream_error: list[BaseException] = []
+
+    def _stream_stderr() -> None:
+        try:
+            if proc.stderr is None:
+                return
+            for line in proc.stderr:
+                stderr_lines.append(line)
+                try:
+                    print(line, end="", flush=True)
+                except (UnicodeEncodeError, OSError):
+                    _sys.stdout.buffer.write(
+                        line.encode("utf-8", errors="replace")
+                    )
+                    _sys.stdout.flush()
+        except BaseException as e:  # noqa: BLE001
+            stream_error.append(e)
+
+    stderr_thread = threading.Thread(target=_stream_stderr, daemon=True)
+    stderr_thread.start()
+
+    def _collected_stderr() -> str:
+        out = "".join(stderr_lines)
+        if stream_error:
+            out += (
+                f"\n[Docent: stderr streaming thread raised "
+                f"{type(stream_error[0]).__name__}: {stream_error[0]}]\n"
+            )
+        return out
+
     try:
-        _, stderr_output_raw = proc.communicate(timeout=timeout)
+        proc.wait(timeout=timeout)
+        stderr_thread.join(timeout=5)
         returncode = proc.returncode
-        stderr_output = stderr_output_raw or ""
+        stderr_output = _collected_stderr()
     except subprocess.TimeoutExpired:
         proc.kill()
+        stderr_thread.join(timeout=5)
         try:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             pass
         returncode = -1
-        stderr_output = (
-            f"Feynman timed out after {timeout:.0f}s. "
+        stderr_output = _collected_stderr() + (
+            f"\nFeynman timed out after {timeout:.0f}s. "
             "The research task may still be running in the background. "
             "Try increasing the timeout with: "
             "docent studio config-set --key feynman_timeout --value <seconds>"
@@ -392,6 +478,7 @@ def _run_feynman(
                 pass
         else:
             proc.terminate()
+        stderr_thread.join(timeout=5)
         try:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
@@ -403,8 +490,12 @@ def _run_feynman(
         if cost > 0:
             _write_daily_spend(_read_daily_spend() + cost)
 
-    after: set[Path] = set(outputs_dir.glob("*.md")) if outputs_dir.is_dir() else set()
-    new_files = sorted(after - before, key=lambda p: p.stat().st_mtime, reverse=True)
+    after_snap = _md_snapshot(outputs_dir)
+    new_files = sorted(
+        [p for p, mt in after_snap.items() if mt > before_snap.get(p, 0)],
+        key=lambda p: after_snap[p],
+        reverse=True,
+    )
 
     if not new_files:
         return returncode, None, stderr_output

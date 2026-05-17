@@ -19,7 +19,7 @@ class ResearchSettings(BaseModel):
     feynman_command: list[str] | None = None
     feynman_budget_usd: float = 0.0  # 0.0 = no limit (default). Set to e.g. 2.00 to cap Feynman spend at $2 per session.
     feynman_model: str | None = None  # e.g. "anthropic/claude-sonnet-4-5" — passes --model to feynman
-    feynman_timeout: float = 900.0  # seconds before killing stuck feynman runs
+    feynman_timeout: float = 1800.0  # seconds before killing stuck feynman runs (/review with code repo access needs ~20-25 min)
     oc_provider: str = "opencode-go"
     oc_model_planner: str = "glm-5.1"
     oc_model_writer: str = "minimax-m2.7"
