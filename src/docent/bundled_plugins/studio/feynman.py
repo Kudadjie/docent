@@ -156,6 +156,23 @@ def _model_note(last_model: str | None, configured_model: str | None) -> str:
     return "\n  Model attempted: unknown (feynman default)"
 
 
+def _billing_link(model: str | None) -> tuple[str, str]:
+    """Return (provider_display_name, billing_url) for a configured model string.
+
+    URL is empty string if the provider is unknown.
+    """
+    if not model:
+        return ("your model provider", "")
+    provider = model.split("/")[0].lower()
+    links = {
+        "anthropic": ("Anthropic", "https://console.anthropic.com/settings/billing"),
+        "openai": ("OpenAI", "https://platform.openai.com/account/billing"),
+        "google": ("Google AI Studio", "https://aistudio.google.com/app/apikey"),
+        "azure": ("Azure OpenAI", "https://portal.azure.com/"),
+    }
+    return links.get(provider, (provider.title(), ""))
+
+
 def _summarize_feynman_error(stderr: str, configured_model: str | None = None) -> str:
     """Parse feynman's JSON session stream and extract a user-friendly error summary."""
     _DOCS_LINK = "https://feynman.is/docs"
@@ -165,6 +182,17 @@ def _summarize_feynman_error(stderr: str, configured_model: str | None = None) -
         f"Adjust Feynman settings via its CLI in a separate terminal.\n"
         f"See {_DOCS_LINK} for more Feynman-native options."
     )
+
+    def _credit_balance_msg(model_note: str, model_hint: str | None) -> str:
+        provider, url = _billing_link(model_hint)
+        url_line = f"\n  Top up at: {url}" if url else ""
+        return (
+            f"{provider} credit balance is exhausted.{model_note}{url_line}\n"
+            "Or switch to a different provider/model:\n"
+            "  docent studio config-set --key feynman_model --value <provider/model>\n"
+            "  (e.g. openai/gpt-4o, google/gemini-2.0-flash)\n"
+            f"{_DOCS_FOOTER}"
+        )
 
     last_model = None
     last_error_raw = None
@@ -194,6 +222,8 @@ def _summarize_feynman_error(stderr: str, configured_model: str | None = None) -
 
         model_note = _model_note(found_model, configured_model)
 
+        if "credit balance" in stderr_lower or "credit_balance_too_low" in stderr_lower:
+            return _credit_balance_msg(model_note, configured_model or found_model)
         if "quota" in stderr_lower or "RESOURCE_EXHAUSTED" in stderr or code == 429:
             return (
                 f"Feynman API quota exhausted.{model_note}\n"
@@ -217,10 +247,12 @@ def _summarize_feynman_error(stderr: str, configured_model: str | None = None) -
                 f"{_DOCS_FOOTER}"
             )
 
-        tail = stderr.strip()[-500:] if stderr.strip() else "(no output)"
+        # Streamed output already shown to the terminal — don't duplicate it here.
+        # Include a short tail only as a fallback for non-TTY callers (e.g. MCP).
+        tail = stderr.strip()[-200:] if stderr.strip() else "(no output)"
         return (
             f"Feynman exited with an error.{model_note}\n"
-            f"{tail}\n"
+            f"  Last output: ...{tail}\n"
             f"{_DOCS_FOOTER}"
         )
 
@@ -235,6 +267,9 @@ def _summarize_feynman_error(stderr: str, configured_model: str | None = None) -
     status = err_obj.get("status", "")
 
     model_note = _model_note(last_model, configured_model)
+
+    if "credit balance" in msg.lower() or "credit_balance_too_low" in msg.lower():
+        return _credit_balance_msg(model_note, configured_model or last_model)
 
     if "rate" in msg.lower() or "limit" in msg.lower():
         return (
