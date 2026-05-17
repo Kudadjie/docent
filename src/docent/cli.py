@@ -739,6 +739,17 @@ def _check_opencode(settings: Settings) -> tuple[str, str, str, str]:
     )
 
 
+def _check_litellm_provider(
+    label: str, key: str | None, env_var: str, setup_cmd: str
+) -> tuple[str, str, str, str]:
+    """Generic check for a litellm provider API key."""
+    resolved = key or __import__("os").environ.get(env_var, "")
+    if not resolved:
+        return label, "SKIP", "-", f"Not configured — set {env_var} or run: {setup_cmd}"
+    masked = resolved[:6] + "…"
+    return label, "OK", "-", f"Key present ({masked})"
+
+
 def _check_reading_db(settings: Settings) -> tuple[str, str, str, str]:
     db = settings.reading.database_dir
     if db is None:
@@ -1040,6 +1051,11 @@ def doctor_command(ctx: typer.Context) -> None:
         lambda: _check_alphaxiv(settings),
         lambda: _check_notebooklm_py(),
         lambda: _check_reading_db(settings),
+        lambda: _check_litellm_provider("Groq", settings.research.groq_api_key, "GROQ_API_KEY", "docent studio config-set --key groq_api_key --value YOUR_KEY"),
+        lambda: _check_litellm_provider("Gemini", settings.research.gemini_api_key, "GEMINI_API_KEY", "docent studio config-set --key gemini_api_key --value YOUR_KEY"),
+        lambda: _check_litellm_provider("OpenRouter", settings.research.openrouter_api_key, "OPENROUTER_API_KEY", "docent studio config-set --key openrouter_api_key --value YOUR_KEY"),
+        lambda: _check_litellm_provider("Mistral", settings.research.mistral_api_key, "MISTRAL_API_KEY", "docent studio config-set --key mistral_api_key --value YOUR_KEY"),
+        lambda: _check_litellm_provider("Cerebras", settings.research.cerebras_api_key, "CEREBRAS_API_KEY", "docent studio config-set --key cerebras_api_key --value YOUR_KEY"),
     ]
     with ThreadPoolExecutor(max_workers=len(check_fns)) as pool:
         futures = [pool.submit(fn) for fn in check_fns]

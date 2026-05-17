@@ -233,7 +233,26 @@ Studio runs deep research, literature reviews, and peer reviews, backed by Feynm
 | `notebook` | Save locally, then create a new NotebookLM notebook and push all sources. Requires `notebooklm-py` and `notebooklm login`. |
 | `vault` | Save locally, then copy to `{obsidian_vault}/Studio/` with YAML frontmatter. Requires `obsidian_vault` config key. |
 
-**Studio config keys:** `output_dir`, `feynman_budget_usd`, `oc_provider`, `oc_model_planner`, `oc_model_writer`, `oc_model_verifier`, `oc_model_reviewer`, `oc_model_researcher`, `oc_budget_usd`, `tavily_api_key`, `notebooklm_notebook_id`, `obsidian_vault`, `alphaxiv_api_key`.
+**Studio config keys:**
+
+| Key | Default | Notes |
+|---|---|---|
+| `studio_backend` | `opencode` | Active Docent-tier backend: `opencode`, `groq`, `gemini`, `openrouter`, `mistral`, `cerebras`, `anthropic`, `openai`, `ollama`, `lm_studio`, `local` |
+| `output_dir` | `~/Documents/Docent/research` | Research output directory |
+| `feynman_budget_usd` | `0.0` | Feynman spend cap per session (0 = unlimited) |
+| `oc_provider` / `oc_model_*` / `oc_budget_usd` | — | OpenCode backend settings |
+| `groq_api_key` / `groq_model` | `llama-3.3-70b-versatile` | [Free at console.groq.com](https://console.groq.com) |
+| `gemini_api_key` / `gemini_model` | `gemini-2.0-flash` | [Free at aistudio.google.com](https://aistudio.google.com) |
+| `openrouter_api_key` / `openrouter_model` | `meta-llama/llama-3.3-70b-instruct:free` | [Free tier at openrouter.ai](https://openrouter.ai) |
+| `mistral_api_key` / `mistral_model` | `mistral-small-latest` | [Free tier at console.mistral.ai](https://console.mistral.ai) |
+| `cerebras_api_key` / `cerebras_model` | `llama-3.3-70b` | [Free tier at cloud.cerebras.ai](https://cloud.cerebras.ai) |
+| `ollama_base_url` / `ollama_model` | `http://localhost:11434` / `llama3` | Local Ollama server |
+| `lm_studio_base_url` / `lm_studio_model` | `http://localhost:1234/v1` / `local-model` | Local LM Studio server |
+| `local_base_url` / `local_model` / `local_api_key` | — | Generic OAI-compatible local backend |
+| `tavily_api_key` | — | [Free at tavily.com](https://tavily.com) |
+| `notebooklm_notebook_id` | — | NotebookLM notebook ID from URL |
+| `obsidian_vault` | — | Absolute path to Obsidian vault root |
+| `alphaxiv_api_key` | — | [Free at alphaxiv.org/settings](https://alphaxiv.org/settings) |
 
 **alphaXiv paper search:** `search-papers` and `get-paper` use the `alphaxiv-py` SDK. Get a free API key at [alphaxiv.org/settings](https://alphaxiv.org/settings) and set it:
 

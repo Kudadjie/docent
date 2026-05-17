@@ -20,6 +20,7 @@ class ResearchSettings(BaseModel):
     feynman_budget_usd: float = 0.0  # 0.0 = no limit (default). Set to e.g. 2.00 to cap Feynman spend at $2 per session.
     feynman_model: str | None = None  # e.g. "anthropic/claude-sonnet-4-5" — passes --model to feynman
     feynman_timeout: float = 1800.0  # seconds before killing stuck feynman runs (/review with code repo access needs ~20-25 min)
+    studio_backend: str = "opencode"  # active Docent-tier backend
     oc_provider: str = "opencode-go"
     oc_model_planner: str = "glm-5.1"
     oc_model_writer: str = "minimax-m2.7"
@@ -27,6 +28,30 @@ class ResearchSettings(BaseModel):
     oc_model_reviewer: str = "deepseek-v4-pro"
     oc_model_researcher: str = "glm-5.1"
     oc_budget_usd: float = 0.0
+
+    # LiteLLM provider API keys
+    groq_api_key: str | None = None
+    gemini_api_key: str | None = None
+    openrouter_api_key: str | None = None
+    mistral_api_key: str | None = None
+    cerebras_api_key: str | None = None
+
+    # LiteLLM provider models (defaults shown)
+    groq_model: str = "llama-3.3-70b-versatile"
+    gemini_model: str = "gemini-2.0-flash"
+    openrouter_model: str = "meta-llama/llama-3.3-70b-instruct:free"
+    mistral_model: str = "mistral-small-latest"
+    cerebras_model: str = "llama-3.3-70b"
+    ollama_model: str = "llama3"
+    lm_studio_model: str = "local-model"
+    local_model: str = "local-model"
+
+    # Local provider base URLs
+    ollama_base_url: str = "http://localhost:11434"
+    lm_studio_base_url: str = "http://localhost:1234/v1"
+    local_base_url: str | None = None
+    local_api_key: str | None = None
+
     tavily_api_key: str | None = None
     tavily_research_timeout: float = 600.0  # seconds to wait for Tavily Research API results
     semantic_scholar_api_key: str | None = None

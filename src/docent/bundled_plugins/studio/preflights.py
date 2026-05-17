@@ -260,16 +260,38 @@ def _preflight_docent(inputs: BaseModel, context: Context) -> None:
     Progress takes over stdin).  Checks:
       0. Guide files are readable (all backends).
       1. Free-tier disclaimer + Tavily key guidance (backend='free').
-      2. OpenCode server is running (backend='docent').
-      3. The planner model is usable — credits, valid auth (backend='docent').
-      4. Tavily API key is available (backend='docent').
+      2. LiteLLM backends: API key present.
+      3. OpenCode backends: server running, planner model usable, Tavily key set.
     """
     _preflight_guide_files(inputs)
     _preflight_free_backend(inputs, context)
 
-    if getattr(inputs, "backend", None) != "docent":
+    from .backend import DOCENT_BACKEND_NAMES
+    backend_name = getattr(inputs, "backend", None)
+    if backend_name not in DOCENT_BACKEND_NAMES:
         return
 
+    # Resolve which provider is actually active
+    effective = (
+        context.settings.research.studio_backend
+        if backend_name == "docent"
+        else backend_name
+    )
+
+    if effective not in ("opencode", None, ""):
+        # LiteLLM backend — validate credentials early for a clean error message
+        import typer
+        from docent.ui.console import get_console
+        from docent.errors import AuthError
+        try:
+            from .backend import get_backend
+            get_backend(context.settings, override=backend_name)
+        except (AuthError, ValueError) as e:
+            get_console().print(f"[red]Error:[/] {e}")
+            raise typer.Exit(1)
+        return  # No server or Tavily check needed for LiteLLM backends
+
+    # OpenCode checks
     import typer
     from docent.ui.console import get_console
     from docent.utils.model_health import verify_opencode_model
@@ -285,6 +307,7 @@ def _preflight_docent(inputs: BaseModel, context: Context) -> None:
             "Start it with: [cyan]opencode serve --port 4096[/]\n"
             "Alternatives (no OpenCode required):\n"
             "  • [cyan]--backend free[/]    — Tavily + DuckDuckGo, no API key needed\n"
+            "  • [cyan]--backend groq[/]    — free Groq API (set GROQ_API_KEY)\n"
             "  • [cyan]--backend feynman[/] — Feynman agent (API credits required)"
         )
         raise typer.Exit(1)
@@ -300,6 +323,7 @@ def _preflight_docent(inputs: BaseModel, context: Context) -> None:
             f"[red]✗[/] Model [cyan]{planner}[/] is not usable: {e}\n"
             "Alternatives (no OpenCode required):\n"
             "  • [cyan]--backend free[/]    — Tavily + DuckDuckGo, no API key needed\n"
+            "  • [cyan]--backend groq[/]    — free Groq API (set GROQ_API_KEY)\n"
             "  • [cyan]--backend feynman[/] — Feynman agent (API credits required)\n"
             "Or fix the model issue above then retry."
         )
@@ -309,6 +333,7 @@ def _preflight_docent(inputs: BaseModel, context: Context) -> None:
             f"[red]✗[/] OpenCode server became unreachable during model check: {e}\n"
             "Alternatives (no OpenCode required):\n"
             "  • [cyan]--backend free[/]    — Tavily + DuckDuckGo, no API key needed\n"
+            "  • [cyan]--backend groq[/]    — free Groq API (set GROQ_API_KEY)\n"
             "  • [cyan]--backend feynman[/] — Feynman agent (API credits required)\n"
             "Or restart the OpenCode server and retry."
         )
@@ -316,12 +341,11 @@ def _preflight_docent(inputs: BaseModel, context: Context) -> None:
     except Exception as e:
         console.print(
             f"[red]✗[/] Model check failed for [cyan]{planner}[/] ({e})\n"
-            "Most likely cause: quota exhausted on the provider — many providers\n"
-            "silently drop requests rather than returning an explicit error.\n"
-            "Diagnose with: [cyan]opencode stats[/]\n"
+            "Most likely cause: quota exhausted on the provider.\n"
             "Options:\n"
             "  • Switch to [cyan]--backend free[/] (no OpenCode or API key required)\n"
-            "  • Switch to [cyan]--backend feynman[/] (no OpenCode required; AI API credits required)\n"
+            "  • Switch to [cyan]--backend groq[/] (free Groq API)\n"
+            "  • Switch to [cyan]--backend feynman[/] (no OpenCode required)\n"
             "  • Change model: [cyan]docent studio config-set --key oc_model_planner --value <model>[/]\n"
             "  • Top up your OpenCode subscription and retry"
         )
@@ -330,18 +354,41 @@ def _preflight_docent(inputs: BaseModel, context: Context) -> None:
     tavily_key = _resolve_tavily_key(context)
     if not tavily_key:
         get_console().print(
-            "[red]Error:[/] Tavily API key is required for the [cyan]docent[/] backend.\n"
+            "[red]Error:[/] Tavily API key is required for the [cyan]opencode[/] backend.\n"
             "Get one at https://tavily.com (free tier: 1,000 calls/month).\n"
-            "Or switch to [cyan]--backend free[/] — uses DuckDuckGo when no Tavily key is set."
+            "Or switch to [cyan]--backend free[/] — uses DuckDuckGo when no Tavily key is set.\n"
+            "Or switch to [cyan]--backend groq[/] — works without Tavily (uses manual search)."
         )
         raise typer.Exit(1)
 
 
 def _preflight_oc_only(inputs: BaseModel, context: Context) -> None:
-    """Pre-flight check for review/compare/draft/replicate/audit (needs OcClient but not Tavily)."""
-    if getattr(inputs, "backend", None) != "docent":
+    """Pre-flight check for review/compare/draft/replicate/audit (AI backend, no Tavily needed)."""
+    from .backend import DOCENT_BACKEND_NAMES
+    backend_name = getattr(inputs, "backend", None)
+    if backend_name not in DOCENT_BACKEND_NAMES:
         return
 
+    effective = (
+        context.settings.research.studio_backend
+        if backend_name == "docent"
+        else backend_name
+    )
+
+    if effective not in ("opencode", None, ""):
+        # LiteLLM backend — validate credentials early
+        import typer
+        from docent.ui.console import get_console
+        from docent.errors import AuthError
+        try:
+            from .backend import get_backend
+            get_backend(context.settings, override=backend_name)
+        except (AuthError, ValueError) as e:
+            get_console().print(f"[red]Error:[/] {e}")
+            raise typer.Exit(1)
+        return
+
+    # OpenCode checks
     import typer
     from docent.ui.console import get_console
     from docent.utils.model_health import verify_opencode_model
@@ -354,7 +401,8 @@ def _preflight_oc_only(inputs: BaseModel, context: Context) -> None:
     if not oc.is_available():
         get_console().print(
             "[red]Error:[/] OpenCode server is not running. "
-            "Start it with: [cyan]opencode serve --port 4096[/]"
+            "Start it with: [cyan]opencode serve --port 4096[/]\n"
+            "Alternatives: [cyan]--backend groq[/] or [cyan]--backend feynman[/]"
         )
         raise typer.Exit(1)
 
@@ -367,24 +415,22 @@ def _preflight_oc_only(inputs: BaseModel, context: Context) -> None:
     except OcModelError as e:
         console.print(
             f"[red]✗[/] Model [cyan]{reviewer}[/] is not usable: {e}\n"
-            "Use [cyan]--backend feynman[/] (AI API credits required) to run without OpenCode, or "
-            "fix the model issue above then retry."
+            "Alternatives: [cyan]--backend groq[/] or [cyan]--backend feynman[/], "
+            "or fix the model issue above then retry."
         )
         raise typer.Exit(1)
     except OcUnavailableError as e:
         console.print(
-            f"[red]✗[/] OpenCode server became unreachable during model check: {e}\n"
-            "Use [cyan]--backend feynman[/] (AI API credits required) or restart the OpenCode server."
+            f"[red]✗[/] OpenCode server became unreachable: {e}\n"
+            "Alternatives: [cyan]--backend groq[/] or [cyan]--backend feynman[/]"
         )
         raise typer.Exit(1)
     except Exception as e:
         console.print(
             f"[red]✗[/] Model check failed for [cyan]{reviewer}[/] ({e})\n"
-            "Most likely cause: quota exhausted on the provider — many providers\n"
-            "silently drop requests rather than returning an explicit error.\n"
-            "Diagnose with: [cyan]opencode stats[/]\n"
             "Options:\n"
-            "  • Switch to [cyan]--backend feynman[/] (no OpenCode required; AI API credits required)\n"
+            "  • Switch to [cyan]--backend groq[/] (free Groq API)\n"
+            "  • Switch to [cyan]--backend feynman[/] (no OpenCode required)\n"
             "  • Change model: [cyan]docent studio config-set --key oc_model_reviewer --value <model>[/]\n"
             "  • Top up your OpenCode subscription and retry"
         )

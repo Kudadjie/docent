@@ -71,6 +71,7 @@ _KNOWN_RESEARCH_KEYS = {
     "feynman_budget_usd",
     "feynman_model",
     "feynman_timeout",
+    "studio_backend",
     "oc_provider",
     "oc_model_planner",
     "oc_model_writer",
@@ -78,6 +79,23 @@ _KNOWN_RESEARCH_KEYS = {
     "oc_model_reviewer",
     "oc_model_researcher",
     "oc_budget_usd",
+    "groq_api_key",
+    "groq_model",
+    "gemini_api_key",
+    "gemini_model",
+    "openrouter_api_key",
+    "openrouter_model",
+    "mistral_api_key",
+    "mistral_model",
+    "cerebras_api_key",
+    "cerebras_model",
+    "ollama_model",
+    "ollama_base_url",
+    "lm_studio_model",
+    "lm_studio_base_url",
+    "local_model",
+    "local_api_key",
+    "local_base_url",
     "tavily_api_key",
     "tavily_research_timeout",
     "semantic_scholar_api_key",
@@ -102,14 +120,12 @@ class StudioTool(Tool):
         preflight=_preflight_docent,
     )
     def deep_research(self, inputs: DeepInputs, context: Context):
-        if inputs.backend == "docent":
-            from .oc_client import OcClient
+        from .backend import DOCENT_BACKEND_NAMES
+        if inputs.backend in DOCENT_BACKEND_NAMES:
+            from .backend import get_backend
             from .pipeline import run_deep
 
-            oc = OcClient(
-                provider=context.settings.research.oc_provider,
-                budget_usd=context.settings.research.oc_budget_usd,
-            )
+            backend = get_backend(context.settings, override=inputs.backend)
             tavily_key = context.settings.research.tavily_api_key
 
             output_dir = context.settings.research.output_dir.expanduser()
@@ -127,11 +143,7 @@ class StudioTool(Tool):
 
             try:
                 result_data = yield from run_deep(
-                    effective_topic, oc,
-                    model_planner=context.settings.research.oc_model_planner,
-                    model_writer=context.settings.research.oc_model_writer,
-                    model_verifier=context.settings.research.oc_model_verifier,
-                    model_reviewer=context.settings.research.oc_model_reviewer,
+                    effective_topic, backend,
                     tavily_api_key=tavily_key,
                     semantic_scholar_api_key=context.settings.research.semantic_scholar_api_key,
                     alphaxiv_api_key=context.settings.research.alphaxiv_api_key,
@@ -305,14 +317,12 @@ class StudioTool(Tool):
         preflight=_preflight_docent,
     )
     def lit(self, inputs: LitInputs, context: Context):
-        if inputs.backend == "docent":
-            from .oc_client import OcClient
+        from .backend import DOCENT_BACKEND_NAMES
+        if inputs.backend in DOCENT_BACKEND_NAMES:
+            from .backend import get_backend
             from .pipeline import run_lit
 
-            oc = OcClient(
-                provider=context.settings.research.oc_provider,
-                budget_usd=context.settings.research.oc_budget_usd,
-            )
+            backend = get_backend(context.settings, override=inputs.backend)
             tavily_key = context.settings.research.tavily_api_key
 
             output_dir = context.settings.research.output_dir.expanduser()
@@ -330,11 +340,7 @@ class StudioTool(Tool):
 
             try:
                 result_data = yield from run_lit(
-                    effective_topic, oc,
-                    model_planner=context.settings.research.oc_model_planner,
-                    model_writer=context.settings.research.oc_model_writer,
-                    model_verifier=context.settings.research.oc_model_verifier,
-                    model_reviewer=context.settings.research.oc_model_reviewer,
+                    effective_topic, backend,
                     tavily_api_key=tavily_key,
                     semantic_scholar_api_key=context.settings.research.semantic_scholar_api_key,
                     alphaxiv_api_key=context.settings.research.alphaxiv_api_key,
@@ -505,25 +511,19 @@ class StudioTool(Tool):
         preflight=_preflight_oc_only,
     )
     def review(self, inputs: ReviewInputs, context: Context):
-        if inputs.backend == "docent":
-            from .oc_client import OcClient
+        from .backend import DOCENT_BACKEND_NAMES
+        if inputs.backend in DOCENT_BACKEND_NAMES:
+            from .backend import get_backend
             from .pipeline import run_review
 
-            oc = OcClient(
-                provider=context.settings.research.oc_provider,
-                budget_usd=context.settings.research.oc_budget_usd,
-            )
+            backend = get_backend(context.settings, override=inputs.backend)
 
             output_dir = context.settings.research.output_dir.expanduser()
             output_dir.mkdir(parents=True, exist_ok=True)
             slug = _slugify(_artifact_slug(inputs.artifact)) + "-review"
 
             try:
-                result_data = yield from run_review(
-                    inputs.artifact, oc,
-                    model_researcher=context.settings.research.oc_model_researcher,
-                    model_reviewer=context.settings.research.oc_model_reviewer,
-                )
+                result_data = yield from run_review(inputs.artifact, backend)
             except Exception as e:
                 return ResearchResult(
                     ok=False,
@@ -1095,22 +1095,18 @@ class StudioTool(Tool):
         topic_label = f"{inputs.artifact_a} vs {inputs.artifact_b}"
         slug = _slugify(_artifact_slug(inputs.artifact_a) + "-vs-" + _artifact_slug(inputs.artifact_b)) + "-compare"
 
-        if inputs.backend == "docent":
-            from .oc_client import OcClient
+        from .backend import DOCENT_BACKEND_NAMES
+        if inputs.backend in DOCENT_BACKEND_NAMES:
+            from .backend import get_backend
             from .pipeline import run_compare
 
-            oc = OcClient(
-                provider=context.settings.research.oc_provider,
-                budget_usd=context.settings.research.oc_budget_usd,
-            )
+            backend = get_backend(context.settings, override=inputs.backend)
             output_dir = context.settings.research.output_dir.expanduser()
             output_dir.mkdir(parents=True, exist_ok=True)
 
             try:
                 result_data = yield from run_compare(
-                    inputs.artifact_a, inputs.artifact_b, oc,
-                    model_researcher=context.settings.research.oc_model_researcher,
-                    model_reviewer=context.settings.research.oc_model_reviewer,
+                    inputs.artifact_a, inputs.artifact_b, backend,
                 )
             except Exception as e:
                 return ResearchResult(
@@ -1202,14 +1198,12 @@ class StudioTool(Tool):
     def draft(self, inputs: DraftInputs, context: Context):
         slug = _slugify(inputs.topic) + "-draft"
 
-        if inputs.backend == "docent":
-            from .oc_client import OcClient
+        from .backend import DOCENT_BACKEND_NAMES
+        if inputs.backend in DOCENT_BACKEND_NAMES:
+            from .backend import get_backend
             from .pipeline import run_draft
 
-            oc = OcClient(
-                provider=context.settings.research.oc_provider,
-                budget_usd=context.settings.research.oc_budget_usd,
-            )
+            backend = get_backend(context.settings, override=inputs.backend)
             output_dir = context.settings.research.output_dir.expanduser()
             output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1217,9 +1211,8 @@ class StudioTool(Tool):
 
             try:
                 result_data = yield from run_draft(
-                    inputs.topic, oc,
+                    inputs.topic, backend,
                     guide_context=guide_ctx,
-                    model_writer=context.settings.research.oc_model_writer,
                 )
             except Exception as e:
                 return ResearchResult(
@@ -1309,23 +1302,17 @@ class StudioTool(Tool):
     def replicate(self, inputs: ReplicateInputs, context: Context):
         slug = _slugify(_artifact_slug(inputs.artifact)) + "-replicate"
 
-        if inputs.backend == "docent":
-            from .oc_client import OcClient
+        from .backend import DOCENT_BACKEND_NAMES
+        if inputs.backend in DOCENT_BACKEND_NAMES:
+            from .backend import get_backend
             from .pipeline import run_replicate
 
-            oc = OcClient(
-                provider=context.settings.research.oc_provider,
-                budget_usd=context.settings.research.oc_budget_usd,
-            )
+            backend = get_backend(context.settings, override=inputs.backend)
             output_dir = context.settings.research.output_dir.expanduser()
             output_dir.mkdir(parents=True, exist_ok=True)
 
             try:
-                result_data = yield from run_replicate(
-                    inputs.artifact, oc,
-                    model_researcher=context.settings.research.oc_model_researcher,
-                    model_reviewer=context.settings.research.oc_model_reviewer,
-                )
+                result_data = yield from run_replicate(inputs.artifact, backend)
             except Exception as e:
                 return ResearchResult(
                     ok=False, backend="docent", workflow="replicate",
@@ -1416,23 +1403,17 @@ class StudioTool(Tool):
     def audit(self, inputs: AuditInputs, context: Context):
         slug = _slugify(_artifact_slug(inputs.artifact)) + "-audit"
 
-        if inputs.backend == "docent":
-            from .oc_client import OcClient
+        from .backend import DOCENT_BACKEND_NAMES
+        if inputs.backend in DOCENT_BACKEND_NAMES:
+            from .backend import get_backend
             from .pipeline import run_audit
 
-            oc = OcClient(
-                provider=context.settings.research.oc_provider,
-                budget_usd=context.settings.research.oc_budget_usd,
-            )
+            backend = get_backend(context.settings, override=inputs.backend)
             output_dir = context.settings.research.output_dir.expanduser()
             output_dir.mkdir(parents=True, exist_ok=True)
 
             try:
-                result_data = yield from run_audit(
-                    inputs.artifact, oc,
-                    model_researcher=context.settings.research.oc_model_researcher,
-                    model_reviewer=context.settings.research.oc_model_reviewer,
-                )
+                result_data = yield from run_audit(inputs.artifact, backend)
             except Exception as e:
                 return ResearchResult(
                     ok=False, backend="docent", workflow="audit",

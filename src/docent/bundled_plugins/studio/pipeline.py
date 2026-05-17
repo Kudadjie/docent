@@ -1,4 +1,4 @@
-"""Six-stage deep research pipeline powered by OpenCode LLM calls."""
+"""Six-stage deep research pipeline — provider-agnostic via StudioBackend."""
 from __future__ import annotations
 
 import json
@@ -9,7 +9,7 @@ from typing import Generator
 
 from docent.core import ProgressEvent
 
-from .oc_client import OcClient
+from .backend import StudioBackend
 from .search import academic_search_parallel, fetch_page, paper_search, web_search, tavily_research
 
 try:
@@ -57,11 +57,10 @@ def _fetch_artifact(artifact: str) -> str:
 
 def _run_tavily_pipeline(
     topic: str,
-    oc: OcClient,
+    backend: StudioBackend,
     *,
     tavily_api_key: str,
     tavily_model: str = "pro",
-    model_reviewer: str = "deepseek-v4-pro",
     research_prefix: str = "",
     tavily_research_timeout: float = 600.0,
     semantic_scholar_api_key: str | None = None,
@@ -135,11 +134,11 @@ def _run_tavily_pipeline(
             message=f"Added {len(academic)} academic source(s) from scholarly/arXiv.",
         )
 
-    # Phase 2: OpenCode adversarial review
+    # Phase 2: adversarial review
     yield ProgressEvent(phase="review", message="Running adversarial review...")
     reviewer_prompt = _load_prompt("reviewer").replace("{draft}", content)
     try:
-        review = oc.call(reviewer_prompt, model=model_reviewer, timeout=300)
+        review = backend.call(reviewer_prompt, role="reviewer", timeout=300)
     except Exception as e:
         logger.warning("Reviewer call failed: %s: %s", type(e).__name__, e)
         review = f"(Reviewer unavailable: {e})"
@@ -154,7 +153,7 @@ def _run_tavily_pipeline(
             .replace("{review}", review)
         )
         try:
-            refined_result = oc.call(refiner_prompt, model=model_reviewer, timeout=300)
+            refined_result = backend.call(refiner_prompt, role="reviewer", timeout=300)
             # Quality guard: if refiner output is suspiciously short, keep original
             if refined_result and content and len(refined_result) < len(content) * 0.5:
                 logger.warning(
@@ -184,14 +183,10 @@ def _run_tavily_pipeline(
 
 def _run_pipeline(
     topic: str,
-    oc: OcClient,
+    backend: StudioBackend,
     planner_name: str,
     writer_name: str,
     *,
-    model_planner: str = "glm-5.1",
-    model_writer: str = "minimax-m2.7",
-    model_verifier: str = "glm-5.1",
-    model_reviewer: str = "deepseek-v4-pro",
     tavily_api_key: str | None = None,
     semantic_scholar_api_key: str | None = None,
     alphaxiv_api_key: str | None = None,
@@ -207,7 +202,7 @@ def _run_pipeline(
     yield ProgressEvent(phase="search_plan", message="Generating search strategy...")
     planner_prompt = _load_prompt(planner_name).replace("{topic}", topic)
     try:
-        plan_text = oc.call(planner_prompt, model=model_planner)
+        plan_text = backend.call(planner_prompt, role="planner")
         plan = _parse_json(plan_text)
     except Exception as e:
         return {
@@ -332,7 +327,7 @@ def _run_pipeline(
             .replace("{snippets_summary}", snippets_summary)
         )
         try:
-            gap_text = oc.call(gap_prompt, model=model_planner)
+            gap_text = backend.call(gap_prompt, role="planner")
             gap = _parse_json(gap_text)
         except Exception:
             break
@@ -379,7 +374,7 @@ def _run_pipeline(
         f"[Source {i + 1}] {s.get('title', 'Untitled')}\n"
         f"URL: {s.get('url', '')}\n"
         f"{'Authors: ' + s.get('authors', '') + chr(10) if s.get('authors') else ''}"
-        f"{s.get('full_text') or s.get('snippet', '')}"
+        f"{(s.get('full_text') or s.get('snippet', ''))[:800]}"
         for i, s in enumerate(sources)
     )
     writer_prompt = (
@@ -389,7 +384,7 @@ def _run_pipeline(
         .replace("{sources}", sources_text)
     )
     try:
-        draft = oc.call(writer_prompt, model=model_writer, timeout=600)
+        draft = backend.call(writer_prompt, role="writer", timeout=600)
     except Exception as e:
         return {
             "topic": topic,
@@ -409,7 +404,7 @@ def _run_pipeline(
         .replace("{sources}", sources_text)
     )
     try:
-        verified_draft = oc.call(verifier_prompt, model=model_verifier, timeout=300)
+        verified_draft = backend.call(verifier_prompt, role="verifier", timeout=300)
     except Exception:
         verified_draft = draft
 
@@ -430,7 +425,7 @@ def _run_pipeline(
     yield ProgressEvent(phase="review", message="Running adversarial review...")
     reviewer_prompt = _load_prompt("reviewer").replace("{draft}", verified_draft)
     try:
-        review = oc.call(reviewer_prompt, model=model_reviewer, timeout=300)
+        review = backend.call(reviewer_prompt, role="reviewer", timeout=300)
     except Exception:
         review = "(Reviewer unavailable)"
 
@@ -443,7 +438,7 @@ def _run_pipeline(
             .replace("{review}", review)
         )
         try:
-            refined_draft = oc.call(refiner_prompt, model=model_writer, timeout=300)
+            refined_draft = backend.call(refiner_prompt, role="writer", timeout=300)
             # Quality guard: if refiner output is suspiciously short, keep verified draft
             if refined_draft and verified_draft and len(refined_draft) < len(verified_draft) * 0.5:
                 logger.warning(
@@ -476,15 +471,11 @@ def _run_pipeline(
 
 def _run_with_tavily_fallback(
     topic: str,
-    oc: OcClient,
+    backend: StudioBackend,
     planner_name: str,
     writer_name: str,
     research_prefix: str,
     *,
-    model_planner: str = "glm-5.1",
-    model_writer: str = "minimax-m2.7",
-    model_verifier: str = "glm-5.1",
-    model_reviewer: str = "deepseek-v4-pro",
     tavily_api_key: str | None = None,
     semantic_scholar_api_key: str | None = None,
     alphaxiv_api_key: str | None = None,
@@ -501,10 +492,9 @@ def _run_with_tavily_fallback(
     """
     if tavily_api_key:
         result = yield from _run_tavily_pipeline(
-            topic, oc,
+            topic, backend,
             tavily_api_key=tavily_api_key,
             tavily_model="pro",
-            model_reviewer=model_reviewer,
             research_prefix=research_prefix,
             tavily_research_timeout=tavily_research_timeout,
             semantic_scholar_api_key=semantic_scholar_api_key,
@@ -527,9 +517,7 @@ def _run_with_tavily_fallback(
                 message=f"Tavily failed ({err_detail[:120]}), falling back to manual search...",
             )
             result = yield from _run_pipeline(
-                topic, oc, planner_name, writer_name,
-                model_planner=model_planner, model_writer=model_writer,
-                model_verifier=model_verifier, model_reviewer=model_reviewer,
+                topic, backend, planner_name, writer_name,
                 tavily_api_key=tavily_api_key,
                 semantic_scholar_api_key=semantic_scholar_api_key,
                 alphaxiv_api_key=alphaxiv_api_key,
@@ -538,9 +526,7 @@ def _run_with_tavily_fallback(
 
     # Fallback: manual pipeline (no Tavily key)
     result = yield from _run_pipeline(
-        topic, oc, planner_name, writer_name,
-        model_planner=model_planner, model_writer=model_writer,
-        model_verifier=model_verifier, model_reviewer=model_reviewer,
+        topic, backend, planner_name, writer_name,
         tavily_api_key=tavily_api_key,
         semantic_scholar_api_key=semantic_scholar_api_key,
         alphaxiv_api_key=alphaxiv_api_key,
@@ -550,12 +536,8 @@ def _run_with_tavily_fallback(
 
 def run_deep(
     topic: str,
-    oc: OcClient,
+    backend: StudioBackend,
     *,
-    model_planner: str = "glm-5.1",
-    model_writer: str = "minimax-m2.7",
-    model_verifier: str = "glm-5.1",
-    model_reviewer: str = "deepseek-v4-pro",
     tavily_api_key: str | None = None,
     semantic_scholar_api_key: str | None = None,
     alphaxiv_api_key: str | None = None,
@@ -563,11 +545,9 @@ def run_deep(
 ) -> Generator[ProgressEvent, None, dict]:
     """Run the full deep research pipeline. Yields ProgressEvent, returns result dict."""
     return (yield from _run_with_tavily_fallback(
-        topic, oc,
+        topic, backend,
         planner_name="search_planner", writer_name="writer",
         research_prefix="Deep research: ",
-        model_planner=model_planner, model_writer=model_writer,
-        model_verifier=model_verifier, model_reviewer=model_reviewer,
         tavily_api_key=tavily_api_key,
         semantic_scholar_api_key=semantic_scholar_api_key,
         alphaxiv_api_key=alphaxiv_api_key,
@@ -577,12 +557,8 @@ def run_deep(
 
 def run_lit(
     topic: str,
-    oc: OcClient,
+    backend: StudioBackend,
     *,
-    model_planner: str = "glm-5.1",
-    model_writer: str = "minimax-m2.7",
-    model_verifier: str = "glm-5.1",
-    model_reviewer: str = "deepseek-v4-pro",
     tavily_api_key: str | None = None,
     semantic_scholar_api_key: str | None = None,
     alphaxiv_api_key: str | None = None,
@@ -590,11 +566,9 @@ def run_lit(
 ) -> Generator[ProgressEvent, None, dict]:
     """Run the literature review pipeline. Yields ProgressEvent, returns result dict."""
     return (yield from _run_with_tavily_fallback(
-        topic, oc,
+        topic, backend,
         planner_name="lit_planner", writer_name="lit_writer",
         research_prefix="Literature review: ",
-        model_planner=model_planner, model_writer=model_writer,
-        model_verifier=model_verifier, model_reviewer=model_reviewer,
         tavily_api_key=tavily_api_key,
         semantic_scholar_api_key=semantic_scholar_api_key,
         alphaxiv_api_key=alphaxiv_api_key,
@@ -605,10 +579,7 @@ def run_lit(
 def run_compare(
     artifact_a: str,
     artifact_b: str,
-    oc: OcClient,
-    *,
-    model_researcher: str = "glm-5.1",
-    model_reviewer: str = "deepseek-v4-pro",
+    backend: StudioBackend,
 ) -> Generator[ProgressEvent, None, dict]:
     """Compare two artifacts side by side. Yields ProgressEvent, returns result dict."""
     yield ProgressEvent(phase="fetch", message=f"Fetching {artifact_a!r}...")
@@ -625,14 +596,14 @@ def run_compare(
         .replace("{artifact_b_content}", content_b)
     )
     try:
-        comparison = oc.call(compare_prompt, model=model_researcher, timeout=300)
+        comparison = backend.call(compare_prompt, role="researcher", timeout=300)
     except Exception as e:
         return {"ok": False, "error": f"Compare failed: {e}", "comparison": "", "review": ""}
 
     yield ProgressEvent(phase="review", message="Running adversarial review...")
     reviewer_prompt = _load_prompt("reviewer").replace("{draft}", comparison)
     try:
-        review = oc.call(reviewer_prompt, model=model_reviewer, timeout=300)
+        review = backend.call(reviewer_prompt, role="reviewer", timeout=300)
     except Exception:
         review = "(Reviewer unavailable)"
 
@@ -641,10 +612,9 @@ def run_compare(
 
 def run_draft(
     topic: str,
-    oc: OcClient,
+    backend: StudioBackend,
     *,
     guide_context: str = "",
-    model_writer: str = "minimax-m2.7",
 ) -> Generator[ProgressEvent, None, dict]:
     """Draft a paper section on a topic. Yields ProgressEvent, returns result dict."""
     yield ProgressEvent(phase="write", message=f"Drafting: {topic!r}...")
@@ -655,7 +625,7 @@ def run_draft(
         .replace("{guide_context}", guide_section)
     )
     try:
-        draft = oc.call(draft_prompt, model=model_writer, timeout=600)
+        draft = backend.call(draft_prompt, role="writer", timeout=600)
     except Exception as e:
         return {"ok": False, "error": f"Draft failed: {e}", "draft": ""}
 
@@ -664,10 +634,7 @@ def run_draft(
 
 def run_replicate(
     artifact: str,
-    oc: OcClient,
-    *,
-    model_researcher: str = "glm-5.1",
-    model_reviewer: str = "deepseek-v4-pro",
+    backend: StudioBackend,
 ) -> Generator[ProgressEvent, None, dict]:
     """Build a replication guide for a paper. Yields ProgressEvent, returns result dict."""
     yield ProgressEvent(phase="fetch", message=f"Fetching artifact: {artifact!r}...")
@@ -680,14 +647,14 @@ def run_replicate(
         .replace("{artifact_content}", content)
     )
     try:
-        guide = oc.call(replicate_prompt, model=model_researcher, timeout=300)
+        guide = backend.call(replicate_prompt, role="researcher", timeout=300)
     except Exception as e:
         return {"ok": False, "error": f"Replication analysis failed: {e}", "guide": "", "review": ""}
 
     yield ProgressEvent(phase="review", message="Reviewing replication guide...")
     reviewer_prompt = _load_prompt("reviewer").replace("{draft}", guide)
     try:
-        review = oc.call(reviewer_prompt, model=model_reviewer, timeout=300)
+        review = backend.call(reviewer_prompt, role="reviewer", timeout=300)
     except Exception:
         review = "(Reviewer unavailable)"
 
@@ -696,10 +663,7 @@ def run_replicate(
 
 def run_audit(
     artifact: str,
-    oc: OcClient,
-    *,
-    model_researcher: str = "glm-5.1",
-    model_reviewer: str = "deepseek-v4-pro",
+    backend: StudioBackend,
 ) -> Generator[ProgressEvent, None, dict]:
     """Audit a paper for methodology, validity, and reproducibility. Yields ProgressEvent, returns result dict."""
     yield ProgressEvent(phase="fetch", message=f"Fetching artifact: {artifact!r}...")
@@ -712,14 +676,14 @@ def run_audit(
         .replace("{artifact_content}", content)
     )
     try:
-        report = oc.call(audit_prompt, model=model_researcher, timeout=300)
+        report = backend.call(audit_prompt, role="researcher", timeout=300)
     except Exception as e:
         return {"ok": False, "error": f"Audit failed: {e}", "report": "", "review": ""}
 
     yield ProgressEvent(phase="review", message="Reviewing audit findings...")
     reviewer_prompt = _load_prompt("reviewer").replace("{draft}", report)
     try:
-        review = oc.call(reviewer_prompt, model=model_reviewer, timeout=300)
+        review = backend.call(reviewer_prompt, role="reviewer", timeout=300)
     except Exception:
         review = "(Reviewer unavailable)"
 
@@ -728,10 +692,7 @@ def run_audit(
 
 def run_review(
     artifact: str,
-    oc: OcClient,
-    *,
-    model_researcher: str = "glm-5.1",
-    model_reviewer: str = "deepseek-v4-pro",
+    backend: StudioBackend,
 ) -> Generator[ProgressEvent, None, dict]:
     """Run the peer review pipeline. Yields ProgressEvent, returns result dict."""
     # Stage 1: Fetch artifact content
@@ -746,7 +707,7 @@ def run_review(
         .replace("{artifact_content}", artifact_content)
     )
     try:
-        researcher_notes = oc.call(researcher_prompt, model=model_researcher, timeout=300)
+        researcher_notes = backend.call(researcher_prompt, role="researcher", timeout=300)
     except Exception as e:
         return {
             "artifact": artifact,
@@ -762,7 +723,7 @@ def run_review(
     combined = f"## Artifact\n\n{artifact_content}\n\n## Researcher Notes\n\n{researcher_notes}"
     reviewer_prompt = _load_prompt("reviewer").replace("{draft}", combined)
     try:
-        review = oc.call(reviewer_prompt, model=model_reviewer, timeout=300)
+        review = backend.call(reviewer_prompt, role="reviewer", timeout=300)
     except Exception:
         review = "(Reviewer unavailable)"
 
