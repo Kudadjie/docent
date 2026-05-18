@@ -115,11 +115,9 @@ def _route_output(inputs: Any, out_path: Path, sources_path: Path | None, contex
     """
     from ._notebook import _nlm_push
 
-    # --to-notebook / --to-local shorthands override --output
+    # --to-notebook shorthand overrides --output
     if getattr(inputs, "to_notebook", False):
         inputs.output = "notebook"
-    elif getattr(inputs, "to_local", False):
-        inputs.output = "local"
 
     if inputs.output == "notebook":
         topic = getattr(inputs, "topic", None)

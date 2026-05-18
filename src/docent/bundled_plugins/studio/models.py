@@ -77,22 +77,11 @@ _TO_NOTEBOOK_FIELD = Field(
     ),
 )
 
-_TO_LOCAL_FIELD = Field(
-    False,
-    description=(
-        "Write the finished output to the local research directory after research completes. "
-        "Shorthand for --output local (the default). "
-        "Useful when a different --output default has been set in config."
-    ),
-)
-
-
 class DeepInputs(BaseModel):
     topic: str = Field(..., description="Research topic or question.")
     backend: str = Field("feynman", description=_BACKEND_DEEP_DESC, json_schema_extra={"enum": _BACKEND_ENUM})
     output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
     to_notebook: bool = _TO_NOTEBOOK_FIELD
-    to_local: bool = _TO_LOCAL_FIELD
     guide_files: list[str] = _GUIDE_FILES_FIELD
     confirmed: bool = Field(
         False,
@@ -109,7 +98,6 @@ class LitInputs(BaseModel):
     backend: str = Field("feynman", description=_BACKEND_DEEP_DESC, json_schema_extra={"enum": _BACKEND_ENUM})
     output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
     to_notebook: bool = _TO_NOTEBOOK_FIELD
-    to_local: bool = _TO_LOCAL_FIELD
     guide_files: list[str] = _GUIDE_FILES_FIELD
     confirmed: bool = Field(
         False,
@@ -183,21 +171,6 @@ class ConfigShowInputs(BaseModel):
 class ConfigSetInputs(BaseModel):
     key: str = Field(..., description="Setting key under [research]: 'output_dir'.")
     value: str = Field(..., description="New value.")
-
-
-class ToLocalInputs(BaseModel):
-    output_file: str | None = Field(
-        None,
-        description=(
-            "Path to a research output .md file. "
-            "If omitted, the most recent output in research.output_dir is used."
-        ),
-    )
-    guide_files: list[str] = _GUIDE_FILES_FIELD
-    to_vault: bool = Field(
-        False,
-        description="Also copy to Obsidian vault if research.obsidian_vault is configured.",
-    )
 
 
 class SearchPapersInputs(BaseModel):
@@ -342,28 +315,6 @@ class ConfigSetResult(BaseModel):
         return [
             MessageShape(text=self.message, level="success" if self.ok else "error"),
         ]
-
-
-class ToLocalResult(BaseModel):
-    ok: bool
-    output_file: str | None
-    sources_file: str | None
-    package_dir: str | None
-    sources_count: int
-    vault_path: str | None = None
-    message: str
-
-    def to_shapes(self) -> list[Shape]:
-        if not self.ok:
-            return [ErrorShape(reason=self.message)]
-        shapes: list[Shape] = [MessageShape(text=self.message, level="success")]
-        if self.package_dir:
-            shapes.append(LinkShape(url=self.package_dir, label="Local package"))
-        if self.vault_path:
-            shapes.append(LinkShape(url=self.vault_path, label="Obsidian note"))
-        if self.sources_count:
-            shapes.append(MetricShape(label="Sources in package", value=str(self.sources_count)))
-        return shapes
 
 
 class SearchPapersResult(BaseModel):

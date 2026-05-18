@@ -51,8 +51,6 @@ from .models import (
     ScholarlySearchResult,
     SearchPapersInputs,
     SearchPapersResult,
-    ToLocalInputs,
-    ToLocalResult,
     UsageInputs,
     UsageResult,
 )
@@ -777,101 +775,6 @@ class StudioTool(Tool):
             quality_gate=nlm["quality_gate"],
             perspectives=nlm["perspectives"],
             message=nlm["message"] + save_hint,
-        )
-
-    @action(
-        description=(
-            "Package an existing research output as a local directory: copies the synthesis "
-            "document, writes a sources URL list, and optionally copies to your Obsidian vault. "
-            "Use this when you want a self-contained local record without pushing to NotebookLM."
-        ),
-        input_schema=ToLocalInputs,
-        name="to-local",
-    )
-    def to_local(self, inputs: ToLocalInputs, context: Context) -> ToLocalResult:
-        output_dir = context.settings.research.output_dir.expanduser()
-
-        if inputs.output_file:
-            out_path = Path(inputs.output_file)
-            if not out_path.is_absolute():
-                out_path = output_dir / inputs.output_file
-        else:
-            candidates = [
-                p for p in output_dir.glob("*.md")
-                if not p.name.endswith("-review.md")
-            ] if output_dir.is_dir() else []
-            if not candidates:
-                return ToLocalResult(
-                    ok=False, output_file=None, sources_file=None,
-                    package_dir=None, sources_count=0,
-                    message=(
-                        f"No research output found in {output_dir}. "
-                        "Run `docent studio deep-research` or `docent studio lit` first."
-                    ),
-                )
-            out_path = max(candidates, key=lambda p: p.stat().st_mtime)
-
-        stem = out_path.stem
-        sources_path = out_path.parent / f"{stem}-sources.json"
-
-        has_sources = sources_path.exists()
-        selected = (
-            _rank_sources(
-                json.loads(sources_path.read_text(encoding="utf-8")), 200
-            )
-            if has_sources else []
-        )
-
-        package_dir = out_path.parent / f"{stem}-local"
-        package_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(out_path, package_dir / out_path.name)
-
-        urls_text = "\n".join(s["url"] for s in selected if s.get("url"))
-        (package_dir / "sources_urls.txt").write_text(urls_text, encoding="utf-8")
-
-        if has_sources:
-            shutil.copy2(sources_path, package_dir / sources_path.name)
-
-        for gf_str in inputs.guide_files:
-            gf = Path(gf_str).expanduser()
-            if gf.exists():
-                shutil.copy2(gf, package_dir / gf.name)
-
-        vault_path: str | None = None
-        if inputs.to_vault:
-            vault = context.settings.research.obsidian_vault
-            if vault:
-                vault_dir = Path(vault).expanduser()
-                vault_dir.mkdir(parents=True, exist_ok=True)
-                dest = vault_dir / out_path.name
-                shutil.copy2(out_path, dest)
-                vault_path = str(dest)
-            else:
-                return ToLocalResult(
-                    ok=True,
-                    output_file=str(out_path),
-                    sources_file=str(sources_path) if has_sources else None,
-                    package_dir=str(package_dir),
-                    sources_count=len(selected),
-                    message=(
-                        f"Package written to {package_dir}. "
-                        "Vault copy skipped: obsidian_vault not configured "
-                        "(set with: docent studio config-set --key obsidian_vault --value <path>)."
-                    ),
-                )
-
-        parts = [f"Local package: {package_dir}", f"{len(selected)} source URL(s)"]
-        if vault_path:
-            parts.append(f"vault: {vault_path}")
-
-        return ToLocalResult(
-            ok=True,
-            output_file=str(out_path),
-            sources_file=str(sources_path) if has_sources else None,
-            package_dir=str(package_dir),
-            sources_count=len(selected),
-            vault_path=vault_path,
-            message=" -- ".join(parts),
         )
 
     @action(
