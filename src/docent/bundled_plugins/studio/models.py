@@ -33,27 +33,34 @@ _GUIDE_FILES_FIELD = Field(
 # Input models
 # ---------------------------------------------------------------------------
 
+# All valid backend values — used both for the enum hint and the description.
+_BACKEND_ENUM = [
+    "free", "feynman", "docent",
+    "groq", "gemini", "openrouter", "mistral", "cerebras",
+    "anthropic", "openai",
+    "ollama", "lm_studio", "local",
+]
+
 _BACKEND_DEEP_DESC = (
-    "Research backend — ask the user which to use before calling this tool, "
-    "and include the model recommendation for each option so they can switch if needed:\n\n"
+    "Research backend. ALWAYS present ALL of the following options to the user "
+    "before calling this tool — do not omit any:\n\n"
     "  'free' — Docent aggregates sources (Tavily + Semantic Scholar + CrossRef) then YOU "
-    "do parallel research and synthesise both streams into a full brief. No extra API cost. "
-    "MODEL: Sonnet for everyday research; switch to Opus for thesis-quality synthesis or "
-    "highly technical topics where deeper reasoning matters.\n\n"
-    "  'docent' — 6-stage AI pipeline using the configured backend (default: opencode). "
-    "The synthesis happens inside the provider, not in this conversation. MODEL: any model is fine.\n\n"
-    "  Provider shortcuts (all route through the Docent pipeline, no OpenCode server needed):\n"
-    "    Free-tier cloud: 'groq' (GROQ_API_KEY), 'gemini' (GEMINI_API_KEY), "
-    "'openrouter' (OPENROUTER_API_KEY), 'mistral' (MISTRAL_API_KEY), 'cerebras' (CEREBRAS_API_KEY)\n"
-    "    BYOK cloud: 'anthropic' (ANTHROPIC_API_KEY), 'openai' (OPENAI_API_KEY)\n"
-    "    Local: 'ollama', 'lm_studio', 'local'\n\n"
-    "  'feynman' — full AI deep research via Feynman CLI (10–30 min; requires Feynman installed). "
-    "WARNING: via MCP the connection will time out before Feynman finishes. "
-    "If the user picks feynman, tell them to run it in the terminal instead: "
-    "`docent studio deep-research --backend feynman`. "
-    "Model does not apply — Feynman runs independently.\n\n"
-    "Present the options with their model notes so the user can make an informed choice "
-    "and switch model in Claude Desktop before proceeding."
+    "synthesise both streams here. No extra API cost. "
+    "MODEL: Sonnet for everyday research; Opus for thesis-quality output.\n\n"
+    "  'docent' — 6-stage AI pipeline via your configured provider (default: opencode). "
+    "Synthesis happens inside the provider. MODEL: any.\n\n"
+    "  Free-tier cloud providers (route through Docent pipeline, no OpenCode needed):\n"
+    "    'groq' (GROQ_API_KEY), 'gemini' (GEMINI_API_KEY), "
+    "'openrouter' (OPENROUTER_API_KEY), 'mistral' (MISTRAL_API_KEY), 'cerebras' (CEREBRAS_API_KEY)\n\n"
+    "  BYOK cloud providers:\n"
+    "    'anthropic' (ANTHROPIC_API_KEY), 'openai' (OPENAI_API_KEY)\n\n"
+    "  Local providers (no API key needed):\n"
+    "    'ollama', 'lm_studio', 'local'\n\n"
+    "  'feynman' — full AI deep research via Feynman CLI (10–30 min). "
+    "WARNING: times out via MCP — if user picks feynman, tell them to run in terminal: "
+    "`docent studio deep-research --backend feynman`. Model does not apply.\n\n"
+    "Valid values: free, feynman, docent, groq, gemini, openrouter, mistral, cerebras, "
+    "anthropic, openai, ollama, lm_studio, local."
 )
 
 _TO_NOTEBOOK_FIELD = Field(
@@ -77,7 +84,7 @@ _TO_LOCAL_FIELD = Field(
 
 class DeepInputs(BaseModel):
     topic: str = Field(..., description="Research topic or question.")
-    backend: str = Field("feynman", description=_BACKEND_DEEP_DESC)
+    backend: str = Field("feynman", description=_BACKEND_DEEP_DESC, json_schema_extra={"enum": _BACKEND_ENUM})
     output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
     to_notebook: bool = _TO_NOTEBOOK_FIELD
     to_local: bool = _TO_LOCAL_FIELD
@@ -94,7 +101,7 @@ class DeepInputs(BaseModel):
 
 class LitInputs(BaseModel):
     topic: str = Field(..., description="Research topic or question.")
-    backend: str = Field("feynman", description=_BACKEND_DEEP_DESC)
+    backend: str = Field("feynman", description=_BACKEND_DEEP_DESC, json_schema_extra={"enum": _BACKEND_ENUM})
     output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
     to_notebook: bool = _TO_NOTEBOOK_FIELD
     to_local: bool = _TO_LOCAL_FIELD

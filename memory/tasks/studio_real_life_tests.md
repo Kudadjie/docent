@@ -223,7 +223,7 @@ Then via a connected MCP client, the following tools must appear:
 - `studio__config_show`
 - `studio__config_set`
 
----
+---   Feedback: Works
 
 ## 17. UI integration
 
@@ -231,7 +231,7 @@ Start the UI: `docent ui`
 Check that research tool actions work via MCP in Claude Desktop. Run a research action
 from within a Claude conversation. Verify the output file appears in `output_dir`.
 
----
+--- Feedback: Works
 
 ## 18. Tavily quota exhaustion — graceful failure (docent backend)
 
@@ -244,7 +244,7 @@ docent studio deep-research --topic "test topic" --backend docent
 Not a silent fallthrough.
 (Reset key afterward: `docent studio config-set --key tavily_api_key --value <real_key>`)
 
----
+--- Feedback: Works
 
 ## 19. References section in output markdown
 
@@ -257,7 +257,7 @@ Get-Content ~/Documents/Docent/research/storm-surge-ghana-deep.md | Select-Objec
 - Each entry is numbered (1., 2., 3., …)
 - Each entry includes: title (bold), optional authors, URL, and source type in brackets
 
----
+--- Feedback: Works
 
 ## 20. `to-notebook` full pipeline — phase progress
 
@@ -281,7 +281,7 @@ After test #20, check metric shapes:
 - `Contradictions` — integer (0 or more)
 - `Local package` — link to the `<stem>-notebook/` directory
 
----
+--- Feedback: Works
 
 ## 22. `to-notebook` — skip quality gate and perspectives
 
@@ -318,7 +318,7 @@ docent studio to-notebook --guide-files /tmp/nonexistent-guide.txt
 **Expect:** Warning printed ("could not be read"), asked to confirm. Pipeline continues or
 exits cleanly depending on user choice.
 
----
+--- Feedback: Works
 
 ## 25. `to-notebook` with `--notebook-id`
 
@@ -327,7 +327,7 @@ docent studio to-notebook --notebook-id <id-from-test-20>
 ```
 **Expect:** Skips create step. Pushes into existing notebook. Deduplication active.
 
----
+--- Feedback: Works
 
 ## 26. `to-notebook` self-learning — run-log.jsonl writeback
 
@@ -339,7 +339,7 @@ Get-Content $env:USERPROFILE\.claude\skills\research-to-notebook\run-log.jsonl |
 **Expect:** `timestamp`, `mode`, `topic`, `notebook_id`, `duration_min`, `sources_final`,
 `quality_gate` keys all present.
 
----
+--- Feedback: Works
 
 ## 27. `to-notebook` self-learning — source-compat.json domain update
 
@@ -349,7 +349,7 @@ python -m json.tool $env:USERPROFILE\.claude\skills\research-to-notebook\source-
 **Expect:** `last_updated` = today's date. `domains` section has entries with `success`,
 `fail`, `rate` per domain. Accumulates across runs (not overwritten from scratch).
 
----
+--- Feedback: Works
 
 ## 28. `to-notebook` active overrides — skip_gap_analysis
 
@@ -363,7 +363,7 @@ docent studio to-notebook
 Remove-Item "$env:USERPROFILE\.claude\skills\research-to-notebook\active-overrides.json"
 ```
 
----
+--- Feedback: Not checked, but I'm sure it works. 
 
 ## 29. `to-local` — happy path
 
@@ -374,7 +374,7 @@ docent studio to-local
 **Expect:** Creates `<output_dir>/storm-surge-ghana-deep-local/` with `storm-surge-ghana-deep.md`
 and `sources_urls.txt`. Message shows source URL count.
 
----
+--- Feedback: Works
 
 ## 30. `to-local` with explicit file
 
@@ -426,7 +426,7 @@ docent studio lit --topic "coastal flooding" --guide-files ~/Documents/research-
 With `docent serve` running, verify `studio__to_local`, `studio__compare`, `studio__draft`,
 `studio__replicate`, `studio__audit` appear alongside the tools listed in #16.
 
----
+--- Feedback: Works
 
 ## 35. Free tier — deep research (Tavily key present)
 
@@ -452,7 +452,7 @@ docent studio deep-research --topic "coastal pollution West Africa" --backend fr
 - Section: `## Sources` with markdown links
 - Footer: human-facing tip about sharing with an AI assistant (NOT the `[AI Assistant — Action Required]` block)
 
----
+--- Feedback: Works
 
 ## 36. Free tier — deep research (no Tavily key)
 
@@ -471,7 +471,7 @@ After disclaimer + confirm:
 
 (Restore Tavily key afterward.)
 
----
+--- Feedback: Works
 
 ## 37. Free tier — Tavily quota exhausted → DuckDuckGo fallback
 
@@ -491,7 +491,7 @@ After disclaimer + confirm:
 
 (Reset key afterward.)
 
----
+--- Feedback: Works
 
 ## 38. Free tier — deep research with guide files
 
@@ -560,7 +560,7 @@ At the "Proceed with the free tier? [y/N]" prompt, press Enter (default No) or t
 
 **Expect:** Exits cleanly with no output file created.
 
----
+--- Feedback: Works
 
 ## 43. MCP free tier — synthesis prompt in output
 
@@ -583,7 +583,7 @@ Use the studio deep_research tool with topic="storm surge adaptation" and backen
 - Contains: `"Would you like me to synthesise this into a structured research brief…"`
 - Does NOT contain the human-facing tip text
 
----
+--- Feedback: Works
 
 ## 44. MCP free tier — lit via MCP
 
@@ -617,7 +617,7 @@ Open both output files and compare the footers:
 
 > **Tip for test #45:** Run the MCP version first, copy the output file, then run the CLI version and compare.
 
----
+--- Feedback: Works
 
 ## Priority order for re-run
 

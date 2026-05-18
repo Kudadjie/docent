@@ -127,6 +127,45 @@ def _run_tool_install(console: Any, cmd: list[str]) -> bool:
         return False
 
 
+def _test_semantic_scholar_key(key: str) -> bool:
+    """Return True if the Semantic Scholar key is accepted (HTTP 200 or 429 on a test query).
+
+    HTTP 403 means invalid key. Network failures are treated as inconclusive (True).
+    """
+    try:
+        import requests
+        r = requests.get(
+            "https://api.semanticscholar.org/graph/v1/paper/search",
+            params={"query": "test", "limit": 1, "fields": "title"},
+            headers={"x-api-key": key},
+            timeout=10,
+        )
+        return r.status_code != 403
+    except Exception:
+        return True  # network / timeout — inconclusive, don't block setup
+
+
+def _test_tavily_key(key: str) -> bool:
+    """Return True if the Tavily key is accepted by the search API.
+
+    Makes one minimal search call. Network failures are treated as inconclusive
+    (returns True) so a flaky connection doesn't block setup.
+    """
+    try:
+        from tavily import TavilyClient
+        from tavily.errors import InvalidAPIKeyError
+    except ImportError:
+        return True  # tavily not installed yet — skip
+
+    try:
+        TavilyClient(api_key=key).search("test", max_results=1)
+        return True
+    except InvalidAPIKeyError:
+        return False
+    except Exception:
+        return True  # network / rate-limit — inconclusive, don't block setup
+
+
 def _run_setup_flow(*, first_run: bool = False) -> None:
     """Full interactive Docent setup. Called on first run and by `docent setup`."""
     console = get_console()
@@ -197,25 +236,62 @@ def _run_setup_flow(*, first_run: bool = False) -> None:
         masked = (existing_tavily[:4] + "..." + existing_tavily[-4:]) if len(existing_tavily) > 8 else "set"
         console.print(f"  [dim]Tavily key: currently {masked}[/]")
     else:
-        console.print("  [dim]Tavily: free tier at tavily.com - 1,000 calls/month[/]")
+        console.print(
+            "  [dim]Tavily web search (free key: 1,000 calls/month → better web results than DuckDuckGo).[/]\n"
+            "  [dim]Paid plan unlocks the Tavily Research API: deep AI synthesis with citations.[/]"
+        )
     tavily_raw = typer.prompt("  Tavily API key (Enter to skip)", default="", show_default=False).strip()
     if tavily_raw:
-        try:
-            write_setting("research.tavily_api_key", tavily_raw)
-            console.print("  [green]Tavily key saved.[/]")
-        except Exception as e:
-            console.print(f"  [yellow]Could not save: {e}[/]")
+        console.print("  [dim]Testing key...[/]", end="")
+        key_ok = _test_tavily_key(tavily_raw)
+        if key_ok:
+            console.print(" [green]✓[/]")
+            try:
+                write_setting("research.tavily_api_key", tavily_raw)
+                console.print("  [green]Tavily key saved.[/]")
+            except Exception as e:
+                console.print(f"  [yellow]Could not save: {e}[/]")
+        else:
+            console.print(" [red]✗ key rejected[/]")
+            console.print(
+                "  [red]This key was not accepted by Tavily. Check the key at app.tavily.com.[/]\n"
+                "  [dim]Without a valid key, web search falls back to DuckDuckGo.[/]"
+            )
+            if typer.confirm("  Save anyway?", default=False):
+                try:
+                    write_setting("research.tavily_api_key", tavily_raw)
+                    console.print("  [yellow]Key saved (unverified).[/]")
+                except Exception as e:
+                    console.print(f"  [yellow]Could not save: {e}[/]")
 
     existing_ss = settings.research.semantic_scholar_api_key or ""
     if existing_ss:
-        console.print("  [dim]Semantic Scholar key: already set[/]")
+        console.print("  [dim]Semantic Scholar key: already set (optional — raises rate limits)[/]")
+    else:
+        console.print("  [dim]Semantic Scholar key: optional — raises rate limits. Free at semanticscholar.org/product/api[/]")
     ss_raw = typer.prompt("  Semantic Scholar key (Enter to skip)", default="", show_default=False).strip()
     if ss_raw and ss_raw != existing_ss:
-        try:
-            write_setting("research.semantic_scholar_api_key", ss_raw)
-            console.print("  [green]Semantic Scholar key saved.[/]")
-        except Exception as e:
-            console.print(f"  [yellow]Could not save: {e}[/]")
+        console.print("  [dim]Testing key...[/]", end="")
+        ss_ok = _test_semantic_scholar_key(ss_raw)
+        if ss_ok:
+            console.print(" [green]✓[/]")
+            try:
+                write_setting("research.semantic_scholar_api_key", ss_raw)
+                console.print("  [green]Semantic Scholar key saved.[/]")
+            except Exception as e:
+                console.print(f"  [yellow]Could not save: {e}[/]")
+        else:
+            console.print(" [red]✗ key rejected (HTTP 403)[/]")
+            console.print(
+                "  [red]This key was not accepted. Check the key at semanticscholar.org.[/]\n"
+                "  [dim]Without a key, Semantic Scholar still works at lower rate limits.[/]"
+            )
+            if typer.confirm("  Save anyway?", default=False):
+                try:
+                    write_setting("research.semantic_scholar_api_key", ss_raw)
+                    console.print("  [yellow]Key saved (unverified).[/]")
+                except Exception as e:
+                    console.print(f"  [yellow]Could not save: {e}[/]")
     console.print()
 
     # ── External tools ──
@@ -654,8 +730,14 @@ def _check_tavily(settings: Settings) -> tuple[str, str, str, str]:
     key = settings.research.tavily_api_key
     if key:
         masked = (key[:4] + "..." + key[-4:]) if len(key) > 8 else "set"
-        return "Tavily key", "OK", "-", f"configured ({masked})"
-    return "Tavily key", "WARN", "-", "Not set - free at tavily.com  (docent setup to configure)"
+        return "Tavily key", "OK", "-", (
+            f"configured ({masked}) — free tier: web search (1k/month). "
+            "Paid plan adds Research API (deep AI synthesis with citations)."
+        )
+    return "Tavily key", "WARN", "-", (
+        "Not set — web search falls back to DuckDuckGo. "
+        "Free key at app.tavily.com (no credit card). Run: docent setup"
+    )
 
 
 def _check_semantic_scholar(settings: Settings) -> tuple[str, str, str, str]:

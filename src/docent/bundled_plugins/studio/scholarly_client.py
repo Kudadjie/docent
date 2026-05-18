@@ -6,6 +6,10 @@ so callers should not be surprised when Semantic Scholar or CrossRef answers.
 """
 from __future__ import annotations
 
+import warnings
+# scholarly._scholarly uses `re.search("cites=[\d+,]*", ...)` — invalid escape.
+warnings.filterwarnings("ignore", category=SyntaxWarning, module=r"scholarly")
+
 from typing import Any
 
 import httpx

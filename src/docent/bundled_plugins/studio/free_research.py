@@ -118,7 +118,10 @@ def _net_err_label(exc: Exception) -> str:
 
 def _web_search_ddg(query: str, max_results: int = 10) -> list[dict]:
     """DuckDuckGo web search — no key, no quota. Returns same shape as web_search()."""
-    from duckduckgo_search import DDGS
+    try:
+        from ddgs import DDGS  # renamed from duckduckgo_search
+    except ImportError:
+        from duckduckgo_search import DDGS  # old name fallback
     results = []
     with DDGS() as ddgs:
         for r in ddgs.text(query, max_results=max_results):
@@ -217,13 +220,27 @@ def run_free_deep(
             web_results = web_search(search_query, max_results=10, api_key=tavily_key)
             web_source = "Tavily"
         except (UsageLimitExceededError, InvalidAPIKeyError) as e:
-            quota_msg = (
-                "Tavily free quota exhausted (1,000 calls/month — resets on the 1st). "
-                "Falling back to DuckDuckGo (lower quality: broader results, less curated)…"
-                if isinstance(e, UsageLimitExceededError)
-                else f"Tavily API key invalid: {e}. Falling back to DuckDuckGo…"
-            )
-            yield ProgressEvent(phase="web_search", message=quota_msg)
+            if isinstance(e, UsageLimitExceededError):
+                yield ProgressEvent(
+                    phase="web_search",
+                    level="warn",
+                    message=(
+                        "Tavily free quota exhausted (1,000 calls/month — resets on the 1st). "
+                        "Falling back to DuckDuckGo…"
+                    ),
+                )
+            else:
+                yield ProgressEvent(
+                    phase="tavily_key",
+                    level="error",
+                    message=(
+                        "Invalid Tavily API key — key rejected. "
+                        "Fix: docent studio config-set --key tavily_api_key --value YOUR_KEY  "
+                        "or remove: docent studio config-set --key tavily_api_key --value ''. "
+                        "Tip: a paid Tavily plan unlocks the Research API (deep AI synthesis). "
+                        "Falling back to DuckDuckGo…"
+                    ),
+                )
             try:
                 web_results = _web_search_ddg(search_query, max_results=10)
                 web_source = "DuckDuckGo (fallback — lower quality)"

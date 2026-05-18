@@ -98,11 +98,7 @@ def _run_tavily_pipeline(
             "sources": [],
             "rounds": 0,
             "ok": False,
-            "error": (
-                "Tavily monthly free tier (1,000 calls) has been exceeded. "
-                "Wait for the next billing cycle, upgrade your Tavily plan, "
-                "or use backend='feynman' which does not require Tavily."
-            ),
+            "error": "Tavily monthly free tier (1,000 calls) has been exceeded.",
         }
     except Exception as e:
         return {
@@ -586,8 +582,26 @@ def _run_with_tavily_fallback(
         )
         if result.get("ok"):
             return result
-        # Quota exhaustion — fallback won't help either (also uses Tavily)
+        # Quota exhaustion — fall back to manual pipeline without Tavily key
+        # so web_search() returns [] immediately and the pipeline runs on
+        # academic sources only. The AI backend can still synthesise.
         if "monthly free tier" in (result.get("error") or ""):
+            yield ProgressEvent(
+                phase="tavily_quota",
+                level="warn",
+                message=(
+                    "Tavily free quota exhausted (1,000 calls/month — resets on the 1st). "
+                    "Continuing without web search (academic sources only). "
+                    "To restore web search: wait for reset, or upgrade at tavily.com/pricing. "
+                    "For a free alternative use --backend free (DuckDuckGo fallback)."
+                ),
+            )
+            result = yield from _run_pipeline(
+                topic, backend, planner_name, writer_name,
+                tavily_api_key=None,
+                semantic_scholar_api_key=semantic_scholar_api_key,
+                alphaxiv_api_key=alphaxiv_api_key,
+            )
             return result
         # Other Tavily failures — try manual fallback
         if result.get("error", "").startswith("Tavily research"):
@@ -596,10 +610,28 @@ def _run_with_tavily_fallback(
                 "Tavily research failed (%s), falling back to manual pipeline",
                 err_detail,
             )
-            yield ProgressEvent(
-                phase="warning",
-                message=f"Tavily failed ({err_detail[:120]}), falling back to manual search...",
-            )
+            _auth_keywords = ("unauthorized", "invalid api key", "authentication", "forbidden")
+            _is_auth_err = any(k in err_detail.lower() for k in _auth_keywords)
+            if _is_auth_err:
+                yield ProgressEvent(
+                    phase="tavily_key",
+                    level="error",
+                    message=(
+                        "Invalid Tavily API key — the key was rejected by Tavily. "
+                        "Fix it: docent studio config-set --key tavily_api_key --value YOUR_KEY  "
+                        "or remove it: docent studio config-set --key tavily_api_key --value ''. "
+                        "Without a key, web search falls back to DuckDuckGo (lower quality). "
+                        "Tip: a paid Tavily plan unlocks the Research API "
+                        "(deep AI synthesis with citations, replaces the 6-stage pipeline). "
+                        "See tavily.com/pricing. Continuing with manual pipeline..."
+                    ),
+                )
+            else:
+                yield ProgressEvent(
+                    phase="tavily",
+                    level="warn",
+                    message=f"Tavily research failed ({err_detail[:120]}), falling back to manual search...",
+                )
             result = yield from _run_pipeline(
                 topic, backend, planner_name, writer_name,
                 tavily_api_key=tavily_api_key,
