@@ -159,6 +159,8 @@ class LiteLLMBackend:
         timeout: int = 300,
     ) -> str:
         import litellm
+        litellm.suppress_debug_info = True
+        litellm.set_verbose = False
 
         messages: list[dict] = []
         if system:

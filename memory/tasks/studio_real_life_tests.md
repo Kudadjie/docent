@@ -17,7 +17,8 @@ Run from any directory unless a test specifies otherwise.
 docent studio --help
 ```
 **Expect:** `deep-research`, `get-paper`, `lit`, `review`, `search-papers`, `to-notebook`,
-`to-local`, `usage`, `config-show`, `config-set` all listed.
+`config-show`, `config-set` all listed.
+`to-local` and `usage` should NOT appear (both removed).
 
 --- Feedback: Works
 
@@ -56,7 +57,7 @@ Switch provider: docent studio config-set ...
 
 `docent studio usage` should NOT exist — running it should error "No such command".
 
----
+--- Feedback: Works
 
 ## 4. Docent pipeline — deep research
 
@@ -193,22 +194,13 @@ docent studio review --artifact "2401.12345" --backend feynman
 ```
 docent serve
 ```
-Then via a connected MCP client, the following tools must appear:
-- `studio__deep_research`
-- `studio__lit`
-- `studio__review`
-- `studio__compare`
-- `studio__draft`
-- `studio__replicate`
-- `studio__audit`
-- `studio__get_paper`
-- `studio__search_papers`
-- `studio__scholarly_search`
-- `studio__to_notebook`
-- `studio__to_local`
-- `studio__usage`
-- `studio__config_show`
-- `studio__config_set`
+Then via a connected MCP client, the following tools must appear (34 total):
+`studio__deep_research`, `studio__lit`, `studio__review`, `studio__compare`,
+`studio__draft`, `studio__replicate`, `studio__audit`, `studio__get_paper`,
+`studio__search_papers`, `studio__scholarly_search`, `studio__to_notebook`,
+`studio__read_output`, `studio__save_synthesis`, `studio__config_show`, `studio__config_set`
+
+`studio__to_local` and `studio__usage` must NOT appear.
 
 ---   Feedback: Works
 
