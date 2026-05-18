@@ -225,6 +225,14 @@ Studio runs deep research, literature reviews, and peer reviews, backed by Feynm
 | `docent studio config-show` | Show current Studio settings |
 | `docent studio config-set --key <k> --value <v>` | Set a Studio config value |
 
+### Citation verification
+
+Research output from `deep-research` and `lit` (both `--backend docent` and `--backend feynman`)
+automatically includes a **## Citation Verification** section at the end of the document.
+Every DOI and arXiv ID found in the draft is checked against CrossRef and Semantic Scholar.
+Identifiers that cannot be resolved are flagged — they may be hallucinated, misprinted,
+or not yet indexed, and should be checked before citing.
+
 ### Output destinations (`--output`)
 
 | Value | Behaviour |

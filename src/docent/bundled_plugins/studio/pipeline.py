@@ -1,4 +1,13 @@
-"""Six-stage deep research pipeline — provider-agnostic via StudioBackend."""
+"""Multi-stage research pipeline — provider-agnostic via StudioBackend.
+
+Pipeline architecture (planner → fetch → write → verify → review → refine)
+is inspired by the Feynman open-source research agent (MIT licence):
+  https://github.com/companion-inc/feynman
+
+Integrity gates and citation verification pattern inspired by
+Academic Research Skills (Cheng-I Wu, CC-BY-NC 4.0):
+  https://github.com/Imbad0202/academic-research-skills
+"""
 from __future__ import annotations
 
 import json
@@ -109,7 +118,7 @@ def _run_tavily_pipeline(
     content = research_result.get("content", "")
     sources: list[dict] = list(research_result.get("sources", []))
 
-    if not content:
+    if not content or len(content.strip()) < 500:
         return {
             "topic": topic,
             "draft": "",
@@ -117,7 +126,11 @@ def _run_tavily_pipeline(
             "sources": sources,
             "rounds": 1,
             "ok": False,
-            "error": "Tavily research returned empty content.",
+            "error": (
+                "Tavily research returned empty content."
+                if not content
+                else "Tavily research returned content too short to be useful (< 500 characters)."
+            ),
         }
 
     # Augment: scholarly + arXiv in parallel alongside Tavily's web sources
@@ -165,6 +178,23 @@ def _run_tavily_pipeline(
                 refined_draft = refined_result
         except Exception as e:
             logger.warning("Refiner call failed: %s: %s, keeping original", type(e).__name__, e)
+
+    # Citation verification on final Tavily output
+    yield ProgressEvent(phase="verify_citations", message="Verifying citations against public APIs…")
+    try:
+        from .citation_verifier import verify_citations as _verify_cites
+        _cite_report = _verify_cites(refined_draft, ss_key=semantic_scholar_api_key)
+        if _cite_report.verified or _cite_report.unverified:
+            yield ProgressEvent(
+                phase="verify_citations",
+                message=(
+                    f"Citations: {len(_cite_report.verified)} verified, "
+                    f"{len(_cite_report.unverified)} unresolvable."
+                ),
+            )
+            refined_draft = refined_draft + "\n\n" + _cite_report.as_markdown()
+    except Exception as _ce:
+        logger.warning("Citation verification skipped: %s", _ce)
 
     return {
         "topic": topic,
@@ -419,6 +449,20 @@ def _run_pipeline(
             "error": _writer_error,
         }
 
+    if len(draft.strip()) < 300:
+        return {
+            "topic": topic,
+            "draft": "",
+            "review": "",
+            "sources": sources,
+            "rounds": rounds,
+            "ok": False,
+            "error": (
+                "Writer produced an empty or minimal draft (< 300 characters). "
+                "The source material may be too sparse or the writer prompt may need adjustment."
+            ),
+        }
+
     # Stage 5: Verifier
     yield ProgressEvent(phase="verify", message="Anchoring citations...")
     verifier_prompt = (
@@ -443,6 +487,23 @@ def _run_pipeline(
             len(verified_draft), int(MINIMUM_RATIO * 100), len(draft),
         )
         verified_draft = draft
+
+    # Stage 5.5: Citation API verification
+    yield ProgressEvent(phase="verify_citations", message="Verifying citations against public APIs…")
+    try:
+        from .citation_verifier import verify_citations as _verify_cites
+        _cite_report = _verify_cites(verified_draft, ss_key=semantic_scholar_api_key)
+        if _cite_report.verified or _cite_report.unverified:
+            yield ProgressEvent(
+                phase="verify_citations",
+                message=(
+                    f"Citations: {len(_cite_report.verified)} verified, "
+                    f"{len(_cite_report.unverified)} unresolvable."
+                ),
+            )
+            verified_draft = verified_draft + "\n\n" + _cite_report.as_markdown()
+    except Exception as _ce:
+        logger.warning("Citation verification skipped: %s", _ce)
 
     # Stage 6: Reviewer
     yield ProgressEvent(phase="review", message="Running adversarial review...")
