@@ -233,18 +233,26 @@ from within a Claude conversation. Verify the output file appears in `output_dir
 
 --- Feedback: Works
 
-## 18. Tavily quota exhaustion — graceful failure (docent backend)
+## 18. Tavily key invalid / quota exhausted — graceful fallback (docent backend)
 
-Set an invalid Tavily key to simulate quota exhaustion:
+Set an invalid Tavily key:
 ```
 docent studio config-set --key tavily_api_key --value tvly-invalid-key-for-testing
 docent studio deep-research --topic "test topic" --backend docent
 ```
-**Expect:** Clear error message mentioning "Tavily" and suggesting checking the key.
-Not a silent fallthrough.
-(Reset key afterward: `docent studio config-set --key tavily_api_key --value <real_key>`)
+**Expect:**
+- Bold red `error` event: "Invalid Tavily API key — the key was rejected by Tavily…"
+  with fix instructions and tavily.com/pricing upgrade hint
+- Pipeline continues (does NOT hard-fail)
+- No web search results (key passed as `None` to manual pipeline)
+- Academic sources still fetched and synthesised
+- Final result: `ok=True` with a completed research brief
 
---- Feedback: Works
+For real quota exhaustion (requires actually exhausting 1,000 calls):
+- Yellow `warn` event: "Tavily free quota exhausted… Continuing without web search (academic sources only)."
+- Same academic-only completion
+
+(Reset key afterward: `docent studio config-set --key tavily_api_key --value <real_key>`)
 
 ## 19. References section in output markdown
 
@@ -365,47 +373,6 @@ Remove-Item "$env:USERPROFILE\.claude\skills\research-to-notebook\active-overrid
 
 --- Feedback: Not checked, but I'm sure it works. 
 
-## 29. `to-local` — happy path
-
-After test #4:
-```
-docent studio to-local
-```
-**Expect:** Creates `<output_dir>/storm-surge-ghana-deep-local/` with `storm-surge-ghana-deep.md`
-and `sources_urls.txt`. Message shows source URL count.
-
---- Feedback: Works
-
-## 30. `to-local` with explicit file
-
-```
-docent studio to-local --output-file storm-surge-ghana-deep.md
-```
-**Expect:** Same result as #29.
-
----
-
-## 31. `to-local` with `--guide-files`
-
-```
-echo "Focus on adaptation policy." > ~/Documents/guide.txt
-docent studio to-local --guide-files ~/Documents/guide.txt
-```
-**Expect:** Package directory created as in #29. `guide.txt` is copied into the local package.
-
----
-
-## 32. `to-local` error — no research output
-
-```
-docent studio config-set --key output_dir --value /tmp/empty-to-local-test
-docent studio to-local
-```
-**Expect:** `ok=False`, message: "No research output found…"
-(Reset output_dir afterward.)
-
----
-
 ## 33. `--guide-files` in `deep-research` and `lit` — individual files
 
 ```
@@ -423,8 +390,9 @@ docent studio lit --topic "coastal flooding" --guide-files ~/Documents/research-
 
 ## 34. MCP tool list — all studio tools exposed (delta check)
 
-With `docent serve` running, verify `studio__to_local`, `studio__compare`, `studio__draft`,
+With `docent serve` running, verify `studio__compare`, `studio__draft`,
 `studio__replicate`, `studio__audit` appear alongside the tools listed in #16.
+Total tool count should be **35**. `studio__to_local` should NOT appear (removed).
 
 --- Feedback: Works
 
@@ -484,7 +452,8 @@ After disclaimer + confirm:
 
 **Expect:**
 - `web_search` — "Searching the web via Tavily…"
-- `web_search` — "Tavily API key invalid: … Falling back to DuckDuckGo…" (or quota exhausted message)
+- Bold red `error` event: "Invalid Tavily API key — key rejected. Fix: docent studio config-set…"
+  (rendered as `error` prefix, not dim `web_search` prefix)
 - `web_search` — "DuckDuckGo returned N results. Note: results are broader and less curated than Tavily."
 - Web results section shows `*(via DuckDuckGo (fallback — lower quality))*`
 - Pipeline completes with both web and academic results
@@ -572,15 +541,16 @@ Use the studio deep_research tool with topic="storm surge adaptation" and backen
 ```
 
 **Expect (AI behaviour):**
-1. Tool runs — progress events stream in the MCP response
+1. Tool runs — progress events stream as live log notifications (not just a single response at the end)
 2. The output document is written to disk with the `_MCP_SYNTHESIS_PROMPT` footer (not the human tip)
-3. The AI reads the result and **proactively offers synthesis** before showing the results — e.g.:
-   *"I've compiled your research results using Docent's free tier. Would you like me to synthesise this into a structured research brief with an introduction, key findings, critical analysis, and conclusions?"*
-4. If you say yes, the AI uses the document sections as source material and produces a coherent brief
+3. The MCP tool response ends with a plain-text block starting:
+   `=== FREE-TIER RESEARCH COMPLETE — MANDATORY NEXT STEPS ===`
+   followed by STEP 1–4 instructions in plain text (not buried in a JSON field)
+4. The AI proceeds through all 4 steps WITHOUT asking — parallel research, read output, synthesise, save
+5. Final synthesis is saved via `studio__save_synthesis`; only the summary is shown in chat
 
 **Verify the document footer (open the output file):**
 - Contains: `[Instructions for the AI assistant reading this via MCP]`
-- Contains: `"Would you like me to synthesise this into a structured research brief…"`
 - Does NOT contain the human-facing tip text
 
 --- Feedback: Works
@@ -645,18 +615,16 @@ Open both output files and compare the footers:
 15. **#13** — OC spend tracking (after #4/#9)
 16. **#19** — references section in output
 
-### Tier 5 — to-notebook / to-local pipeline
+### Tier 5 — to-notebook pipeline
 17. **#5** — to-notebook happy path (after #4)
-18. **#29** — to-local happy path
-19. **#20** — full pipeline phase progress
-20. **#21** — quality gate shape output
-21. **#22** — skip quality gate/perspectives
-22. **#23** — skip NLM research arm
-23. **#24** — guide-files in to-notebook
-24. **#26 + #27** — self-learning writeback
-25. **#28** — active-overrides
-26. **#25** — explicit notebook-id
-27. **#31 + #32** — to-local guide-file + error case
+18. **#20** — full pipeline phase progress
+19. **#21** — quality gate shape output
+20. **#22** — skip quality gate/perspectives
+21. **#23** — skip NLM research arm
+22. **#24** — guide-files in to-notebook
+23. **#26 + #27** — self-learning writeback
+24. **#28** — active-overrides
+25. **#25** — explicit notebook-id
 
 ### Tier 6 — MCP synthesis prompt (requires MCP client connected)
 28. **#43** — MCP free tier deep research + synthesis offer

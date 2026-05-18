@@ -632,9 +632,10 @@ def _run_with_tavily_fallback(
                     level="warn",
                     message=f"Tavily research failed ({err_detail[:120]}), falling back to manual search...",
                 )
+            # Pass None so web_search skips Tavily — the key is known bad.
             result = yield from _run_pipeline(
                 topic, backend, planner_name, writer_name,
-                tavily_api_key=tavily_api_key,
+                tavily_api_key=None,
                 semantic_scholar_api_key=semantic_scholar_api_key,
                 alphaxiv_api_key=alphaxiv_api_key,
             )
