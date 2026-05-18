@@ -1,4 +1,4 @@
-"""Feynman CLI wrapper: error classes, executable resolution, spend tracking, runner."""
+"""Feynman CLI wrapper: error classes, executable resolution, runner."""
 from __future__ import annotations
 
 import json
@@ -9,16 +9,12 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from docent.errors import ToolNotFoundError, UsageLimitError
+from docent.errors import ToolNotFoundError
 
 
 # ---------------------------------------------------------------------------
 # Errors
 # ---------------------------------------------------------------------------
-
-class FeynmanBudgetExceededError(UsageLimitError):
-    """Raised when Feynman session spend reaches 90% of the configured budget."""
-
 
 class FeynmanNotFoundError(ToolNotFoundError):
     """Raised when the feynman executable cannot be found on PATH or known locations."""
@@ -34,39 +30,6 @@ class FeynmanNotFoundError(ToolNotFoundError):
         if details:
             msg += f"\nDetails: {details}"
         super().__init__(msg)
-
-
-# ---------------------------------------------------------------------------
-# Spend tracking
-# ---------------------------------------------------------------------------
-
-def _spend_file() -> Path:
-    from docent.utils.paths import cache_dir
-    return cache_dir() / "research" / "feynman_spend.json"
-
-
-def _read_daily_spend() -> float:
-    """Return today's accumulated Feynman spend in USD. Resets automatically at midnight."""
-    import datetime
-    today = datetime.date.today().isoformat()
-    try:
-        data = json.loads(_spend_file().read_text(encoding="utf-8"))
-        if data.get("date") == today:
-            return float(data.get("spend_usd", 0.0))
-    except Exception:
-        pass
-    return 0.0
-
-
-def _write_daily_spend(spend: float) -> None:
-    """Persist today's accumulated Feynman spend to disk."""
-    import datetime
-    p = _spend_file()
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(
-        json.dumps({"date": datetime.date.today().isoformat(), "spend_usd": round(spend, 6)}),
-        encoding="utf-8",
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -395,7 +358,6 @@ def _run_feynman(
     output_dir: Path,
     slug: str,
     *,
-    budget_usd: float = 0.0,
     timeout: float = 900.0,
 ) -> tuple[int, str | None, str]:
     """Run feynman and return (returncode, output_file_path | None, stderr).
@@ -404,16 +366,6 @@ def _run_feynman(
     Raises FeynmanNotFoundError if feynman is not installed.
     Captures only stderr (for error surfacing); stdout goes to terminal for real-time progress.
     """
-    if budget_usd > 0:
-        current_spend = _read_daily_spend()
-        if current_spend >= budget_usd * 0.9:
-            raise FeynmanBudgetExceededError(
-                f"Feynman daily budget nearly exhausted "
-                f"(${current_spend:.2f} of ${budget_usd:.2f} today). "
-                f"Increase with `docent studio config-set feynman_budget_usd <amount>` "
-                f"or use backend='docent'."
-            )
-
     resolved_cmd = _find_feynman(configured_command)
     full_cmd = resolved_cmd + subcommand_args
 
@@ -563,11 +515,6 @@ def _run_feynman(
         except subprocess.TimeoutExpired:
             proc.kill()
         raise
-
-    if budget_usd > 0:
-        cost = _extract_feynman_cost(stderr_output)
-        if cost > 0:
-            _write_daily_spend(_read_daily_spend() + cost)
 
     after_snap = _md_snapshot(outputs_dir)
     new_files = sorted(

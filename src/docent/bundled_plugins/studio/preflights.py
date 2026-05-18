@@ -325,7 +325,6 @@ def _preflight_docent(inputs: BaseModel, context: Context) -> None:
 
     oc = OcClient(
         provider=context.settings.research.oc_provider,
-        budget_usd=context.settings.research.oc_budget_usd,
     )
     if not oc.is_available():
         get_console().print(
@@ -421,7 +420,6 @@ def _preflight_oc_only(inputs: BaseModel, context: Context) -> None:
 
     oc = OcClient(
         provider=context.settings.research.oc_provider,
-        budget_usd=context.settings.research.oc_budget_usd,
     )
     if not oc.is_available():
         get_console().print(

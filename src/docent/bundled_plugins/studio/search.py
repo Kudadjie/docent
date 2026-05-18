@@ -1,8 +1,6 @@
 """Web search, academic paper search, page fetching, and Tavily research for the research pipeline."""
 from __future__ import annotations
 
-import datetime
-import json
 import logging
 import re
 import time
@@ -25,31 +23,6 @@ _S2_FIELDS = "title,abstract,authors,year,externalIds"
 logger = logging.getLogger(__name__)
 
 
-def _tavily_spend_file() -> Path:
-    from docent.utils.paths import cache_dir
-    return cache_dir() / "research" / "tavily_spend.json"
-
-
-def _read_tavily_daily_requests() -> int:
-    today = datetime.date.today().isoformat()
-    try:
-        data = json.loads(_tavily_spend_file().read_text(encoding="utf-8"))
-        if data.get("date") == today:
-            return int(data.get("requests", 0))
-    except Exception:
-        pass
-    return 0
-
-
-def _write_tavily_daily_requests(count: int) -> None:
-    today = datetime.date.today().isoformat()
-    _tavily_spend_file().parent.mkdir(parents=True, exist_ok=True)
-    _tavily_spend_file().write_text(
-        json.dumps({"date": today, "requests": count}, indent=2),
-        encoding="utf-8",
-    )
-
-
 def web_search(query: str, max_results: int = 8, api_key: str | None = None) -> list[dict]:
     """Search the web via Tavily. Returns list of {title, url, snippet}.
 
@@ -68,12 +41,6 @@ def web_search(query: str, max_results: int = 8, api_key: str | None = None) -> 
             max_results=max_results,
             search_depth="advanced",
         )
-        # Increment daily request counter
-        try:
-            current = _read_tavily_daily_requests()
-            _write_tavily_daily_requests(current + 1)
-        except Exception:
-            pass
         results = [
             {
                 "title": r.get("title", ""),
@@ -374,12 +341,6 @@ def tavily_research(
         poll_count += 1
 
         if status == "completed":
-            # Increment daily request counter
-            try:
-                current = _read_tavily_daily_requests()
-                _write_tavily_daily_requests(current + 1)
-            except Exception:
-                pass
 
             sources = []
             for s in result.get("sources", []):

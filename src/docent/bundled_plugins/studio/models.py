@@ -220,10 +220,6 @@ class AuditInputs(BaseModel):
     guide_files: list[str] = _GUIDE_FILES_FIELD
 
 
-class UsageInputs(BaseModel):
-    pass
-
-
 # ---------------------------------------------------------------------------
 # Result models
 # ---------------------------------------------------------------------------
@@ -262,7 +258,6 @@ class ConfigShowResult(BaseModel):
     oc_model_verifier: str
     oc_model_reviewer: str
     oc_model_researcher: str
-    oc_budget_usd: float
     tavily_api_key: str | None = None
     tavily_research_timeout: float = 600.0
     semantic_scholar_api_key: str | None = None
@@ -291,7 +286,6 @@ class ConfigShowResult(BaseModel):
             MetricShape(label="oc_model_verifier", value=self.oc_model_verifier),
             MetricShape(label="oc_model_reviewer", value=self.oc_model_reviewer),
             MetricShape(label="oc_model_researcher", value=self.oc_model_researcher),
-            MetricShape(label="oc_budget_usd", value=str(self.oc_budget_usd)),
             MetricShape(label="tavily_api_key", value=_mask(self.tavily_api_key)),
             MetricShape(label="tavily_research_timeout", value=f"{self.tavily_research_timeout:.0f}s"),
             MetricShape(label="semantic_scholar_api_key", value=_mask(self.semantic_scholar_api_key)),
@@ -396,19 +390,3 @@ class ScholarlySearchResult(BaseModel):
         return shapes
 
 
-class UsageResult(BaseModel):
-    feynman_spend_usd: float
-    oc_spend_usd: float
-    feynman_budget_usd: float
-    oc_budget_usd: float
-    date: str
-    message: str
-
-    def to_shapes(self) -> list[Shape]:
-        return [
-            MetricShape(label="Date", value=self.date),
-            MetricShape(label="Feynman spend today", value=f"${self.feynman_spend_usd:.4f}",
-                       unit=f"/ ${self.feynman_budget_usd:.2f} budget" if self.feynman_budget_usd > 0 else "(no limit)"),
-            MetricShape(label="OpenCode spend today", value=f"${self.oc_spend_usd:.4f}",
-                       unit=f"/ ${self.oc_budget_usd:.2f} budget" if self.oc_budget_usd > 0 else "(no limit)"),
-        ]

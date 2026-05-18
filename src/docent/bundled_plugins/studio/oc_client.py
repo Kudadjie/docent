@@ -1,14 +1,13 @@
 """Thin OpenCode REST API client for in-process LLM calls."""
 from __future__ import annotations
 
-import datetime
 import json
 import threading
 import urllib.error
 import urllib.request
 from pathlib import Path
 
-from docent.errors import AuthError, ServiceUnavailableError, UsageLimitError
+from docent.errors import AuthError, ServiceUnavailableError
 
 _BASE_URL = "http://127.0.0.1:4096"
 _DEFAULT_PROVIDER = "opencode-go"
@@ -47,37 +46,8 @@ def _detect_base_url() -> str:
     return _BASE_URL
 
 
-def _oc_spend_file() -> Path:
-    from docent.utils.paths import cache_dir
-    return cache_dir() / "research" / "oc_spend.json"
-
-
-def _read_oc_daily_spend() -> float:
-    today = datetime.date.today().isoformat()
-    try:
-        data = json.loads(_oc_spend_file().read_text(encoding="utf-8"))
-        if data.get("date") == today:
-            return float(data.get("spend_usd", 0.0))
-    except Exception:
-        pass
-    return 0.0
-
-
-def _write_oc_daily_spend(spend: float) -> None:
-    p = _oc_spend_file()
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(
-        json.dumps({"date": datetime.date.today().isoformat(), "spend_usd": round(spend, 6)}),
-        encoding="utf-8",
-    )
-
-
 class OcUnavailableError(ServiceUnavailableError):
     """Raised when OpenCode server is not reachable."""
-
-
-class OcBudgetExceededError(UsageLimitError):
-    """Raised when daily OC spend reaches 90% of the configured budget."""
 
 
 class OcModelError(AuthError):
@@ -102,11 +72,9 @@ class OcClient:
         self,
         base_url: str | None = None,
         provider: str = _DEFAULT_PROVIDER,
-        budget_usd: float = 0.0,
     ) -> None:
         self.base_url = base_url or _detect_base_url()
         self.provider = provider
-        self.budget_usd = budget_usd
         # Per-instance cache for check_model() results: model → OcModelError or None.
         # None means "last check passed"; an OcModelError means it failed.
         self._check_cache: dict[str, "OcModelError | None"] = {}
@@ -146,16 +114,6 @@ class OcClient:
 
     def call(self, prompt: str, model: str = "glm-5.1", timeout: int = 300) -> str:
         """Create a session, send the prompt, return the text response."""
-        if self.budget_usd > 0:
-            current = _read_oc_daily_spend()
-            if current >= self.budget_usd * 0.9:
-                raise OcBudgetExceededError(
-                    f"OpenCode daily budget nearly exhausted "
-                    f"(${current:.2f} of ${self.budget_usd:.2f} today). "
-                    f"Increase with `docent studio config-set oc_budget_usd <amount>` "
-                    f"or set oc_budget_usd=0 to remove the limit."
-                )
-
         session_id = self._api("POST", "/session", {})["id"]
 
         # Run the potentially long model call in a daemon thread so that
@@ -264,13 +222,6 @@ class OcClient:
                         http_code=code,
                     )
                 raise OcModelError(f"Model error for {model!r} (code {code}): {msg}", http_code=code)
-
-        try:
-            cost = float((response.get("info") or {}).get("cost") or 0.0)
-            if cost > 0:
-                _write_oc_daily_spend(_read_oc_daily_spend() + cost)
-        except Exception:
-            pass
 
         return "\n".join(
             p["text"] for p in parts if p.get("type") == "text"

@@ -10,15 +10,12 @@ from docent.core import Context, ProgressEvent, Tool, action, register_tool
 
 from ._notebook import _nlm_push, _rank_sources, _find_sources_path, ToNotebookInputs, ToNotebookResult  # noqa: F401
 from .feynman import (
-    FeynmanBudgetExceededError,
     FeynmanNotFoundError,
     _extract_feynman_cost,  # noqa: F401 — re-exported for tests
     _find_feynman,
     _feynman_version_from_package_json,
-    _read_daily_spend,
     _run_feynman,
     _summarize_feynman_error,
-    _write_daily_spend,  # noqa: F401 — re-exported for tests
 )
 from .helpers import (
     _append_references,
@@ -51,8 +48,6 @@ from .models import (
     ScholarlySearchResult,
     SearchPapersInputs,
     SearchPapersResult,
-    UsageInputs,
-    UsageResult,
 )
 from .preflights import (  # noqa: F401
     _preflight_docent,
@@ -64,9 +59,16 @@ from .preflights import (  # noqa: F401
 )
 
 
+_PRICING_NOTE = (
+    "API cost heads-up — typical cost per run by provider:\n"
+    "  Free / very cheap : Groq, Mistral, Cerebras (~$0.01–$0.05)  |  Gemini (free tier available)\n"
+    "  Moderate          : OpenRouter free models (~$0.00–$0.10)    |  OpenAI GPT-4o (~$0.20–$0.80)\n"
+    "  Expensive         : Anthropic Claude — most expensive of all  (~$0.50–$3.00+ per run)\n"
+    "Switch provider: docent studio config-set --key feynman_model --value groq/llama-3.3-70b-versatile"
+)
+
 _KNOWN_RESEARCH_KEYS = {
     "output_dir",
-    "feynman_budget_usd",
     "feynman_model",
     "feynman_timeout",
     "studio_backend",
@@ -76,7 +78,6 @@ _KNOWN_RESEARCH_KEYS = {
     "oc_model_verifier",
     "oc_model_reviewer",
     "oc_model_researcher",
-    "oc_budget_usd",
     "groq_api_key",
     "groq_model",
     "gemini_api_key",
@@ -120,6 +121,7 @@ class StudioTool(Tool):
     def deep_research(self, inputs: DeepInputs, context: Context):
         from .backend import DOCENT_BACKEND_NAMES
         if inputs.backend in DOCENT_BACKEND_NAMES:
+            yield ProgressEvent(phase="cost", level="warn", message=_PRICING_NOTE)
             from .backend import get_backend
             from .pipeline import run_deep
 
@@ -240,6 +242,7 @@ class StudioTool(Tool):
             )
 
         # Feynman branch
+        yield ProgressEvent(phase="cost", level="warn", message=_PRICING_NOTE)
         yield ProgressEvent(
             phase="start",
             message=f"Starting Feynman deep research: {inputs.topic!r}",
@@ -260,10 +263,9 @@ class StudioTool(Tool):
         try:
             returncode, output_file, stderr_output = _run_feynman(
                 feynman_cmd, cmd_args, workspace_dir, output_dir, slug,
-                budget_usd=context.settings.research.feynman_budget_usd,
                 timeout=context.settings.research.feynman_timeout,
             )
-        except (FeynmanBudgetExceededError, FeynmanNotFoundError) as e:
+        except FeynmanNotFoundError as e:
             return ResearchResult(
                 ok=False, backend="feynman", workflow="deep",
                 topic_or_artifact=inputs.topic, output_file=None, returncode=None,
@@ -317,6 +319,7 @@ class StudioTool(Tool):
     def lit(self, inputs: LitInputs, context: Context):
         from .backend import DOCENT_BACKEND_NAMES
         if inputs.backend in DOCENT_BACKEND_NAMES:
+            yield ProgressEvent(phase="cost", level="warn", message=_PRICING_NOTE)
             from .backend import get_backend
             from .pipeline import run_lit
 
@@ -434,6 +437,7 @@ class StudioTool(Tool):
             )
 
         # Feynman branch
+        yield ProgressEvent(phase="cost", level="warn", message=_PRICING_NOTE)
         yield ProgressEvent(
             phase="start",
             message=f"Starting Feynman literature review: {inputs.topic!r}",
@@ -454,10 +458,9 @@ class StudioTool(Tool):
         try:
             returncode, output_file, stderr_output = _run_feynman(
                 feynman_cmd, cmd_args, workspace_dir, output_dir, slug,
-                budget_usd=context.settings.research.feynman_budget_usd,
                 timeout=context.settings.research.feynman_timeout,
             )
-        except (FeynmanBudgetExceededError, FeynmanNotFoundError) as e:
+        except FeynmanNotFoundError as e:
             return ResearchResult(
                 ok=False, backend="feynman", workflow="lit",
                 topic_or_artifact=inputs.topic, output_file=None, returncode=None,
@@ -511,6 +514,7 @@ class StudioTool(Tool):
     def review(self, inputs: ReviewInputs, context: Context):
         from .backend import DOCENT_BACKEND_NAMES
         if inputs.backend in DOCENT_BACKEND_NAMES:
+            yield ProgressEvent(phase="cost", level="warn", message=_PRICING_NOTE)
             from .backend import get_backend
             from .pipeline import run_review
 
@@ -565,6 +569,7 @@ class StudioTool(Tool):
             )
 
         # Feynman branch
+        yield ProgressEvent(phase="cost", level="warn", message=_PRICING_NOTE)
         yield ProgressEvent(
             phase="start",
             message=f"Starting Feynman review: {inputs.artifact!r}",
@@ -580,10 +585,9 @@ class StudioTool(Tool):
         try:
             returncode, output_file, stderr_output = _run_feynman(
                 feynman_cmd, cmd_args, workspace_dir, output_dir, slug,
-                budget_usd=context.settings.research.feynman_budget_usd,
                 timeout=context.settings.research.feynman_timeout,
             )
-        except (FeynmanBudgetExceededError, FeynmanNotFoundError) as e:
+        except FeynmanNotFoundError as e:
             return ResearchResult(
                 ok=False, backend="feynman", workflow="review",
                 topic_or_artifact=inputs.artifact, output_file=None, returncode=None,
@@ -954,7 +958,6 @@ class StudioTool(Tool):
             oc_model_verifier=rs.oc_model_verifier,
             oc_model_reviewer=rs.oc_model_reviewer,
             oc_model_researcher=rs.oc_model_researcher,
-            oc_budget_usd=rs.oc_budget_usd,
             tavily_api_key=rs.tavily_api_key,
             tavily_research_timeout=rs.tavily_research_timeout,
             semantic_scholar_api_key=rs.semantic_scholar_api_key,
@@ -1000,6 +1003,7 @@ class StudioTool(Tool):
 
         from .backend import DOCENT_BACKEND_NAMES
         if inputs.backend in DOCENT_BACKEND_NAMES:
+            yield ProgressEvent(phase="cost", level="warn", message=_PRICING_NOTE)
             from .backend import get_backend
             from .pipeline import run_compare
 
@@ -1043,6 +1047,7 @@ class StudioTool(Tool):
             )
 
         # Feynman branch
+        yield ProgressEvent(phase="cost", level="warn", message=_PRICING_NOTE)
         yield ProgressEvent(phase="start", message=f"Starting Feynman compare: {topic_label!r}")
         feynman_cmd = context.settings.research.feynman_command or ["feynman"]
         output_dir = context.settings.research.output_dir.expanduser()
@@ -1059,10 +1064,9 @@ class StudioTool(Tool):
         try:
             returncode, output_file, stderr_output = _run_feynman(
                 feynman_cmd, cmd_args, workspace_dir, output_dir, slug,
-                budget_usd=context.settings.research.feynman_budget_usd,
                 timeout=context.settings.research.feynman_timeout,
             )
-        except (FeynmanBudgetExceededError, FeynmanNotFoundError) as e:
+        except FeynmanNotFoundError as e:
             return ResearchResult(
                 ok=False, backend="feynman", workflow="compare",
                 topic_or_artifact=topic_label, output_file=None, returncode=None, message=str(e),
@@ -1103,6 +1107,7 @@ class StudioTool(Tool):
 
         from .backend import DOCENT_BACKEND_NAMES
         if inputs.backend in DOCENT_BACKEND_NAMES:
+            yield ProgressEvent(phase="cost", level="warn", message=_PRICING_NOTE)
             from .backend import get_backend
             from .pipeline import run_draft
 
@@ -1147,6 +1152,7 @@ class StudioTool(Tool):
             )
 
         # Feynman branch
+        yield ProgressEvent(phase="cost", level="warn", message=_PRICING_NOTE)
         yield ProgressEvent(phase="start", message=f"Starting Feynman draft: {inputs.topic!r}")
         feynman_cmd = context.settings.research.feynman_command or ["feynman"]
         output_dir = context.settings.research.output_dir.expanduser()
@@ -1163,10 +1169,9 @@ class StudioTool(Tool):
         try:
             returncode, output_file, stderr_output = _run_feynman(
                 feynman_cmd, cmd_args, workspace_dir, output_dir, slug,
-                budget_usd=context.settings.research.feynman_budget_usd,
                 timeout=context.settings.research.feynman_timeout,
             )
-        except (FeynmanBudgetExceededError, FeynmanNotFoundError) as e:
+        except FeynmanNotFoundError as e:
             return ResearchResult(
                 ok=False, backend="feynman", workflow="draft",
                 topic_or_artifact=inputs.topic, output_file=None, returncode=None, message=str(e),
@@ -1207,6 +1212,7 @@ class StudioTool(Tool):
 
         from .backend import DOCENT_BACKEND_NAMES
         if inputs.backend in DOCENT_BACKEND_NAMES:
+            yield ProgressEvent(phase="cost", level="warn", message=_PRICING_NOTE)
             from .backend import get_backend
             from .pipeline import run_replicate
 
@@ -1248,6 +1254,7 @@ class StudioTool(Tool):
             )
 
         # Feynman branch
+        yield ProgressEvent(phase="cost", level="warn", message=_PRICING_NOTE)
         yield ProgressEvent(phase="start", message=f"Starting Feynman replicate: {inputs.artifact!r}")
         feynman_cmd = context.settings.research.feynman_command or ["feynman"]
         output_dir = context.settings.research.output_dir.expanduser()
@@ -1264,10 +1271,9 @@ class StudioTool(Tool):
         try:
             returncode, output_file, stderr_output = _run_feynman(
                 feynman_cmd, cmd_args, workspace_dir, output_dir, slug,
-                budget_usd=context.settings.research.feynman_budget_usd,
                 timeout=context.settings.research.feynman_timeout,
             )
-        except (FeynmanBudgetExceededError, FeynmanNotFoundError) as e:
+        except FeynmanNotFoundError as e:
             return ResearchResult(
                 ok=False, backend="feynman", workflow="replicate",
                 topic_or_artifact=inputs.artifact, output_file=None, returncode=None, message=str(e),
@@ -1308,6 +1314,7 @@ class StudioTool(Tool):
 
         from .backend import DOCENT_BACKEND_NAMES
         if inputs.backend in DOCENT_BACKEND_NAMES:
+            yield ProgressEvent(phase="cost", level="warn", message=_PRICING_NOTE)
             from .backend import get_backend
             from .pipeline import run_audit
 
@@ -1349,6 +1356,7 @@ class StudioTool(Tool):
             )
 
         # Feynman branch
+        yield ProgressEvent(phase="cost", level="warn", message=_PRICING_NOTE)
         yield ProgressEvent(phase="start", message=f"Starting Feynman audit: {inputs.artifact!r}")
         feynman_cmd = context.settings.research.feynman_command or ["feynman"]
         output_dir = context.settings.research.output_dir.expanduser()
@@ -1365,10 +1373,9 @@ class StudioTool(Tool):
         try:
             returncode, output_file, stderr_output = _run_feynman(
                 feynman_cmd, cmd_args, workspace_dir, output_dir, slug,
-                budget_usd=context.settings.research.feynman_budget_usd,
                 timeout=context.settings.research.feynman_timeout,
             )
-        except (FeynmanBudgetExceededError, FeynmanNotFoundError) as e:
+        except FeynmanNotFoundError as e:
             return ResearchResult(
                 ok=False, backend="feynman", workflow="audit",
                 topic_or_artifact=inputs.artifact, output_file=None, returncode=None, message=str(e),
@@ -1399,34 +1406,6 @@ class StudioTool(Tool):
             message=f"Audit completed for {inputs.artifact!r}.{extra}",
         )
 
-    @action(
-        description="Show today's Feynman and OpenCode spend against configured budgets.",
-        input_schema=UsageInputs,
-    )
-    def usage(self, inputs: UsageInputs, context: Context) -> UsageResult:
-        import datetime
-        from .oc_client import _read_oc_daily_spend
-        from .search import _read_tavily_daily_requests
-        feynman_spend = _read_daily_spend()
-        oc_spend = _read_oc_daily_spend()
-        tavily_requests = _read_tavily_daily_requests()
-        rs = context.settings.research
-        today = datetime.date.today().isoformat()
-        return UsageResult(
-            feynman_spend_usd=feynman_spend,
-            oc_spend_usd=oc_spend,
-            feynman_budget_usd=rs.feynman_budget_usd,
-            oc_budget_usd=rs.oc_budget_usd,
-            date=today,
-            message=(
-                f"Today ({today}): Feynman ${feynman_spend:.4f}"
-                + (f" / ${rs.feynman_budget_usd:.2f}" if rs.feynman_budget_usd > 0 else "")
-                + f", OpenCode ${oc_spend:.4f}"
-                + (f" / ${rs.oc_budget_usd:.2f}" if rs.oc_budget_usd > 0 else "")
-                + f", Tavily {tavily_requests} reqs"
-                + " / 1000/mo free"
-            ),
-        )
 
 
 def on_startup(context) -> None:  # noqa: ARG001

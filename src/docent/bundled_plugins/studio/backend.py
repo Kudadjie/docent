@@ -115,7 +115,6 @@ class OcBackend:
         from .oc_client import OcClient
         self._oc = OcClient(
             provider=settings.research.oc_provider,
-            budget_usd=settings.research.oc_budget_usd,
         )
         self._research = settings.research
 

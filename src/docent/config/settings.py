@@ -17,7 +17,6 @@ class ResearchSettings(BaseModel):
 
     output_dir: Path = Field(default_factory=lambda: Path("~/Documents/Docent/research"))
     feynman_command: list[str] | None = None
-    feynman_budget_usd: float = 0.0  # 0.0 = no limit (default). Set to e.g. 2.00 to cap Feynman spend at $2 per session.
     feynman_model: str | None = None  # e.g. "anthropic/claude-sonnet-4-5" — passes --model to feynman
     feynman_timeout: float = 1800.0  # seconds before killing stuck feynman runs (/review with code repo access needs ~20-25 min)
     studio_backend: str = "opencode"  # active Docent-tier backend
@@ -27,7 +26,6 @@ class ResearchSettings(BaseModel):
     oc_model_verifier: str = "glm-5.1"
     oc_model_reviewer: str = "deepseek-v4-pro"
     oc_model_researcher: str = "glm-5.1"
-    oc_budget_usd: float = 0.0
 
     # LiteLLM provider API keys
     groq_api_key: str | None = None

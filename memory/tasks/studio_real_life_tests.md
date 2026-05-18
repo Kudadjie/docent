@@ -473,7 +473,7 @@ docent studio deep-research --topic "storm surge Ghana" --backend free --guide-f
 - Guide context section appears in output document above web results
 - Search query is sharpened by guide content (check web result titles for relevance)
 
----
+--- Feedback: Works
 
 ## 39. Free tier — folder guide files expansion
 
@@ -488,7 +488,7 @@ docent studio deep-research --topic "coastal erosion" --backend free --guide-fil
 - Both `region.txt` and `timeframe.md` are read and concatenated into guide context
 - Guide context section in output shows content from both files
 
----
+--- Feedback: Works
 
 ## 40. Free tier — unreadable guide file: warn and confirm
 
@@ -503,7 +503,7 @@ docent studio deep-research --topic "flood risk" --backend free --guide-files "$
 - Enter `y` → pipeline runs without the bad file
 - Enter `n` → exits cleanly, no pipeline runs
 
----
+--- Feedback: Works
 
 ## 41. Free tier — literature review
 
@@ -518,7 +518,7 @@ docent studio lit --topic "sea level rise West Africa" --backend free
 - File contains `## Papers` section with 10–40 papers
 - File contains human-facing footer tip (NOT the MCP synthesis block)
 
----
+--- Feedback: Works
 
 ## 42. Free tier — decline disclaimer
 
@@ -563,7 +563,7 @@ Same as #43 but using `studio__lit` with `backend="free"`.
 - AI offers synthesis offer before presenting the paper list
 - Output file footer is `_MCP_SYNTHESIS_PROMPT` (MCP variant), not the human tip
 
----
+--- Feedback: Works
 
 ## 45. MCP vs CLI footer distinction
 
