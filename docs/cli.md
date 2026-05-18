@@ -218,11 +218,12 @@ Studio runs deep research, literature reviews, and peer reviews, backed by Feynm
 | `docent studio draft --topic "..." [--backend feynman\|docent]` | Draft a paper section or document |
 | `docent studio replicate --artifact "..." [--backend feynman\|docent]` | Build a replication guide for a paper |
 | `docent studio audit --artifact "..." [--backend feynman\|docent]` | Audit a paper for methodology and reproducibility |
-| `docent studio to-notebook [--output-file <path>] [--max-sources N] [--notebook-id <id>]` | Post-process: push existing research output to NotebookLM |
+| `docent studio to-notebook [--output-file <path>] [--sources-file <path>] [--topic "..."] [--max-sources N] [--notebook-id <id>] [--guide-files <path>] [--no-run-nlm-research] [--no-run-quality-gate] [--no-run-perspectives]` | Post-process: push existing research output to NotebookLM. Runs 6-phase quality pipeline (nlm-research, push, stabilise, quality gate, perspectives). |
 | `docent studio search-papers --query "..." [--max-results N]` | Search alphaXiv for academic papers |
 | `docent studio get-paper --arxiv-id "2401.12345"` | Fetch AI-generated overview for a paper |
 | `docent studio scholarly-search --query "..." [--max-results N]` | Search Google Scholar / Semantic Scholar / CrossRef |
-| `docent studio usage` | Show today's Feynman/OpenCode spend + Tavily requests |
+| `docent studio read-output --output-file <abs-path>` | Read a research output file for AI synthesis (MCP utility) |
+| `docent studio save-synthesis --source-output-file <path> --content "..." --summary "..."` | Save an AI synthesis brief adjacent to its source file (MCP utility) |
 | `docent studio config-show` | Show current Studio settings |
 | `docent studio config-set --key <k> --value <v>` | Set a Studio config value |
 
@@ -266,10 +267,10 @@ or not yet indexed, and should be checked before citing.
 
 | Key | Default | Notes |
 |---|---|---|
-| `studio_backend` | `opencode` | Active Docent-tier backend: `opencode`, `groq`, `gemini`, `openrouter`, `mistral`, `cerebras`, `anthropic`, `openai`, `ollama`, `lm_studio`, `local` |
+| `studio_backend` | `feynman` | Default backend when `--backend` is omitted |
 | `output_dir` | `~/Documents/Docent/research` | Research output directory |
-| `feynman_budget_usd` | `0.0` | Feynman spend cap per session (0 = unlimited) |
-| `oc_provider` / `oc_model_*` / `oc_budget_usd` | — | OpenCode backend settings |
+| `oc_provider` | `opencode-go` | OpenCode provider (`opencode-go`, `anthropic`, `groq`, …) |
+| `oc_model_planner` / `oc_model_writer` / `oc_model_verifier` / `oc_model_reviewer` / `oc_model_researcher` | `glm-5.1` | Per-stage model overrides for the docent backend |
 | `groq_api_key` / `groq_model` | `llama-3.3-70b-versatile` | [Free at console.groq.com](https://console.groq.com) |
 | `gemini_api_key` / `gemini_model` | `gemini-2.0-flash` | [Free at aistudio.google.com](https://aistudio.google.com) |
 | `openrouter_api_key` / `openrouter_model` | `meta-llama/llama-3.3-70b-instruct:free` | [Free tier at openrouter.ai](https://openrouter.ai) |
