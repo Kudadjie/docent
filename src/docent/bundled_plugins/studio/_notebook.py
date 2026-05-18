@@ -36,6 +36,8 @@ _LEARN_DIR = _docent_data_dir() / "notebook-learning"
 _SKILL_COMPAT_PATH = _LEARN_DIR / "source-compat.json"
 _SKILL_RUN_LOG_PATH = _LEARN_DIR / "run-log.jsonl"
 _SKILL_OVERRIDES_PATH = _LEARN_DIR / "active-overrides.json"
+# Bundled defaults shipped with the package — read-only, user data is merged on top
+_BUNDLED_COMPAT_PATH = Path(__file__).parent / "data" / "source-compat-defaults.json"
 
 _NOTEBOOK_MAP_FILENAME = ".notebook-map.json"
 
@@ -340,14 +342,25 @@ def _strip_utm(url: str) -> str:
         return url
 
 
+def _load_merged_compat() -> dict:
+    """Merge bundled defaults with user-learned data. User data wins on conflicts."""
+    def _read(p: Path) -> dict:
+        try:
+            return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+        except (json.JSONDecodeError, OSError):
+            return {}
+
+    bundled = _read(_BUNDLED_COMPAT_PATH)
+    user = _read(_SKILL_COMPAT_PATH)
+
+    domains: dict = {**bundled.get("domains", {}), **user.get("domains", {})}
+    always_skip: set = set(bundled.get("always_skip", [])) | set(user.get("always_skip", []))
+    return {"always_skip": list(always_skip), "domains": domains}
+
+
 def _nlm_compat_filter(urls: list[str]) -> list[str]:
-    """Filter URLs from known-bad domains using the skill's source-compat.json."""
-    if not _SKILL_COMPAT_PATH.exists():
-        return urls
-    try:
-        compat = json.loads(_SKILL_COMPAT_PATH.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return urls
+    """Filter URLs from known-bad domains using bundled + user-learned compat data."""
+    compat = _load_merged_compat()
     always_skip = set(compat.get("always_skip", []))
     domains_data = compat.get("domains", {})
     result = []

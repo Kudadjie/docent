@@ -1,0 +1,1245 @@
+{
+  "version": 2,
+  "last_updated": "2026-05-18",
+  "always_skip": [
+    "facebook.com",
+    "instagram.com",
+    "twitter.com",
+    "x.com",
+    "linkedin.com",
+    "tiktok.com",
+    "reddit.com"
+  ],
+  "domains": {
+    "youtube.com": {
+      "success": 13,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": "NLM transcribes natively. Always works."
+    },
+    "arxiv.org": {
+      "success": 54,
+      "fail": 9,
+      "rate": 0.86,
+      "notes": "PDFs work well. Occasional timeout on large papers."
+    },
+    "github.com": {
+      "success": 3,
+      "fail": 2,
+      "rate": 0.6,
+      "notes": "README pages work. Raw file URLs sometimes fail."
+    },
+    "medium.com": {
+      "success": 2,
+      "fail": 3,
+      "rate": 0.4,
+      "notes": "Paywalled articles fail. Free ones sometimes work."
+    },
+    "wikipedia.org": {
+      "success": 8,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": "Always works."
+    },
+    "docs.python.org": {
+      "success": 3,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": "Official docs always work."
+    },
+    "pytorch.org": {
+      "success": 2,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": "Docs and tutorials work."
+    },
+    "tensorflow.org": {
+      "success": 2,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": "Docs work."
+    },
+    "coursera.org": {
+      "success": 0,
+      "fail": 2,
+      "rate": 0.0,
+      "notes": "Login wall blocks import."
+    },
+    "udemy.com": {
+      "success": 0,
+      "fail": 1,
+      "rate": 0.0,
+      "notes": "Login wall."
+    },
+    "doi.org": {
+      "success": 0,
+      "fail": 0,
+      "rate": -1,
+      "notes": "Redirects to publisher. Depends on final destination."
+    },
+    "mdpi.com": {
+      "success": 0,
+      "fail": 0,
+      "rate": -1,
+      "notes": "Open access publisher. Untested."
+    },
+    "researchgate.net": {
+      "success": 0,
+      "fail": 0,
+      "rate": -1,
+      "notes": "Sometimes has full PDFs. Untested."
+    },
+    "sciencedirect.com": {
+      "success": 0,
+      "fail": 0,
+      "rate": -1,
+      "notes": "Elsevier. Usually paywalled."
+    },
+    "springer.com": {
+      "success": 0,
+      "fail": 0,
+      "rate": -1,
+      "notes": "Usually paywalled."
+    },
+    "wiley.com": {
+      "success": 0,
+      "fail": 0,
+      "rate": -1,
+      "notes": "Usually paywalled."
+    },
+    "tandfonline.com": {
+      "success": 1,
+      "fail": 1,
+      "rate": 0.5,
+      "notes": "Taylor & Francis. Usually paywalled."
+    },
+    "nature.com": {
+      "success": 3,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": "Some open access. Mostly paywalled."
+    },
+    "ieee.org": {
+      "success": 0,
+      "fail": 0,
+      "rate": -1,
+      "notes": "Usually paywalled."
+    },
+    "science.org": {
+      "success": 0,
+      "fail": 0,
+      "rate": -1,
+      "notes": "AAAS/Science. Usually paywalled."
+    },
+    "cambridge.org": {
+      "success": 0,
+      "fail": 0,
+      "rate": -1,
+      "notes": "Cambridge University Press. Usually paywalled."
+    },
+    "academic.oup.com": {
+      "success": 0,
+      "fail": 0,
+      "rate": -1,
+      "notes": "Oxford Academic. Usually paywalled."
+    },
+    "eartharxiv.org": {
+      "success": 0,
+      "fail": 0,
+      "rate": -1,
+      "notes": "Open access preprints. Likely works like arxiv."
+    },
+    "essoar.org": {
+      "success": 0,
+      "fail": 0,
+      "rate": -1,
+      "notes": "ESSOAr earth science preprints. Likely works."
+    },
+    "ocw.mit.edu": {
+      "success": 3,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": "MIT OpenCourseWare. Always works. Course pages import well."
+    },
+    "open.umn.edu": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": "Open Textbook Library. Works."
+    },
+    "open.oregonstate.education": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": "Oregon State open textbooks. Works."
+    },
+    "rwu.pressbooks.pub": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": "RWU Pressbooks open textbooks. Works."
+    },
+    "hydro.soton.ac.uk": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": "Southampton hydrology PDFs. Works."
+    },
+    "personalpages.manchester.ac.uk": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": "Manchester University lecture note PDFs. Works."
+    },
+    "web.mit.edu": {
+      "success": 2,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": "MIT web server PDFs (fluids-modules, handouts). Works."
+    },
+    "brennen.caltech.edu": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": "Caltech Brennen fluid book PDFs. Works."
+    },
+    "courses.washington.edu": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": "UW course lecture notes PDFs. Works."
+    },
+    "hess.copernicus.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": "Hydrology and Earth System Sciences open-access journal PDFs. Works."
+    },
+    "weadapt.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": "weADAPT knowledge base. Works."
+    },
+    "www.hec.usace.army.mil": {
+      "success": 2,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": "HEC/USACE. Web page and PDF both work."
+    },
+    "www.fhwa.dot.gov": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": "FHWA government PDFs. Works."
+    },
+    "www.irjet.net": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": "IRJET open-access engineering journal PDFs. Works."
+    },
+    "staff.civil.uq.edu.au": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": "UQ Civil Engineering staff pages/PDFs. Works."
+    },
+    "izw.baw.de": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": "BAW (German Federal Waterways) PDFs. Works."
+    },
+    "nccbulletin.ru": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": "Russian academic journal PDFs. Works."
+    },
+    "www.arr-software.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": "ARR Australian Rainfall and Runoff PDFs. Works (may time out in batch but succeeds async)."
+    },
+    "mdpi-res.com": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": "MDPI resource server for book PDFs. Works (may time out in batch but succeeds async)."
+    },
+    "www.ct.upt.ro": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": "Romanian university PDFs. Works."
+    },
+    "www.nhc.noaa.gov": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": "NOAA National Hurricane Center. Works."
+    },
+    "ndl.ethernet.edu.et": {
+      "success": 0,
+      "fail": 1,
+      "rate": 0.0,
+      "notes": "Ethiopian university digital library. RPC timeout — skip."
+    },
+    "mech.kth.se": {
+      "success": 0,
+      "fail": 1,
+      "rate": 0.0,
+      "notes": "KTH Mechanics PDFs. Quick fail — skip."
+    },
+    "www.usgs.gov": {
+      "success": 0,
+      "fail": 1,
+      "rate": 0.0,
+      "notes": "USGS website pages. Failed to add — skip."
+    },
+    "ui.adsabs.harvard.edu": {
+      "success": 1,
+      "fail": 1,
+      "rate": 0.5,
+      "notes": ""
+    },
+    "research.fit.edu": {
+      "success": 2,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "academia.edu": {
+      "success": 1,
+      "fail": 4,
+      "rate": 0.2,
+      "notes": ""
+    },
+    "article.sapub.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "pure.ug.edu.gh": {
+      "success": 5,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "ideas.repec.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "courier.unesco.org": {
+      "success": 2,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "digitalearthafrica.org": {
+      "success": 2,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "opengovpartnership.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "preventionweb.net": {
+      "success": 0,
+      "fail": 1,
+      "rate": 0.0,
+      "notes": ""
+    },
+    "ojs.bibl.u-szeged.hu": {
+      "success": 0,
+      "fail": 1,
+      "rate": 0.0,
+      "notes": ""
+    },
+    "ugspace.ug.edu.gh": {
+      "success": 4,
+      "fail": 1,
+      "rate": 0.8,
+      "notes": ""
+    },
+    "science.nasa.gov": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "theconversation.com": {
+      "success": 0,
+      "fail": 1,
+      "rate": 0.0,
+      "notes": ""
+    },
+    "questjournals.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "afd.fr": {
+      "success": 4,
+      "fail": 1,
+      "rate": 0.8,
+      "notes": ""
+    },
+    "unfccc.int": {
+      "success": 2,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "crc.uri.edu": {
+      "success": 3,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "qiraatafrican.com": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "thehighstreetjournal.com": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "ir.ucc.edu.gh": {
+      "success": 2,
+      "fail": 3,
+      "rate": 0.4,
+      "notes": ""
+    },
+    "ghana.actionaid.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "meerwissen.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "globalebafund.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "afr100.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "ghanaweb.com": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "bluemarbleeval.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "geo-ldn.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "link.springer.com": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "ghanaiantimes.com.gh": {
+      "success": 0,
+      "fail": 1,
+      "rate": 0.0,
+      "notes": ""
+    },
+    "acecor.ucc.edu.gh": {
+      "success": 2,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "meteo.gov.gh": {
+      "success": 2,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "jcr.kglmeridian.com": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "en.wikipedia.org": {
+      "success": 3,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "citinewsroom.com": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "myjoyonline.com": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "repository.unimac.edu.gh": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "scholarworks.waldenu.edu": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "wacaprogram.org": {
+      "success": 6,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "research.unipd.it": {
+      "success": 2,
+      "fail": 1,
+      "rate": 0.67,
+      "notes": ""
+    },
+    "restore.dicea.unipd.it": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "fig.net": {
+      "success": 3,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "sapub.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "repository.kaust.edu.sa": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "documents1.worldbank.org": {
+      "success": 7,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "semanticscholar.org": {
+      "success": 2,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "sargcoop.org": {
+      "success": 2,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "response.restoration.noaa.gov": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "apps.dtic.mil": {
+      "success": 0,
+      "fail": 1,
+      "rate": 0.0,
+      "notes": ""
+    },
+    "research-portal.uea.ac.uk": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "bircu-journal.com": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "wocan.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "premiumtimesng.com": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "fao.org": {
+      "success": 0,
+      "fail": 1,
+      "rate": 0.0,
+      "notes": ""
+    },
+    "witpress.com": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "deep-sea-conservation.org": {
+      "success": 2,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "unep.org": {
+      "success": 3,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "ijsate.com": {
+      "success": 2,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "scirp.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "scribd.com": {
+      "success": 0,
+      "fail": 1,
+      "rate": 0.0,
+      "notes": ""
+    },
+    "climatepolicyinitiative.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "geochemicalperspectivesletters.org": {
+      "success": 2,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "archimer.ifremer.fr": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "pmc.ncbi.nlm.nih.gov": {
+      "success": 3,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "int-res.com": {
+      "success": 0,
+      "fail": 1,
+      "rate": 0.0,
+      "notes": ""
+    },
+    "journals.ug.edu.gh": {
+      "success": 3,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "rid.ug.edu.gh": {
+      "success": 0,
+      "fail": 1,
+      "rate": 0.0,
+      "notes": ""
+    },
+    "sdgsghana.gov.gh": {
+      "success": 0,
+      "fail": 1,
+      "rate": 0.0,
+      "notes": ""
+    },
+    "jocpr.com": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "commissionoceanindien.org": {
+      "success": 2,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "ifdd.francophonie.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "openknowledge.worldbank.org": {
+      "success": 2,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "nigerianjournalsonline.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "rsisinternational.org": {
+      "success": 2,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "stakeholderdemocracy.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "diis.dk": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "commons.wmu.se": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "journals.plos.org": {
+      "success": 2,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "discovery.researcher.life": {
+      "success": 2,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "gda.esa.int": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "epic.awi.de": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "issafrica.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "climateaction.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "oursharedseas.com": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "isa.org.jm": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "oceannews.com": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "unepfi.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "core.ac.uk": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "globalsciencebooks.info": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "scholars.cityu.edu.hk": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "f1000research.com": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "scielo.br": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "environewsnigeria.com": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "vliz.be": {
+      "success": 3,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "iwlearn.net": {
+      "success": 0,
+      "fail": 1,
+      "rate": 0.0,
+      "notes": ""
+    },
+    "uniselinus.education": {
+      "success": 0,
+      "fail": 1,
+      "rate": 0.0,
+      "notes": ""
+    },
+    "tullowoil.com": {
+      "success": 0,
+      "fail": 1,
+      "rate": 0.0,
+      "notes": ""
+    },
+    "repository.up.ac.za": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "synapsesocial.com": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "oceancare.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "files.ethz.ch": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "ijndd.in": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "econstor.eu": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "southpolestation.com": {
+      "success": 0,
+      "fail": 1,
+      "rate": 0.0,
+      "notes": ""
+    },
+    "cidse.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "journals.enviromindsolutions.com": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "ccm.ucc.edu.gh": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "mamiwataproject.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "worldbank.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "archive.ipcc.ch": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "thinkhazard.org": {
+      "success": 2,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "scholarworks.uno.edu": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "generic.wordpress.soton.ac.uk": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "nhc.noaa.gov": {
+      "success": 2,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "undp.org": {
+      "success": 2,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "modernghana.com": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "floodlist.com": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "africa24tv.com": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "wacavar.net": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "globalshield.org": {
+      "success": 3,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "eclass.aegean.gr": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "gca.org": {
+      "success": 0,
+      "fail": 1,
+      "rate": 0.0,
+      "notes": ""
+    },
+    "shs.cairn.info": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "fust.iode.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "revist.net": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "jodc.go.jp": {
+      "success": 0,
+      "fail": 1,
+      "rate": 0.0,
+      "notes": ""
+    },
+    "gloss-sealevel.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "pwri.go.jp": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "horizon.documentation.ird.fr": {
+      "success": 2,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "floodmap.net": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "global-shield-solutions.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "financialprotectionforum.org": {
+      "success": 2,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "pwc.ch": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "gw.govt.nz": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "scor-int.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "repository.library.noaa.gov": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "slosh.nws.noaa.gov": {
+      "success": 2,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "walshmedicalmedia.com": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "acep.africa": {
+      "success": 0,
+      "fail": 1,
+      "rate": 0.0,
+      "notes": ""
+    },
+    "oneoceanhub.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "idl-bnc-idrc.dspacedirect.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "youthbridgefoundation.org": {
+      "success": 0,
+      "fail": 1,
+      "rate": 0.0,
+      "notes": ""
+    },
+    "meetingorganizer.copernicus.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "piahs.copernicus.org": {
+      "success": 0,
+      "fail": 1,
+      "rate": 0.0,
+      "notes": ""
+    },
+    "water.ca.gov": {
+      "success": 0,
+      "fail": 1,
+      "rate": 0.0,
+      "notes": ""
+    },
+    "frontiersin.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "tidesandcurrents.noaa.gov": {
+      "success": 2,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "eea.europa.eu": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "essd.copernicus.org": {
+      "success": 0,
+      "fail": 1,
+      "rate": 0.0,
+      "notes": ""
+    },
+    "psmsl.org": {
+      "success": 2,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "experience.arcgis.com": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "fema.gov": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "mofep.gov.gh": {
+      "success": 0,
+      "fail": 1,
+      "rate": 0.0,
+      "notes": ""
+    },
+    "csis-website-prod.s3.amazonaws.com": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "southwest.coastalmonitoring.org": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "iocm.noaa.gov": {
+      "success": 1,
+      "fail": 0,
+      "rate": 1.0,
+      "notes": ""
+    },
+    "repository.tudelft.nl": {
+      "success": 0,
+      "fail": 1,
+      "rate": 0.0,
+      "notes": ""
+    }
+  }
+}
