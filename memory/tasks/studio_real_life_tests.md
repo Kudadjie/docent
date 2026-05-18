@@ -26,8 +26,9 @@ docent studio --help
 ```
 docent studio config-show
 ```
-**Expect:** Prints `output_dir`, `feynman_command`, `feynman_budget_usd`, all `oc_model_*`
-fields, `oc_budget_usd`, `oc_provider`.
+**Expect:** Prints `output_dir`, `feynman_command`, `feynman_model`, `feynman_timeout`,
+all `oc_model_*` fields, `oc_provider`, `tavily_api_key`, `notebooklm_notebook_id`, etc.
+`feynman_budget_usd` and `oc_budget_usd` should NOT appear (removed).
 
 ```
 docent studio config-set --key output_dir --value ~/Documents/Docent/research
@@ -37,15 +38,25 @@ docent studio config-show
 
 --- Feedback: Works
 
-## 3. Usage: baseline zero
+## 3. Pricing note on AI backends
 
 ```
-docent studio usage
+docent studio deep-research --topic "test" --backend gemini
 ```
-**Expect:** Today's date, Feynman spend $0.0000, OC spend $0.0000 (both "(no limit)" if
-budgets unset). If a spend file exists from today, spend may be non-zero — that's correct.
+(Cancel immediately after the pricing note appears — just checking the note fires.)
 
---- Feedback: Works
+**Expect:** Yellow `warn` progress event at the start:
+```
+API cost heads-up — typical cost per run by provider:
+  Free / very cheap : Groq, Mistral, Cerebras (~$0.01–$0.05)  |  Gemini (free tier available)
+  Moderate          : OpenRouter free models (~$0.00–$0.10)    |  OpenAI GPT-4o (~$0.20–$0.80)
+  Expensive         : Anthropic Claude — most expensive of all  (~$0.50–$3.00+ per run)
+Switch provider: docent studio config-set ...
+```
+
+`docent studio usage` should NOT exist — running it should error "No such command".
+
+---
 
 ## 4. Docent pipeline — deep research
 
@@ -138,17 +149,6 @@ docent studio deep-research --topic "sea level rise adaptation" --backend feynma
 
 --- Feedback: Works. Just try again to see live output
 
-## 11. Feynman backend — budget guard
-
-```
-docent studio config-set --key feynman_budget_usd --value 0.01
-docent studio deep-research --topic "test topic" --backend feynman
-```
-**Expect:** Guard fires immediately or after the first call.
-Message mentions budget exhausted and suggests increasing the limit.
-(Reset budget to 0.0 afterward.)
-
----
 
 ## 12. Feynman update notification
 
@@ -160,19 +160,6 @@ docent reading show
 
 --- Feedback: Works
 
-## 13. OC spend tracking
-
-After running test #4 or #9:
-```
-docent studio usage
-```
-**Expect:** OC spend > $0.0000.
-```
-cat ~/.docent/cache/research/oc_spend.json
-```
-Should show today's date and a non-zero `spend_usd`.
-
----
 
 ## 14. BYOK / provider config
 
@@ -612,8 +599,7 @@ Open both output files and compare the footers:
 ### Tier 4 — Paid backends (requires OpenCode credits)
 13. **#4** — docent deep research
 14. **#9** — docent lit review
-15. **#13** — OC spend tracking (after #4/#9)
-16. **#19** — references section in output
+15. **#19** — references section in output
 
 ### Tier 5 — to-notebook pipeline
 17. **#5** — to-notebook happy path (after #4)
@@ -632,9 +618,8 @@ Open both output files and compare the footers:
 30. **#45** — CLI vs MCP footer distinction
 
 ### Tier 7 — Miscellaneous
-31. **#16** — full MCP tool list
+31. **#16** — full MCP tool list (expect 34 tools, no studio__usage)
 32. **#34** — delta MCP tool list check
 33. **#18** — Tavily quota graceful failure (docent backend)
 34. **#10** — Feynman backend (if installed)
-35. **#11** — budget guard
-36. **#12** — update notification
+35. **#12** — update notification
