@@ -1,8 +1,7 @@
-"""Tests for the Feynman budget guard."""
+"""Tests for Feynman error handling and resolution."""
 from __future__ import annotations
 
 import inspect
-import subprocess
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -13,14 +12,11 @@ import docent.bundled_plugins.studio as rtn
 import docent.bundled_plugins.studio.feynman as feynman_mod
 from docent.bundled_plugins.studio import (
     DeepInputs,
-    FeynmanBudgetExceededError,
     FeynmanNotFoundError,
     ResearchResult,
     StudioTool,
     _extract_feynman_cost,
-    _read_daily_spend,
     _run_feynman,
-    _write_daily_spend,
 )
 from docent.config.settings import ResearchSettings, Settings
 from docent.core.context import Context
@@ -37,22 +33,11 @@ def _drain(maybe_gen: Any) -> Any:
         return e.value
 
 
-def _mock_context(*, output_dir: Path, budget_usd: float = 0.0) -> Context:
-    research = ResearchSettings(
-        output_dir=output_dir,
-        feynman_budget_usd=budget_usd,
-    )
+def _mock_context(*, output_dir: Path) -> Context:
+    research = ResearchSettings(output_dir=output_dir)
     settings = MagicMock(spec=Settings)
     settings.research = research
     return Context(settings=settings, llm=MagicMock(), executor=MagicMock())
-
-
-@pytest.fixture(autouse=True)
-def reset_spend(tmp_path, monkeypatch):
-    """Redirect the spend file to tmp_path so tests don't touch real cache."""
-    spend_file = tmp_path / "feynman_spend.json"
-    monkeypatch.setattr(feynman_mod, "_spend_file", lambda: spend_file)
-    yield spend_file
 
 
 class TestExtractFeynmanCost:
@@ -64,60 +49,6 @@ class TestExtractFeynmanCost:
 
     def test_extract_cost_total_cost_format(self):
         assert _extract_feynman_cost("Total cost: $1.23") == pytest.approx(1.23)
-
-
-class TestBudgetGuard:
-    def _mock_proc(self, returncode: int = 0, stderr: str = "") -> MagicMock:
-        """Build a mock Popen object whose communicate() returns (stdout, stderr)."""
-        proc = MagicMock()
-        proc.communicate.return_value = ("", stderr)
-        proc.returncode = returncode
-        return proc
-
-    def test_no_budget_no_guard(self, tmp_path: Path):
-        _write_daily_spend(9999.0)
-        with patch("docent.bundled_plugins.studio.feynman.subprocess.Popen", return_value=self._mock_proc(stderr="Cost: $0.43")), \
-             patch("docent.bundled_plugins.studio.feynman._find_feynman", return_value=["echo"]):
-            rc, out, _ = _run_feynman(
-                ["echo"], [], tmp_path, tmp_path, "slug", budget_usd=0.0,
-            )
-        assert rc == 0
-
-    def test_budget_not_exceeded_runs(self, tmp_path: Path):
-        with patch("docent.bundled_plugins.studio.feynman.subprocess.Popen", return_value=self._mock_proc()), \
-             patch("docent.bundled_plugins.studio.feynman._find_feynman", return_value=["echo"]):
-            rc, out, _ = _run_feynman(
-                ["echo"], [], tmp_path, tmp_path, "slug", budget_usd=2.0,
-            )
-        assert rc == 0
-
-    def test_budget_90_percent_blocks(self, tmp_path: Path):
-        _write_daily_spend(1.80)
-        with pytest.raises(FeynmanBudgetExceededError):
-            _run_feynman(
-                ["echo"], [], tmp_path, tmp_path, "slug", budget_usd=2.0,
-            )
-
-    def test_budget_accumulates_after_run(self, tmp_path: Path):
-        with patch("docent.bundled_plugins.studio.feynman.subprocess.Popen", return_value=self._mock_proc(stderr="Cost: $0.50")), \
-             patch("docent.bundled_plugins.studio.feynman._find_feynman", return_value=["echo"]):
-            _run_feynman(
-                ["echo"], [], tmp_path, tmp_path, "slug", budget_usd=2.0,
-            )
-        assert _read_daily_spend() == pytest.approx(0.50)
-
-
-class TestDeepBudgetExceeded:
-    def test_deep_feynman_budget_exceeded_returns_error_result(self, tmp_path: Path):
-        tool = StudioTool()
-        ctx = _mock_context(output_dir=tmp_path, budget_usd=1.0)
-        with patch(
-            "docent.bundled_plugins.studio._run_feynman",
-            side_effect=FeynmanBudgetExceededError("over budget"),
-        ):
-            result = _drain(tool.deep_research(DeepInputs(topic="test"), ctx))
-        assert result.ok is False
-        assert "over budget" in result.message
 
 
 class TestFindFeynman:
@@ -228,11 +159,14 @@ class TestSummarizeFeynmanError:
 
     def test_rate_limited(self):
         from docent.bundled_plugins.studio import _summarize_feynman_error
+        # code 429 from OpenAI with "rate limit exceeded" → quota exhaustion path
+        # (429 is always treated as quota for billing purposes; true rate-limits
+        # have code 0 with "rate limit" in the message text)
         stderr = (
             '{"model":"openai/gpt-4o","errorMessage":"{\\"error\\":{\\"code\\":429,\\"message\\":\\"rate limit exceeded\\"}}"}\n'
         )
         msg = _summarize_feynman_error(stderr)
-        assert "rate-limited" in msg.lower()
+        assert "quota exhausted" in msg.lower()
 
     def test_timeout(self):
         from docent.bundled_plugins.studio import _summarize_feynman_error

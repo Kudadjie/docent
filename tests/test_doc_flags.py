@@ -23,6 +23,7 @@ _EXTRA_VALID = {
     "upgrade",      # pip install --upgrade docent-cli
     # MCP JSON config argument (not a CLI flag)
     "directory",    # "--directory" in .mcp.json args array
+    "no-sync",      # "uv run --no-sync" in MCP config example (uv flag, not Docent)
 }
 
 

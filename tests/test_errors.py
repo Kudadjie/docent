@@ -59,24 +59,19 @@ def test_docent_error_is_runtime_error():
 
 
 def test_subclass_is_docent_error():
-    from docent.bundled_plugins.studio import FeynmanNotFoundError, FeynmanBudgetExceededError
+    from docent.bundled_plugins.studio import FeynmanNotFoundError
     assert issubclass(FeynmanNotFoundError, DocentError)
-    assert issubclass(FeynmanBudgetExceededError, DocentError)
     assert FeynmanNotFoundError.code == "D002"
-    assert FeynmanBudgetExceededError.code == "D004"
 
 
 def test_oc_exceptions_are_docent_errors():
     from docent.bundled_plugins.studio.oc_client import (
         OcUnavailableError,
-        OcBudgetExceededError,
         OcModelError,
     )
     assert issubclass(OcUnavailableError, DocentError)
-    assert issubclass(OcBudgetExceededError, DocentError)
     assert issubclass(OcModelError, DocentError)
     assert OcUnavailableError.code == "D007"
-    assert OcBudgetExceededError.code == "D004"
     assert OcModelError.code == "D003"
 
 

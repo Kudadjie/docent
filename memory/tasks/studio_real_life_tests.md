@@ -202,7 +202,7 @@ Then via a connected MCP client, the following tools must appear (34 total):
 
 `studio__to_local` and `studio__usage` must NOT appear.
 
----   Feedback: Works
+--- Feedback: Works
 
 ## 17. UI integration
 
@@ -232,6 +232,8 @@ For real quota exhaustion (requires actually exhausting 1,000 calls):
 - Same academic-only completion
 
 (Reset key afterward: `docent studio config-set --key tavily_api_key --value <real_key>`)
+
+--- Feedback: Works
 
 ## 19. References section in output markdown
 
@@ -350,7 +352,7 @@ docent studio to-notebook
 Remove-Item "$env:USERPROFILE\.claude\skills\research-to-notebook\active-overrides.json"
 ```
 
---- Feedback: Not checked, but I'm sure it works. 
+--- Feedback: Works 
 
 ## 33. `--guide-files` in `deep-research` and `lit` — individual files
 
@@ -365,7 +367,7 @@ docent studio lit --topic "coastal flooding" --guide-files ~/Documents/research-
 ```
 **Expect:** Same — guide context shapes the literature search.
 
----
+--- Feedback: Works
 
 ## 34. MCP tool list — all studio tools exposed (delta check)
 

@@ -30,8 +30,6 @@ from docent.bundled_plugins.studio import (
     StudioTool,
     ToNotebookInputs,
     ToNotebookResult,
-    UsageInputs,
-    UsageResult,
     _slugify,
     _artifact_slug,
     _rank_sources,
@@ -685,7 +683,7 @@ class TestOutputDestinations:
     def test_output_notebook_pushes(self, tmp_path):
         output_dir = tmp_path / "r"
         ctx = _mock_context(output_dir=output_dir)
-        with patch("docent.bundled_plugins.studio._nlm_push",
+        with patch("docent.bundled_plugins.studio._notebook._nlm_push",
                    new=_make_nlm_push(notebook_id="new-nb")):
             result = self._run_deep(ctx, extra_inputs={"output": "notebook"})
         assert result.ok is True
@@ -720,34 +718,6 @@ class TestOutputDestinations:
         ctx = _mock_context(output_dir=tmp_path / "r", obsidian_vault=vault)
         self._run_deep(ctx, extra_inputs={"output": "vault"})
         assert (vault / "Studio").is_dir()
-
-
-class TestUsageAction:
-    def test_usage_zero_spend(self, tmp_path, monkeypatch):
-        import docent.bundled_plugins.studio as mod
-        import docent.bundled_plugins.studio.oc_client as oc_mod
-        monkeypatch.setattr(mod, "_read_daily_spend", lambda: 0.0)
-        monkeypatch.setattr(oc_mod, "_read_oc_daily_spend", lambda: 0.0)
-
-        tool = StudioTool()
-        ctx = _mock_context()
-        result = tool.usage(UsageInputs(), ctx)
-        assert isinstance(result, UsageResult)
-        assert result.feynman_spend_usd == 0.0
-        assert result.oc_spend_usd == 0.0
-
-    def test_usage_shows_correct_spend(self, tmp_path, monkeypatch):
-        import docent.bundled_plugins.studio as mod
-        import docent.bundled_plugins.studio.oc_client as oc_mod
-        monkeypatch.setattr(mod, "_read_daily_spend", lambda: 1.23)
-        monkeypatch.setattr(oc_mod, "_read_oc_daily_spend", lambda: 0.45)
-
-        tool = StudioTool()
-        ctx = _mock_context()
-        result = tool.usage(UsageInputs(), ctx)
-        assert isinstance(result, UsageResult)
-        assert result.feynman_spend_usd == pytest.approx(1.23)
-        assert result.oc_spend_usd == pytest.approx(0.45)
 
 
 # ---------------------------------------------------------------------------

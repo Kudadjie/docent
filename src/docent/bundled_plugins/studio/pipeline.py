@@ -399,8 +399,11 @@ def _run_pipeline(
     sources = unique_sources[:30]
 
     # Stage 4: Writer
+    sources_text: str = ""
+
     def _build_writer_prompt(src_list: list[dict]) -> str:
-        text = "\n\n".join(
+        nonlocal sources_text
+        sources_text = "\n\n".join(
             f"[Source {i + 1}] {s.get('title', 'Untitled')}\n"
             f"URL: {s.get('url', '')}\n"
             f"{'Authors: ' + s.get('authors', '') + chr(10) if s.get('authors') else ''}"
@@ -411,7 +414,7 @@ def _run_pipeline(
             _load_prompt(writer_name)
             .replace("{topic}", topic)
             .replace("{source_count}", str(len(src_list)))
-            .replace("{sources}", text)
+            .replace("{sources}", sources_text)
         )
 
     yield ProgressEvent(

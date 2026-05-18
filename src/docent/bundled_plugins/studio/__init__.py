@@ -648,7 +648,31 @@ class StudioTool(Tool):
     def to_notebook(self, inputs: ToNotebookInputs, context: Context):
         output_dir = context.settings.research.output_dir.expanduser()
 
-        # Preflight has already resolved output_file; just build the Path.
+        # Preflight resolves output_file before the action runs. When called
+        # directly (e.g. in tests, bypassing preflight) we auto-detect.
+        if inputs.output_file is None:
+            candidates = sorted(
+                [
+                    p for p in output_dir.glob("*.md")
+                    if not p.name.endswith("-review.md") and not p.name.endswith("-sources.json")
+                ],
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            ) if output_dir.is_dir() else []
+            if not candidates:
+                return ToNotebookResult(
+                    ok=False,
+                    output_file=None,
+                    sources_file=None,
+                    package_dir=None,
+                    sources_count=0,
+                    message=(
+                        f"No research output found in {output_dir}. "
+                        "Run docent studio deep-research or docent studio lit first."
+                    ),
+                )
+            inputs.output_file = str(candidates[0])
+
         out_path = Path(inputs.output_file)
         if not out_path.is_absolute():
             out_path = output_dir / inputs.output_file
