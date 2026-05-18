@@ -275,14 +275,116 @@ def run_server() -> None:
         if parsed is None:
             return [types.TextContent(type="text", text=f"Unknown tool format: {name!r}")]
         tool_name, action_cli_name = parsed
+
+        # Capture session for streaming notifications — keeps long pipelines alive.
         try:
-            loop = asyncio.get_event_loop()
-            text = await loop.run_in_executor(
-                None, invoke_action, tool_name, action_cli_name, arguments or {}
-            )
-            return [types.TextContent(type="text", text=text)]
+            req_ctx = server.request_context
+            session = req_ctx.session
+            request_id = req_ctx.request_id
+            meta = req_ctx.meta
+            progress_token = getattr(meta, "progressToken", None) if meta else None
+        except LookupError:
+            session = None
+            request_id = None
+            progress_token = None
+
+        from docent.core.exceptions import ConfirmationRequired
+        from docent.core.invoke import make_context, run_action
+
+        mcp_context = make_context(via_mcp=True)
+
+        try:
+            raw = run_action(tool_name, action_cli_name, arguments or {}, context=mcp_context)
+        except ConfirmationRequired as exc:
+            return [types.TextContent(type="text", text=json.dumps({
+                "ok": False,
+                "confirmation_required": True,
+                "notes": exc.notes,
+                "message": (
+                    "Present the notes above to the user. "
+                    "Once they acknowledge, call this tool again with confirmed=true to proceed."
+                ),
+            }, indent=2))]
         except Exception as exc:
             return [types.TextContent(type="text", text=f"Error: {exc}")]
+
+        lines: list[str] = []
+
+        if not inspect.isgenerator(raw):
+            # Non-streaming result — return immediately.
+            for note in mcp_context.mcp_notes:
+                lines.append(json.dumps({"note": note}))
+            lines.append(_serialize(raw))
+            _maybe_inline_research_output(lines, raw)
+            return [types.TextContent(type="text", text="\n".join(lines))]
+
+        # Streaming path: drain generator in a thread, forward each ProgressEvent
+        # as a log notification so the MCP connection stays alive during long pipelines.
+        event_queue: asyncio.Queue = asyncio.Queue()
+        cur_loop = asyncio.get_event_loop()
+        # ProgressEvent.level → MCP LoggingLevel
+        _level_map = {"info": "info", "warn": "warning", "error": "error"}
+
+        def _drain_generator() -> None:
+            try:
+                while True:
+                    try:
+                        evt = next(raw)
+                        cur_loop.call_soon_threadsafe(event_queue.put_nowait, ("event", evt))
+                    except StopIteration as stop:
+                        cur_loop.call_soon_threadsafe(event_queue.put_nowait, ("done", stop.value))
+                        return
+            except Exception as exc:
+                cur_loop.call_soon_threadsafe(event_queue.put_nowait, ("error", exc))
+
+        drain_future = cur_loop.run_in_executor(None, _drain_generator)
+        result_value = None
+        progress_count = 0
+
+        while True:
+            kind, payload = await event_queue.get()
+
+            if kind == "event":
+                if isinstance(payload, ProgressEvent) and payload.message:
+                    line = f"[{payload.phase}] {payload.message}"
+                    lines.append(line)
+                    if session is not None:
+                        try:
+                            await session.send_log_message(
+                                level=_level_map.get(payload.level, "info"),
+                                data=line,
+                                related_request_id=request_id,
+                            )
+                        except Exception:
+                            pass
+                        if progress_token is not None:
+                            progress_count += 1
+                            try:
+                                await session.send_progress_notification(
+                                    progress_token=progress_token,
+                                    progress=float(progress_count),
+                                    message=line,
+                                    related_request_id=str(request_id) if request_id else None,
+                                )
+                            except Exception:
+                                pass
+
+            elif kind == "done":
+                result_value = payload
+                break
+
+            elif kind == "error":
+                await drain_future
+                return [types.TextContent(type="text", text=f"Error: {payload}")]
+
+        await drain_future
+
+        for note in mcp_context.mcp_notes:
+            lines.append(json.dumps({"note": note}))
+
+        lines.append(_serialize(result_value))
+        _maybe_inline_research_output(lines, result_value)
+        return [types.TextContent(type="text", text="\n".join(lines))]
 
     async def _serve() -> None:
         async with stdio_server() as (read_stream, write_stream):
