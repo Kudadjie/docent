@@ -1,4 +1,4 @@
-# Docent CLI v1.0
+# Docent CLI v1.2
 
 Docent is a personal CLI control center for grad-school workflows. It manages an academic reading queue and syncs with a Mendeley library. All tools are also exposed as MCP (Model Context Protocol) tools so Claude Code can call them directly.
 
@@ -136,6 +136,7 @@ Create `.mcp.json` in your Claude Code project root (or add to `~/.claude/settin
         "--directory",
         "/absolute/path/to/docent-repo",
         "run",
+        "--no-sync",
         "docent",
         "serve"
       ]
@@ -154,7 +155,7 @@ Test the server directly first:
 
 ```bash
 docent serve
-# [docent] MCP server ready — 18 tools registered. Waiting for client…
+# [docent] MCP server ready — 35 tools registered. Waiting for client…
 # (blocks on stdin — Ctrl+C to stop)
 ```
 
@@ -210,20 +211,40 @@ Studio runs deep research, literature reviews, and peer reviews, backed by Feynm
 
 | Command | Notes |
 |---------|-------|
-| `docent studio deep-research "topic" [--backend feynman\|docent] [--output local\|notebook\|vault]` | Full research pipeline |
-| `docent studio lit "topic" [--backend feynman\|docent] [--output local\|notebook\|vault]` | Literature review (Tavily + scholarly + arXiv) |
-| `docent studio review "artifact" [--backend feynman\|docent] [--output local\|notebook\|vault]` | Peer review of arXiv ID, PDF, or URL |
-| `docent studio compare "id-a" "id-b" [--backend feynman\|docent] [--output local\|notebook\|vault]` | Side-by-side comparison of two artifacts |
-| `docent studio draft "topic" [--backend feynman\|docent] [--output local\|notebook\|vault]` | Draft a paper section or document |
-| `docent studio replicate "artifact" [--backend feynman\|docent] [--output local\|notebook\|vault]` | Build a replication guide for a paper |
-| `docent studio audit "artifact" [--backend feynman\|docent] [--output local\|notebook\|vault]` | Audit a paper for methodology and reproducibility |
+| `docent studio deep-research --topic "..." [--backend <b>] [--output local\|notebook\|vault] [--to-notebook] [--guide-files <path>]` | Full research pipeline |
+| `docent studio lit --topic "..." [--backend <b>] [--output local\|notebook\|vault] [--to-notebook] [--guide-files <path>]` | Literature review (Tavily + scholarly + arXiv) |
+| `docent studio review --artifact "..." [--backend feynman\|docent] [--output local\|notebook\|vault]` | Peer review of arXiv ID, PDF, or URL |
+| `docent studio compare --artifact-a "..." --artifact-b "..." [--backend feynman\|docent]` | Side-by-side comparison of two artifacts |
+| `docent studio draft --topic "..." [--backend feynman\|docent]` | Draft a paper section or document |
+| `docent studio replicate --artifact "..." [--backend feynman\|docent]` | Build a replication guide for a paper |
+| `docent studio audit --artifact "..." [--backend feynman\|docent]` | Audit a paper for methodology and reproducibility |
 | `docent studio to-notebook [--output-file <path>] [--max-sources N] [--notebook-id <id>]` | Post-process: push existing research output to NotebookLM |
-| `docent studio search-papers "query" [--max-results N]` | Search alphaXiv for academic papers |
-| `docent studio get-paper "arxiv-id"` | Fetch AI-generated overview for a paper |
-| `docent studio scholarly-search "query" [--max-results N]` | Search Google Scholar / Semantic Scholar / CrossRef |
+| `docent studio search-papers --query "..." [--max-results N]` | Search alphaXiv for academic papers |
+| `docent studio get-paper --arxiv-id "2401.12345"` | Fetch AI-generated overview for a paper |
+| `docent studio scholarly-search --query "..." [--max-results N]` | Search Google Scholar / Semantic Scholar / CrossRef |
 | `docent studio usage` | Show today's Feynman/OpenCode spend + Tavily requests |
 | `docent studio config-show` | Show current Studio settings |
 | `docent studio config-set --key <k> --value <v>` | Set a Studio config value |
+
+**Backends for `deep-research` and `lit` (`--backend <b>`):**
+
+| Backend | How it works | Requires |
+|---------|-------------|---------|
+| `free` | Docent aggregates sources; the AI assistant synthesises in-conversation. Fast, no API cost. **Best for MCP use.** | Nothing |
+| `docent` | 6-stage pipeline via configured provider (default: opencode). **Terminal only — times out via MCP.** | OpenCode server |
+| `groq` | 6-stage pipeline via Groq API | `GROQ_API_KEY` |
+| `gemini` | 6-stage pipeline via Gemini API | `GEMINI_API_KEY` |
+| `openrouter` | 6-stage pipeline via OpenRouter | `OPENROUTER_API_KEY` |
+| `mistral` | 6-stage pipeline via Mistral | `MISTRAL_API_KEY` |
+| `cerebras` | 6-stage pipeline via Cerebras | `CEREBRAS_API_KEY` |
+| `anthropic` | 6-stage pipeline via Anthropic API | `ANTHROPIC_API_KEY` |
+| `openai` | 6-stage pipeline via OpenAI API | `OPENAI_API_KEY` |
+| `ollama` | 6-stage pipeline via local Ollama | Ollama running locally |
+| `lm_studio` | 6-stage pipeline via LM Studio | LM Studio running locally |
+| `local` | 6-stage pipeline via any OAI-compatible server | `local_base_url` config |
+| `feynman` | Full Feynman CLI deep research (10–30 min). **Terminal only — always times out via MCP.** | Feynman installed |
+
+> **MCP note:** `free` is the only backend reliable via MCP — all AI backends run a multi-minute pipeline that will time out. For AI backends from Claude Desktop, use the terminal command shown when you ask.
 
 ### Citation verification
 
@@ -270,13 +291,20 @@ docent studio config-set --key alphaxiv_api_key --value "<key>"
 
 Or via `DOCENT_RESEARCH__ALPHAXIV_API_KEY` env var.
 
-**Tavily:** Web search in the docent-native backend uses Tavily (free tier: 1,000 calls/month). Set your API key:
+**Tavily:** Docent uses Tavily for web search in the research pipeline. There are two tiers:
+
+- **Free key** (1,000 calls/month) — enables `tavily_search`, which gives better web results than the DuckDuckGo fallback. Get one free at [app.tavily.com](https://app.tavily.com) (no credit card).
+- **Paid key** — unlocks the **Tavily Research API** (`tavily_research`), which replaces the 6-stage manual pipeline with a single deep-research call that produces a fully cited report. Significantly faster and higher quality.
+
+Without any key, web search falls back to DuckDuckGo automatically.
 
 ```bash
 docent studio config-set --key tavily_api_key --value "tvly-..."
 ```
 
 Or via `DOCENT_RESEARCH__TAVILY_API_KEY` env var.
+
+`docent setup` validates the key against the Tavily API before saving and reports which tier it detected.
 
 ---
 
@@ -314,6 +342,8 @@ Outputs a table with `OK` / `WARN` / `FAIL` / `SKIP` status for each check. Run 
 ### `docent setup`
 
 Interactive guided setup: Mendeley connection, PDF database directory, API keys (Tavily, Semantic Scholar). Safe to re-run — existing values are shown as defaults.
+
+Each API key is validated against its service before saving. An invalid key shows a red ✗ and offers a "save anyway" prompt rather than silently storing a broken value.
 
 ```bash
 docent setup
