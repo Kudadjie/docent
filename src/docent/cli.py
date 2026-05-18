@@ -1,6 +1,12 @@
 # ruff: noqa: E402 — imports after _patch_rich_unicode_loader() call are intentional
 from __future__ import annotations
 
+import warnings
+# Must be before any import that might pull in scholarly — the SyntaxWarning for
+# the invalid \d escape in scholarly._scholarly fires at bytecode-compile time in
+# Python 3.13, before any lazy-import filter in scholarly_client.py can take effect.
+warnings.filterwarnings("ignore", category=SyntaxWarning, module=r"scholarly")
+
 import inspect
 import json
 import sys

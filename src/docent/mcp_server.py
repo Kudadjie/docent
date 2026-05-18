@@ -26,6 +26,9 @@ Claude Code .mcp.json:
 """
 from __future__ import annotations
 
+import warnings
+warnings.filterwarnings("ignore", category=SyntaxWarning, module=r"scholarly")
+
 import asyncio
 import inspect
 import json
