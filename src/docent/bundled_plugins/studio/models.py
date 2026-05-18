@@ -56,10 +56,31 @@ _BACKEND_DEEP_DESC = (
     "and switch model in Claude Desktop before proceeding."
 )
 
+_TO_NOTEBOOK_FIELD = Field(
+    False,
+    description=(
+        "Push the finished output directly to NotebookLM after research completes. "
+        "Shorthand for --output notebook. "
+        "Requires notebooklm-py and a configured notebook."
+    ),
+)
+
+_TO_LOCAL_FIELD = Field(
+    False,
+    description=(
+        "Write the finished output to the local research directory after research completes. "
+        "Shorthand for --output local (the default). "
+        "Useful when a different --output default has been set in config."
+    ),
+)
+
+
 class DeepInputs(BaseModel):
     topic: str = Field(..., description="Research topic or question.")
     backend: str = Field("feynman", description=_BACKEND_DEEP_DESC)
     output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
+    to_notebook: bool = _TO_NOTEBOOK_FIELD
+    to_local: bool = _TO_LOCAL_FIELD
     guide_files: list[str] = _GUIDE_FILES_FIELD
     confirmed: bool = Field(
         False,
@@ -75,6 +96,8 @@ class LitInputs(BaseModel):
     topic: str = Field(..., description="Research topic or question.")
     backend: str = Field("feynman", description=_BACKEND_DEEP_DESC)
     output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
+    to_notebook: bool = _TO_NOTEBOOK_FIELD
+    to_local: bool = _TO_LOCAL_FIELD
     guide_files: list[str] = _GUIDE_FILES_FIELD
     confirmed: bool = Field(
         False,

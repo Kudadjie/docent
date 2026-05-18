@@ -19,7 +19,7 @@ docent studio --help
 **Expect:** `deep-research`, `get-paper`, `lit`, `review`, `search-papers`, `to-notebook`,
 `to-local`, `usage`, `config-show`, `config-set` all listed.
 
----
+--- Feedback: Works
 
 ## 2. Config: show and set
 
@@ -35,7 +35,7 @@ docent studio config-show
 ```
 **Expect:** `output_dir` updated. Verify persisted in `~/.docent/config.toml` under `[studio]`.
 
----
+--- Feedback: Works
 
 ## 3. Usage: baseline zero
 
@@ -45,7 +45,7 @@ docent studio usage
 **Expect:** Today's date, Feynman spend $0.0000, OC spend $0.0000 (both "(no limit)" if
 budgets unset). If a spend file exists from today, spend may be non-zero — that's correct.
 
----
+--- Feedback: Works
 
 ## 4. Docent pipeline — deep research
 
@@ -64,7 +64,7 @@ docent studio deep-research --topic "storm surge Ghana" --backend docent
 **If OpenCode server is unavailable:**
 - Should print an actionable error ("please run `opencode serve --port 4096`"), not a traceback
 
----
+--- Feedback: Works
 
 ## 5. `to-notebook` — after docent deep research
 
@@ -79,7 +79,7 @@ docent studio to-notebook
 
 **Edge case:** run again immediately — should succeed (overwrites existing notebook dir)
 
----
+--- Feedback: Works
 
 ## 6. `to-notebook` — with explicit file
 
@@ -88,7 +88,7 @@ docent studio to-notebook --output-file storm-surge-ghana-deep.md
 ```
 **Expect:** Same result as #5 but using the explicit path.
 
----
+--- Feedback: Works
 
 ## 7. `to-notebook` — error: no sources file (Feynman backend)
 
@@ -98,7 +98,7 @@ docent studio to-notebook --output-file orphan-test.md
 ```
 **Expect:** `ok=False`, message says "No sources file found…"
 
----
+--- Feedback: Works
 
 ## 8. `to-notebook` — error: empty output dir
 
@@ -109,7 +109,7 @@ docent studio to-notebook
 **Expect:** `ok=False`, message says "No research output found…"
 (Reset output_dir to your real path afterward.)
 
----
+--- Feedback: Works
 
 ## 9. Literature review — docent backend
 
@@ -122,7 +122,7 @@ docent studio lit --topic "coastal erosion West Africa" --backend docent
 - Sources file: `…-lit-sources.json`
 - `.md` file ends with `## References` section
 
----
+--- Feedback: Works
 
 ## 10. Feynman backend — deep research
 
@@ -136,7 +136,7 @@ docent studio deep-research --topic "sea level rise adaptation" --backend feynma
 - NO sources file created (Feynman backend doesn't expose sources)
 - `docent studio to-notebook --output-file sea-level-rise-adaptation-deep.md` → fails with "No sources file found"
 
----
+--- Feedback: Works. Just try again to see live output
 
 ## 11. Feynman backend — budget guard
 
@@ -158,7 +158,7 @@ docent reading show
 **Expect:** If Feynman has a newer npm version than cached, a yellow notice prints:
 `UPDATE AVAILABLE: feynman X.X.X is available (run: npm install -g feynman)`
 
----
+--- Feedback: Works
 
 ## 13. OC spend tracking
 
@@ -175,6 +175,8 @@ Should show today's date and a non-zero `spend_usd`.
 ---
 
 ## 14. BYOK / provider config
+
+Trying to make it work with any AI provider(API key)
 
 ```
 docent studio config-set --key oc_provider --value anthropic
@@ -268,7 +270,7 @@ docent studio to-notebook
 
 **Final message:** "Notebook ready: N source(s) added, quality gate: ..., perspectives generated"
 
----
+--- Feedback: Works
 
 ## 21. `to-notebook` quality gate — shape output
 
@@ -288,7 +290,7 @@ docent studio to-notebook --no-run-quality-gate --no-run-perspectives
 ```
 **Expect:** No `nlm-quality` or `nlm-perspectives` phase events. Completes faster.
 
----
+--- Feedback: Works
 
 ## 23. `to-notebook` — skip NLM web research arm
 
@@ -297,7 +299,7 @@ docent studio to-notebook --no-run-nlm-research
 ```
 **Expect:** No `nlm-research` events. Goes straight from push to stabilise.
 
----
+--- Feedback: Works
 
 ## 24. `to-notebook` with `--guide-files`
 

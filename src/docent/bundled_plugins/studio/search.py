@@ -90,6 +90,12 @@ def web_search(query: str, max_results: int = 8, api_key: str | None = None) -> 
         # Auth/rate-limit errors should not be silently swallowed.
         raise
     except Exception as e:
+        from docent.bundled_plugins.studio.helpers import _is_network_error
+        if _is_network_error(e):
+            from docent.errors import NetworkError
+            raise NetworkError(
+                f"No internet connection — Tavily search failed: {e}", cause=e
+            ) from e
         logger.warning("Tavily search for %r failed: %s: %s", query, type(e).__name__, e)
         return []
 
@@ -271,7 +277,11 @@ def fetch_page(url: str, max_chars: int = 3000) -> str:
         text = re.sub(r"\s+", " ", text).strip()
         return text[:max_chars]
     except Exception as e:
-        logger.debug("Failed to fetch %s: %s", url, e)
+        from docent.bundled_plugins.studio.helpers import _is_network_error
+        if _is_network_error(e):
+            logger.warning("Network error fetching %s — check internet connection: %s", url, e)
+        else:
+            logger.debug("Failed to fetch %s: %s", url, e)
         return ""
 
 

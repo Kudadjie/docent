@@ -195,6 +195,13 @@ def _run_pipeline(
 
     Yields ProgressEvent items during execution, returns the result dict.
     """
+    from docent.bundled_plugins.studio.helpers import _check_connectivity
+    if not _check_connectivity():
+        from docent.errors import NetworkError
+        raise NetworkError(
+            "No internet connection detected. Check your connection and retry."
+        )
+
     sources: list[dict] = []
     rounds = 0
 
@@ -366,26 +373,42 @@ def _run_pipeline(
     sources = unique_sources[:30]
 
     # Stage 4: Writer
+    def _build_writer_prompt(src_list: list[dict]) -> str:
+        text = "\n\n".join(
+            f"[Source {i + 1}] {s.get('title', 'Untitled')}\n"
+            f"URL: {s.get('url', '')}\n"
+            f"{'Authors: ' + s.get('authors', '') + chr(10) if s.get('authors') else ''}"
+            f"{(s.get('full_text') or s.get('snippet', ''))[:800]}"
+            for i, s in enumerate(src_list)
+        )
+        return (
+            _load_prompt(writer_name)
+            .replace("{topic}", topic)
+            .replace("{source_count}", str(len(src_list)))
+            .replace("{sources}", text)
+        )
+
     yield ProgressEvent(
         phase="write",
         message=f"Synthesising {len(sources)} sources into draft...",
     )
-    sources_text = "\n\n".join(
-        f"[Source {i + 1}] {s.get('title', 'Untitled')}\n"
-        f"URL: {s.get('url', '')}\n"
-        f"{'Authors: ' + s.get('authors', '') + chr(10) if s.get('authors') else ''}"
-        f"{(s.get('full_text') or s.get('snippet', ''))[:800]}"
-        for i, s in enumerate(sources)
-    )
-    writer_prompt = (
-        _load_prompt(writer_name)
-        .replace("{topic}", topic)
-        .replace("{source_count}", str(len(sources)))
-        .replace("{sources}", sources_text)
-    )
-    try:
-        draft = backend.call(writer_prompt, role="writer", timeout=600)
-    except Exception as e:
+    draft: str = ""
+    _writer_error: str = ""
+    for _attempt, _src_list in enumerate([sources, sources[:15]]):
+        if _attempt > 0:
+            yield ProgressEvent(
+                phase="write",
+                message=f"Writer timed out — retrying with top {len(_src_list)} sources...",
+            )
+        try:
+            draft = backend.call(_build_writer_prompt(_src_list), role="writer", timeout=900)
+            sources = _src_list  # keep source list consistent with what was actually used
+            _writer_error = ""
+            break
+        except Exception as e:
+            _writer_error = f"Writer failed: {e}"
+
+    if _writer_error:
         return {
             "topic": topic,
             "draft": "",
@@ -393,7 +416,7 @@ def _run_pipeline(
             "sources": sources,
             "rounds": rounds,
             "ok": False,
-            "error": f"Writer failed: {e}",
+            "error": _writer_error,
         }
 
     # Stage 5: Verifier

@@ -63,3 +63,8 @@ class ResourceNotFoundError(DocentError):
 class ServiceUnavailableError(DocentError):
     """External service not reachable."""
     code: ClassVar[str] = "D007"
+
+
+class NetworkError(DocentError):
+    """Network connectivity failure — no internet or server unreachable."""
+    code: ClassVar[str] = "D008"

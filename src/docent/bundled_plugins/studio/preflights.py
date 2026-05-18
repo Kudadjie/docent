@@ -9,6 +9,28 @@ from docent.core import Context
 from pydantic import BaseModel
 
 
+def _oc_unavailable_reason(oc: Any) -> str:
+    """Return a human-readable reason for an OcUnavailableError during model check.
+
+    Distinguishes between three cases:
+    - OpenCode server itself died (is_available returns False)
+    - No internet connection (server is up but can't reach external model provider)
+    - Model provider overloaded / transient timeout
+    """
+    from docent.bundled_plugins.studio.helpers import _check_connectivity
+    if not oc.is_available():
+        return (
+            "OpenCode server stopped responding. "
+            "Restart it with: [cyan]opencode serve --port 4096[/]"
+        )
+    if not _check_connectivity():
+        return (
+            "No internet connection — cannot reach the model provider. "
+            "Check your connection and retry."
+        )
+    return "Model provider timed out or is overloaded — try again in a moment."
+
+
 # ---------------------------------------------------------------------------
 # Tavily key resolver
 # ---------------------------------------------------------------------------
@@ -92,6 +114,12 @@ def _route_output(inputs: Any, out_path: Path, sources_path: Path | None, contex
     Returns (notebook_id, vault_path, extra_message) as a tuple.
     """
     from ._notebook import _nlm_push
+
+    # --to-notebook / --to-local shorthands override --output
+    if getattr(inputs, "to_notebook", False):
+        inputs.output = "notebook"
+    elif getattr(inputs, "to_local", False):
+        inputs.output = "local"
 
     if inputs.output == "notebook":
         topic = getattr(inputs, "topic", None)
@@ -328,14 +356,13 @@ def _preflight_docent(inputs: BaseModel, context: Context) -> None:
             "Or fix the model issue above then retry."
         )
         raise typer.Exit(1)
-    except OcUnavailableError as e:
+    except OcUnavailableError:
         console.print(
-            f"[red]✗[/] OpenCode server became unreachable during model check: {e}\n"
+            f"[red]✗[/] Model check failed: {_oc_unavailable_reason(oc)}\n"
             "Alternatives (no OpenCode required):\n"
             "  • [cyan]--backend free[/]    — Tavily + DuckDuckGo, no API key needed\n"
             "  • [cyan]--backend groq[/]    — free Groq API (set GROQ_API_KEY)\n"
-            "  • [cyan]--backend feynman[/] — Feynman agent (API credits required)\n"
-            "Or restart the OpenCode server and retry."
+            "  • [cyan]--backend feynman[/] — Feynman agent (API credits required)"
         )
         raise typer.Exit(1)
     except Exception as e:
@@ -419,9 +446,9 @@ def _preflight_oc_only(inputs: BaseModel, context: Context) -> None:
             "or fix the model issue above then retry."
         )
         raise typer.Exit(1)
-    except OcUnavailableError as e:
+    except OcUnavailableError:
         console.print(
-            f"[red]✗[/] OpenCode server became unreachable: {e}\n"
+            f"[red]✗[/] Model check failed: {_oc_unavailable_reason(oc)}\n"
             "Alternatives: [cyan]--backend groq[/] or [cyan]--backend feynman[/]"
         )
         raise typer.Exit(1)
@@ -484,12 +511,34 @@ def _suggest_rename(out_path: Path, console: Any, typer: Any) -> Path:
         f"\n[yellow]File/topic mismatch:[/]\n"
         f"  File:  [dim]{out_path.name}[/]\n"
         f"  Topic: [cyan]{heading_topic}[/]\n"
-        f"  Suggested name: [cyan]{new_name}[/]"
+        f"  Suggested name: [cyan]{new_name}[/]\n"
+        f"\n  [dim]1)[/] Rename to suggested: [cyan]{new_name}[/]"
+        f"\n  [dim]2)[/] Keep original:       [dim]{out_path.name}[/]"
+        f"\n  [dim]3)[/] Enter a custom name"
     )
     try:
-        if not typer.confirm("  Rename the file to match its topic?", default=True):
-            return out_path
+        choice = typer.prompt("  Choice", default="1").strip()
     except (EOFError, KeyboardInterrupt):
+        return out_path
+
+    if choice == "2":
+        return out_path
+    elif choice == "3":
+        try:
+            custom = typer.prompt("  Custom filename (without .md)").strip()
+        except (EOFError, KeyboardInterrupt):
+            return out_path
+        if not custom:
+            return out_path
+        new_slug = _slugify(custom)
+        new_name = f"{new_slug}.md"
+        new_path = out_path.parent / new_name
+        if new_path == out_path:
+            return out_path
+        if new_path.exists():
+            console.print(f"  [yellow]Warning:[/] [cyan]{new_name}[/] already exists — keeping original name.")
+            return out_path
+    elif choice != "1":
         return out_path
 
     # Rename synthesis doc
@@ -547,6 +596,26 @@ def _warn_no_sources(out_path: Path, console: Any, typer: Any) -> None:
         "Only the synthesis document itself will be added to NotebookLM — "
         "the original research sources won't be included.\n"
         "This typically happens when the file has been renamed."
+    )
+    try:
+        if not typer.confirm("Proceed anyway?", default=False):
+            raise typer.Exit(1)
+    except (EOFError, KeyboardInterrupt):
+        raise typer.Exit(1)
+
+
+def _warn_missing_guide_files(inputs: BaseModel, console: Any, typer: Any) -> None:
+    """Warn and confirm when any --guide-files path doesn't exist."""
+    guide_files: list[str] = getattr(inputs, "guide_files", None) or []
+    if not guide_files:
+        return
+    missing = [gf for gf in guide_files if not Path(gf).expanduser().exists()]
+    if not missing:
+        return
+    console.print(
+        "\n[yellow]Warning:[/] The following guide file(s) could not be found:\n"
+        + "\n".join(f"  • [dim]{gf}[/]" for gf in missing)
+        + "\nThe notebook will be populated without them."
     )
     try:
         if not typer.confirm("Proceed anyway?", default=False):
@@ -673,3 +742,4 @@ def _preflight_to_notebook(inputs: BaseModel, context: Context) -> None:
         _check_synthesis_doc(_sel, console, typer)
         if not _explicit_sources:
             _warn_no_sources(_sel, console, typer)
+    _warn_missing_guide_files(inputs, console, typer)

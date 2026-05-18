@@ -176,7 +176,7 @@ class OcClient:
                         "role": "user",
                         "model": {"modelID": model, "providerID": self.provider},
                     },
-                    timeout=timeout,
+                    timeout=None,  # No per-recv socket timeout; outer polling loop enforces wall-clock limit
                 )
             except BaseException as exc:  # noqa: BLE001
                 holder[1] = exc
@@ -191,6 +191,8 @@ class OcClient:
         _poll = 0.1
         _limit = float(timeout) + 5.0
         _waited = 0.0
+        _since_conn_check = 0.0
+        _CONN_CHECK_INTERVAL = 30.0
         while not done.wait(timeout=_poll):
             _waited += _poll
             if _waited >= _limit:
@@ -198,9 +200,33 @@ class OcClient:
                     f"OpenCode model call timed out after {_limit:.0f}s "
                     f"at {self.base_url}."
                 )
+            _since_conn_check += _poll
+            if _since_conn_check >= _CONN_CHECK_INTERVAL:
+                _since_conn_check = 0.0
+                # Check server first (local), then internet (external model provider)
+                if not self.is_available():
+                    raise OcUnavailableError(
+                        f"OpenCode server stopped responding at {self.base_url}. "
+                        "Restart it with: opencode serve --port 4096"
+                    )
+                from docent.bundled_plugins.studio.helpers import _check_connectivity
+                if not _check_connectivity():
+                    from docent.errors import NetworkError
+                    raise NetworkError(
+                        "Internet connection lost during model call. "
+                        "Check your connection and retry."
+                    )
 
         if holder[1] is not None:
-            raise holder[1]  # re-raise OcModelError / OcUnavailableError / etc.
+            exc = holder[1]
+            from docent.bundled_plugins.studio.helpers import _is_network_error
+            if _is_network_error(exc):
+                from docent.errors import NetworkError
+                raise NetworkError(
+                    f"Network error during OpenCode model call at {self.base_url}: {exc}",
+                    cause=exc,
+                )
+            raise exc  # re-raise OcModelError / OcUnavailableError / etc.
 
         response = holder[0]
 
@@ -250,7 +276,7 @@ class OcClient:
             p["text"] for p in parts if p.get("type") == "text"
         )
 
-    def _api(self, method: str, path: str, body: dict | None = None, timeout: int = 10) -> dict:
+    def _api(self, method: str, path: str, body: dict | None = None, timeout: int | None = 10) -> dict:
         url = f"{self.base_url}{path}"
         data = json.dumps(body).encode() if body is not None else None
         headers = {"Content-Type": "application/json"} if data else {}

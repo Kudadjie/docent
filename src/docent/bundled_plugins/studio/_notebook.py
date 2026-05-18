@@ -31,10 +31,11 @@ if TYPE_CHECKING:
 # Constants
 # ---------------------------------------------------------------------------
 
-_SKILL_DIR = Path.home() / ".claude" / "skills" / "research-to-notebook"
-_SKILL_COMPAT_PATH = _SKILL_DIR / "source-compat.json"
-_SKILL_RUN_LOG_PATH = _SKILL_DIR / "run-log.jsonl"
-_SKILL_OVERRIDES_PATH = _SKILL_DIR / "active-overrides.json"
+from docent.utils.paths import data_dir as _docent_data_dir
+_LEARN_DIR = _docent_data_dir() / "notebook-learning"
+_SKILL_COMPAT_PATH = _LEARN_DIR / "source-compat.json"
+_SKILL_RUN_LOG_PATH = _LEARN_DIR / "run-log.jsonl"
+_SKILL_OVERRIDES_PATH = _LEARN_DIR / "active-overrides.json"
 
 _NOTEBOOK_MAP_FILENAME = ".notebook-map.json"
 
@@ -367,12 +368,13 @@ def _nlm_compat_filter(urls: list[str]) -> list[str]:
 
 def _update_compat(outcomes: list[tuple[str, bool]]) -> None:
     """Update source-compat.json with per-domain success/fail outcomes from this run."""
-    if not outcomes or not _SKILL_COMPAT_PATH.exists():
+    if not outcomes:
         return
     try:
-        compat = json.loads(_SKILL_COMPAT_PATH.read_text(encoding="utf-8"))
+        _LEARN_DIR.mkdir(parents=True, exist_ok=True)
+        compat = json.loads(_SKILL_COMPAT_PATH.read_text(encoding="utf-8")) if _SKILL_COMPAT_PATH.exists() else {}
     except (json.JSONDecodeError, OSError):
-        return
+        compat = {}
     domains_data = compat.setdefault("domains", {})
     for domain, success in outcomes:
         if not domain:
@@ -397,6 +399,7 @@ def _update_compat(outcomes: list[tuple[str, bool]]) -> None:
 def _append_run_log(entry: dict[str, Any]) -> None:
     """Append one run entry to run-log.jsonl. Silent on failure."""
     try:
+        _LEARN_DIR.mkdir(parents=True, exist_ok=True)
         with _SKILL_RUN_LOG_PATH.open("a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     except OSError:
@@ -1052,8 +1055,9 @@ def _nlm_push(
     research_query = effective_topic
     if _guide_paths:
         try:
+            from docent.bundled_plugins.studio.helpers import _decode_text_file
             guide_snippet = " ".join(
-                gp.read_text(encoding="utf-8")[:300].replace("\n", " ")
+                _decode_text_file(gp)[:300].replace("\n", " ")
                 for gp in _guide_paths
             )
             research_query = f"{effective_topic} -- {guide_snippet}"

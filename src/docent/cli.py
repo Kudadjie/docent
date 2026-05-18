@@ -874,7 +874,11 @@ def _build_callback(
             option_default = finfo.default_factory()
         else:
             option_default = finfo.default
-        option = typer.Option(option_default, cli_flag, help=help_text)
+        if finfo.annotation is bool:
+            no_cli_flag = "--no-" + fname.replace("_", "-")
+            option = typer.Option(option_default, f"{cli_flag}/{no_cli_flag}", help=help_text)
+        else:
+            option = typer.Option(option_default, cli_flag, help=help_text)
         params.append(
             inspect.Parameter(
                 fname,

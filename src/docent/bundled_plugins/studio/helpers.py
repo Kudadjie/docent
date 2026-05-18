@@ -2,7 +2,48 @@
 from __future__ import annotations
 
 import re
+import socket
 from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# Network helpers
+# ---------------------------------------------------------------------------
+
+def _check_connectivity(host: str = "8.8.8.8", port: int = 53, timeout: float = 2.0) -> bool:
+    """Return True if a basic TCP connection to *host:port* succeeds."""
+    try:
+        socket.create_connection((host, port), timeout=timeout).close()
+        return True
+    except OSError:
+        return False
+
+
+def _is_network_error(exc: BaseException) -> bool:
+    """Return True when *exc* represents an internet / socket connectivity failure."""
+    import errno as _errno
+    import urllib.error as _ue
+
+    _NETWORK_ERRNOS: frozenset[int] = frozenset({
+        _errno.ECONNREFUSED, _errno.ECONNRESET, _errno.ENETUNREACH,
+        _errno.ETIMEDOUT,    _errno.EHOSTUNREACH, _errno.ENETDOWN,
+        10060,  # Windows WSAETIMEDOUT
+        10061,  # Windows WSAECONNREFUSED
+        10065,  # Windows WSAEHOSTUNREACH
+    })
+    if isinstance(exc, _ue.URLError):
+        return True
+    if isinstance(exc, (ConnectionError, TimeoutError)):
+        return True
+    if isinstance(exc, OSError) and getattr(exc, "errno", None) in _NETWORK_ERRNOS:
+        return True
+    # httpx (used in search.py, scholarly_client.py)
+    try:
+        import httpx as _httpx
+        if isinstance(exc, (_httpx.ConnectError, _httpx.NetworkError, _httpx.TimeoutException)):
+            return True
+    except ImportError:
+        pass
+    return False
 
 
 def _slugify(text: str) -> str:
@@ -19,6 +60,18 @@ def _artifact_slug(artifact: str) -> str:
     return s
 
 
+def _decode_text_file(p: Path) -> str:
+    """Read a text file, trying common encodings before falling back to latin-1."""
+    raw = p.read_bytes()
+    # Detect BOM and pick the right codec; fall back through common encodings.
+    for enc in ("utf-8-sig", "utf-16", "utf-8", "cp1252"):
+        try:
+            return raw.decode(enc)
+        except (UnicodeDecodeError, LookupError):
+            continue
+    return raw.decode("latin-1")  # latin-1 never raises — every byte is valid
+
+
 def _read_guide_file(path: str | None) -> str:
     """Read a single guide file. Returns '' if missing/unreadable."""
     if not path:
@@ -33,7 +86,7 @@ def _read_guide_file(path: str | None) -> str:
                 return extract_text(str(p))
             except ImportError:
                 return ""
-        return p.read_text(encoding="utf-8", errors="replace")
+        return _decode_text_file(p)
     except OSError:
         return ""
 
