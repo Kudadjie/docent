@@ -188,24 +188,31 @@ class OcClient:
 
         response = holder[0]
 
-        # OpenCode may return HTTP 200 but with a model-level error embedded in the
-        # response body (e.g. quota exhaustion, auth failure from the upstream provider).
+        # OpenCode embeds provider errors in response["info"]["error"]["data"], not at
+        # response["error"].  Check both locations so older API shapes still work.
         parts = response.get("parts") or []
         if not parts:
-            err = response.get("error")
+            info = response.get("info") or {}
+            err = info.get("error") or response.get("error")
             if err:
                 if isinstance(err, dict):
-                    msg = err.get("message", str(err))
-                    code = int(err.get("code") or 0)
+                    data = err.get("data") or {}
+                    msg = data.get("message") or err.get("message") or str(err)
+                    code = int(data.get("statusCode") or err.get("code") or 0)
                 else:
                     msg = str(err)
                     code = 0
                 msg_lower = msg.lower()
-                if any(k in msg_lower for k in ("quota", "usage", "exhausted", "exceeded", "RESOURCE_EXHAUSTED")):
+                _credit_keywords = (
+                    "quota", "usage", "exhausted", "exceeded", "resource_exhausted",
+                    "credit", "balance", "billing", "too low", "insufficient",
+                )
+                if any(k in msg_lower for k in _credit_keywords):
                     raise OcModelError(
-                        f"Model quota/usage limit exceeded for {model!r}: {msg}\n"
-                        "Add credits to your provider account, or switch models with:\n"
-                        "  docent studio config-set --key oc_model_planner --value <model>",
+                        f"Insufficient API credits for {model!r}: {msg}\n"
+                        "Top up your account credits, or switch to a free provider:\n"
+                        "  docent studio config-set --key oc_provider --value groq\n"
+                        "  docent studio deep-research --backend free",
                         http_code=code,
                     )
                 if any(k in msg_lower for k in ("auth", "unauthorized", "forbidden", "invalid key")):
@@ -222,6 +229,13 @@ class OcClient:
                         http_code=code,
                     )
                 raise OcModelError(f"Model error for {model!r} (code {code}): {msg}", http_code=code)
+            raise OcModelError(
+                f"Model {model!r} returned no response (empty parts, no error).\n"
+                "The OpenCode server accepted the request but the provider returned nothing.\n"
+                "Check opencode serve logs, or switch provider:\n"
+                "  docent studio config-set --key oc_provider --value anthropic",
+                http_code=0,
+            )
 
         return "\n".join(
             p["text"] for p in parts if p.get("type") == "text"
@@ -234,7 +248,8 @@ class OcClient:
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
-                return json.loads(resp.read())
+                body = resp.read()
+                return json.loads(body) if body else {}
         except urllib.error.HTTPError as e:
             body_bytes = b""
             try:

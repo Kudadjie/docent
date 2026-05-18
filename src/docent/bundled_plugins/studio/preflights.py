@@ -270,7 +270,7 @@ def _preflight_guide_files(inputs: BaseModel) -> None:
     console = get_console()
     console.print("[yellow]Warning:[/] The following guide file(s) could not be read:")
     for p in problems:
-        console.print(f"  [red]✗[/] {p}")
+        console.print(f"  [red]FAIL[/] {p}")
 
     try:
         if not typer.confirm("\nProceed anyway (skipping the files above)?", default=False):
@@ -345,7 +345,7 @@ def _preflight_docent(inputs: BaseModel, context: Context) -> None:
         console.print(f"[green]✓[/] Model [cyan]{planner}[/] is available")
     except OcModelError as e:
         console.print(
-            f"[red]✗[/] Model [cyan]{planner}[/] is not usable: {e}\n"
+            f"[red]FAIL[/] Model [cyan]{planner}[/] is not usable: {e}\n"
             "Alternatives (no OpenCode required):\n"
             "  • [cyan]--backend free[/]    — Tavily + DuckDuckGo, no API key needed\n"
             "  • [cyan]--backend groq[/]    — free Groq API (set GROQ_API_KEY)\n"
@@ -355,7 +355,7 @@ def _preflight_docent(inputs: BaseModel, context: Context) -> None:
         raise typer.Exit(1)
     except OcUnavailableError:
         console.print(
-            f"[red]✗[/] Model check failed: {_oc_unavailable_reason(oc)}\n"
+            f"[red]FAIL[/] Model check failed: {_oc_unavailable_reason(oc)}\n"
             "Alternatives (no OpenCode required):\n"
             "  • [cyan]--backend free[/]    — Tavily + DuckDuckGo, no API key needed\n"
             "  • [cyan]--backend groq[/]    — free Groq API (set GROQ_API_KEY)\n"
@@ -364,7 +364,7 @@ def _preflight_docent(inputs: BaseModel, context: Context) -> None:
         raise typer.Exit(1)
     except Exception as e:
         console.print(
-            f"[red]✗[/] Model check failed for [cyan]{planner}[/] ({e})\n"
+            f"[red]FAIL[/] Model check failed for [cyan]{planner}[/] ({e})\n"
             "Most likely cause: quota exhausted on the provider.\n"
             "Options:\n"
             "  • Switch to [cyan]--backend free[/] (no OpenCode or API key required)\n"
@@ -437,20 +437,20 @@ def _preflight_oc_only(inputs: BaseModel, context: Context) -> None:
         console.print(f"[green]✓[/] Model [cyan]{reviewer}[/] is available")
     except OcModelError as e:
         console.print(
-            f"[red]✗[/] Model [cyan]{reviewer}[/] is not usable: {e}\n"
+            f"[red]FAIL[/] Model [cyan]{reviewer}[/] is not usable: {e}\n"
             "Alternatives: [cyan]--backend groq[/] or [cyan]--backend feynman[/], "
             "or fix the model issue above then retry."
         )
         raise typer.Exit(1)
     except OcUnavailableError:
         console.print(
-            f"[red]✗[/] Model check failed: {_oc_unavailable_reason(oc)}\n"
+            f"[red]FAIL[/] Model check failed: {_oc_unavailable_reason(oc)}\n"
             "Alternatives: [cyan]--backend groq[/] or [cyan]--backend feynman[/]"
         )
         raise typer.Exit(1)
     except Exception as e:
         console.print(
-            f"[red]✗[/] Model check failed for [cyan]{reviewer}[/] ({e})\n"
+            f"[red]FAIL[/] Model check failed for [cyan]{reviewer}[/] ({e})\n"
             "Options:\n"
             "  • Switch to [cyan]--backend groq[/] (free Groq API)\n"
             "  • Switch to [cyan]--backend feynman[/] (no OpenCode required)\n"

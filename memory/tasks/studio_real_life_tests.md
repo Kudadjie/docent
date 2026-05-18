@@ -178,7 +178,7 @@ docent studio config-set --key oc_provider --value opencode-go
 docent studio config-set --key oc_model_planner --value glm-5.1
 ```
 
----
+--- Feedback: Works
 
 ## 15. Peer review — Feynman backend
 
@@ -187,7 +187,7 @@ docent studio review --artifact "2401.12345" --backend feynman
 ```
 **Expect:** Output: `<output_dir>/2401-12345-review.md`.
 
----
+--- Feedback: Works
 
 ## 16. MCP tool exposure
 
@@ -479,7 +479,7 @@ docent studio deep-research --topic "flood risk" --backend free --guide-files "$
 ```
 **Expect (before pipeline):**
 - Warning: "The following guide file(s) could not be read:"
-- `✗ bad-guide.md  (unreadable or corrupted)`
+- `FAIL bad-guide.md  (unreadable or corrupted)`
 - Prompt: "Proceed anyway (skipping the files above)? [y/N]"
 - Enter `y` → pipeline runs without the bad file
 - Enter `n` → exits cleanly, no pipeline runs
