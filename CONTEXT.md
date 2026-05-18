@@ -1,14 +1,13 @@
 # CONTEXT - resume hint for next session
 
-**Current Task:** UX hardening + real-life test run — 43/45 tests passing, all committed to dev (5e0ae3d).
+**Current Task:** All studio real-life tests complete. Docs sprint done.
 
 **Key Decisions:**
-- `to-local` action removed (redundant with output_dir; vault push via `--output vault`)
-- Budget guards + spend tracking removed; replaced with one-time pricing note (Anthropic callout)
-- MCP server now streams log notifications per ProgressEvent — keeps long pipelines alive in Claude Desktop
-- `--no-sync` added to Claude Desktop MCP config to prevent file-lock disconnect on startup
+- `oc_client` now reads OpenCode errors from `response["info"]["error"]["data"]` (not `response["error"]`); credit/balance keywords added; empty body returns `{}` not JSONDecodeError
+- `✗` (U+2717) replaced with `FAIL` in preflights.py — not encodable in Windows CP1252
+- UI specs in `docs/ui-specs/` (studio + reading); user guides in `docs/guides/` (studio + reading)
 
 **Next Steps:**
-1. Complete tests #14 (BYOK/provider config — needs API credits) and #15 (Feynman peer review)
-2. Tag v1.2.0 after both pass
-3. Tavily Research API `citation_format` param — wire when plan is upgraded
+1. Tag v1.2.0 (`git tag v1.2.0 && git push origin dev --tags`)
+2. Design / build the Studio UI (start from `docs/ui-specs/studio-ui-spec.md`)
+3. Design / build the Reading UI (start from `docs/ui-specs/reading-ui-spec.md`)
