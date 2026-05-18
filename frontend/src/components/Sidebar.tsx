@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { LayoutDashboard, BookOpen, BookText, Settings } from 'lucide-react';
+import { LayoutDashboard, BookOpen, FlaskConical, BookText, Settings } from 'lucide-react';
 import WelcomeModal, { type UserProfile } from './WelcomeModal';
 
 interface NavItem {
@@ -25,6 +25,12 @@ const PLUGIN_NAV: NavItem[] = [
     href: '/reading',
     label: 'Reading',
     icon: <BookOpen size={16} strokeWidth={1.5} />,
+  },
+  {
+    id: 'studio',
+    href: '/studio',
+    label: 'Studio',
+    icon: <FlaskConical size={16} strokeWidth={1.5} />,
   },
 ];
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Settings, Trash2, Pencil, Check, X, BookOpen, RefreshCw } from 'lucide-react';
+import { Settings, Trash2, Pencil, Check, X, BookOpen, RefreshCw, Activity, Key, EyeOff } from 'lucide-react';
 import Sidebar from '@/components/Sidebar';
 import StatusBanner, { type DotState } from '@/components/StatusBanner';
 import Toast, { type ToastData } from '@/components/Toast';
@@ -13,9 +13,30 @@ interface ReadingConfig {
   queue_collection: string;
 }
 
+interface ResearchConfig {
+  tavily_api_key: string | null;
+  semantic_scholar_api_key: string | null;
+  alphaxiv_api_key: string | null;
+  groq_api_key: string | null;
+  gemini_api_key: string | null;
+  openrouter_api_key: string | null;
+  mistral_api_key: string | null;
+  cerebras_api_key: string | null;
+}
+
 interface ConfigData {
   reading: ReadingConfig;
+  research: ResearchConfig;
 }
+
+interface DoctorCheck {
+  label: string;
+  status: 'OK' | 'WARN' | 'FAIL' | 'SKIP';
+  version: string;
+  detail: string;
+}
+
+// ── Config row (for non-secret values) ───────────────────────────────────────
 
 const READING_FIELDS: {
   key: keyof ReadingConfig;
@@ -34,6 +55,62 @@ const READING_FIELDS: {
     label: 'Mendeley collection',
     description: 'Name of the Mendeley collection to sync from. Must exactly match the collection name in the Mendeley desktop app.',
     placeholder: 'Docent-Queue',
+  },
+];
+
+const RESEARCH_KEY_FIELDS: {
+  key: keyof ResearchConfig;
+  label: string;
+  description: string;
+  placeholder: string;
+}[] = [
+  {
+    key: 'tavily_api_key',
+    label: 'Tavily',
+    description: 'Web search for research workflows. Free tier: 1,000 calls/month. Get a key at app.tavily.com — no credit card needed.',
+    placeholder: 'tvly-...',
+  },
+  {
+    key: 'alphaxiv_api_key',
+    label: 'alphaXiv',
+    description: 'Academic paper search and AI overviews. Free key at alphaxiv.org/settings.',
+    placeholder: 'ax-...',
+  },
+  {
+    key: 'semantic_scholar_api_key',
+    label: 'Semantic Scholar',
+    description: 'Optional — raises API rate limits for scholarly search. api.semanticscholar.org',
+    placeholder: 'your-key',
+  },
+  {
+    key: 'groq_api_key',
+    label: 'Groq',
+    description: 'Fast, cheap AI backend. Free tier at console.groq.com.',
+    placeholder: 'gsk_...',
+  },
+  {
+    key: 'gemini_api_key',
+    label: 'Gemini',
+    description: 'Google AI backend. Free tier at aistudio.google.com.',
+    placeholder: 'AIza...',
+  },
+  {
+    key: 'openrouter_api_key',
+    label: 'OpenRouter',
+    description: 'Access multiple AI models via one key. Pay-as-you-go at openrouter.ai.',
+    placeholder: 'sk-or-...',
+  },
+  {
+    key: 'mistral_api_key',
+    label: 'Mistral',
+    description: 'Mistral AI backend. console.mistral.ai.',
+    placeholder: 'your-key',
+  },
+  {
+    key: 'cerebras_api_key',
+    label: 'Cerebras',
+    description: 'Cerebras AI backend. cloud.cerebras.ai.',
+    placeholder: 'your-key',
   },
 ];
 
@@ -163,21 +240,185 @@ function ConfigRow({
   );
 }
 
-interface VersionInfo {
-  installed: string | null;
-  latest: string | null;
-  up_to_date: boolean | null;
-  error?: string;
+// ── Secret key row (always starts empty on edit, never shows raw value) ──────
+
+function SecretKeyRow({
+  label,
+  description,
+  masked,
+  placeholder,
+  onSave,
+}: {
+  label: string;
+  description: string;
+  masked: string | null;
+  placeholder: string;
+  onSave: (v: string) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    setSaving(true);
+    await onSave(draft.trim());
+    setSaving(false);
+    setEditing(false);
+    setDraft('');
+  }
+
+  function cancel() {
+    setEditing(false);
+    setDraft('');
+  }
+
+  const isSet = !!masked;
+
+  return (
+    <div style={{
+      padding: '14px 0',
+      borderBottom: '1px solid var(--border)',
+      display: 'grid',
+      gridTemplateColumns: '1fr auto',
+      gap: '8px 24px',
+      alignItems: 'start',
+    }}>
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+          <span style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500, color: 'var(--fg1)' }}>
+            {label}
+          </span>
+          {isSet && (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 3,
+              fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 500,
+              padding: '1px 6px', borderRadius: 9999,
+              background: 'rgba(24,226,153,0.15)', color: '#0fa76e',
+              textTransform: 'uppercase', letterSpacing: '0.3px',
+            }}>
+              set
+            </span>
+          )}
+        </div>
+        <div style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg4)', lineHeight: 1.5 }}>
+          {description}
+        </div>
+        <div style={{ marginTop: 6 }}>
+          {editing ? (
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <input
+                autoFocus
+                type="password"
+                value={draft}
+                onChange={e => setDraft(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') cancel(); }}
+                placeholder={isSet ? 'Enter new key to replace…' : placeholder}
+                style={{
+                  fontFamily: 'var(--mono)', fontSize: 12,
+                  padding: '5px 10px', borderRadius: 6,
+                  border: '1px solid #18E299',
+                  background: 'var(--bg-card)', color: 'var(--fg1)',
+                  outline: 'none', width: 320,
+                }}
+              />
+              <button
+                onClick={save}
+                disabled={saving || !draft.trim()}
+                aria-label="Save"
+                style={{
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  width: 28, height: 28, borderRadius: 6, border: 'none',
+                  background: 'rgba(24,226,153,0.15)', color: '#0fa76e',
+                  cursor: saving || !draft.trim() ? 'default' : 'pointer',
+                  opacity: saving || !draft.trim() ? 0.5 : 1,
+                }}
+              >
+                <Check size={14} strokeWidth={2} />
+              </button>
+              <button
+                onClick={cancel}
+                aria-label="Cancel"
+                style={{
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  width: 28, height: 28, borderRadius: 6, border: 'none',
+                  background: 'var(--gray100)', color: 'var(--fg3)',
+                  cursor: 'pointer',
+                }}
+              >
+                <X size={14} strokeWidth={2} />
+              </button>
+            </div>
+          ) : (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              fontFamily: 'var(--mono)', fontSize: 12,
+              color: isSet ? 'var(--fg2)' : 'var(--fg4)',
+              fontStyle: isSet ? 'normal' : 'italic',
+            }}>
+              {isSet ? (
+                <>
+                  <EyeOff size={11} strokeWidth={1.5} style={{ color: 'var(--fg4)' }} />
+                  {masked}
+                </>
+              ) : 'not set'}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {!editing && (
+        <button
+          onClick={() => setEditing(true)}
+          aria-label={`${isSet ? 'Replace' : 'Set'} ${label} key`}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 5,
+            padding: '5px 10px', borderRadius: 6,
+            border: '1px solid var(--border-md)',
+            background: 'transparent', color: 'var(--fg3)',
+            fontFamily: 'var(--sans)', fontSize: 12,
+            cursor: 'pointer', whiteSpace: 'nowrap', marginTop: 2,
+          }}
+        >
+          <Key size={11} strokeWidth={1.5} />
+          {isSet ? 'Replace' : 'Set key'}
+        </button>
+      )}
+    </div>
+  );
 }
 
-interface ToolInfo {
-  name: string;
-  label: string;
-  installed: string | null;
-  latest: string | null;
-  up_to_date: boolean | null;
-  upgrade_cmd: string;
+// ── Doctor status badge ───────────────────────────────────────────────────────
+
+const STATUS_COLOR: Record<DoctorCheck['status'], string> = {
+  OK: '#0fa76e',
+  WARN: '#C97B00',
+  FAIL: '#D45656',
+  SKIP: 'var(--fg4)',
+};
+
+const STATUS_BG: Record<DoctorCheck['status'], string> = {
+  OK: 'rgba(24,226,153,0.12)',
+  WARN: 'rgba(201,123,0,0.1)',
+  FAIL: 'rgba(212,86,86,0.1)',
+  SKIP: 'var(--gray100)',
+};
+
+function StatusBadge({ status }: { status: DoctorCheck['status'] }) {
+  return (
+    <span style={{
+      fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 600,
+      padding: '2px 7px', borderRadius: 9999,
+      background: STATUS_BG[status],
+      color: STATUS_COLOR[status],
+      textTransform: 'uppercase', letterSpacing: '0.4px',
+      flexShrink: 0,
+    }}>
+      {status}
+    </span>
+  );
 }
+
+// ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
   const { dark, toggleDark } = useDarkMode();
@@ -186,14 +427,11 @@ export default function SettingsPage() {
   const [toast, setToast] = useState<ToastData | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const [clearing, setClearing] = useState(false);
-  const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
-  const [checkingVersion, setCheckingVersion] = useState(false);
-  const [toolingInfo, setToolingInfo] = useState<ToolInfo[] | null>(null);
-  const [checkingTooling, setCheckingTooling] = useState(false);
+  const [doctorChecks, setDoctorChecks] = useState<DoctorCheck[] | null>(null);
+  const [loadingDoctor, setLoadingDoctor] = useState(false);
   const [dotState, setDotState] = useState<DotState>('idle');
   const dotResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Transition dotState and auto-reset to idle after 2s
   function signalDot(state: DotState) {
     setDotState(state);
     if (dotResetRef.current) clearTimeout(dotResetRef.current);
@@ -207,7 +445,34 @@ export default function SettingsPage() {
       .then(r => r.json())
       .then((d: ConfigData) => setConfig(d))
       .catch(() => {});
+
+    runDoctor();
   }, []);
+
+  async function runDoctor() {
+    setLoadingDoctor(true);
+    signalDot('working');
+    try {
+      const res = await fetch('/api/doctor');
+      const data = await res.json() as DoctorCheck[];
+      setDoctorChecks(data);
+      signalDot('done');
+
+      const issues = data.filter(c => c.status === 'FAIL' || c.status === 'WARN');
+      if (issues.length > 0) {
+        addNotification({
+          type: 'update',
+          title: `${issues.length} health ${issues.length === 1 ? 'issue' : 'issues'} found`,
+          body: issues.map(c => c.label).join(', '),
+        });
+      }
+    } catch {
+      setDoctorChecks([]);
+      signalDot('error');
+    } finally {
+      setLoadingDoctor(false);
+    }
+  }
 
   async function handleSaveReading(key: keyof ReadingConfig, value: string) {
     signalDot('working');
@@ -225,6 +490,30 @@ export default function SettingsPage() {
       } else {
         if (body.reading) setConfig(c => c ? { ...c, reading: body.reading! } : c);
         setToast({ type: 'success', message: `Saved reading.${key}.` });
+        signalDot('done');
+      }
+    } catch {
+      setToast({ type: 'error', message: 'Network error.' });
+      signalDot('error');
+    }
+  }
+
+  async function handleSaveResearch(key: keyof ResearchConfig, value: string) {
+    signalDot('working');
+    try {
+      const res = await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ section: 'research', key, value }),
+      });
+      const body = await res.json() as { ok: boolean; research?: ResearchConfig; error?: string };
+      if (!res.ok || !body.ok) {
+        const clean = (body.error ?? 'Unknown error').replace(/\x1b\[[0-9;]*m/g, '').trim();
+        setToast({ type: 'error', message: `Could not save: ${clean.slice(0, 120)}` });
+        signalDot('error');
+      } else {
+        if (body.research) setConfig(c => c ? { ...c, research: body.research! } : c);
+        setToast({ type: 'success', message: `Saved ${key.replace(/_api_key$/, '')} key.` });
         signalDot('done');
       }
     } catch {
@@ -260,56 +549,8 @@ export default function SettingsPage() {
     }
   }
 
-  async function checkForUpdates() {
-    setCheckingVersion(true);
-    signalDot('working');
-    try {
-      const res = await fetch('/api/version');
-      const data = await res.json() as VersionInfo;
-      setVersionInfo(data);
-      signalDot('done');
-      if (data.up_to_date === false && data.latest) {
-        addNotification({
-          type: 'update',
-          title: 'Docent update available',
-          body: `v${data.latest} is out (you have v${data.installed ?? '?'}). Run \`pip install -U docent-cli\` to update.`,
-        });
-      }
-    } catch {
-      setVersionInfo({ installed: null, latest: null, up_to_date: null, error: 'Network error' });
-      signalDot('error');
-    } finally {
-      setCheckingVersion(false);
-    }
-  }
-
-  async function checkForToolingUpdates() {
-    setCheckingTooling(true);
-    signalDot('working');
-    try {
-      const res = await fetch('/api/tooling');
-      const data = await res.json() as ToolInfo[];
-      setToolingInfo(data);
-      signalDot('done');
-      const outdated = data.filter(t => t.up_to_date === false);
-      if (outdated.length > 0) {
-        outdated.forEach(t => {
-          addNotification({
-            type: 'update',
-            title: `${t.label} update available`,
-            body: `v${t.latest} is out (you have v${t.installed ?? '?'}). Run \`${t.upgrade_cmd}\`.`,
-          });
-        });
-      }
-    } catch {
-      setToolingInfo([]);
-      signalDot('error');
-    } finally {
-      setCheckingTooling(false);
-    }
-  }
-
   const rc = config?.reading;
+  const res = config?.research;
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
@@ -318,13 +559,9 @@ export default function SettingsPage() {
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
         <StatusBanner dark={dark} onToggleDark={toggleDark} dotState={dotState} />
 
-        {/* Scrollable content */}
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {/* Header */}
-          <div style={{
-            padding: '28px 32px 24px',
-            borderBottom: '1px solid var(--border)',
-          }}>
+          <div style={{ padding: '28px 32px 24px', borderBottom: '1px solid var(--border)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
               <Settings size={16} strokeWidth={1.5} color="#0fa76e" />
               <h1 style={{
@@ -339,7 +576,6 @@ export default function SettingsPage() {
             </p>
           </div>
 
-          {/* Content */}
           <div style={{ padding: '32px', maxWidth: 640 }}>
 
             {/* Reading config */}
@@ -356,7 +592,6 @@ export default function SettingsPage() {
               <p style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg4)', marginBottom: 16 }}>
                 Controls how Docent syncs your reading queue with Mendeley and your local paper database.
               </p>
-
               <div style={{ borderTop: '1px solid var(--border)' }}>
                 {READING_FIELDS.map(f => (
                   <ConfigRow
@@ -371,207 +606,150 @@ export default function SettingsPage() {
               </div>
             </section>
 
-            {/* Version */}
+            {/* API keys */}
             <section style={{ marginBottom: 48 }}>
-              <h2 style={{
-                fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600,
-                color: 'var(--fg4)', letterSpacing: '0.5px', textTransform: 'uppercase',
-                margin: '0 0 16px',
-              }}>
-                Updates
-              </h2>
-
-              <div style={{
-                border: '1px solid var(--border)',
-                borderRadius: 10,
-                padding: '20px 24px',
-              }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 24 }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{
-                      fontFamily: 'var(--sans)', fontSize: 14, fontWeight: 500,
-                      color: 'var(--fg1)', marginBottom: 4,
-                    }}>
-                      Docent version
-                    </div>
-
-                    {versionInfo ? (
-                      <div style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg3)', lineHeight: 1.6 }}>
-                        {versionInfo.error ? (
-                          <span style={{ color: '#D45656' }}>{versionInfo.error}</span>
-                        ) : versionInfo.up_to_date ? (
-                          <span style={{ color: '#0fa76e' }}>
-                            v{versionInfo.installed} — up to date
-                          </span>
-                        ) : (
-                          <>
-                            <span>Installed: <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>v{versionInfo.installed}</span></span>
-                            {versionInfo.latest && (
-                              <>
-                                {' · '}
-                                <span style={{ color: '#C97B00' }}>
-                                  v{versionInfo.latest} available
-                                </span>
-                                <div style={{ marginTop: 6 }}>
-                                  Run{' '}
-                                  <span style={{
-                                    fontFamily: 'var(--mono)', fontSize: 11,
-                                    background: 'var(--gray100)', padding: '1px 6px',
-                                    borderRadius: 4, border: '1px solid var(--border)',
-                                    color: 'var(--fg1)',
-                                  }}>
-                                    docent update
-                                  </span>
-                                  {' '}in your terminal, then restart Claude.
-                                </div>
-                              </>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    ) : (
-                      <div style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg4)' }}>
-                        Click to check for updates.
-                      </div>
-                    )}
-                  </div>
-
-                  <button
-                    onClick={checkForUpdates}
-                    disabled={checkingVersion}
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 6,
-                      padding: '6px 14px', borderRadius: 7,
-                      border: '1px solid var(--border-md)',
-                      background: 'transparent', color: 'var(--fg3)',
-                      fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500,
-                      cursor: checkingVersion ? 'default' : 'pointer',
-                      opacity: checkingVersion ? 0.6 : 1, flexShrink: 0,
-                    }}
-                  >
-                    <RefreshCw size={13} strokeWidth={1.5} style={{ animation: checkingVersion ? 'spin 1s linear infinite' : 'none' }} />
-                    {checkingVersion ? 'Checking…' : 'Check for updates'}
-                  </button>
-                </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <Key size={14} strokeWidth={1.5} color="#0fa76e" />
+                <h2 style={{
+                  fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600,
+                  color: 'var(--fg2)', letterSpacing: '0.2px', margin: 0,
+                }}>
+                  API keys
+                </h2>
+              </div>
+              <p style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg4)', marginBottom: 16 }}>
+                Keys for research backends and paper search. Stored in <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>~/.docent/config.toml</span> — never sent anywhere except the respective provider.
+              </p>
+              <div style={{ borderTop: '1px solid var(--border)' }}>
+                {RESEARCH_KEY_FIELDS.map(f => (
+                  <SecretKeyRow
+                    key={f.key}
+                    label={f.label}
+                    description={f.description}
+                    masked={res ? (res[f.key] ?? null) : null}
+                    placeholder={f.placeholder}
+                    onSave={v => handleSaveResearch(f.key, v)}
+                  />
+                ))}
               </div>
             </section>
 
-            {/* Tooling updates */}
+            {/* System health */}
             <section style={{ marginBottom: 48 }}>
-              <h2 style={{
-                fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600,
-                color: 'var(--fg4)', letterSpacing: '0.5px', textTransform: 'uppercase',
-                margin: '0 0 16px',
-              }}>
-                Tooling
-              </h2>
-
-              <div style={{
-                border: '1px solid var(--border)',
-                borderRadius: 10,
-                padding: '20px 24px',
-              }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 24 }}>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{
-                      fontFamily: 'var(--sans)', fontSize: 14, fontWeight: 500,
-                      color: 'var(--fg1)', marginBottom: 4,
-                    }}>
-                      Research tooling
-                    </div>
-                    <div style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg4)', marginBottom: 10 }}>
-                      External tools Docent uses for research workflows.
-                    </div>
-
-                    {toolingInfo ? (
-                      toolingInfo.length === 0 ? (
-                        <span style={{ fontFamily: 'var(--sans)', fontSize: 12, color: '#D45656' }}>
-                          Could not fetch tooling versions.
-                        </span>
-                      ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                          {toolingInfo.map(t => (
-                            <div key={t.name} style={{
-                              display: 'flex', alignItems: 'center', gap: 10,
-                              padding: '10px 14px', borderRadius: 8,
-                              background: 'var(--bg-subtle)',
-                              border: '1px solid var(--border)',
-                            }}>
-                              <div style={{ flex: 1, minWidth: 0 }}>
-                                <span style={{
-                                  fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 600,
-                                  color: 'var(--fg1)',
-                                }}>
-                                  {t.label}
-                                </span>
-                                <span style={{
-                                  fontFamily: 'var(--mono)', fontSize: 10,
-                                  color: 'var(--fg4)', marginLeft: 8,
-                                }}>
-                                  {t.name}
-                                </span>
-                              </div>
-                              <div style={{ fontFamily: 'var(--sans)', fontSize: 12 }}>
-                                {t.up_to_date === null ? (
-                                  <span style={{ color: 'var(--fg4)' }}>
-                                    {t.installed ? `v${t.installed}` : 'not installed'}
-                                  </span>
-                                ) : t.up_to_date ? (
-                                  <span style={{ color: '#0fa76e' }}>v{t.installed} — up to date</span>
-                                ) : (
-                                  <span style={{ color: '#C97B00' }}>
-                                    v{t.installed} → <strong>v{t.latest}</strong> available
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                          {toolingInfo.some(t => t.up_to_date === false) && (
-                            <div style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg3)', marginTop: 4 }}>
-                              Run{' '}
-                              {toolingInfo.filter(t => t.up_to_date === false).map((t, i, arr) => (
-                                <span key={t.name}>
-                                  <span style={{
-                                    fontFamily: 'var(--mono)', fontSize: 11,
-                                    background: 'var(--gray100)', padding: '1px 6px',
-                                    borderRadius: 4, border: '1px solid var(--border)',
-                                    color: 'var(--fg1)',
-                                  }}>
-                                    {t.upgrade_cmd}
-                                  </span>
-                                  {i < arr.length - 1 ? ', ' : ''}
-                                </span>
-                              ))}{' '}
-                              in your terminal.
-                            </div>
-                          )}
-                        </div>
-                      )
-                    ) : (
-                      <div style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg4)' }}>
-                        Click to check for tooling updates.
-                      </div>
-                    )}
-                  </div>
-
-                  <button
-                    onClick={checkForToolingUpdates}
-                    disabled={checkingTooling}
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 6,
-                      padding: '6px 14px', borderRadius: 7,
-                      border: '1px solid var(--border-md)',
-                      background: 'transparent', color: 'var(--fg3)',
-                      fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500,
-                      cursor: checkingTooling ? 'default' : 'pointer',
-                      opacity: checkingTooling ? 0.6 : 1, flexShrink: 0,
-                    }}
-                  >
-                    <RefreshCw size={13} strokeWidth={1.5} style={{ animation: checkingTooling ? 'spin 1s linear infinite' : 'none' }} />
-                    {checkingTooling ? 'Checking…' : 'Check now'}
-                  </button>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Activity size={14} strokeWidth={1.5} color="#0fa76e" />
+                  <h2 style={{
+                    fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600,
+                    color: 'var(--fg2)', letterSpacing: '0.2px', margin: 0,
+                  }}>
+                    System health
+                  </h2>
                 </div>
+                <button
+                  onClick={runDoctor}
+                  disabled={loadingDoctor}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    padding: '5px 12px', borderRadius: 7,
+                    border: '1px solid var(--border-md)',
+                    background: 'transparent', color: 'var(--fg3)',
+                    fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500,
+                    cursor: loadingDoctor ? 'default' : 'pointer',
+                    opacity: loadingDoctor ? 0.6 : 1,
+                  }}
+                >
+                  <RefreshCw
+                    size={12} strokeWidth={1.5}
+                    style={{ animation: loadingDoctor ? 'spin 1s linear infinite' : 'none' }}
+                  />
+                  {loadingDoctor ? 'Checking…' : 'Refresh'}
+                </button>
               </div>
+
+              {doctorChecks === null ? (
+                <div style={{
+                  border: '1px solid var(--border)', borderRadius: 10,
+                  padding: '24px', textAlign: 'center',
+                  fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--fg4)',
+                }}>
+                  Checking your environment…
+                </div>
+              ) : doctorChecks.length === 0 ? (
+                <div style={{
+                  border: '1px solid rgba(212,86,86,0.3)', borderRadius: 10,
+                  padding: '16px 20px', fontFamily: 'var(--sans)', fontSize: 13, color: '#D45656',
+                }}>
+                  Could not run health checks.
+                </div>
+              ) : (
+                <div style={{
+                  border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden',
+                }}>
+                  {doctorChecks.map((check, i) => (
+                    <div
+                      key={check.label}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '140px 56px 80px 1fr',
+                        gap: '0 12px',
+                        alignItems: 'center',
+                        padding: '9px 16px',
+                        borderBottom: i < doctorChecks.length - 1 ? '1px solid var(--border)' : 'none',
+                        background: check.status === 'FAIL'
+                          ? 'rgba(212,86,86,0.03)'
+                          : check.status === 'WARN'
+                            ? 'rgba(201,123,0,0.02)'
+                            : 'transparent',
+                      }}
+                    >
+                      <span style={{
+                        fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500,
+                        color: 'var(--fg1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}>
+                        {check.label}
+                      </span>
+                      <StatusBadge status={check.status} />
+                      <span style={{
+                        fontFamily: 'var(--mono)', fontSize: 10,
+                        color: 'var(--fg4)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}>
+                        {check.version !== '-' ? check.version : ''}
+                      </span>
+                      <span style={{
+                        fontFamily: 'var(--sans)', fontSize: 11,
+                        color: check.status === 'FAIL' ? '#D45656'
+                          : check.status === 'WARN' ? '#C97B00'
+                            : 'var(--fg4)',
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}
+                        title={check.detail}
+                      >
+                        {check.detail !== '-' ? check.detail : ''}
+                      </span>
+                    </div>
+                  ))}
+
+                  {/* Summary footer */}
+                  {(() => {
+                    const issues = doctorChecks.filter(c => c.status === 'FAIL' || c.status === 'WARN').length;
+                    const ok = doctorChecks.filter(c => c.status === 'OK').length;
+                    return (
+                      <div style={{
+                        padding: '8px 16px',
+                        borderTop: '1px solid var(--border)',
+                        background: 'var(--bg-subtle)',
+                        fontFamily: 'var(--sans)', fontSize: 11,
+                        color: issues === 0 ? '#0fa76e' : '#C97B00',
+                      }}>
+                        {issues === 0
+                          ? `All ${ok} checks passed`
+                          : `${issues} ${issues === 1 ? 'issue' : 'issues'} found — check the details above`}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
             </section>
 
             {/* Danger zone */}

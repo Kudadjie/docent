@@ -58,6 +58,23 @@ def _read_config_reading() -> dict:
         return {}
 
 
+def _read_config_research() -> dict:
+    try:
+        with open(_config_file(), "rb") as f:
+            data = tomllib.load(f)
+        return data.get("research", {})
+    except Exception:
+        return {}
+
+
+def _mask_key(key: str | None) -> Optional[str]:
+    if not key:
+        return None
+    if len(key) <= 8:
+        return "***"
+    return key[:4] + "..." + key[-4:]
+
+
 async def _run_command(cmd: str, args: list[str], timeout: float = 30.0) -> tuple[str, str, int]:
     proc = await asyncio.create_subprocess_exec(
         cmd, *args,
@@ -204,14 +221,29 @@ async def post_action(body: ActionBody) -> JSONResponse:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
 
 
+_RESEARCH_KEY_FIELDS = [
+    "tavily_api_key",
+    "semantic_scholar_api_key",
+    "alphaxiv_api_key",
+    "groq_api_key",
+    "gemini_api_key",
+    "openrouter_api_key",
+    "mistral_api_key",
+    "cerebras_api_key",
+]
+
+
 @app.get("/api/config")
 async def get_config() -> JSONResponse:
     cfg = _read_config_reading()
+    rcfg = _read_config_research()
+    research = {k: _mask_key(rcfg.get(k)) for k in _RESEARCH_KEY_FIELDS}
     return JSONResponse({
         "reading": {
             "database_dir": cfg.get("database_dir", None),
             "queue_collection": cfg.get("queue_collection", "Docent-Queue"),
-        }
+        },
+        "research": research,
     })
 
 
@@ -223,22 +255,35 @@ class ConfigBody(BaseModel):
 
 @app.post("/api/config")
 async def post_config(body: ConfigBody) -> JSONResponse:
-    if body.section != "reading":
-        return JSONResponse({"error": "Only section='reading' is supported"}, status_code=400)
-    try:
-        await asyncio.to_thread(
-            run_action, "reading", "config-set", {"key": body.key, "value": body.value}
-        )
-    except Exception as exc:
-        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
-    cfg = _read_config_reading()
-    return JSONResponse({
-        "ok": True,
-        "reading": {
-            "database_dir": cfg.get("database_dir", None),
-            "queue_collection": cfg.get("queue_collection", "Docent-Queue"),
-        }
-    })
+    if body.section == "reading":
+        try:
+            await asyncio.to_thread(
+                run_action, "reading", "config-set", {"key": body.key, "value": body.value}
+            )
+        except Exception as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+        cfg = _read_config_reading()
+        return JSONResponse({
+            "ok": True,
+            "reading": {
+                "database_dir": cfg.get("database_dir", None),
+                "queue_collection": cfg.get("queue_collection", "Docent-Queue"),
+            }
+        })
+    elif body.section == "research":
+        try:
+            await asyncio.to_thread(
+                run_action, "studio", "config-set", {"key": body.key, "value": body.value}
+            )
+        except Exception as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+        rcfg = _read_config_research()
+        return JSONResponse({
+            "ok": True,
+            "research": {k: _mask_key(rcfg.get(k)) for k in _RESEARCH_KEY_FIELDS},
+        })
+    else:
+        return JSONResponse({"error": f"Unknown section: {body.section!r}"}, status_code=400)
 
 
 @app.get("/api/user")
@@ -315,6 +360,187 @@ async def get_tooling() -> JSONResponse:
 
     results = await asyncio.gather(*(_tool_status(tool) for tool in TOOLING))
     return JSONResponse(list(results))
+
+
+@app.get("/api/doctor")
+async def get_doctor() -> JSONResponse:
+    import sys
+    import shutil
+    import subprocess as _sp
+
+    cfg_reading = _read_config_reading()
+    cfg_research = _read_config_research()
+    user_data = _read_json(_user_file(), {})
+
+    def _row(label: str, status: str, version: str = "-", detail: str = "-") -> dict:
+        return {"label": label, "status": status, "version": version, "detail": detail}
+
+    # ── Profile ──────────────────────────────────────────────────────────────
+    name = (user_data.get("name") or "").strip()
+    profile_row = (
+        _row("Profile", "OK", detail=f"{name} · {user_data.get('level', '?')} · {user_data.get('program', '?')}")
+        if name and name != "You"
+        else _row("Profile", "WARN", detail="Not set — use 'Set up your profile' in the sidebar")
+    )
+
+    # ── Python ───────────────────────────────────────────────────────────────
+    pv = sys.version_info
+    python_row = _row("Python", "OK", f"{pv.major}.{pv.minor}.{pv.micro}")
+
+    # ── Docent version ────────────────────────────────────────────────────────
+    async def _docent_version_row() -> dict:
+        try:
+            stdout, _, rc = await _run(["--version"], timeout=8.0)
+            version = stdout.strip().split()[-1] if rc == 0 else "?"
+            try:
+                async with httpx.AsyncClient(timeout=8.0) as client:
+                    r = await client.get("https://pypi.org/pypi/docent-cli/json")
+                    latest = r.json()["info"]["version"]
+                if version == latest:
+                    return _row("Docent", "OK", version, "up to date")
+                return _row("Docent", "WARN", version, f"update available: {latest} — run: docent update")
+            except Exception:
+                return _row("Docent", "OK", version)
+        except Exception as exc:
+            return _row("Docent", "WARN", "?", str(exc)[:80])
+
+    # ── CLI tool helper ───────────────────────────────────────────────────────
+    async def _cli_row(label: str, cmd: list[str], install_hint: str) -> dict:
+        exe = await asyncio.to_thread(shutil.which, cmd[0])
+        if exe is None:
+            return _row(label, "FAIL", detail=install_hint)
+        try:
+            stdout, _, rc = await _run_command(exe, cmd[1:], timeout=8.0)
+            version = (stdout.strip() or "?").splitlines()[0].strip()
+            return _row(label, "OK", version)
+        except asyncio.TimeoutError:
+            return _row(label, "WARN", "?", "version check timed out")
+        except Exception as exc:
+            return _row(label, "WARN", "?", str(exc)[:80])
+
+    # ── Mendeley MCP ──────────────────────────────────────────────────────────
+    async def _mendeley_row() -> dict:
+        uvx = await asyncio.to_thread(shutil.which, "uvx")
+        if uvx:
+            return _row("Mendeley MCP", "OK", detail="uvx found")
+        return _row("Mendeley MCP", "FAIL", detail="uvx not found — install uv: https://docs.astral.sh/uv/")
+
+    # ── OpenCode ──────────────────────────────────────────────────────────────
+    async def _opencode_row() -> dict:
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                r = await client.get("http://127.0.0.1:4096/global/health")
+                if r.status_code == 200:
+                    return _row("OpenCode", "OK", detail="server reachable at :4096")
+        except Exception:
+            pass
+        return _row("OpenCode", "WARN", detail="Not running — start with: opencode serve --port 4096")
+
+    # ── Feynman ───────────────────────────────────────────────────────────────
+    async def _feynman_row() -> dict:
+        installed, latest = await asyncio.gather(
+            _get_npm_installed("@companion-ai/feynman"),
+            _fetch_npm_latest("@companion-ai/feynman"),
+        )
+        if installed is None:
+            return _row("Feynman CLI", "WARN", detail="Not installed — npm install -g @companion-ai/feynman")
+        if latest and not _version_at_least(installed, latest):
+            return _row("Feynman CLI", "WARN", installed,
+                        f"update available: {latest} — npm install -g @companion-ai/feynman@latest")
+        return _row("Feynman CLI", "OK", installed)
+
+    # ── NotebookLM ────────────────────────────────────────────────────────────
+    def _notebooklm_sync() -> dict:
+        try:
+            import notebooklm as _nlm
+            version = getattr(_nlm, "__version__", "-")
+        except ImportError:
+            return _row("NotebookLM", "FAIL", detail='not installed — pip install "notebooklm-py[browser]"')
+        exe = shutil.which("notebooklm")
+        if not exe:
+            return _row("NotebookLM", "WARN", version, "CLI not on PATH")
+        try:
+            result = _sp.run([exe, "list", "--json"], capture_output=True, text=True, timeout=10)
+            import json as _j
+            data = _j.loads(result.stdout or "{}")
+            if result.returncode == 0 and not data.get("error"):
+                return _row("NotebookLM", "OK", version, "authenticated")
+        except Exception:
+            pass
+        return _row("NotebookLM", "WARN", version, "Not authenticated — run: notebooklm login")
+
+    # ── alphaXiv ──────────────────────────────────────────────────────────────
+    def _alphaxiv_sync() -> dict:
+        try:
+            from alphaxiv import __version__ as ax_v
+        except ImportError:
+            return _row("alphaXiv", "FAIL", detail="alphaxiv-py not installed (uv add alphaxiv-py)")
+        key = cfg_research.get("alphaxiv_api_key")
+        if key:
+            return _row("alphaXiv", "OK", ax_v, f"key configured ({_mask_key(key)})")
+        return _row("alphaXiv", "SKIP", ax_v, "No key — get free key at alphaxiv.org/settings")
+
+    # ── Reading DB ────────────────────────────────────────────────────────────
+    def _reading_db_row() -> dict:
+        db = cfg_reading.get("database_dir")
+        if db is None:
+            return _row("Reading DB", "WARN", detail="Not configured — set database_dir in Settings")
+        expanded = Path(str(db)).expanduser()
+        if expanded.exists():
+            return _row("Reading DB", "OK", detail=str(expanded))
+        return _row("Reading DB", "WARN", detail=f"{expanded} does not exist")
+
+    # ── API key checks ────────────────────────────────────────────────────────
+    def _key_row(label: str, cfg_key: str, hint: str, warn_if_missing: bool = False) -> dict:
+        key = cfg_research.get(cfg_key)
+        if key:
+            return _row(label, "OK", detail=f"key configured ({_mask_key(key)})")
+        status = "WARN" if warn_if_missing else "SKIP"
+        return _row(label, status, detail=hint)
+
+    # Run all checks concurrently
+    (
+        docent_row,
+        uv_row, node_row, npm_row,
+        feynman_row, mendeley_row, opencode_row,
+        nlm_row, ax_row,
+    ) = await asyncio.gather(
+        _docent_version_row(),
+        _cli_row("uv", ["uv", "--version"], "Install uv: https://docs.astral.sh/uv/"),
+        _cli_row("Node.js", ["node", "--version"], "Install Node.js: https://nodejs.org"),
+        _cli_row("npm", ["npm", "--version"], "Install npm: https://nodejs.org"),
+        _feynman_row(),
+        _mendeley_row(),
+        _opencode_row(),
+        asyncio.to_thread(_notebooklm_sync),
+        asyncio.to_thread(_alphaxiv_sync),
+    )
+    db_row = await asyncio.to_thread(_reading_db_row)
+
+    checks = [
+        profile_row,
+        python_row,
+        docent_row,
+        uv_row,
+        node_row,
+        npm_row,
+        feynman_row,
+        mendeley_row,
+        opencode_row,
+        nlm_row,
+        ax_row,
+        db_row,
+        _key_row("Tavily", "tavily_api_key",
+                 "Not set — get free key at app.tavily.com. Falls back to DuckDuckGo.", warn_if_missing=True),
+        _key_row("Semantic Scholar", "semantic_scholar_api_key",
+                 "Optional — raises rate limits (api.semanticscholar.org)"),
+        _key_row("Groq", "groq_api_key", "Free tier at console.groq.com"),
+        _key_row("Gemini", "gemini_api_key", "Free tier at aistudio.google.com"),
+        _key_row("OpenRouter", "openrouter_api_key", "Pay-as-you-go at openrouter.ai"),
+        _key_row("Mistral", "mistral_api_key", "console.mistral.ai"),
+        _key_row("Cerebras", "cerebras_api_key", "cloud.cerebras.ai"),
+    ]
+    return JSONResponse(checks)
 
 
 if UI_DIST.is_dir():
