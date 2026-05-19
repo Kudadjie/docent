@@ -438,16 +438,36 @@ async def get_doctor() -> JSONResponse:
 
     # ── Feynman ───────────────────────────────────────────────────────────────
     async def _feynman_row() -> dict:
-        installed, latest = await asyncio.gather(
-            _get_npm_installed("@companion-ai/feynman"),
-            _fetch_npm_latest("@companion-ai/feynman"),
-        )
-        if installed is None:
-            return _row("Feynman CLI", "WARN", detail="Not installed — npm install -g @companion-ai/feynman")
-        if latest and not _version_at_least(installed, latest):
-            return _row("Feynman CLI", "WARN", installed,
+        # Primary: check binary on PATH / Windows AppData (mirrors _find_feynman logic).
+        # npm list -g is unreliable on Windows when the npm prefix differs from PATH.
+        from pathlib import Path as _P
+        feynman_cmd: list[str] | None = None
+        resolved = shutil.which("feynman")
+        if resolved:
+            feynman_cmd = [resolved]
+        else:
+            appdata = os.environ.get("APPDATA", "")
+            if appdata:
+                win_path = _P(appdata) / "npm" / "feynman.cmd"
+                if win_path.is_file():
+                    feynman_cmd = [str(win_path)]
+
+        if feynman_cmd is None:
+            # Binary not on PATH — fall back to npm registry check
+            installed = await _get_npm_installed("@companion-ai/feynman")
+            if installed is None:
+                return _row("Feynman CLI", "WARN", detail="Not installed — npm install -g @companion-ai/feynman")
+            feynman_cmd = ["feynman"]
+
+        # Read version from package.json (no subprocess)
+        from docent.bundled_plugins.studio.feynman import _feynman_version_from_package_json
+        version = _feynman_version_from_package_json(feynman_cmd)
+
+        latest = await _fetch_npm_latest("@companion-ai/feynman")
+        if latest and version != "?" and not _version_at_least(version, latest):
+            return _row("Feynman CLI", "WARN", version,
                         f"update available: {latest} — npm install -g @companion-ai/feynman@latest")
-        return _row("Feynman CLI", "OK", installed)
+        return _row("Feynman CLI", "OK", version or "?")
 
     # ── NotebookLM ────────────────────────────────────────────────────────────
     def _notebooklm_sync() -> dict:

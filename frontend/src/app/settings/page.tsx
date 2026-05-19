@@ -418,6 +418,47 @@ function StatusBadge({ status }: { status: DoctorCheck['status'] }) {
   );
 }
 
+// ── Section card ─────────────────────────────────────────────────────────────
+
+function SectionCard({ icon, title, description, children }: {
+  icon: React.ReactNode;
+  title: string;
+  description: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
+      <div style={{ padding: '16px 20px 14px', borderBottom: '1px solid var(--border)', background: 'linear-gradient(135deg, #18E29908 0%, transparent 60%)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+          {icon}
+          <h2 style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600, color: 'var(--fg1)', margin: 0 }}>
+            {title}
+          </h2>
+        </div>
+        <p style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg4)', lineHeight: 1.5, margin: 0 }}>
+          {description}
+        </p>
+      </div>
+      <div style={{ padding: '0 20px' }}>{children}</div>
+    </div>
+  );
+}
+
+function KeyGroup({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div style={{
+        padding: '12px 0 2px',
+        fontFamily: 'var(--mono)', fontSize: 9.5, fontWeight: 600,
+        color: 'var(--fg4)', letterSpacing: '0.7px', textTransform: 'uppercase',
+      }}>
+        {label}
+      </div>
+      {children}
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
@@ -561,7 +602,7 @@ export default function SettingsPage() {
 
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {/* Header */}
-          <div style={{ padding: '28px 32px 24px', borderBottom: '1px solid var(--border)' }}>
+          <div style={{ padding: '28px 32px 24px', borderBottom: '1px solid var(--border)', background: 'linear-gradient(135deg, #18E29910 0%, transparent 65%)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
               <Settings size={16} strokeWidth={1.5} color="#0fa76e" />
               <h1 style={{
@@ -576,23 +617,15 @@ export default function SettingsPage() {
             </p>
           </div>
 
-          <div style={{ padding: '32px', maxWidth: 640 }}>
+          <div style={{ padding: '32px', maxWidth: 660 }}>
 
             {/* Reading config */}
-            <section style={{ marginBottom: 48 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                <BookOpen size={14} strokeWidth={1.5} color="#0fa76e" />
-                <h2 style={{
-                  fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600,
-                  color: 'var(--fg2)', letterSpacing: '0.2px', margin: 0,
-                }}>
-                  Reading
-                </h2>
-              </div>
-              <p style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg4)', marginBottom: 16 }}>
-                Controls how Docent syncs your reading queue with Mendeley and your local paper database.
-              </p>
-              <div style={{ borderTop: '1px solid var(--border)' }}>
+            <section style={{ marginBottom: 28 }}>
+              <SectionCard
+                icon={<BookOpen size={14} strokeWidth={1.5} color="#0fa76e" />}
+                title="Reading"
+                description="Controls how Docent syncs your reading queue with Mendeley and your local paper database."
+              >
                 {READING_FIELDS.map(f => (
                   <ConfigRow
                     key={f.key}
@@ -603,164 +636,134 @@ export default function SettingsPage() {
                     onSave={v => handleSaveReading(f.key, v)}
                   />
                 ))}
-              </div>
+              </SectionCard>
             </section>
 
             {/* API keys */}
-            <section style={{ marginBottom: 48 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                <Key size={14} strokeWidth={1.5} color="#0fa76e" />
-                <h2 style={{
-                  fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600,
-                  color: 'var(--fg2)', letterSpacing: '0.2px', margin: 0,
-                }}>
-                  API keys
-                </h2>
-              </div>
-              <p style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg4)', marginBottom: 16 }}>
-                Keys for research backends and paper search. Stored in <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>~/.docent/config.toml</span> — never sent anywhere except the respective provider.
-              </p>
-              <div style={{ borderTop: '1px solid var(--border)' }}>
-                {RESEARCH_KEY_FIELDS.map(f => (
-                  <SecretKeyRow
-                    key={f.key}
-                    label={f.label}
-                    description={f.description}
-                    masked={res ? (res[f.key] ?? null) : null}
-                    placeholder={f.placeholder}
-                    onSave={v => handleSaveResearch(f.key, v)}
-                  />
-                ))}
-              </div>
+            <section style={{ marginBottom: 28 }}>
+              <SectionCard
+                icon={<Key size={14} strokeWidth={1.5} color="#0fa76e" />}
+                title="API keys"
+                description={<>Keys for research backends and paper search. Stored in <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>~/.docent/config.toml</span> — never sent anywhere except the respective provider.</>}
+              >
+                <KeyGroup label="Search & discovery">
+                  {RESEARCH_KEY_FIELDS.filter(f => ['tavily_api_key','alphaxiv_api_key','semantic_scholar_api_key'].includes(f.key)).map(f => (
+                    <SecretKeyRow key={f.key} label={f.label} description={f.description}
+                      masked={res ? (res[f.key] ?? null) : null} placeholder={f.placeholder}
+                      onSave={v => handleSaveResearch(f.key, v)} />
+                  ))}
+                </KeyGroup>
+                <KeyGroup label="AI backends">
+                  {RESEARCH_KEY_FIELDS.filter(f => !['tavily_api_key','alphaxiv_api_key','semantic_scholar_api_key'].includes(f.key)).map(f => (
+                    <SecretKeyRow key={f.key} label={f.label} description={f.description}
+                      masked={res ? (res[f.key] ?? null) : null} placeholder={f.placeholder}
+                      onSave={v => handleSaveResearch(f.key, v)} />
+                  ))}
+                </KeyGroup>
+              </SectionCard>
             </section>
 
             {/* System health */}
-            <section style={{ marginBottom: 48 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Activity size={14} strokeWidth={1.5} color="#0fa76e" />
-                  <h2 style={{
-                    fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600,
-                    color: 'var(--fg2)', letterSpacing: '0.2px', margin: 0,
-                  }}>
-                    System health
-                  </h2>
-                </div>
-                <button
-                  onClick={runDoctor}
-                  disabled={loadingDoctor}
-                  style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 6,
-                    padding: '5px 12px', borderRadius: 7,
-                    border: '1px solid var(--border-md)',
-                    background: 'transparent', color: 'var(--fg3)',
-                    fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500,
-                    cursor: loadingDoctor ? 'default' : 'pointer',
-                    opacity: loadingDoctor ? 0.6 : 1,
-                  }}
-                >
-                  <RefreshCw
-                    size={12} strokeWidth={1.5}
-                    style={{ animation: loadingDoctor ? 'spin 1s linear infinite' : 'none' }}
-                  />
-                  {loadingDoctor ? 'Checking…' : 'Refresh'}
-                </button>
-              </div>
-
-              {doctorChecks === null ? (
+            <section style={{ marginBottom: 28 }}>
+              <div style={{
+                background: 'var(--bg-card)', border: '1px solid var(--border)',
+                borderRadius: 12, overflow: 'hidden',
+              }}>
                 <div style={{
-                  border: '1px solid var(--border)', borderRadius: 10,
-                  padding: '24px', textAlign: 'center',
-                  fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--fg4)',
+                  padding: '16px 20px 14px', borderBottom: '1px solid var(--border)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  background: 'linear-gradient(135deg, #18E29908 0%, transparent 60%)',
                 }}>
-                  Checking your environment…
-                </div>
-              ) : doctorChecks.length === 0 ? (
-                <div style={{
-                  border: '1px solid rgba(212,86,86,0.3)', borderRadius: 10,
-                  padding: '16px 20px', fontFamily: 'var(--sans)', fontSize: 13, color: '#D45656',
-                }}>
-                  Could not run health checks.
-                </div>
-              ) : (
-                <div style={{
-                  border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden',
-                }}>
-                  {doctorChecks.map((check, i) => (
-                    <div
-                      key={check.label}
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: '140px 56px 80px 1fr',
-                        gap: '0 12px',
-                        alignItems: 'center',
-                        padding: '9px 16px',
-                        borderBottom: i < doctorChecks.length - 1 ? '1px solid var(--border)' : 'none',
-                        background: check.status === 'FAIL'
-                          ? 'rgba(212,86,86,0.03)'
-                          : check.status === 'WARN'
-                            ? 'rgba(201,123,0,0.02)'
-                            : 'transparent',
-                      }}
-                    >
-                      <span style={{
-                        fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500,
-                        color: 'var(--fg1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                      }}>
-                        {check.label}
-                      </span>
-                      <StatusBadge status={check.status} />
-                      <span style={{
-                        fontFamily: 'var(--mono)', fontSize: 10,
-                        color: 'var(--fg4)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                      }}>
-                        {check.version !== '-' ? check.version : ''}
-                      </span>
-                      <span style={{
-                        fontFamily: 'var(--sans)', fontSize: 11,
-                        color: check.status === 'FAIL' ? '#D45656'
-                          : check.status === 'WARN' ? '#C97B00'
-                            : 'var(--fg4)',
-                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                      }}
-                        title={check.detail}
-                      >
-                        {check.detail !== '-' ? check.detail : ''}
-                      </span>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                      <Activity size={14} strokeWidth={1.5} color="#0fa76e" />
+                      <h2 style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600, color: 'var(--fg1)', margin: 0 }}>
+                        System health
+                      </h2>
                     </div>
-                  ))}
-
-                  {/* Summary footer */}
-                  {(() => {
-                    const issues = doctorChecks.filter(c => c.status === 'FAIL' || c.status === 'WARN').length;
-                    const ok = doctorChecks.filter(c => c.status === 'OK').length;
-                    return (
-                      <div style={{
-                        padding: '8px 16px',
-                        borderTop: '1px solid var(--border)',
-                        background: 'var(--bg-subtle)',
-                        fontFamily: 'var(--sans)', fontSize: 11,
-                        color: issues === 0 ? '#0fa76e' : '#C97B00',
-                      }}>
-                        {issues === 0
-                          ? `All ${ok} checks passed`
-                          : `${issues} ${issues === 1 ? 'issue' : 'issues'} found — check the details above`}
-                      </div>
-                    );
-                  })()}
+                    <p style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg4)', margin: 0, lineHeight: 1.5 }}>
+                      Environment checks for all Docent dependencies.
+                    </p>
+                  </div>
+                  <button
+                    onClick={runDoctor} disabled={loadingDoctor}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                      padding: '5px 12px', borderRadius: 7,
+                      border: '1px solid var(--border-md)',
+                      background: 'transparent', color: 'var(--fg3)',
+                      fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500,
+                      cursor: loadingDoctor ? 'default' : 'pointer', opacity: loadingDoctor ? 0.6 : 1,
+                    }}
+                  >
+                    <RefreshCw size={12} strokeWidth={1.5} style={{ animation: loadingDoctor ? 'spin 1s linear infinite' : 'none' }} />
+                    {loadingDoctor ? 'Checking…' : 'Refresh'}
+                  </button>
                 </div>
-              )}
+
+                {doctorChecks === null ? (
+                  <div style={{ padding: '28px 20px', textAlign: 'center', fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--fg4)' }}>
+                    Checking your environment…
+                  </div>
+                ) : doctorChecks.length === 0 ? (
+                  <div style={{ padding: '16px 20px', fontFamily: 'var(--sans)', fontSize: 13, color: '#D45656' }}>
+                    Could not run health checks.
+                  </div>
+                ) : (
+                  <>
+                    {doctorChecks.map((check, i) => (
+                      <div key={check.label} style={{
+                        display: 'grid',
+                        gridTemplateColumns: '150px 52px 90px 1fr',
+                        gap: '0 12px', alignItems: 'start',
+                        padding: '11px 20px',
+                        borderBottom: i < doctorChecks.length - 1 ? '1px solid var(--border)' : 'none',
+                        background: check.status === 'FAIL' ? 'rgba(212,86,86,0.03)'
+                          : check.status === 'WARN' ? 'rgba(201,123,0,0.02)' : 'transparent',
+                      }}>
+                        <span style={{ fontFamily: 'var(--sans)', fontSize: 12.5, fontWeight: 500, color: 'var(--fg1)', paddingTop: 1 }}>
+                          {check.label}
+                        </span>
+                        <div style={{ paddingTop: 2 }}><StatusBadge status={check.status} /></div>
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--fg4)', paddingTop: 2, wordBreak: 'break-all' }}>
+                          {check.version !== '-' ? check.version : ''}
+                        </span>
+                        <span style={{
+                          fontFamily: 'var(--sans)', fontSize: 11.5, lineHeight: 1.5,
+                          color: check.status === 'FAIL' ? '#D45656'
+                            : check.status === 'WARN' ? '#C97B00' : 'var(--fg4)',
+                        }}>
+                          {check.detail !== '-' ? check.detail : ''}
+                        </span>
+                      </div>
+                    ))}
+                    {(() => {
+                      const issues = doctorChecks.filter(c => c.status === 'FAIL' || c.status === 'WARN').length;
+                      const ok = doctorChecks.filter(c => c.status === 'OK').length;
+                      return (
+                        <div style={{
+                          padding: '9px 20px', borderTop: '1px solid var(--border)',
+                          background: 'var(--bg-subtle)',
+                          fontFamily: 'var(--sans)', fontSize: 11.5,
+                          color: issues === 0 ? '#0fa76e' : '#C97B00',
+                        }}>
+                          {issues === 0 ? `All ${ok} checks passed` : `${issues} ${issues === 1 ? 'issue' : 'issues'} found`}
+                        </div>
+                      );
+                    })()}
+                  </>
+                )}
+              </div>
             </section>
 
             {/* Danger zone */}
             <section>
-              <h2 style={{
-                fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600,
-                color: 'var(--fg4)', letterSpacing: '0.5px', textTransform: 'uppercase',
-                margin: '0 0 16px',
-              }}>
-                Danger Zone
-              </h2>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                <Trash2 size={13} strokeWidth={1.5} color="#D45656" />
+                <h2 style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600, color: '#D45656', margin: 0 }}>
+                  Danger zone
+                </h2>
+              </div>
 
               <div style={{
                 border: '1px solid rgba(212,86,86,0.3)',
