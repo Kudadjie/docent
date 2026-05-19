@@ -49,8 +49,43 @@ export default function StudioPage() {
   const [currentPhase, setCurrentPhase] = useState<string | null>(null);
   const [doneData, setDoneData]         = useState<Record<string, unknown> | null>(null);
   const [gating, setGating]           = useState(false);
-  const abortRef  = useRef<AbortController | null>(null);
+  const abortRef  = useRef<{ abort: () => void } | null>(null);
   const stoppedRef = useRef(false);
+
+  // ── Column resize ────────────────────────────────────────────────────────────
+  const [leftWidth, setLeftWidth] = useState<number>(() => {
+    try { return parseInt(localStorage.getItem('studio-left-width') ?? '380', 10) || 380; } catch { return 380; }
+  });
+  const dragging = useRef(false);
+  const dragStartX = useRef(0);
+  const dragStartW = useRef(0);
+
+  function onDividerMouseDown(e: React.MouseEvent) {
+    dragging.current = true;
+    dragStartX.current = e.clientX;
+    dragStartW.current = leftWidth;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }
+
+  useEffect(() => {
+    function onMove(e: MouseEvent) {
+      if (!dragging.current) return;
+      const delta = e.clientX - dragStartX.current;
+      const next = Math.max(260, Math.min(600, dragStartW.current + delta));
+      setLeftWidth(next);
+    }
+    function onUp() {
+      if (!dragging.current) return;
+      dragging.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      try { localStorage.setItem('studio-left-width', String(leftWidth)); } catch {}
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+  }, [leftWidth]);
 
   // ── Overlay / panel state ───────────────────────────────────────────────────
   const [cmdKOpen, setCmdKOpen]           = useState(false);
@@ -113,103 +148,77 @@ export default function StudioPage() {
     setCurrentPhase(null);
     setRecents(prev => [actionId, ...prev.filter(x => x !== actionId)].slice(0, 4) as ActionId[]);
 
-    const controller = new AbortController();
-    abortRef.current = controller;
+    await new Promise<void>((resolve) => {
+      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const ws = new WebSocket(`${proto}//${window.location.host}/ws/studio/run`);
+      abortRef.current = { abort: () => ws.close() };
 
-    try {
-      const res = await fetch('/api/studio/run', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action_id: actionId,
-          topic:      form.topic,
-          backend:    form.backend.toLowerCase(),
-          dest:       form.dest.toLowerCase().replace(' →', '').trim(),
-          guides:     form.guides,
-          artifact:   form.artifact,
-          artifact_a: form.artifactA,
-          artifact_b: form.artifactB,
-          query:      form.query,
+      ws.onopen = () => {
+        ws.send(JSON.stringify({
+          action_id:   actionId,
+          topic:       form.topic,
+          backend:     form.backend.toLowerCase(),
+          dest:        form.dest.toLowerCase(),
+          guides:      form.guides,
+          artifact:    form.artifact,
+          artifact_a:  form.artifactA,
+          artifact_b:  form.artifactB,
+          query:       form.query,
           max_results: form.maxResults,
-          arxiv_id:   form.arxivId,
-          out_path:   form.outPath,
-          src_path:   form.srcPath,
+          arxiv_id:    form.arxivId,
+          out_path:    form.outPath,
+          src_path:    form.srcPath,
           max_sources: form.maxSources,
-          nlm:  form.nlm,
-          gate: form.gate,
-          persp: form.persp,
-          cfg_key: form.cfgKey,
-          cfg_val: form.cfgVal,
-        }),
-        signal: controller.signal,
-      });
+          nlm:         form.nlm,
+          gate:        form.gate,
+          persp:       form.persp,
+          cfg_key:     form.cfgKey,
+          cfg_val:     form.cfgVal,
+        }));
+      };
 
-      if (!res.ok) {
-        const errText = await res.text().catch(() => 'Unknown error');
-        const entry: LogEntry = { phase: 'error', text: errText };
-        collectedLogs.push(entry);
-        setLogs([entry]);
-        if (!stoppedRef.current) { setStatus('failure'); pushRun('failure', collectedLogs, [], 'error'); }
-        return;
-      }
+      ws.onmessage = (e: MessageEvent) => {
+        if (stoppedRef.current) return;
+        let evt: Record<string, unknown>;
+        try { evt = JSON.parse(e.data as string); } catch { return; }
 
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
-      let buf = '';
-      let finalStatus: 'success' | 'failure' = 'success';
-      let lastPhase: string | null = null;
-
-      try {
-        outer: while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          buf += decoder.decode(value, { stream: true });
-          const lines = buf.split('\n');
-          buf = lines.pop() ?? '';
-          for (const raw of lines) {
-            if (!raw.startsWith('data: ')) continue;
-            let evt: Record<string, unknown>;
-            try { evt = JSON.parse(raw.slice(6)); } catch { continue; }
-
-            if (evt.type === 'log') {
-              const entry: LogEntry = { phase: String(evt.phase), text: String(evt.text) };
-              collectedLogs.push(entry);
-              setLogs(prev => [...prev, entry]);
-              lastPhase = entry.phase;
-              setCurrentPhase(entry.phase);
-            } else if (evt.type === 'done') {
-              finalStatus = (evt.status as 'success' | 'failure') ?? 'success';
-              if (evt.raw) {
-                try { const parsed = JSON.parse(evt.raw as string) as Record<string, unknown>; setDoneData(parsed); } catch {}
-              }
-              break outer;
-            } else if (evt.type === 'error') {
-              const entry: LogEntry = { phase: 'error', text: String(evt.message) };
-              collectedLogs.push(entry);
-              setLogs(prev => [...prev, entry]);
-              finalStatus = 'failure';
-              lastPhase = 'error';
-              break outer;
-            }
+        if (evt.type === 'log') {
+          const entry: LogEntry = { phase: String(evt.phase), text: String(evt.text) };
+          collectedLogs.push(entry);
+          setLogs(prev => [...prev, entry]);
+          setCurrentPhase(String(evt.phase));
+        } else if (evt.type === 'done') {
+          const finalStatus = (evt.status as 'success' | 'failure') ?? 'success';
+          if (evt.raw) {
+            try { setDoneData(JSON.parse(evt.raw as string) as Record<string, unknown>); } catch {}
           }
+          setStatus(finalStatus);
+          pushRun(finalStatus, collectedLogs, collectedSources, collectedLogs[collectedLogs.length - 1]?.phase ?? null);
+          ws.close();
+        } else if (evt.type === 'error') {
+          const entry: LogEntry = { phase: 'error', text: String(evt.message) };
+          collectedLogs.push(entry);
+          setLogs(prev => [...prev, entry]);
+          setStatus('failure');
+          pushRun('failure', collectedLogs, [], 'error');
+          ws.close();
         }
-      } finally {
-        reader.releaseLock();
-      }
+      };
 
-      if (!stoppedRef.current) {
-        setStatus(finalStatus);
-        pushRun(finalStatus, collectedLogs, collectedSources, lastPhase);
-      }
-    } catch (err: unknown) {
-      if ((err as Error)?.name === 'AbortError') return;
-      const entry: LogEntry = { phase: 'error', text: err instanceof Error ? err.message : String(err) };
-      collectedLogs.push(entry);
-      setLogs(prev => [...prev, entry]);
-      if (!stoppedRef.current) { setStatus('failure'); pushRun('failure', collectedLogs, [], 'error'); }
-    } finally {
-      if (abortRef.current === controller) abortRef.current = null;
-    }
+      ws.onerror = () => {
+        if (!stoppedRef.current) {
+          const entry: LogEntry = { phase: 'error', text: 'Connection error — is the server running?' };
+          setLogs([entry]);
+          setStatus('failure');
+          pushRun('failure', [entry], [], 'error');
+        }
+      };
+
+      ws.onclose = () => {
+        abortRef.current = null;
+        resolve();
+      };
+    });
   }
 
   function handleRun()  { void startRun(); }
@@ -318,6 +327,14 @@ export default function StudioPage() {
             isRunning={status === 'running'}
             onStop={handleStop}
             activePresetId={activePresetId}
+            width={leftWidth}
+          />
+          {/* Resize divider */}
+          <div
+            onMouseDown={onDividerMouseDown}
+            title="Drag to resize"
+            style={{ width: 4, flexShrink: 0, cursor: 'col-resize', background: 'transparent', transition: 'background 0.15s', position: 'relative', zIndex: 1 }}
+            className="studio-resize-divider"
           />
           <OutputPanel
             action={action} state={form}
@@ -335,6 +352,7 @@ export default function StudioPage() {
                 onSelect={handleLoadRun}
                 onClose={() => setHistoryOpen(false)}
                 onClear={() => setRuns([])}
+                onDelete={(id) => setRuns(prev => prev.filter(r => r.id !== id))}
               />
             </div>
           )}

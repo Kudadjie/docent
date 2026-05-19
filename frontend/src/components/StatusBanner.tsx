@@ -2,6 +2,7 @@
 
 import { Bell, RefreshCw, Info, AlertTriangle, XCircle, X, Search } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import type { BannerCounts } from '@/lib/types';
 import { useNotifications, type AppNotification } from '@/lib/notifications';
 
@@ -86,6 +87,15 @@ const NOTIF_ICON: Record<AppNotification['type'], React.ReactNode> = {
   error:   <XCircle size={12} strokeWidth={2} color="#E53535" />,
 };
 
+function notifHref(n: AppNotification): string | null {
+  if (n.href) return n.href;
+  if (n.title.toLowerCase().includes('health') || n.title.toLowerCase().includes('issue')) return '/settings';
+  if (n.title.toLowerCase().includes('update') || n.title.toLowerCase().includes('version')) return '/settings';
+  if (n.title.toLowerCase().includes('studio') || n.title.toLowerCase().includes('research')) return '/studio';
+  if (n.title.toLowerCase().includes('reading') || n.title.toLowerCase().includes('sync')) return '/reading';
+  return null;
+}
+
 function NotificationDropdown({
   notifications,
   onDismiss,
@@ -100,6 +110,7 @@ function NotificationDropdown({
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const router = useRouter();
 
   useEffect(() => {
     function handle(e: MouseEvent) {
@@ -161,14 +172,18 @@ function NotificationDropdown({
             No notifications
           </div>
         ) : (
-          notifications.map(n => (
+          notifications.map(n => {
+            const href = notifHref(n);
+            return (
             <div
               key={n.id}
+              onClick={() => { if (href) { onClose(); router.push(href); } }}
               style={{
                 padding: '10px 14px',
                 borderBottom: '1px solid var(--border)',
                 background: n.read ? 'transparent' : 'var(--bg-subtle)',
                 display: 'flex', gap: 10, alignItems: 'flex-start',
+                cursor: href ? 'pointer' : 'default',
               }}
             >
               <div style={{ marginTop: 1, flexShrink: 0 }}>{NOTIF_ICON[n.type]}</div>
@@ -190,10 +205,11 @@ function NotificationDropdown({
                   marginTop: 4, letterSpacing: '0.3px',
                 }}>
                   {formatAge(n.timestamp)}
+                  {href && <span style={{ marginLeft: 6, color: '#0fa76e' }}>→ go there</span>}
                 </div>
               </div>
               <button
-                onClick={() => onDismiss(n.id)}
+                onClick={(e) => { e.stopPropagation(); onDismiss(n.id); }}
                 aria-label="Dismiss"
                 style={{
                   flexShrink: 0, background: 'none', border: 'none',
@@ -204,7 +220,8 @@ function NotificationDropdown({
                 <X size={12} strokeWidth={2} />
               </button>
             </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>

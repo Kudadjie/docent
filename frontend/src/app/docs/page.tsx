@@ -13,6 +13,8 @@ const SECTIONS: Section[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'studio', label: 'Studio' },
   { id: 'reading-queue', label: 'Reading Queue' },
+  { id: 'ecosystem', label: 'Ecosystem' },
+  { id: 'plugins', label: 'Plugin Guide' },
   { id: 'cli', label: 'CLI Reference' },
   { id: 'mcp', label: 'MCP Setup' },
   { id: 'settings', label: 'Settings' },
@@ -217,10 +219,10 @@ export default function DocsPage() {
           </div>
 
           {/* Content — hero wash bleeding from the top via background-image */}
-          <div style={{ flex: 1, padding: '28px 40px', overflow: 'auto', maxWidth: 820,
+          <div style={{ flex: 1, padding: '28px 40px', overflow: 'auto',
             backgroundImage: 'var(--hero-grad)',
             backgroundRepeat: 'no-repeat',
-            backgroundSize: '100% 320px',
+            backgroundSize: '100% 100%',
             backgroundAttachment: 'local',
           }}>
 
@@ -228,23 +230,32 @@ export default function DocsPage() {
             <Card>
               <SectionHeading id="overview">Overview</SectionHeading>
               <Prose>
-                Docent is a CLI-based control center for grad-school workflows. It exposes a plugin
-                architecture — each tool (currently <strong>Reading Queue</strong>) registers actions
-                that are callable from the terminal, from Claude via MCP, or from this UI.
+                Docent is a grad-school AI assistant with three main tools: a <strong>Reading Queue</strong> that
+                syncs your Mendeley library, a <strong>Studio</strong> research engine for AI-powered literature
+                reviews, paper analysis, and notebook building, and an <strong>Ecosystem</strong> page that
+                connects all the external tools Docent integrates with.
               </Prose>
               <Prose>
-                Documents live in <strong>Mendeley</strong>. Docent syncs from a named Mendeley collection
-                and maintains a lightweight local queue. You never add documents directly in Docent — you
-                add them to Mendeley first, then pull.
+                Every feature is callable three ways: from the terminal (<Code>docent …</Code>),
+                from Claude via MCP (<Code>docent serve</Code>), or from this web UI (<Code>docent ui</Code>).
               </Prose>
               <SubHeading>How it fits together</SubHeading>
-              <CodeBlock>{`Mendeley desktop  →  "Docent-Queue" collection
-       ↓
-docent reading sync-from-mendeley   (pulls metadata + order)
-       ↓
-Reading queue  →  next / start / done / export …
-       ↓
-docent serve  →  Claude MCP  (or this UI)`}</CodeBlock>
+              <CodeBlock>{`Mendeley  →  "Docent-Queue"  →  docent reading sync-from-mendeley
+                                     ↓
+                             Reading queue (local)
+                                     ↓
+                         docent serve  →  Claude MCP  →  Studio actions
+                                     ↓
+                          docent ui  →  this UI`}</CodeBlock>
+              <SubHeading>Quick-start</SubHeading>
+              <CommandTable rows={[
+                { cmd: 'pip install docent-cli', desc: 'Install Docent.' },
+                { cmd: 'docent doctor', desc: 'Check your environment — shows which integrations are working.' },
+                { cmd: 'docent ui', desc: 'Start the web UI at localhost:7432.' },
+                { cmd: 'docent serve', desc: 'Start the MCP server for Claude integration.' },
+                { cmd: 'docent reading sync-from-mendeley', desc: 'Pull your Mendeley reading list into Docent.' },
+                { cmd: 'docent studio deep-research --topic "…"', desc: 'Run a deep research action from the terminal.' },
+              ]} />
             </Card>
 
             {/* Studio */}
@@ -285,8 +296,8 @@ docent serve  →  Claude MCP  (or this UI)`}</CodeBlock>
 
               <SubHeading>Output destinations</SubHeading>
               <CommandTable rows={[
-                { cmd: '--output local', desc: 'Default. Save to ~/.docent/research/ (or configured output_dir).' },
-                { cmd: '--output notebook', desc: 'Upload output and sources to your NotebookLM notebook.' },
+                { cmd: '--output local', desc: 'Default. Save to ~/.docent/research/ (or configured output_dir). You can send the result to NotebookLM afterwards from the Studio result panel.' },
+                { cmd: '--output notebook', desc: 'Upload output and sources directly to your configured NotebookLM notebook after the run.' },
               ]} />
 
               <SubHeading>Guide files</SubHeading>
@@ -303,6 +314,72 @@ docent serve  →  Claude MCP  (or this UI)`}</CodeBlock>
                 { cmd: 'docent studio config-set --key groq_api_key --value gsk_…', desc: 'Set Groq API key for fast AI synthesis.' },
                 { cmd: 'docent studio config-show', desc: 'Show all current studio config values (API keys masked).' },
               ]} />
+            </Card>
+
+            {/* Ecosystem */}
+            <Card>
+              <SectionHeading id="ecosystem">Ecosystem</SectionHeading>
+              <Prose>
+                The Ecosystem page (accessible from the sidebar) lists every external tool Docent integrates with — search engines, AI backends, reference managers, and notebook services. Each card shows what the tool does, when to use it, and how to install it.
+              </Prose>
+              <SubHeading>Tool categories</SubHeading>
+              <CommandTable rows={[
+                { cmd: 'Feynman', desc: 'Autonomous deep-research agent. Powers the Feynman backend in Studio. Install: pip install feynman-cli' },
+                { cmd: 'Tavily', desc: 'Web search API used by the Free backend. Get a free key at app.tavily.com.' },
+                { cmd: 'Semantic Scholar', desc: 'Academic paper search. Used by scholarly-search and lit review actions. Free with optional API key for higher rate limits.' },
+                { cmd: 'alphaXiv', desc: 'Academic paper search and AI overviews. Used by search-papers action. Free key at alphaxiv.org.' },
+                { cmd: 'Mendeley', desc: 'Reference manager. Docent syncs your reading queue from a named Mendeley collection.' },
+                { cmd: 'NotebookLM', desc: 'Google\'s AI research notebook. Docent pushes sources and research output into your notebooks via the to-notebook action.' },
+                { cmd: 'OpenCode', desc: 'Local AI coding agent. Powers the Docent research backend (6-stage pipeline). Run: opencode serve --port 4096' },
+              ]} />
+              <SubHeading>Checking your ecosystem</SubHeading>
+              <Prose>
+                Run <Code>docent doctor</Code> to see the status of every installed integration. The Settings page also runs this automatically and shows a health dashboard.
+              </Prose>
+            </Card>
+
+            {/* Plugin Guide */}
+            <Card>
+              <SectionHeading id="plugins">Plugin Guide</SectionHeading>
+              <Prose>
+                Docent is built on a plugin architecture. Every tool you see — Reading Queue, Studio — is a plugin registered at startup. You can write your own plugins to add new actions callable from the CLI, Claude via MCP, and this UI.
+              </Prose>
+              <SubHeading>Plugin structure</SubHeading>
+              <CodeBlock>{`# my_plugin/__init__.py
+from docent.core.tool import Tool, action, ProgressEvent
+from pydantic import BaseModel
+
+class MyPlugin(Tool):
+    name = "my_plugin"
+    description = "My custom tool"
+
+    class ConfigModel(BaseModel):
+        some_setting: str = "default"
+
+    @action(description="Do something useful")
+    def my_action(self, ctx, topic: str):
+        yield ProgressEvent(phase="start", message=f"Processing {topic}")
+        # ... your logic here
+        yield ProgressEvent(phase="done", message="Finished")`}</CodeBlock>
+              <SubHeading>Registering a plugin</SubHeading>
+              <Prose>
+                Add your plugin to <Code>pyproject.toml</Code> under <Code>[project.entry-points."docent.plugins"]</Code>:
+              </Prose>
+              <CodeBlock>{`[project.entry-points."docent.plugins"]
+my_plugin = "my_plugin:MyPlugin"`}</CodeBlock>
+              <Prose>
+                After installing your package, run <Code>docent list</Code> to confirm the plugin appears. All actions are automatically exposed as MCP tools following the <Code>toolname__actionname</Code> convention.
+              </Prose>
+              <SubHeading>ProgressEvent fields</SubHeading>
+              <CommandTable rows={[
+                { cmd: 'phase', desc: 'Short slug identifying the current stage (e.g. "search", "write"). Shown in the UI phase strip.' },
+                { cmd: 'message', desc: 'Human-readable description of what\'s happening. Streamed live in the Studio activity log.' },
+                { cmd: 'level', desc: 'One of: info (default), warn, error. Controls visual styling in the log.' },
+              ]} />
+              <SubHeading>Config keys</SubHeading>
+              <Prose>
+                Each plugin declares its config schema via a <Code>ConfigModel</Code>. Users set values with <Code>docent &lt;toolname&gt; config-set --key &lt;k&gt; --value &lt;v&gt;</Code>. Config is stored in <Code>~/.docent/config.toml</Code> under a <Code>[toolname]</Code> section.
+              </Prose>
             </Card>
 
             {/* Reading Queue */}
@@ -368,7 +445,9 @@ docent serve  →  Claude MCP  (or this UI)`}</CodeBlock>
                 { cmd: 'docent --version', desc: 'Print the installed Docent version.' },
                 { cmd: 'docent list', desc: 'List all registered tools and their available actions.' },
                 { cmd: 'docent info <tool>', desc: 'Show detailed info and action list for a tool.' },
+                { cmd: 'docent ui', desc: 'Start the web UI at localhost:7432 (default). Use --port to change.' },
                 { cmd: 'docent serve', desc: 'Start the MCP stdio server. Wire this into Claude\'s .mcp.json.' },
+                { cmd: 'docent doctor', desc: 'Run environment checks for all Docent dependencies.' },
                 { cmd: 'docent update', desc: 'Upgrade Docent to the latest version on PyPI. Reminds you to restart Claude if using MCP.' },
               ]} />
 

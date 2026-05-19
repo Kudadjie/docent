@@ -285,7 +285,7 @@ export default function EcosystemPage() {
             radial-gradient(ellipse 480px 220px at 50% 75%, ${PINK}10, transparent 60%)
           `,
           backgroundRepeat: 'no-repeat',
-          backgroundSize: '100% 520px',
+          backgroundSize: '100% 100%',
           backgroundAttachment: 'local',
         }}>
           <div style={{ maxWidth: 860, margin: '0 auto', padding: '64px 32px 96px' }}>

@@ -58,7 +58,7 @@ docent update
 
 ## 🏗 Architecture
 
-See [`Docent_Architecture.md`](Docent_Architecture.md) for the full design. The short version:
+See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full design. The short version:
 
 - **Tool registry** — tools self-register via `@register_tool` at import time. Registry stores the class, not an instance, so nothing runs until the tool is actually invoked.
 - **Context object** — frozen dataclass passed to every tool. Provides `settings`, `llm` (lazy litellm), and `executor` (subprocess wrapper).

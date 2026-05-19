@@ -1,10 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { LayoutDashboard, BookOpen, FlaskConical, BookText, Settings, Globe2 } from 'lucide-react';
 import WelcomeModal, { type UserProfile } from './WelcomeModal';
+
+const NAV_ORDER_KEY = 'docent:nav-order';
 
 interface NavItem {
   id: string;
@@ -62,11 +64,24 @@ interface Props {
   currentRun?: { status: 'running'; currentPhase: string } | null;
 }
 
+const REORDERABLE_IDS = PLUGIN_NAV.filter(n => n.id !== 'dashboard').map(n => n.id);
+
+function loadNavOrder(): string[] {
+  try {
+    const stored = JSON.parse(localStorage.getItem(NAV_ORDER_KEY) ?? 'null') as string[] | null;
+    if (Array.isArray(stored) && stored.every(id => REORDERABLE_IDS.includes(id))) return stored;
+  } catch {}
+  return REORDERABLE_IDS;
+}
+
 export default function Sidebar({ active, queueCount, dark: darkProp, currentRun }: Props) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
   const [localDark, setLocalDark] = useState(false);
   const [savedDatabaseDir, setSavedDatabaseDir] = useState<string>('');
+  const [navOrder, setNavOrder] = useState<string[]>(REORDERABLE_IDS);
+  const dragId = useRef<string | null>(null);
+  const dragOverId = useRef<string | null>(null);
 
   useEffect(() => {
     if (darkProp === undefined) {
@@ -75,6 +90,33 @@ export default function Sidebar({ active, queueCount, dark: darkProp, currentRun
       });
     }
   }, [darkProp]);
+
+  useEffect(() => {
+    queueMicrotask(() => setNavOrder(loadNavOrder()));
+  }, []);
+
+  function onDragStart(id: string) { dragId.current = id; }
+  function onDragOver(e: React.DragEvent, id: string) {
+    e.preventDefault();
+    dragOverId.current = id;
+  }
+  function onDrop() {
+    const from = dragId.current;
+    const to = dragOverId.current;
+    if (!from || !to || from === to) return;
+    setNavOrder(prev => {
+      const next = [...prev];
+      const fi = next.indexOf(from);
+      const ti = next.indexOf(to);
+      if (fi < 0 || ti < 0) return prev;
+      next.splice(fi, 1);
+      next.splice(ti, 0, from);
+      try { localStorage.setItem(NAV_ORDER_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+    dragId.current = null;
+    dragOverId.current = null;
+  }
 
   const dark = darkProp !== undefined ? darkProp : localDark;
 
@@ -148,10 +190,10 @@ export default function Sidebar({ active, queueCount, dark: darkProp, currentRun
           borderRight: '1px solid var(--border)',
         }}
       >
-        {/* Logo */}
+        {/* Logo — 48px to match StatusBanner height; borderBottom aligns as one top bar */}
         <div
           style={{
-            height: 56,
+            height: 48,
             display: 'flex',
             alignItems: 'center',
             padding: '0 18px',
@@ -161,8 +203,8 @@ export default function Sidebar({ active, queueCount, dark: darkProp, currentRun
           <Image
             src={dark ? '/logo-dark.svg' : '/logo.svg'}
             alt="docent"
-            height={24}
-            width={96}
+            height={28}
+            width={112}
             style={{ display: 'block' }}
             priority
           />
@@ -178,13 +220,21 @@ export default function Sidebar({ active, queueCount, dark: darkProp, currentRun
             gap: 2,
           }}
         >
-          {PLUGIN_NAV.map((item) => {
+          {[
+            PLUGIN_NAV.find(n => n.id === 'dashboard')!,
+            ...navOrder.map(id => PLUGIN_NAV.find(n => n.id === id)!).filter(Boolean),
+          ].map((item) => {
             const isActive = item.id === active;
+            const isDraggable = item.id !== 'dashboard';
             return (
               <Link
                 key={item.id}
                 href={item.href}
                 aria-current={isActive ? 'page' : undefined}
+                draggable={isDraggable}
+                onDragStart={isDraggable ? () => onDragStart(item.id) : undefined}
+                onDragOver={isDraggable ? (e) => onDragOver(e, item.id) : undefined}
+                onDrop={isDraggable ? onDrop : undefined}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -201,6 +251,7 @@ export default function Sidebar({ active, queueCount, dark: darkProp, currentRun
                   fontWeight: isActive ? 500 : 400,
                   transition: 'background 0.1s, color 0.1s',
                   boxShadow: isActive ? 'rgba(0,0,0,0.04) 0px 1px 3px' : 'none',
+                  cursor: isDraggable ? 'grab' : 'default',
                 }}
               >
                 <span style={{ display: 'flex', color: isActive ? '#0fa76e' : 'var(--fg4)' }}>

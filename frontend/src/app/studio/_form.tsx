@@ -429,7 +429,6 @@ const BACKEND_NOTES: Record<string, string> = {
 const DEST_NOTES: Record<string, string> = {
   Local:      'Saved to your configured docent research folder.',
   Notebook:   'Uploaded to NotebookLM after the run.',
-  'Pipe →':   'Output fed directly into the next action\'s input — use to chain actions.',
 };
 
 function FormTopic({ state, set }: { state: FormState; set: SetFn }) {
@@ -447,7 +446,7 @@ function FormTopic({ state, set }: { state: FormState; set: SetFn }) {
       </Note>
     </Field>
     <Field label="Output destination">
-      <Segmented value={state.dest} onChange={v => set('dest', v)} options={['Local', 'Notebook', 'Pipe →']} />
+      <Segmented value={state.dest} onChange={v => set('dest', v)} options={['Local', 'Notebook']} />
       {destNote && <Note>{destNote}</Note>}
     </Field>
     <GuideFiles files={state.guides} setFiles={v => set('guides', v)} />
@@ -652,13 +651,13 @@ function FreeTierGate({ onCancel, onProceed }: { onCancel: () => void; onProceed
 // ── Left column ────────────────────────────────────────────────────────────────
 
 export function LeftColumn({ actionId, setActionId, state, set, onRun, gating, setGating,
-  presets, onDeletePreset, onSelectPreset, onOpenCmdK, isRunning, onStop, activePresetId }: {
+  presets, onDeletePreset, onSelectPreset, onOpenCmdK, isRunning, onStop, activePresetId, width }: {
   actionId: ActionId; setActionId: (id: ActionId) => void;
   state: FormState; set: SetFn;
   onRun: () => void; gating: boolean; setGating: (v: boolean) => void;
   presets: Preset[]; onDeletePreset: (id: string) => void; onSelectPreset: (p: Preset) => void;
   onOpenCmdK: () => void; isRunning: boolean; onStop: () => void;
-  activePresetId?: string | null;
+  activePresetId?: string | null; width?: number;
 }) {
   const action = findAction(actionId);
   const Form = FORM_MAP[action.form];
@@ -708,7 +707,7 @@ export function LeftColumn({ actionId, setActionId, state, set, onRun, gating, s
 
   return (
     <aside onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}
-      style={{ width: 380, flexShrink: 0, height: '100%', borderRight: '1px solid var(--border)', background: 'transparent', display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
+      style={{ width: width ?? 380, flexShrink: 0, height: '100%', borderRight: '1px solid var(--border)', background: 'transparent', display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
 
       <div style={{ padding: '18px 22px 12px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
         <div style={{ position: 'relative' }}>
@@ -716,7 +715,7 @@ export function LeftColumn({ actionId, setActionId, state, set, onRun, gating, s
             <span style={{ color: BRAND_DEEP, display: 'flex' }}><FlaskConical size={16} strokeWidth={1.5} /></span>
             <h1 style={{ fontFamily: 'var(--sans)', fontSize: 18, fontWeight: 600, color: 'var(--fg1)', letterSpacing: '-0.3px', margin: 0 }}>Studio</h1>
           </div>
-          <p style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg3)', margin: 0 }}>Run AI research actions</p>
+          <p style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg3)', margin: 0 }}>Run AI-powered academic actions</p>
         </div>
         <button onClick={onOpenCmdK} title="Quick action (Ctrl+K)"
           style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border-md)', background: 'var(--gray100)', cursor: 'pointer', color: 'var(--fg3)' }}>

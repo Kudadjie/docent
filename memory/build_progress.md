@@ -4,7 +4,7 @@ description: Current step, completed steps, and what's next; read first on every
 type: project
 ---
 
-Docent is a Python CLI "control center" for grad-school workflows. Design lives in `Docent_Architecture.md` (committed to repo). Build order is strict — do not reorder.
+Docent is a Python CLI "control center" for grad-school workflows. Design lives in `ARCHITECTURE.md` (committed to repo). Build order is strict — do not reorder.
 
 ## Status as of 2026-05-12 (v1.2.0 omnibus — hardening + v1.3 planning + debt ALL before tag)
 

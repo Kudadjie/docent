@@ -660,10 +660,14 @@ export default function SettingsPage() {
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
         <StatusBanner dark={dark} onToggleDark={toggleDark} dotState={dotState} />
 
-        <div style={{ flex: 1, overflowY: 'auto' }}>
+        <div style={{ flex: 1, overflowY: 'auto', position: 'relative',
+          backgroundImage: 'var(--hero-grad)',
+          backgroundRepeat: 'no-repeat',
+          backgroundSize: '100% 100%',
+          backgroundAttachment: 'local',
+        }}>
           {/* Header */}
           <div style={{ position: 'relative', padding: '28px 32px 24px', borderBottom: '1px solid var(--border)' }}>
-            <div aria-hidden className="hero-wash" />
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
               <Settings size={16} strokeWidth={1.5} color="#0fa76e" />
               <h1 style={{
@@ -678,10 +682,10 @@ export default function SettingsPage() {
             </p>
           </div>
 
-          <div style={{ padding: '32px', maxWidth: 660 }}>
+          <div style={{ padding: '32px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, maxWidth: 1100, alignItems: 'start' }}>
 
-            {/* Reading config */}
-            <section style={{ marginBottom: 28 }}>
+            {/* Left column: Reading config + System health */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
               <SectionCard
                 icon={<BookOpen size={14} strokeWidth={1.5} color="#0fa76e" />}
                 title="Reading"
@@ -698,34 +702,9 @@ export default function SettingsPage() {
                   />
                 ))}
               </SectionCard>
-            </section>
 
-            {/* API keys */}
-            <section style={{ marginBottom: 28 }}>
-              <SectionCard
-                icon={<Key size={14} strokeWidth={1.5} color="#0fa76e" />}
-                title="API keys"
-                description={<>Keys for research backends and paper search. Stored in <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>~/.docent/config.toml</span> — never sent anywhere except the respective provider.</>}
-              >
-                <KeyGroup label="Search & discovery">
-                  {RESEARCH_KEY_FIELDS.filter(f => ['tavily_api_key','alphaxiv_api_key','semantic_scholar_api_key'].includes(f.key)).map(f => (
-                    <SecretKeyRow key={f.key} label={f.label} description={f.description}
-                      masked={res ? (res[f.key] ?? null) : null} placeholder={f.placeholder}
-                      onSave={v => handleSaveResearch(f.key, v)} />
-                  ))}
-                </KeyGroup>
-                <KeyGroup label="AI backends">
-                  {RESEARCH_KEY_FIELDS.filter(f => !['tavily_api_key','alphaxiv_api_key','semantic_scholar_api_key'].includes(f.key)).map(f => (
-                    <SecretKeyRow key={f.key} label={f.label} description={f.description}
-                      masked={res ? (res[f.key] ?? null) : null} placeholder={f.placeholder}
-                      onSave={v => handleSaveResearch(f.key, v)} />
-                  ))}
-                </KeyGroup>
-              </SectionCard>
-            </section>
-
-            {/* System health */}
-            <section style={{ marginBottom: 28 }}>
+            {/* System health — directly under Reading in left column */}
+            <section>
               <div style={{
                 background: 'var(--bg-card)', border: '1px solid var(--border)',
                 borderRadius: 12, overflow: 'hidden',
@@ -816,14 +795,37 @@ export default function SettingsPage() {
                 )}
               </div>
             </section>
+            </div> {/* end left column */}
+
+            {/* Right column: API keys */}
+            <SectionCard
+              icon={<Key size={14} strokeWidth={1.5} color="#0fa76e" />}
+              title="API keys"
+              description={<>Keys for research backends and paper search. Stored in <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>~/.docent/config.toml</span> — never sent anywhere except the respective provider.</>}
+            >
+              <KeyGroup label="Search & discovery">
+                {RESEARCH_KEY_FIELDS.filter(f => ['tavily_api_key','alphaxiv_api_key','semantic_scholar_api_key'].includes(f.key)).map(f => (
+                  <SecretKeyRow key={f.key} label={f.label} description={f.description}
+                    masked={res ? (res[f.key] ?? null) : null} placeholder={f.placeholder}
+                    onSave={v => handleSaveResearch(f.key, v)} />
+                ))}
+              </KeyGroup>
+              <KeyGroup label="AI backends">
+                {RESEARCH_KEY_FIELDS.filter(f => !['tavily_api_key','alphaxiv_api_key','semantic_scholar_api_key'].includes(f.key)).map(f => (
+                  <SecretKeyRow key={f.key} label={f.label} description={f.description}
+                    masked={res ? (res[f.key] ?? null) : null} placeholder={f.placeholder}
+                    onSave={v => handleSaveResearch(f.key, v)} />
+                ))}
+              </KeyGroup>
+            </SectionCard>
 
             {/* OpenCode server */}
-            <section>
+            <section style={{ gridColumn: '1 / -1' }}>
               <OpenCodeSection />
             </section>
 
-            {/* Danger zone */}
-            <section>
+            {/* Danger zone — full width */}
+            <section style={{ gridColumn: '1 / -1' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
                 <Trash2 size={13} strokeWidth={1.5} color="#D45656" />
                 <h2 style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600, color: '#D45656', margin: 0 }}>

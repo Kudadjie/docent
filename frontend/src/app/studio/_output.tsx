@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useMemo } from 'react';
+import ReactMarkdown from 'react-markdown';
 import {
   CheckCircle, XCircle, AlertTriangle, ExternalLink, ChevronDown, ChevronRight, Plus, X, History, Trash,
 } from 'lucide-react';
@@ -71,17 +72,57 @@ function SourceChips({ sources }: { sources: Source[] }) {
   );
 }
 
+// ── Phase colour palette ───────────────────────────────────────────────────────
+// Each phase group gets a distinct accent so the log is easy to scan at a glance.
+const PHASE_PALETTE: Record<string, { color: string; bg: string }> = {
+  // search phases → violet / purple
+  web_search:    { color: '#a78bfa', bg: 'rgba(139,92,246,0.14)' },
+  paper_search:  { color: '#a78bfa', bg: 'rgba(139,92,246,0.14)' },
+  search:        { color: '#a78bfa', bg: 'rgba(139,92,246,0.14)' },
+  scholar:       { color: '#a78bfa', bg: 'rgba(139,92,246,0.14)' },
+  scholarly:     { color: '#a78bfa', bg: 'rgba(139,92,246,0.14)' },
+  // planning / writing → blue
+  search_plan:   { color: '#60a5fa', bg: 'rgba(59,130,246,0.14)' },
+  plan:          { color: '#60a5fa', bg: 'rgba(59,130,246,0.14)' },
+  fetch:         { color: '#60a5fa', bg: 'rgba(59,130,246,0.14)' },
+  write:         { color: '#60a5fa', bg: 'rgba(59,130,246,0.14)' },
+  draft:         { color: '#60a5fa', bg: 'rgba(59,130,246,0.14)' },
+  research:      { color: '#60a5fa', bg: 'rgba(59,130,246,0.14)' },
+  // compile / verify → brand green
+  compile:       { color: BRAND_DEEP, bg: BRAND + '1c' },
+  verify:        { color: BRAND_DEEP, bg: BRAND + '1c' },
+  verify_citations: { color: BRAND_DEEP, bg: BRAND + '1c' },
+  citations:     { color: BRAND_DEEP, bg: BRAND + '1c' },
+  refine:        { color: BRAND_DEEP, bg: BRAND + '1c' },
+  // review / done → teal-ish (same green family, slightly brighter)
+  review:        { color: '#2dd4bf', bg: 'rgba(45,212,191,0.12)' },
+  done:          { color: '#2dd4bf', bg: 'rgba(45,212,191,0.12)' },
+  package:       { color: '#2dd4bf', bg: 'rgba(45,212,191,0.12)' },
+  // warn / cost → amber  (overridden below for tone-based rows)
+  warn:          { color: 'var(--amber-text)', bg: 'var(--amber-bg)' },
+  cost:          { color: 'var(--amber-text)', bg: 'var(--amber-bg)' },
+  // error → red
+  error:         { color: 'var(--red-text)', bg: 'var(--red-bg)' },
+  // start / info → neutral blue-grey
+  start:         { color: '#94a3b8', bg: 'rgba(148,163,184,0.12)' },
+  info:          { color: '#94a3b8', bg: 'rgba(148,163,184,0.12)' },
+};
+
+function phasePalette(phase: string, tone: string) {
+  if (tone === 'warn') return { color: 'var(--amber-text)', bg: 'var(--amber-bg)', rowBg: 'var(--amber-bg)', border: AMBER_BORDER };
+  if (tone === 'error') return { color: 'var(--red-text)', bg: 'var(--red-bg)', rowBg: 'var(--red-bg)', border: '#E53535' };
+  const p = PHASE_PALETTE[phase] ?? { color: BRAND_DEEP, bg: BRAND + '1c' };
+  return { ...p, rowBg: 'transparent', border: 'transparent' };
+}
+
 // ── Log line ───────────────────────────────────────────────────────────────────
 
 function LogLine({ phase, text, live }: { phase: string; text: string; live?: boolean }) {
-  const tone      = PHASE_TONE[phase] ?? 'info';
-  const phaseColor = tone === 'warn' ? 'var(--amber-text)' : tone === 'error' ? 'var(--red-text)' : BRAND_DEEP;
-  const phaseBg    = tone === 'warn' ? 'var(--amber-bg)' : tone === 'error' ? 'var(--red-bg)' : BRAND + '1c';
-  const rowBg      = tone === 'warn' ? 'var(--amber-bg)' : tone === 'error' ? 'var(--red-bg)' : 'transparent';
-  const rowBorder  = tone === 'warn' ? AMBER_BORDER : tone === 'error' ? '#E53535' : 'transparent';
+  const tone = PHASE_TONE[phase] ?? 'info';
+  const { color, bg, rowBg, border } = phasePalette(phase, tone);
   return (
-    <div className={'log-line' + (live ? ' live' : '')} style={{ display: 'flex', gap: 10, padding: '5px 12px 5px 10px', background: rowBg, borderLeft: `2px solid ${rowBorder}`, borderRadius: '2px 4px 4px 2px', alignItems: 'flex-start' }}>
-      <span style={{ fontFamily: 'var(--mono)', fontSize: 9.5, fontWeight: 600, letterSpacing: '0.6px', textTransform: 'uppercase', color: phaseColor, background: phaseBg, padding: '2px 6px', borderRadius: 4, flexShrink: 0, marginTop: 1, minWidth: 46, textAlign: 'center' }}>
+    <div className={'log-line' + (live ? ' live' : '')} style={{ display: 'flex', gap: 10, padding: '5px 12px 5px 10px', background: rowBg, borderLeft: `2px solid ${border}`, borderRadius: '2px 4px 4px 2px', alignItems: 'flex-start' }}>
+      <span style={{ fontFamily: 'var(--mono)', fontSize: 9.5, fontWeight: 600, letterSpacing: '0.6px', textTransform: 'uppercase', color, background: bg, padding: '2px 6px', borderRadius: 4, flexShrink: 0, marginTop: 1, minWidth: 46, textAlign: 'center' }}>
         {phase}
       </span>
       <span style={{ fontFamily: 'var(--sans)', fontSize: 12.5, color: 'var(--fg2)', lineHeight: 1.5, flex: 1, wordBreak: 'break-word' }}>
@@ -161,7 +202,7 @@ function OutputEmpty() {
           Ready
         </div>
         <div style={{ fontFamily: 'var(--sans)', fontSize: 24, fontWeight: 700, color: 'var(--fg1)', letterSpacing: '-0.5px', lineHeight: 1.2 }}>
-          Run a research action
+          Run a studio action
         </div>
         <div style={{ fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--fg3)', lineHeight: 1.75, maxWidth: 320 }}>
           Select an action on the left, fill in the form, then run — or press <Kbd>Ctrl</Kbd><Kbd>K</Kbd> to quick-jump.
@@ -206,9 +247,10 @@ function DocPreview({ path }: { path: string }) {
           {loading && <div style={{ padding: '16px', fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg4)' }}>Loading…</div>}
           {err && <div style={{ padding: '12px', fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--red-text)' }}>{err}</div>}
           {content !== null && !loading && (
-            <pre style={{ margin: 0, padding: '14px 16px', fontFamily: 'var(--mono)', fontSize: 11.5, lineHeight: 1.65, color: 'var(--fg2)', background: 'var(--bg-subtle)', overflowY: 'auto', maxHeight: 400, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-              {content}
-            </pre>
+            <div style={{ padding: '14px 16px', background: 'var(--bg-subtle)', overflowY: 'auto', maxHeight: 400 }}
+              className="md-preview">
+              <ReactMarkdown>{content}</ReactMarkdown>
+            </div>
           )}
         </div>
       )}
@@ -252,13 +294,12 @@ function ResultResearchSuccess({ topic, action, dest, doneData, onSaveAsPreset, 
       )}
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        {notebookId && (
+        {notebookId ? (
           <a href={'https://notebooklm.google.com/notebook/' + notebookId} target="_blank" rel="noreferrer"
             style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: 'var(--sans)', fontSize: 12, color: BRAND_DEEP, textDecoration: 'none', padding: '4px 10px', borderRadius: 9999, background: BRAND + '18', border: '1px solid ' + BRAND + '44' }}>
             <ExternalLink size={12} strokeWidth={1.5} /> Open in NotebookLM
           </a>
-        )}
-        {!notebookId && dest === 'Notebook' && (
+        ) : dest === 'Local' && (
           <button onClick={onPipeToNotebook} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg2)', padding: '4px 10px', borderRadius: 9999, background: 'transparent', border: '1px solid var(--border-md)', cursor: 'pointer' }}>
             <ExternalLink size={12} strokeWidth={1.5} /> Send to NotebookLM
           </button>
@@ -271,15 +312,6 @@ function ResultResearchSuccess({ topic, action, dest, doneData, onSaveAsPreset, 
         )}
       </div>
 
-      {dest === 'Pipe →' && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', background: BRAND + '12', border: `1px solid ${BRAND + '33'}`, borderLeft: `3px solid ${BRAND_DEEP}`, borderRadius: '4px 8px 8px 4px' }}>
-          <div style={{ flex: 1, fontFamily: 'var(--sans)', fontSize: 12.5, color: 'var(--fg2)', lineHeight: 1.5 }}>
-            <strong style={{ color: 'var(--fg1)', fontWeight: 600 }}>Piped to notebook</strong>
-            <span style={{ color: 'var(--fg4)', marginLeft: 6 }}>· sources file pre-filled with this run&apos;s output</span>
-          </div>
-          <PrimaryBtn size="sm" onClick={onPipeToNotebook}>Continue →</PrimaryBtn>
-        </div>
-      )}
     </div>
   );
 }
@@ -757,7 +789,7 @@ export function OutputsPanel({ onClose }: { onClose: () => void }) {
               <div style={{ borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', background: 'var(--bg-subtle)', maxHeight: 240, overflow: 'hidden' }}>
                 {preview.loading
                   ? <div style={{ padding: '12px 18px', fontFamily: 'var(--sans)', fontSize: 11, color: 'var(--fg4)' }}>Loading…</div>
-                  : <pre style={{ margin: 0, padding: '10px 18px', fontFamily: 'var(--mono)', fontSize: 10.5, lineHeight: 1.6, color: 'var(--fg2)', overflowY: 'auto', maxHeight: 240, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{preview.content}</pre>
+                  : <div style={{ padding: '10px 18px', overflowY: 'auto', maxHeight: 240 }} className="md-preview md-preview-sm"><ReactMarkdown>{preview.content ?? ''}</ReactMarkdown></div>
                 }
               </div>
             )}
@@ -770,9 +802,9 @@ export function OutputsPanel({ onClose }: { onClose: () => void }) {
 
 // ── History drawer ─────────────────────────────────────────────────────────────
 
-export function HistoryDrawer({ runs, currentRunId, onSelect, onClose, onClear }: {
+export function HistoryDrawer({ runs, currentRunId, onSelect, onClose, onClear, onDelete }: {
   runs: RunRecord[]; currentRunId: string | null;
-  onSelect: (id: string) => void; onClose: () => void; onClear: () => void;
+  onSelect: (id: string) => void; onClose: () => void; onClear: () => void; onDelete: (id: string) => void;
 }) {
   return (
     <aside style={{ width: 300, flexShrink: 0, height: '100%', borderLeft: '1px solid var(--border)', background: 'var(--bg)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -806,17 +838,24 @@ export function HistoryDrawer({ runs, currentRunId, onSelect, onClose, onClear }
             : BRAND;
           const dotAnim  = r.status === 'running' ? 'logo-dot-blink 1.1s step-end infinite' : 'none';
           return (
-            <button key={r.id} onClick={() => onSelect(r.id)}
-              style={{ width: '100%', textAlign: 'left', padding: '10px 12px', marginBottom: 4, borderRadius: 8, border: `1px solid ${active ? BRAND + '66' : 'transparent'}`, background: active ? BRAND + '10' : 'transparent', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 5 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: dotColor, animation: dotAnim, flexShrink: 0 }} />
-                <span style={{ fontFamily: 'var(--sans)', fontSize: 12.5, fontWeight: active ? 600 : 500, color: 'var(--fg1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, flex: 1 }}>{r.actionLabel}</span>
-                <span style={{ fontFamily: 'var(--mono)', fontSize: 9.5, color: 'var(--fg4)', letterSpacing: '0.4px', flexShrink: 0 }}>{r.timeAgo}</span>
-              </div>
-              {r.detail && (
-                <div style={{ fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--fg3)', letterSpacing: '0.2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingLeft: 13 }}>{r.detail}</div>
-              )}
-            </button>
+            <div key={r.id} style={{ position: 'relative', marginBottom: 4 }} className="history-item">
+              <button onClick={() => onSelect(r.id)}
+                style={{ width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: 8, border: `1px solid ${active ? BRAND + '66' : 'transparent'}`, background: active ? BRAND + '10' : 'transparent', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 5, paddingRight: 32 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: dotColor, animation: dotAnim, flexShrink: 0 }} />
+                  <span style={{ fontFamily: 'var(--sans)', fontSize: 12.5, fontWeight: active ? 600 : 500, color: 'var(--fg1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, flex: 1 }}>{r.actionLabel}</span>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 9.5, color: 'var(--fg4)', letterSpacing: '0.4px', flexShrink: 0 }}>{r.timeAgo}</span>
+                </div>
+                {r.detail && (
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--fg3)', letterSpacing: '0.2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingLeft: 13 }}>{r.detail}</div>
+                )}
+              </button>
+              <button onClick={(e) => { e.stopPropagation(); onDelete(r.id); }} title="Delete entry"
+                style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: 20, height: 20, border: 'none', background: 'transparent', color: 'var(--fg4)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 4, opacity: 0, transition: 'opacity 0.1s' }}
+                className="history-delete-btn">
+                <Trash size={11} strokeWidth={1.5} />
+              </button>
+            </div>
           );
         })}
       </div>

@@ -9,6 +9,7 @@ warnings.filterwarnings("ignore", category=SyntaxWarning, module=r"scholarly")
 
 import inspect
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any, Callable
@@ -355,7 +356,14 @@ def _run_setup_flow(*, first_run: bool = False) -> None:
     # ── NotebookLM ───────────────────────────────────────────────────────────
     nlm_exe = shutil.which("notebooklm")
     try:
-        import notebooklm as _nlm_mod  # noqa: F401
+        import contextlib as _cl, io as _io, sys as _sys
+        if "notebooklm" not in _sys.modules:
+            import os as _os
+            _os.environ.setdefault("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "1")
+            with _cl.redirect_stderr(_io.StringIO()):
+                import notebooklm as _nlm_mod  # noqa: F401
+        else:
+            import notebooklm as _nlm_mod  # noqa: F401
         _nlm_pkg_ok = True
     except ImportError:
         _nlm_pkg_ok = False
@@ -787,7 +795,14 @@ def _check_notebooklm_py() -> tuple[str, str, str, str]:
 
     # 1. Python package
     try:
-        import notebooklm as nlm_mod
+        import contextlib as _cl2, io as _io2, sys as _sys2
+        if "notebooklm" not in _sys2.modules:
+            import os as _os2
+            _os2.environ.setdefault("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "1")
+            with _cl2.redirect_stderr(_io2.StringIO()):
+                import notebooklm as nlm_mod
+        else:
+            import notebooklm as nlm_mod
         nlm_version = getattr(nlm_mod, "__version__", None) or "-"
     except ImportError:
         return (
@@ -955,12 +970,24 @@ def _build_callback(
             _log.exception("Unhandled exception in action callback")
             raise
         if result is not None:
-            console = get_console()
-            if hasattr(result, "to_shapes"):
-                from docent.ui.renderers import render_shapes
-                render_shapes(result.to_shapes(), console)
+            if os.environ.get("DOCENT_UI_SUBPROCESS"):
+                # Emit a structured result line for the UI server to parse.
+                # This bypasses Rich console rendering entirely so the server gets
+                # reliable data rather than scraping wrapped console output.
+                _r: dict[str, object] = {}
+                for _attr in ("output_file", "notebook_id", "message", "ok"):
+                    _v = getattr(result, _attr, None)
+                    if _v is not None:
+                        _r[_attr] = _v
+                import json as _json
+                print(f"\x00DOCENT_RESULT\x00{_json.dumps(_r)}", flush=True)
             else:
-                console.print(result)
+                console = get_console()
+                if hasattr(result, "to_shapes"):
+                    from docent.ui.renderers import render_shapes
+                    render_shapes(result.to_shapes(), console)
+                else:
+                    console.print(result)
 
     params = [
         inspect.Parameter("ctx", inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation=typer.Context),

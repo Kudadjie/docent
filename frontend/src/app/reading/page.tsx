@@ -574,12 +574,13 @@ ${sectionsHtml}
             </div>
 
             {/* How to add button */}
-            <GhostBtn
-              icon={<HelpCircle size={14} strokeWidth={1.5} />}
+            <button
               onClick={() => setShowInfo(true)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 9999, border: '1px solid rgba(139,92,246,0.35)', background: 'rgba(139,92,246,0.1)', color: '#a78bfa', fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap' }}
             >
+              <HelpCircle size={14} strokeWidth={1.5} />
               How to add?
-            </GhostBtn>
+            </button>
           </div>
 
           {/* Action bar */}
@@ -596,16 +597,21 @@ ${sectionsHtml}
             <div style={{ display: 'flex', gap: 6 }}>
               <GhostBtn
                 icon={<RefreshCw size={14} strokeWidth={1.5} />}
-                onClick={async () => { setBusy('refresh'); await refresh(); setBusy(null); }}
+                onClick={async () => {
+                  setBusy('refresh');
+                  const [,] = await Promise.all([refresh(), new Promise(r => setTimeout(r, 1500))]);
+                  setBusy(null);
+                }}
               >
                 {busy === 'refresh' ? 'Refreshing…' : 'Refresh'}
               </GhostBtn>
-              <GhostBtn
-                icon={<Download size={14} strokeWidth={1.5} />}
+              <button
                 onClick={handleSync}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 9999, border: '1px solid rgba(24,226,153,0.4)', background: 'rgba(24,226,153,0.1)', color: '#0fa76e', fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap' }}
               >
+                <Download size={14} strokeWidth={1.5} />
                 {busy === 'sync' ? 'Syncing…' : 'Sync Mendeley'}
-              </GhostBtn>
+              </button>
               <GhostBtn icon={<Printer size={14} strokeWidth={1.5} />} onClick={handleExport}>
                 Export Documents
               </GhostBtn>
@@ -759,7 +765,7 @@ ${sectionsHtml}
         </div>
 
         {/* Table */}
-        <div style={{ flex: 1, overflow: 'hidden', background: 'var(--bg-card)' }}>
+        <div style={{ flex: 1, overflow: 'hidden', background: 'var(--bg-card)', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           <PaperTable
             entries={filtered}
             newIds={newIds}

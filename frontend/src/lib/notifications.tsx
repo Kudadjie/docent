@@ -11,6 +11,7 @@ export interface AppNotification {
   body: string;
   timestamp: string;
   read: boolean;
+  href?: string;
 }
 
 interface NotificationContextValue {
@@ -55,13 +56,15 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   }, []);
 
   const addNotification = useCallback((n: Omit<AppNotification, 'id' | 'timestamp' | 'read'>) => {
-    const notif: AppNotification = {
-      ...n,
-      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      timestamp: new Date().toISOString(),
-      read: false,
-    };
     setNotifications(prev => {
+      const isDupe = prev.some(p => p.title === n.title && p.body === n.body && !p.read);
+      if (isDupe) return prev;
+      const notif: AppNotification = {
+        ...n,
+        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        timestamp: new Date().toISOString(),
+        read: false,
+      };
       const next = [notif, ...prev].slice(0, 50);
       saveNotifications(next);
       return next;

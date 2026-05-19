@@ -11,7 +11,7 @@ from typing import Any, Optional
 
 import httpx
 import uvicorn
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -430,6 +430,7 @@ async def get_doctor() -> JSONResponse:
 
     # ── OpenCode ──────────────────────────────────────────────────────────────
     async def _opencode_row() -> dict:
+        import shutil
         try:
             async with httpx.AsyncClient(timeout=3.0) as client:
                 r = await client.get("http://127.0.0.1:4096/global/health")
@@ -437,7 +438,19 @@ async def get_doctor() -> JSONResponse:
                     return _row("OpenCode", "OK", detail="server reachable at :4096")
         except Exception:
             pass
-        return _row("OpenCode", "WARN", detail="Not running — start with: opencode serve --port 4096")
+        # Server unreachable — distinguish between "not installed" and "not running".
+        oc_exe = shutil.which("opencode")
+        if oc_exe is None:
+            return _row(
+                "OpenCode",
+                "FAIL",
+                detail="Not installed — npm install -g opencode-ai (requires Node.js)",
+            )
+        return _row(
+            "OpenCode",
+            "WARN",
+            detail=f"Installed but not running — click 'Start server' in Settings, or run: opencode serve --port 4096",
+        )
 
     # ── Feynman ───────────────────────────────────────────────────────────────
     async def _feynman_row() -> dict:
@@ -475,7 +488,17 @@ async def get_doctor() -> JSONResponse:
     # ── NotebookLM ────────────────────────────────────────────────────────────
     def _notebooklm_sync() -> dict:
         try:
-            import notebooklm as _nlm
+            import contextlib, io as _io, sys as _sys
+            # Playwright emits "There was an error managing firefox; using browser
+            # found in the cache" to stderr on first import. Suppress it — it's
+            # harmless noise (Playwright found a cached browser and will use it).
+            if "notebooklm" not in _sys.modules:
+                import os as _os
+                _os.environ.setdefault("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "1")
+                with contextlib.redirect_stderr(_io.StringIO()):
+                    import notebooklm as _nlm
+            else:
+                import notebooklm as _nlm
             version = getattr(_nlm, "__version__", "-")
         except ImportError:
             return _row("NotebookLM", "FAIL", detail='not installed — pip install "notebooklm-py[browser]"')
@@ -693,8 +716,18 @@ async def _stream_studio_run(studio_action: str, args: dict[str, Any]):
             msg = str(exc).strip() or type(exc).__name__
             loop.call_soon_threadsafe(q.put_nowait, ('error', msg))
 
-    def _sse(data: dict) -> str:
-        return f"data: {json.dumps(data)}\n\n"
+    def _sse(data: dict) -> bytes:
+        # SSE comment line + the data event. The comment acts as a keepalive marker
+        # and adds bytes so chunks aren't coalesced by TCP Nagle on Windows.
+        # We yield bytes directly (not str) to avoid an extra encoding step in Starlette
+        # and to ensure each chunk goes through `transport.write()` as a single syscall.
+        return (f": ping\ndata: {json.dumps(data)}\n\n").encode("utf-8")
+
+    # Prime the response with a 2KB SSE comment. Chrome and other browsers may
+    # delay exposing chunks to JavaScript until the response body exceeds a small
+    # threshold; this padding forces the stream to start flowing immediately.
+    yield (": " + ("-" * 2048) + "\n\n").encode("utf-8")
+    await asyncio.sleep(0.01)
 
     thread = loop.run_in_executor(None, _run_in_thread)
     try:
@@ -704,6 +737,11 @@ async def _stream_studio_run(studio_action: str, args: dict[str, Any]):
                 evt = payload
                 if evt.message:
                     yield _sse({'type': 'log', 'phase': evt.phase, 'text': evt.message, 'level': evt.level})
+                    # asyncio.sleep with a small non-zero delay forces the event loop to
+                    # poll I/O and flush the transport's write buffer. sleep(0) alone is
+                    # not enough on Windows ProactorEventLoop — it schedules a callback
+                    # but doesn't guarantee an I/O flush cycle.
+                    await asyncio.sleep(0.01)
             elif kind == 'done':
                 result = payload
                 ok = not isinstance(result, _BM) or bool(getattr(result, 'ok', True))
@@ -826,6 +864,7 @@ _opencode_proc: Optional[subprocess.Popen] = None  # type: ignore[type-arg]
 @app.post("/api/opencode/start")
 async def opencode_start() -> JSONResponse:
     global _opencode_proc
+    import shutil
     # Check if already reachable
     try:
         async with httpx.AsyncClient(timeout=2.0) as client:
@@ -834,21 +873,63 @@ async def opencode_start() -> JSONResponse:
                 return JSONResponse({"ok": True, "status": "already_running"})
     except Exception:
         pass
+
+    # Resolve the executable. On Windows, npm installs `opencode.cmd` and Python's
+    # subprocess.Popen with a list arg does NOT find .cmd files unless we resolve
+    # the full path with shutil.which (which DOES check PATHEXT).
+    oc_exe = shutil.which("opencode")
+    if not oc_exe:
+        hint = (
+            "opencode not found on PATH. "
+            "Install with: npm install -g opencode-ai  "
+            "(needs Node.js — run `docent doctor` for setup help)."
+        )
+        return JSONResponse({"ok": False, "error": hint}, status_code=500)
+
     try:
         flags = 0
         if sys.platform == "win32":
             flags = subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
+        # Capture stderr so we can surface launch failures instead of silently DEVNULL'ing them.
         _opencode_proc = subprocess.Popen(
-            ["opencode", "serve", "--port", "4096"],
+            [oc_exe, "serve", "--port", "4096"],
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
             creationflags=flags,
         )
         # Give it a moment to start
-        await asyncio.sleep(1.5)
-        return JSONResponse({"ok": True, "status": "started", "pid": _opencode_proc.pid})
-    except FileNotFoundError:
-        return JSONResponse({"ok": False, "error": "opencode not found — install: npm install -g opencode"}, status_code=500)
+        await asyncio.sleep(2.0)
+
+        # Verify it actually came up by hitting the health endpoint.
+        if _opencode_proc.poll() is not None:
+            # Process exited already — read stderr for the reason.
+            rc = _opencode_proc.returncode
+            err = ""
+            try:
+                err = (_opencode_proc.stderr.read() or b"").decode("utf-8", errors="replace")[:400] if _opencode_proc.stderr else ""
+            except Exception:
+                pass
+            _opencode_proc = None
+            return JSONResponse(
+                {"ok": False, "error": f"opencode exited immediately (rc={rc}). {err}".strip()},
+                status_code=500,
+            )
+
+        try:
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                r = await client.get("http://127.0.0.1:4096/global/health")
+                if r.status_code == 200:
+                    return JSONResponse({"ok": True, "status": "started", "pid": _opencode_proc.pid})
+        except Exception:
+            pass
+
+        # Process is alive but server not yet reachable — report that, don't kill.
+        return JSONResponse({
+            "ok": True,
+            "status": "started",
+            "pid": _opencode_proc.pid,
+            "warning": "Process started but :4096 not yet reachable. Retry status check in a few seconds.",
+        })
     except Exception as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
 
@@ -878,6 +959,195 @@ async def opencode_status() -> JSONResponse:
     return JSONResponse({"running": False})
 
 
+def _build_studio_cmd(body: StudioRunBody) -> list[str] | None:
+    """Build a `docent studio <action> ...` subprocess command from the UI form body."""
+    import shutil as _sh
+    action = _STUDIO_ACTION_MAP.get(body.action_id)
+    if not action:
+        return None
+    docent_exe = _sh.which("docent")
+    if not docent_exe:
+        return None
+
+    backend = _BACKEND_NORM.get(body.backend.lower().replace(" ", "_"), "free")
+    dest = body.dest.lower().replace(" →", "").strip()
+
+    cmd: list[str] = [docent_exe, "studio", action]
+
+    # Per-action arguments (mirrors _form_to_studio_args exactly)
+    if action in ("deep-research", "lit", "draft"):
+        cmd += ["--topic", body.topic, "--backend", backend, "--output", dest, "--confirmed"]
+        for g in (body.guides or []):
+            cmd += ["--guide-files", g]
+
+    elif action in ("review", "replicate", "audit"):
+        cmd += ["--artifact", body.artifact, "--backend", backend, "--output", dest]
+        for g in (body.guides or []):
+            cmd += ["--guide-files", g]
+
+    elif action == "compare":
+        cmd += ["--artifact-a", body.artifact_a, "--artifact-b", body.artifact_b,
+                "--backend", backend, "--output", dest]
+        for g in (body.guides or []):
+            cmd += ["--guide-files", g]
+
+    elif action in ("search-papers", "scholarly-search"):
+        cmd += ["--query", body.query, "--max-results", str(body.max_results)]
+
+    elif action == "get-paper":
+        cmd += ["--arxiv-id", body.arxiv_id]
+
+    elif action == "to-notebook":
+        if body.src_path:
+            cmd += ["--sources-file", body.src_path]
+        if body.out_path:
+            cmd += ["--output-file", body.out_path]
+        cmd += ["--max-sources", str(body.max_sources)]
+        if not body.nlm:
+            cmd += ["--no-run-nlm-research"]
+        if not body.gate:
+            cmd += ["--no-run-quality-gate"]
+        if not body.persp:
+            cmd += ["--no-run-perspectives"]
+
+    elif action == "config-set":
+        cmd += ["--key", body.cfg_key, "--value", body.cfg_val]
+
+    # config-show has no extra args
+    return cmd
+
+
+@app.websocket("/ws/studio/run")
+async def studio_run_ws(websocket: WebSocket):
+    """WebSocket endpoint — pipes `docent studio <action>` subprocess stdout live.
+
+    Each stdout line from the CLI is `phase message`. We parse it and forward
+    it as a WebSocket JSON frame. asyncio subprocess pipes are true OS-level
+    async I/O — no SSE/HTTP buffering layer — so events arrive immediately.
+    """
+    await websocket.accept()
+
+    try:
+        body_raw = await websocket.receive_json()
+        body = StudioRunBody(**body_raw)
+    except WebSocketDisconnect:
+        return
+    except Exception as exc:
+        try:
+            await websocket.send_json({"type": "error", "message": f"Bad request: {exc}"})
+        except Exception:
+            pass
+        return
+
+    cmd = _build_studio_cmd(body)
+    if cmd is None:
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "message": (
+                    f"Action '{body.action_id}' not found or 'docent' not on PATH. "
+                    "Make sure docent is installed and on PATH."
+                ),
+            })
+        except Exception:
+            pass
+        return
+
+    env = {
+        **os.environ,
+        "PYTHONIOENCODING": "utf-8",
+        "NO_COLOR": "1",              # strip Rich ANSI markup
+        "FORCE_COLOR": "0",
+        "TERM": "dumb",               # tell Rich it's not a real terminal
+        "COLUMNS": "1000",            # prevent Rich from wrapping long paths across lines
+        "DOCENT_UI_SUBPROCESS": "1",  # suppress post-action result rendering in CLI
+    }
+
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,   # merge stderr → stdout so warnings appear
+        env=env,
+    )
+
+    import re as _re
+    output_file: str | None = None
+    notebook_id: str | None = None
+    _RESULT_MARKER = "\x00DOCENT_RESULT\x00"
+
+    try:
+        assert proc.stdout is not None
+        async for raw_bytes in proc.stdout:
+            line = raw_bytes.decode("utf-8", errors="replace").rstrip()
+            if not line:
+                continue
+
+            # Structured result line emitted by cli.py when DOCENT_UI_SUBPROCESS=1.
+            # Parse it for output_file / notebook_id and skip forwarding to the UI.
+            if _RESULT_MARKER in line:
+                try:
+                    payload = json.loads(line[line.index(_RESULT_MARKER) + len(_RESULT_MARKER):])
+                    output_file = payload.get("output_file") or output_file
+                    notebook_id = payload.get("notebook_id") or notebook_id
+                except Exception:
+                    pass
+                continue
+
+            # Strip any residual Rich markup (e.g. "[dim]phase[/]") left by non-TTY output
+            line_clean = _re.sub(r"\[/?[^\]]*\]", "", line).strip()
+            if not line_clean:
+                continue
+
+            # Parse "phase message" format produced by _drive_progress.
+            # Real pipeline phases are always lowercase snake_case (web_search,
+            # paper_search, compile, done, …). Filter out startup banners, update
+            # notices ("UPDATE AVAILABLE: feynman …"), Rich progress-bar artifacts,
+            # and any other line whose first word isn't a valid phase identifier.
+            parts = line_clean.split(None, 1)
+            raw_phase = parts[0]
+            if not _re.match(r'^[a-z][a-z0-9_]*$', raw_phase):
+                continue  # skip: banner chars, UPDATE, @companion-ai/…, etc.
+            phase = raw_phase
+            text  = parts[1] if len(parts) > 1 else line_clean
+
+            try:
+                await websocket.send_json({"type": "log", "phase": phase, "text": text})
+            except Exception:
+                proc.terminate()
+                return
+
+    except WebSocketDisconnect:
+        proc.terminate()
+        return
+    except Exception as exc:
+        try:
+            await websocket.send_json({"type": "error", "message": str(exc)})
+        except Exception:
+            pass
+        proc.terminate()
+        return
+
+    await proc.wait()
+
+    result: dict[str, Any] = {}
+    if output_file:
+        result["output_file"] = output_file
+    if notebook_id:
+        result["notebook_id"] = notebook_id
+
+    try:
+        if proc.returncode == 0:
+            await websocket.send_json({
+                "type": "done", "status": "success", "raw": json.dumps(result),
+            })
+        else:
+            await websocket.send_json({
+                "type": "done", "status": "failure", "raw": json.dumps({}),
+            })
+    except Exception:
+        pass
+
+
 @app.post("/api/studio/run")
 async def studio_run(body: StudioRunBody):
     if body.action_id not in _STUDIO_ACTION_MAP:
@@ -900,4 +1170,11 @@ def run_server(host: str = "127.0.0.1", port: int = 7432) -> None:
     from docent.tools import discover_tools
     discover_tools()
     load_plugins()
-    uvicorn.run(app, host=host, port=port)
+    uvicorn.run(
+        app,
+        host=host,
+        port=port,
+        # Disable response buffering so SSE events reach the browser immediately.
+        # h11_max_incomplete_event_size=None prevents h11 from buffering partial events.
+        h11_max_incomplete_event_size=16 * 1024 * 1024,
+    )
