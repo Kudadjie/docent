@@ -149,6 +149,23 @@ def _route_output(inputs: Any, out_path: Path, sources_path: Path | None, contex
 # Preflight checks
 # ---------------------------------------------------------------------------
 
+def _bail(context: Context, rich_msg: str, plain_msg: str | None = None) -> None:
+    """Unified error exit for preflights.
+
+    CLI callers: print the Rich-marked-up message and raise typer.Exit(1).
+    MCP / server callers: raise RuntimeError with the plain message so the
+    caller can surface it through SSE / JSON rather than losing it to stdout.
+    """
+    import re
+    if context.via_mcp:
+        msg = plain_msg or re.sub(r"\[/?[^\]]+\]", "", rich_msg).strip()
+        raise RuntimeError(msg)
+    import typer
+    from docent.ui.console import get_console
+    get_console().print(rich_msg)
+    raise typer.Exit(1)
+
+
 def _preflight_free_backend(inputs: BaseModel, context: Context) -> None:
     """Show free-tier disclaimer, guide Tavily signup if key is missing, and confirm.
 
@@ -301,84 +318,64 @@ def _preflight_docent(inputs: BaseModel, context: Context) -> None:
 
     if effective not in ("opencode", None, ""):
         # LiteLLM backend — validate credentials early for a clean error message
-        import typer
-        from docent.ui.console import get_console
         from docent.errors import AuthError
         try:
             from .backend import get_backend
             get_backend(context.settings, override=backend_name)
         except (AuthError, ValueError) as e:
-            get_console().print(f"[red]Error:[/] {e}")
-            raise typer.Exit(1)
+            _bail(context, f"[red]Error:[/] {e}")
         return  # No server or Tavily check needed for LiteLLM backends
 
     # OpenCode checks
-    import typer
-    from docent.ui.console import get_console
     from docent.utils.model_health import verify_opencode_model
     from .oc_client import OcClient, OcModelError, OcUnavailableError
 
-    oc = OcClient(
-        provider=context.settings.research.oc_provider,
-    )
+    oc = OcClient(provider=context.settings.research.oc_provider)
     if not oc.is_available():
-        get_console().print(
+        _bail(context,
             "[red]Error:[/] OpenCode server is not running. "
             "Start it with: [cyan]opencode serve --port 4096[/]\n"
-            "Alternatives (no OpenCode required):\n"
-            "  • [cyan]--backend free[/]    — Tavily + DuckDuckGo, no API key needed\n"
-            "  • [cyan]--backend groq[/]    — free Groq API (set GROQ_API_KEY)\n"
-            "  • [cyan]--backend feynman[/] — Feynman agent (API credits required)"
+            "Alternatives: --backend free  |  --backend groq  |  --backend feynman",
+            "OpenCode server is not running. "
+            "Start it with: opencode serve --port 4096\n"
+            "Alternatives: --backend free | --backend groq | --backend feynman",
         )
-        raise typer.Exit(1)
 
     planner = context.settings.research.oc_model_planner
-    console = get_console()
     try:
-        with console.status(f"Checking model availability: [cyan]{planner}[/]..."):
+        if not context.via_mcp:
+            from docent.ui.console import get_console
+            console = get_console()
+            with console.status(f"Checking model availability: [cyan]{planner}[/]..."):
+                verify_opencode_model(planner, provider=context.settings.research.oc_provider)
+            console.print(f"[green]✓[/] Model [cyan]{planner}[/] is available")
+        else:
             verify_opencode_model(planner, provider=context.settings.research.oc_provider)
-        console.print(f"[green]✓[/] Model [cyan]{planner}[/] is available")
     except OcModelError as e:
-        console.print(
-            f"[red]FAIL[/] Model [cyan]{planner}[/] is not usable: {e}\n"
-            "Alternatives (no OpenCode required):\n"
-            "  • [cyan]--backend free[/]    — Tavily + DuckDuckGo, no API key needed\n"
-            "  • [cyan]--backend groq[/]    — free Groq API (set GROQ_API_KEY)\n"
-            "  • [cyan]--backend feynman[/] — Feynman agent (API credits required)\n"
-            "Or fix the model issue above then retry."
+        _bail(context,
+            f"[red]FAIL[/] Model [cyan]{planner}[/] is not usable: {e}",
+            f"Model {planner!r} is not usable: {e}",
         )
-        raise typer.Exit(1)
     except OcUnavailableError:
-        console.print(
-            f"[red]FAIL[/] Model check failed: {_oc_unavailable_reason(oc)}\n"
-            "Alternatives (no OpenCode required):\n"
-            "  • [cyan]--backend free[/]    — Tavily + DuckDuckGo, no API key needed\n"
-            "  • [cyan]--backend groq[/]    — free Groq API (set GROQ_API_KEY)\n"
-            "  • [cyan]--backend feynman[/] — Feynman agent (API credits required)"
+        _bail(context,
+            f"[red]FAIL[/] Model check failed: {_oc_unavailable_reason(oc)}",
+            f"Model check failed: {_oc_unavailable_reason(oc)}",
         )
-        raise typer.Exit(1)
     except Exception as e:
-        console.print(
-            f"[red]FAIL[/] Model check failed for [cyan]{planner}[/] ({e})\n"
-            "Most likely cause: quota exhausted on the provider.\n"
-            "Options:\n"
-            "  • Switch to [cyan]--backend free[/] (no OpenCode or API key required)\n"
-            "  • Switch to [cyan]--backend groq[/] (free Groq API)\n"
-            "  • Switch to [cyan]--backend feynman[/] (no OpenCode required)\n"
-            "  • Change model: [cyan]docent studio config-set --key oc_model_planner --value <model>[/]\n"
-            "  • Top up your OpenCode subscription and retry"
+        _bail(context,
+            f"[red]FAIL[/] Model check failed for [cyan]{planner}[/] ({e})",
+            f"Model check failed for {planner!r}: {e}",
         )
-        raise typer.Exit(1)
 
     tavily_key = _resolve_tavily_key(context)
     if not tavily_key:
-        get_console().print(
+        _bail(context,
             "[red]Error:[/] Tavily API key is required for the [cyan]opencode[/] backend.\n"
-            "Get one at https://tavily.com (free tier: 1,000 calls/month).\n"
-            "Or switch to [cyan]--backend free[/] — uses DuckDuckGo when no Tavily key is set.\n"
-            "Or switch to [cyan]--backend groq[/] — works without Tavily (uses manual search)."
+            "Get one at https://tavily.com — free tier 1,000 calls/month.\n"
+            "Or switch to --backend free (DuckDuckGo fallback) or --backend groq.",
+            "Tavily API key is required for the opencode backend. "
+            "Get one at https://tavily.com or switch to --backend free.",
         )
-        raise typer.Exit(1)
 
 
 def _preflight_oc_only(inputs: BaseModel, context: Context) -> None:
@@ -396,63 +393,54 @@ def _preflight_oc_only(inputs: BaseModel, context: Context) -> None:
 
     if effective not in ("opencode", None, ""):
         # LiteLLM backend — validate credentials early
-        import typer
-        from docent.ui.console import get_console
         from docent.errors import AuthError
         try:
             from .backend import get_backend
             get_backend(context.settings, override=backend_name)
         except (AuthError, ValueError) as e:
-            get_console().print(f"[red]Error:[/] {e}")
-            raise typer.Exit(1)
+            _bail(context, f"[red]Error:[/] {e}")
         return
 
     # OpenCode checks
-    import typer
-    from docent.ui.console import get_console
     from docent.utils.model_health import verify_opencode_model
     from .oc_client import OcClient, OcModelError, OcUnavailableError
 
-    oc = OcClient(
-        provider=context.settings.research.oc_provider,
-    )
+    oc = OcClient(provider=context.settings.research.oc_provider)
     if not oc.is_available():
-        get_console().print(
+        _bail(context,
             "[red]Error:[/] OpenCode server is not running. "
             "Start it with: [cyan]opencode serve --port 4096[/]\n"
-            "Alternatives: [cyan]--backend groq[/] or [cyan]--backend feynman[/]"
+            "Alternatives: --backend groq  |  --backend feynman",
+            "OpenCode server is not running. "
+            "Start it with: opencode serve --port 4096\n"
+            "Alternatives: --backend groq | --backend feynman",
         )
-        raise typer.Exit(1)
 
     reviewer = context.settings.research.oc_model_reviewer
-    console = get_console()
     try:
-        with console.status(f"Checking model availability: [cyan]{reviewer}[/]..."):
+        if not context.via_mcp:
+            from docent.ui.console import get_console
+            console = get_console()
+            with console.status(f"Checking model availability: [cyan]{reviewer}[/]..."):
+                verify_opencode_model(reviewer, provider=context.settings.research.oc_provider)
+            console.print(f"[green]✓[/] Model [cyan]{reviewer}[/] is available")
+        else:
             verify_opencode_model(reviewer, provider=context.settings.research.oc_provider)
-        console.print(f"[green]✓[/] Model [cyan]{reviewer}[/] is available")
     except OcModelError as e:
-        console.print(
-            f"[red]FAIL[/] Model [cyan]{reviewer}[/] is not usable: {e}\n"
-            "Alternatives: [cyan]--backend groq[/] or [cyan]--backend feynman[/], "
-            "or fix the model issue above then retry."
+        _bail(context,
+            f"[red]FAIL[/] Model [cyan]{reviewer}[/] is not usable: {e}",
+            f"Model {reviewer!r} is not usable: {e}",
         )
-        raise typer.Exit(1)
     except OcUnavailableError:
-        console.print(
-            f"[red]FAIL[/] Model check failed: {_oc_unavailable_reason(oc)}\n"
-            "Alternatives: [cyan]--backend groq[/] or [cyan]--backend feynman[/]"
+        _bail(context,
+            f"[red]FAIL[/] Model check failed: {_oc_unavailable_reason(oc)}",
+            f"Model check failed: {_oc_unavailable_reason(oc)}",
         )
-        raise typer.Exit(1)
     except Exception as e:
-        console.print(
-            f"[red]FAIL[/] Model check failed for [cyan]{reviewer}[/] ({e})\n"
-            "Options:\n"
-            "  • Switch to [cyan]--backend groq[/] (free Groq API)\n"
-            "  • Switch to [cyan]--backend feynman[/] (no OpenCode required)\n"
-            "  • Change model: [cyan]docent studio config-set --key oc_model_reviewer --value <model>[/]\n"
-            "  • Top up your OpenCode subscription and retry"
+        _bail(context,
+            f"[red]FAIL[/] Model check failed for [cyan]{reviewer}[/] ({e})",
+            f"Model check failed for {reviewer!r}: {e}",
         )
-        raise typer.Exit(1)
 
 
 # ---------------------------------------------------------------------------

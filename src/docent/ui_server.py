@@ -642,14 +642,15 @@ async def _stream_studio_run(studio_action: str, args: dict[str, Any]):
     def _run_in_thread() -> None:
         from docent.core import ProgressEvent, run_action
         from docent.core.invoke import make_context
-        # via_mcp=False: keeps human-readable output format (not MCP synthesis prompts).
-        # confirmed=True is passed in args for free-tier runs — _preflight_free_backend
-        # checks that flag directly and skips the interactive TTY confirm.
-        ctx = make_context(via_mcp=False)
+        # via_mcp=True: all preflights take the structured path (_bail raises RuntimeError
+        # instead of print+typer.Exit so errors reach the SSE stream with real messages).
+        # confirmed=True in args handles the free-tier gate without a second prompt.
+        ctx = make_context(via_mcp=True)
         try:
             raw = run_action('studio', studio_action, args, context=ctx)
         except BaseException as exc:
-            loop.call_soon_threadsafe(q.put_nowait, ('error', str(exc)))
+            msg = str(exc).strip() or type(exc).__name__
+            loop.call_soon_threadsafe(q.put_nowait, ('error', msg))
             return
 
         if not _inspect.isgenerator(raw):
@@ -666,7 +667,8 @@ async def _stream_studio_run(studio_action: str, args: dict[str, Any]):
                     loop.call_soon_threadsafe(q.put_nowait, ('done', stop.value))
                     return
         except BaseException as exc:
-            loop.call_soon_threadsafe(q.put_nowait, ('error', str(exc)))
+            msg = str(exc).strip() or type(exc).__name__
+            loop.call_soon_threadsafe(q.put_nowait, ('error', msg))
 
     def _sse(data: dict) -> str:
         return f"data: {json.dumps(data)}\n\n"
