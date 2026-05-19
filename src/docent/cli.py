@@ -512,6 +512,16 @@ def main(
     from docent.utils.paths import logs_dir
     configure_logging(verbose=settings.verbose, log_dir=logs_dir())
 
+    # Show the startup banner when running interactively (not piped, not serve/setup/doctor).
+    _banner_skip = (
+        ctx.invoked_subcommand in ("setup", "doctor", "serve", None)
+        or settings.no_color
+        or not __import__("sys").stdout.isatty()
+    )
+    if not _banner_skip:
+        from docent._banner import print_banner
+        print_banner(get_console())
+
     # Skip startup prompts for commands that manage their own output or that run
     # as a stdio server (serve) where stdout must be pure JSON-RPC.
     _skip_startup = ctx.invoked_subcommand in ("setup", "doctor", "serve")
