@@ -9,6 +9,9 @@
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 <script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="studio-shared.jsx"></script>
+<script type="text/babel" src="studio-form.jsx"></script>
+<script type="text/babel" src="studio-output.jsx"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body, #root { height: 100%; width: 100%; overflow: hidden; }
@@ -18,1327 +21,73 @@ body { font-family: 'Inter', system-ui, sans-serif; -webkit-font-smoothing: anti
 ::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.2); border-radius: 4px; }
 
 @keyframes fadeInUp { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
-@keyframes logo-dot-blink { 0%,100%{opacity:1} 50%{opacity:0} }
+@keyframes slideInRight { from { opacity:0; transform:translateX(20px); } to { opacity:1; transform:none; } }
+@keyframes logo-dot-blink { 0%,100%{opacity:1} 50%{opacity:0.15} }
 @keyframes log-pulse { 0%,100%{opacity:1} 50%{opacity:0.55} }
 @keyframes dot-bounce { 0%,80%,100%{transform:translateY(0);opacity:0.4} 40%{transform:translateY(-2px);opacity:1} }
 
 .log-line { animation: fadeInUp 0.15s ease forwards; }
 .log-line.live { animation: fadeInUp 0.15s ease forwards, log-pulse 1.2s ease-in-out infinite 0.15s; }
-.btn-hover:hover { background: var(--hover-bg) !important; }
+.src-chip { animation: fadeInUp 0.2s ease forwards; }
 .tap { transition: transform 0.05s ease, background 0.12s ease; }
 .tap:active { transform: scale(0.98); }
 .collapsible-toggle:hover .chev { transform: translateX(1px); }
 .thinking-dot { display:inline-block; width:3px; height:3px; border-radius:50%; background:currentColor; margin:0 1px; animation: dot-bounce 1.2s ease-in-out infinite; }
 .thinking-dot:nth-child(2) { animation-delay: 0.15s; }
 .thinking-dot:nth-child(3) { animation-delay: 0.3s; }
+.action-row:hover .row-action { opacity: 1 !important; }
+.history-drawer { animation: slideInRight 0.18s ease forwards; }
 </style>
 </head>
 <body>
 <div id="root"></div>
 <script type="text/babel">
 
-// ─── CONSTANTS ────────────────────────────────────────────────────────────────
-const SANS = "'Inter', system-ui, sans-serif";
-const MONO = "'Geist Mono', ui-monospace, monospace";
-const BRAND = '#18E299';
-const BRAND_DEEP = '#0fa76e';
-const BRAND_LIGHT = '#d4fae8';
-const AMBER = '#C37D0D';
-const AMBER_BG = '#FFF7ED';
-const AMBER_BORDER = '#F59E0B';
-const RED = '#D45656';
-
-// ─── THEME FACTORY ────────────────────────────────────────────────────────────
-function makeTheme(dark) {
-  return {
-    bg:        dark ? '#0d0d0d' : '#ffffff',
-    surface:   dark ? '#111111' : '#fafafa',
-    card:      dark ? '#141414' : '#ffffff',
-    fg1:       dark ? '#ededed' : '#0d0d0d',
-    fg2:       dark ? '#c0c0c0' : '#333333',
-    fg3:       dark ? '#a0a0a0' : '#666666',
-    fg4:       dark ? '#606060' : '#888888',
-    gray100:   dark ? '#1e1e1e' : '#f5f5f5',
-    gray200:   dark ? '#2a2a2a' : '#e5e5e5',
-    border:    dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
-    borderMd:  dark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.09)',
-    logoBorder:dark ? 'rgba(255,255,255,0.22)' : '#0d0d0d',
-    rowHover:  dark ? '#1a1a1a' : '#fafafa',
-    amberBg:   dark ? 'rgba(245,158,11,0.10)' : '#FFF7ED',
-    amberText: dark ? '#F5A623' : '#B45309',
-    redBg:     dark ? 'rgba(212,86,86,0.12)' : '#FEF2F2',
-    redText:   dark ? '#F87171' : '#B91C1C',
-    blueBg:    dark ? 'rgba(59,130,246,0.12)' : '#EFF6FF',
-    blueText:  dark ? '#60A5FA' : '#1D4ED8',
-    codeBg:    dark ? '#0a0a0a' : '#fafafa',
-    dark,
-  };
-}
-const ThemeCtx = React.createContext(makeTheme(false));
-const useTheme = () => React.useContext(ThemeCtx);
-
-// ─── ICONS (Lucide) ───────────────────────────────────────────────────────────
-const ico = (paths, size=16, sw=1.5) => () => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
-       strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round">{paths}</svg>
-);
-const Ico = {
-  LayoutDashboard: ico(<>
-    <rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/>
-    <rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/>
-  </>),
-  BookOpen: ico(<>
-    <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
-    <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
-  </>),
-  FlaskConical: ico(<>
-    <path d="M10 2v7.31"/><path d="M14 9.3V1.99"/><path d="M8.5 2h7"/>
-    <path d="M14 9.3a6.5 6.5 0 1 1-4 0"/><path d="M5.52 16h12.96"/>
-  </>),
-  Play: ico(<polygon points="6 3 20 12 6 21 6 3"/>, 13, 2),
-  Square: ico(<rect x="5" y="5" width="14" height="14" rx="1"/>, 12, 2),
-  CheckCircle: ico(<>
-    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-    <polyline points="22 4 12 14.01 9 11.01"/>
-  </>),
-  XCircle: ico(<>
-    <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/>
-    <line x1="9" y1="9" x2="15" y2="15"/>
-  </>),
-  AlertTriangle: ico(<>
-    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-    <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-  </>, 14, 2),
-  Copy: ico(<>
-    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-  </>, 12, 1.6),
-  Plus: ico(<><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></>, 14, 2),
-  ChevronDown: ico(<polyline points="6 9 12 15 18 9"/>, 14, 2),
-  ChevronRight: ico(<polyline points="9 18 15 12 9 6"/>, 14, 2),
-  Search: ico(<><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></>, 14),
-  ExternalLink: ico(<>
-    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-    <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
-  </>, 12),
-  File: ico(<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></>, 13),
-  X: ico(<><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>, 12, 2),
-  Sun: ico(<>
-    <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/>
-    <line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
-    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/>
-    <line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
-    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
-  </>, 12, 2),
-  Moon: ico(<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>, 12, 2),
-  Book: ico(<>
-    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
-    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
-  </>, 14),
-  Database: ico(<>
-    <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
-    <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
-  </>, 13),
-};
-
-// ─── ACTIONS DEFINITION ───────────────────────────────────────────────────────
-const ACTIONS = {
-  research: {
-    label: 'Research',
-    items: [
-      { id:'deep',     label:'Deep research',     form:'topic' },
-      { id:'lit',      label:'Literature review', form:'topic' },
-      { id:'peer',     label:'Peer review',       form:'artifact' },
-      { id:'compare',  label:'Compare',           form:'compare' },
-      { id:'draft',    label:'Draft',             form:'topic' },
-      { id:'replicate',label:'Replicate',         form:'artifact' },
-      { id:'audit',    label:'Audit',             form:'artifact' },
-    ],
-  },
-  utilities: {
-    label: 'Utilities',
-    items: [
-      { id:'search',     label:'Search papers',    form:'search' },
-      { id:'getpaper',   label:'Get paper',        form:'getpaper' },
-      { id:'scholarly',  label:'Scholarly search', form:'search' },
-      { id:'notebook',   label:'To notebook',      form:'notebook' },
-    ],
-  },
-  config: {
-    label: 'Config',
-    items: [
-      { id:'cfgshow', label:'Show config',    form:'cfgshow' },
-      { id:'cfgset',  label:'Set config key', form:'cfgset' },
-    ],
-  },
-};
-const ALL_ACTIONS = Object.values(ACTIONS).flatMap(g => g.items);
-const findAction = (id) => ALL_ACTIONS.find(a => a.id === id) || ALL_ACTIONS[0];
-
-const BACKENDS = ['Free','Feynman','Docent','Groq','Gemini','OpenRouter','Anthropic','OpenAI','Ollama','LM Studio'];
-
-// ─── PRIMITIVE COMPONENTS ─────────────────────────────────────────────────────
-
-function PrimaryBtn({ icon, children, onClick, disabled, full }) {
-  return (
-    <button onClick={onClick} disabled={disabled} className="tap"
-      style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', gap:7,
-        padding:'9px 18px', borderRadius:9999, background: disabled ? '#a8e8cf' : BRAND,
-        color:'#0d0d0d', fontFamily:SANS, fontSize:13, fontWeight:600, border:'none',
-        cursor: disabled?'not-allowed':'pointer', width: full?'100%':'auto', opacity: disabled?0.7:1 }}>
-      {icon}
-      {children}
-    </button>
-  );
-}
-
-function GhostBtn({ icon, children, onClick, size='md', danger }) {
-  const T = useTheme();
-  const [hov, setHov] = React.useState(false);
-  const pad = size === 'sm' ? '4px 10px' : '5px 12px';
-  return (
-    <button onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)} onClick={onClick}
-      style={{ display:'inline-flex', alignItems:'center', gap:6, padding:pad, borderRadius:9999,
-        border:`1px solid ${T.borderMd}`, background: hov ? T.gray100 : 'transparent',
-        color: danger ? RED : T.fg2, fontFamily:SANS, fontSize:13, fontWeight:500,
-        cursor:'pointer', transition:'background 0.12s', whiteSpace:'nowrap' }}>
-      {icon && <span style={{ color: danger ? RED : T.fg4, display:'flex' }}>{icon}</span>}
-      {children}
-    </button>
-  );
-}
-
-function PillToggle({ active, onClick, disabled, tooltip, children }) {
-  const T = useTheme();
-  const [hov, setHov] = React.useState(false);
-  return (
-    <button onClick={disabled?null:onClick} onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)}
-      title={tooltip}
-      style={{ padding:'5px 12px', borderRadius:9999,
-        border: active ? `1px solid ${BRAND}` : `1px solid ${T.borderMd}`,
-        background: active ? BRAND : (hov && !disabled ? T.gray100 : 'transparent'),
-        color: active ? '#0d0d0d' : (disabled ? T.fg4 : T.fg2),
-        fontFamily:SANS, fontSize:12, fontWeight:500,
-        cursor: disabled?'not-allowed':'pointer', opacity:disabled?0.55:1,
-        transition:'all 0.12s', whiteSpace:'nowrap' }}>
-      {children}
-    </button>
-  );
-}
-
-function Segmented({ value, onChange, options }) {
-  const T = useTheme();
-  return (
-    <div style={{ display:'inline-flex', padding:2, background:T.gray100, borderRadius:9999,
-        border:`1px solid ${T.border}` }}>
-      {options.map(opt => {
-        const active = opt === value;
-        return (
-          <button key={opt} onClick={()=>onChange(opt)}
-            style={{ padding:'4px 14px', borderRadius:9999, border:'none',
-              background: active ? T.bg : 'transparent',
-              color: active ? T.fg1 : T.fg3,
-              fontFamily:SANS, fontSize:12, fontWeight: active?500:400, cursor:'pointer',
-              transition:'all 0.12s',
-              boxShadow: active ? '0 1px 2px rgba(0,0,0,0.06)' : 'none' }}>{opt}</button>
-        );
-      })}
-    </div>
-  );
-}
-
-function Input({ value, onChange, placeholder, type='text', mono }) {
-  const T = useTheme();
-  const [focus, setFocus] = React.useState(false);
-  return (
-    <input type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder}
-      onFocus={()=>setFocus(true)} onBlur={()=>setFocus(false)}
-      style={{ width:'100%', padding:'8px 12px',
-        border:`1px solid ${focus?BRAND:T.borderMd}`, borderRadius:8,
-        fontFamily: mono ? MONO : SANS, fontSize:13, color:T.fg1, background:T.bg,
-        outline:'none', transition:'border-color 0.15s' }} />
-  );
-}
-
-function Label({ children, hint }) {
-  const T = useTheme();
-  return (
-    <label style={{ display:'block', marginBottom:6, fontFamily:SANS, fontSize:12,
-        fontWeight:500, color:T.fg3 }}>
-      {children}
-      {hint && <span style={{ color:T.fg4, fontWeight:400, marginLeft:6 }}>{hint}</span>}
-    </label>
-  );
-}
-
-function Field({ label, hint, children }) {
-  return (
-    <div>
-      <Label hint={hint}>{label}</Label>
-      {children}
-    </div>
-  );
-}
-
-function Note({ tone='info', children }) {
-  const T = useTheme();
-  const bg = tone === 'warn' ? T.amberBg : T.gray100;
-  const text = tone === 'warn' ? T.amberText : T.fg3;
-  return (
-    <div style={{ fontFamily:SANS, fontSize:11.5, color:text, padding:'6px 10px',
-        borderRadius:6, background: tone==='warn'?bg:'transparent',
-        borderLeft: tone==='warn' ? `2px solid ${AMBER_BORDER}` : 'none',
-        marginTop:8, lineHeight:1.5 }}>
-      {children}
-    </div>
-  );
-}
-
-function Toggle({ checked, onChange }) {
-  const T = useTheme();
-  return (
-    <button onClick={()=>onChange(!checked)}
-      style={{ width:30, height:18, borderRadius:9999, border:'none',
-        background: checked ? BRAND : T.gray200,
-        position:'relative', cursor:'pointer', padding:0,
-        transition:'background 0.15s', flexShrink:0 }}>
-      <span style={{ position:'absolute', top:2, left: checked?14:2,
-        width:14, height:14, borderRadius:'50%', background:'#fff',
-        boxShadow:'0 1px 2px rgba(0,0,0,0.2)', transition:'left 0.15s' }} />
-    </button>
-  );
-}
-
-function Stepper({ value, onChange, min=1, max=99 }) {
-  const T = useTheme();
-  return (
-    <div style={{ display:'inline-flex', alignItems:'center',
-        border:`1px solid ${T.borderMd}`, borderRadius:8, overflow:'hidden', background:T.bg }}>
-      <button onClick={()=>onChange(Math.max(min, value-1))}
-        style={{ width:28, height:30, border:'none', background:'transparent', cursor:'pointer',
-          color:T.fg3, fontSize:16, fontFamily:SANS }}>−</button>
-      <div style={{ width:36, textAlign:'center', fontFamily:MONO, fontSize:12,
-          color:T.fg1, fontWeight:500, borderLeft:`1px solid ${T.border}`,
-          borderRight:`1px solid ${T.border}`, padding:'7px 0' }}>{value}</div>
-      <button onClick={()=>onChange(Math.min(max, value+1))}
-        style={{ width:28, height:30, border:'none', background:'transparent', cursor:'pointer',
-          color:T.fg3, fontSize:14, fontFamily:SANS }}>+</button>
-    </div>
-  );
-}
-
-function CodeBlock({ children, mono=true }) {
-  const T = useTheme();
-  const [copied, setCopied] = React.useState(false);
-  const text = typeof children === 'string' ? children : '';
-  return (
-    <div style={{ position:'relative', background:T.codeBg, border:`1px solid ${T.border}`,
-        borderRadius:8, padding:'10px 36px 10px 12px', fontFamily: mono?MONO:SANS,
-        fontSize:11.5, color:T.fg2, lineHeight:1.55, letterSpacing:'0.2px',
-        wordBreak:'break-all', whiteSpace:'pre-wrap' }}>
-      {children}
-      <button onClick={()=>{ if(text){ navigator.clipboard?.writeText(text); setCopied(true); setTimeout(()=>setCopied(false),1200);} }}
-        title="Copy"
-        style={{ position:'absolute', top:6, right:6, width:24, height:24, borderRadius:6,
-          border:'none', background:'transparent', color: copied?BRAND_DEEP:T.fg4, cursor:'pointer',
-          display:'flex', alignItems:'center', justifyContent:'center' }}>
-        {copied ? <Ico.CheckCircle/> : <Ico.Copy/>}
-      </button>
-    </div>
-  );
-}
-
-function Chip({ color, children }) {
-  const T = useTheme();
-  return (
-    <span style={{ display:'inline-flex', alignItems:'center', gap:5,
-        padding:'4px 10px', borderRadius:9999,
-        background: color ? color+'1f' : T.gray100,
-        color: color || T.fg2,
-        fontFamily:MONO, fontSize:11, fontWeight:600, letterSpacing:'0.4px',
-        textTransform:'uppercase' }}>
-      {children}
-    </span>
-  );
-}
-
-// ─── DOCENT WORDMARK ──────────────────────────────────────────────────────────
-function DocentWordmark() {
-  const T = useTheme();
-  const src = T.dark ? '../assets/logo-light.svg' : '../assets/logo.svg';
-  return <img src={src} alt="Docent" style={{ height:24, display:'block' }} />;
-}
-function StatusIndicator({ dotState='idle' }) {
-  const T = useTheme();
-  const dotColor = { idle:BRAND, working:'#F5A623', error:'#E53535', done:BRAND }[dotState];
-  const dotAnim = dotState === 'working' ? 'logo-dot-blink 1s step-end infinite'
-                : dotState === 'error'   ? 'logo-dot-blink 0.7s step-end infinite' : 'none';
-  return (
-    <div style={{ height:24, display:'inline-flex', alignItems:'center', padding:'0 9px', gap:6,
-        borderRadius:9999, border:`1.5px solid ${T.logoBorder}`, background:T.bg }}>
-      <span style={{ width:6, height:6, borderRadius:'50%', background:dotColor,
-        animation:dotAnim }} />
-      <span style={{ fontFamily:SANS, fontSize:11.5, fontWeight:600, color:T.fg1,
-        letterSpacing:'-0.2px', lineHeight:1 }}>docent</span>
-    </div>
-  );
-}
-
-// ─── SIDEBAR ──────────────────────────────────────────────────────────────────
-function Sidebar({ active, onNav }) {
-  const T = useTheme();
-  const items = [
-    { id:'dashboard', label:'Dashboard', Icon: Ico.LayoutDashboard, count:null },
-    { id:'reading',   label:'Reading',   Icon: Ico.BookOpen,        count:12 },
-    { id:'studio',    label:'Studio',    Icon: Ico.FlaskConical,    count:null },
-  ];
-  return (
-    <aside style={{ width:220, flexShrink:0, height:'100%',
-        borderRight:`1px solid ${T.border}`, background:T.bg,
-        display:'flex', flexDirection:'column', overflow:'hidden' }}>
-      <div style={{ height:56, display:'flex', alignItems:'center', padding:'0 18px',
-          borderBottom:`1px solid ${T.border}`, flexShrink:0 }}>
-        <DocentWordmark />
-      </div>
-      <nav style={{ flex:1, padding:'10px 8px', display:'flex', flexDirection:'column', gap:2 }}>
-        {items.map(({ id, label, Icon, count }) => {
-          const isActive = id === active;
-          return (
-            <button key={id} onClick={()=>onNav?.(id)}
-              style={{ width:'100%', display:'flex', alignItems:'center', gap:9,
-                padding:'7px 10px', borderRadius:8, border:'none', cursor:'pointer',
-                fontFamily:SANS, fontSize:13, fontWeight: isActive?500:400,
-                color: isActive ? BRAND_DEEP : T.fg3,
-                background: isActive ? BRAND+'22' : 'transparent',
-                transition:'background 0.1s, color 0.1s', textAlign:'left' }}>
-              <span style={{ color: isActive ? BRAND_DEEP : T.fg4, display:'flex', flexShrink:0 }}>
-                <Icon/>
-              </span>
-              {label}
-              {isActive && count != null && (
-                <span style={{ marginLeft:'auto', fontFamily:MONO, fontSize:9,
-                  color:BRAND_DEEP, background:BRAND+'33', padding:'1px 6px',
-                  borderRadius:9999, letterSpacing:'0.3px', textTransform:'uppercase',
-                  fontWeight:600 }}>{count}</span>
-              )}
-            </button>
-          );
-        })}
-      </nav>
-      <div style={{ padding:'12px 18px', borderTop:`1px solid ${T.border}`,
-          display:'flex', alignItems:'center', gap:8 }}>
-        <div style={{ width:28, height:28, borderRadius:'50%', background:BRAND+'22',
-            color:BRAND_DEEP, display:'flex', alignItems:'center', justifyContent:'center',
-            fontFamily:SANS, fontSize:12, fontWeight:600, flexShrink:0 }}>A</div>
-        <div>
-          <div style={{ fontFamily:SANS, fontSize:12, fontWeight:500, color:T.fg1 }}>Alex R.</div>
-          <div style={{ fontFamily:SANS, fontSize:11, color:T.fg4 }}>alex@lab.edu</div>
-        </div>
-      </div>
-    </aside>
-  );
-}
-
-function StatusBanner({ dark, setDark }) {
-  const T = useTheme();
-  const stats = [
-    { label:'QUEUE', value:12 }, { label:'DATABASE', value:45 }, { label:'MENDELEY', value:40 },
-  ];
-  return (
-    <div style={{ height:40, flexShrink:0, background:T.surface,
-        borderBottom:`1px solid ${T.border}`, display:'flex', alignItems:'center',
-        padding:'0 24px', gap:24 }}>
-      {stats.map(({ label, value }) => (
-        <div key={label} style={{ display:'flex', alignItems:'center', gap:7 }}>
-          <span style={{ fontFamily:MONO, fontSize:10, fontWeight:500, color:T.fg4,
-            letterSpacing:'0.7px', textTransform:'uppercase' }}>{label}</span>
-          <span style={{ fontFamily:MONO, fontSize:11, fontWeight:600, color:T.fg1,
-            letterSpacing:'0.4px' }}>{value}</span>
-        </div>
-      ))}
-      <div style={{ flex:1 }} />
-      <button onClick={()=>setDark(!dark)}
-        style={{ display:'flex', alignItems:'center', gap:5, padding:'3px 10px',
-          borderRadius:9999, border:`1px solid ${T.borderMd}`, background:'transparent',
-          cursor:'pointer', fontFamily:MONO, fontSize:10, letterSpacing:'0.5px',
-          textTransform:'uppercase', color:T.fg3 }}>
-        {dark ? <Ico.Sun/> : <Ico.Moon/>}
-        {dark ? 'Light' : 'Dark'}
-      </button>
-      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-        <span style={{ fontFamily:MONO, fontSize:10, color:T.fg4,
-          letterSpacing:'0.5px', textTransform:'uppercase' }}>Synced 2m ago</span>
-        <StatusIndicator dotState="idle" />
-      </div>
-    </div>
-  );
-}
-
-// ─── ACTION LIST (left, top) ──────────────────────────────────────────────────
-function ActionList({ activeId, onSelect }) {
-  const T = useTheme();
-  return (
-    <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
-      {Object.entries(ACTIONS).map(([key, group]) => (
-        <div key={key}>
-          <div style={{ padding:'0 4px 6px', fontFamily:MONO, fontSize:10, fontWeight:500,
-              color:T.fg4, letterSpacing:'0.7px', textTransform:'uppercase' }}>
-            {group.label}
-          </div>
-          <div style={{ display:'flex', flexDirection:'column', gap:1 }}>
-            {group.items.map(item => {
-              const isActive = item.id === activeId;
-              return (
-                <button key={item.id} onClick={()=>onSelect(item.id)}
-                  className={'tap ' + (isActive ? '' : 'btn-hover')}
-                  style={{ width:'100%', textAlign:'left', padding:'6px 10px',
-                    borderRadius:6, border:'none', cursor:'pointer',
-                    fontFamily:SANS, fontSize:12.5,
-                    fontWeight: isActive ? 500 : 400,
-                    color: isActive ? BRAND_DEEP : T.fg2,
-                    background: isActive ? BRAND+'1f' : 'transparent',
-                    transition:'all 0.1s', display:'flex', alignItems:'center',
-                    '--hover-bg': T.gray100 }}>
-                  <span style={{ width:4, height:4, borderRadius:'50%',
-                    background: isActive ? BRAND : 'transparent', marginRight:9 }} />
-                  {item.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ─── BACKEND SELECTOR ─────────────────────────────────────────────────────────
-function BackendSelector({ value, onChange, freeDisabled }) {
-  return (
-    <div style={{ display:'flex', flexWrap:'wrap', gap:5 }}>
-      {BACKENDS.map(b => (
-        <PillToggle key={b} active={value === b} onClick={()=>onChange(b)}
-          disabled={freeDisabled && b === 'Free'}
-          tooltip={freeDisabled && b === 'Free' ? 'Not available for this action' : null}>
-          {b}
-        </PillToggle>
-      ))}
-    </div>
-  );
-}
-
-// ─── GUIDE FILES ──────────────────────────────────────────────────────────────
-function GuideFiles({ files, setFiles }) {
-  const T = useTheme();
-  const [open, setOpen] = React.useState(false);
-  const [draft, setDraft] = React.useState('');
-  return (
-    <div>
-      <button onClick={()=>setOpen(o=>!o)} className="collapsible-toggle"
-        style={{ display:'flex', alignItems:'center', gap:5, background:'transparent',
-          border:'none', cursor:'pointer', padding:'2px 0', color:T.fg3,
-          fontFamily:SANS, fontSize:12, fontWeight:500 }}>
-        <span className="chev" style={{ display:'flex', transition:'transform 0.12s',
-          transform: open?'rotate(0deg)':'rotate(-90deg)' }}>
-          <Ico.ChevronDown />
-        </span>
-        Add guide files <span style={{ color:T.fg4, fontWeight:400 }}>(optional)</span>
-      </button>
-      {open && (
-        <div style={{ marginTop:8, display:'flex', flexDirection:'column', gap:6 }}>
-          <div style={{ display:'flex', gap:6 }}>
-            <div style={{ flex:1 }}>
-              <Input value={draft} onChange={setDraft} placeholder="path/to/guide.pdf" mono />
-            </div>
-            <button onClick={()=>{ if(draft.trim()){ setFiles([...files, draft.trim()]); setDraft(''); } }}
-              style={{ padding:'8px 12px', borderRadius:8,
-                border:`1px solid ${T.borderMd}`, background:T.gray100,
-                color:T.fg2, fontFamily:SANS, fontSize:12, fontWeight:500, cursor:'pointer',
-                display:'inline-flex', alignItems:'center', gap:4 }}>
-              <Ico.Plus/> Add
-            </button>
-          </div>
-          {files.length > 0 && (
-            <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
-              {files.map((f, i) => (
-                <div key={i} style={{ display:'flex', alignItems:'center', gap:6,
-                    padding:'4px 8px', background:T.gray100, borderRadius:6,
-                    fontFamily:MONO, fontSize:11, color:T.fg2 }}>
-                  <span style={{ color:T.fg4, display:'flex' }}><Ico.File/></span>
-                  <span style={{ flex:1, overflow:'hidden', textOverflow:'ellipsis',
-                    whiteSpace:'nowrap' }}>{f}</span>
-                  <button onClick={()=>setFiles(files.filter((_,j)=>j!==i))}
-                    style={{ background:'transparent', border:'none', cursor:'pointer',
-                      color:T.fg4, display:'flex', padding:2 }}>
-                    <Ico.X/>
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── FORMS (per action) ───────────────────────────────────────────────────────
-function FormTopic({ state, set }) {
-  return <>
-    <Field label="Topic">
-      <Input value={state.topic} onChange={v=>set('topic', v)}
-        placeholder="e.g. storm surge inundation under climate change" />
-    </Field>
-    <Field label="Backend">
-      <BackendSelector value={state.backend} onChange={v=>set('backend', v)} />
-      {state.backend === 'Free'
-        ? <Note>No API key needed.</Note>
-        : <Note tone="warn">Runs 3–30 min. May time out over MCP.</Note>}
-    </Field>
-    <Field label="Output destination">
-      <Segmented value={state.dest} onChange={v=>set('dest', v)} options={['Local','Notebook','Vault']} />
-    </Field>
-    <GuideFiles files={state.guides} setFiles={v=>set('guides', v)} />
-  </>;
-}
-
-function FormArtifact({ state, set }) {
-  return <>
-    <Field label="Artifact" hint="arXiv ID, PDF path, or URL">
-      <Input value={state.artifact} onChange={v=>set('artifact', v)}
-        placeholder="2401.12345 / paper.pdf / https://…" mono />
-    </Field>
-    <Field label="Backend">
-      <BackendSelector value={state.backend === 'Free' ? 'Anthropic' : state.backend}
-        onChange={v=>set('backend', v)} freeDisabled />
-      <Note tone="warn">Runs 3–30 min. May time out over MCP.</Note>
-    </Field>
-    <GuideFiles files={state.guides} setFiles={v=>set('guides', v)} />
-  </>;
-}
-
-function FormCompare({ state, set }) {
-  return <>
-    <Field label="Artifact A" hint="arXiv / PDF / URL">
-      <Input value={state.artifactA} onChange={v=>set('artifactA', v)} placeholder="2401.12345" mono />
-    </Field>
-    <Field label="Artifact B" hint="arXiv / PDF / URL">
-      <Input value={state.artifactB} onChange={v=>set('artifactB', v)} placeholder="2310.06825" mono />
-    </Field>
-    <Field label="Backend">
-      <BackendSelector value={state.backend === 'Free' ? 'Anthropic' : state.backend}
-        onChange={v=>set('backend', v)} freeDisabled />
-      <Note tone="warn">Runs 3–30 min. May time out over MCP.</Note>
-    </Field>
-    <GuideFiles files={state.guides} setFiles={v=>set('guides', v)} />
-  </>;
-}
-
-function FormSearch({ state, set }) {
-  return <>
-    <Field label="Query">
-      <Input value={state.query} onChange={v=>set('query', v)}
-        placeholder="e.g. coastal flooding bayesian" />
-    </Field>
-    <Field label="Max results">
-      <Stepper value={state.maxResults} onChange={v=>set('maxResults', v)} min={1} max={100} />
-    </Field>
-  </>;
-}
-
-function FormGetPaper({ state, set }) {
-  return <>
-    <Field label="arXiv ID or URL">
-      <Input value={state.arxivId} onChange={v=>set('arxivId', v)}
-        placeholder="e.g. 2401.12345 or arxiv.org/abs/…" mono />
-    </Field>
-  </>;
-}
-
-function FormNotebook({ state, set }) {
-  const T = useTheme();
-  return <>
-    <Field label="Output file path" hint="(optional)">
-      <Input value={state.outPath} onChange={v=>set('outPath', v)}
-        placeholder="Auto-detect most recent" mono />
-    </Field>
-    <Field label="Sources file path" hint="(optional)">
-      <Input value={state.srcPath} onChange={v=>set('srcPath', v)}
-        placeholder="sources.json" mono />
-    </Field>
-    <Field label="Max sources">
-      <Stepper value={state.maxSources} onChange={v=>set('maxSources', v)} min={1} max={200} />
-    </Field>
-    <div style={{ display:'flex', flexDirection:'column', gap:8,
-        padding:'10px 12px', background:T.gray100, borderRadius:8 }}>
-      {[
-        ['nlm','NLM research'],
-        ['gate','Quality gate'],
-        ['persp','Perspectives'],
-      ].map(([k, lbl]) => (
-        <div key={k} style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-          <span style={{ fontFamily:SANS, fontSize:12.5, color:T.fg2 }}>{lbl}</span>
-          <Toggle checked={state[k]} onChange={v=>set(k, v)} />
-        </div>
-      ))}
-    </div>
-  </>;
-}
-
-function FormCfgShow() {
-  const T = useTheme();
-  return <div style={{ fontFamily:SANS, fontSize:12.5, color:T.fg3, lineHeight:1.5 }}>
-    Display current configuration values. API keys are masked.
-  </div>;
-}
-
-function FormCfgSet({ state, set }) {
-  return <>
-    <Field label="Key">
-      <Input value={state.cfgKey} onChange={v=>set('cfgKey', v)}
-        placeholder="anthropic_api_key" mono />
-    </Field>
-    <Field label="Value">
-      <Input value={state.cfgVal} onChange={v=>set('cfgVal', v)}
-        placeholder="sk-ant-…" mono />
-    </Field>
-  </>;
-}
-
-const FORM_MAP = {
-  topic: FormTopic, artifact: FormArtifact, compare: FormCompare,
-  search: FormSearch, getpaper: FormGetPaper, notebook: FormNotebook,
-  cfgshow: FormCfgShow, cfgset: FormCfgSet,
-};
-
-function runLabel(action) {
-  return action.id === 'search' || action.id === 'scholarly' ? 'Search'
-       : action.id === 'getpaper' ? 'Look up'
-       : action.id === 'cfgshow' ? 'Show config'
-       : action.id === 'cfgset'  ? 'Save'
-       : action.id === 'notebook'? 'Build notebook'
-       : `Run ${action.label.toLowerCase()}`;
-}
-
-// ─── FREE-TIER DISCLAIMER PANEL ───────────────────────────────────────────────
-function FreeTierGate({ onCancel, onProceed }) {
-  const T = useTheme();
-  React.useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') onCancel(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onCancel]);
-  return (
-    <div style={{ background:T.amberBg, borderLeft:`3px solid ${AMBER_BORDER}`,
-        borderRadius:'4px 8px 8px 4px', padding:'14px 16px', marginTop:12,
-        animation:'fadeInUp 0.18s ease' }}>
-      <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:8,
-          color: T.amberText, fontFamily:SANS, fontSize:12.5, fontWeight:600 }}>
-        <Ico.AlertTriangle /> Free tier — confirm before running
-      </div>
-      <ul style={{ listStyle:'none', padding:0, margin:'0 0 12px',
-          display:'flex', flexDirection:'column', gap:4 }}>
-        {[
-          'No AI synthesis — sources only',
-          'Quality depends on search coverage',
-          'Tavily optional (1k/month free); DuckDuckGo fallback',
-          'This is a starting point, not a finished report',
-        ].map(t => (
-          <li key={t} style={{ display:'flex', gap:8, fontFamily:SANS,
-              fontSize:12, color: T.amberText, lineHeight:1.55 }}>
-            <span style={{ marginTop:7, width:3, height:3, borderRadius:'50%',
-              background:T.amberText, flexShrink:0 }}/>
-            <span>{t}</span>
-          </li>
-        ))}
-      </ul>
-      <div style={{ display:'flex', gap:6, justifyContent:'flex-end' }}>
-        <GhostBtn size="sm" onClick={onCancel}>Cancel</GhostBtn>
-        <button onClick={onProceed} className="tap"
-          style={{ padding:'5px 14px', borderRadius:9999, background:BRAND,
-            color:'#0d0d0d', fontFamily:SANS, fontSize:12.5, fontWeight:600,
-            border:'none', cursor:'pointer' }}>
-          Yes, proceed
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ─── LEFT COLUMN ──────────────────────────────────────────────────────────────
-function LeftColumn({ actionId, setActionId, state, set, onRun, gating, setGating }) {
-  const T = useTheme();
-  const action = findAction(actionId);
-  const Form = FORM_MAP[action.form];
-
-  function handleRunClick() {
-    // Free-tier gate for actions that support Free backend
-    const usesFree = (action.form === 'topic') && state.backend === 'Free';
-    if (usesFree) { setGating(true); }
-    else { onRun(); }
-  }
-
-  return (
-    <aside style={{ width:380, flexShrink:0, height:'100%',
-        borderRight:`1px solid ${T.border}`, background:T.bg,
-        display:'flex', flexDirection:'column', overflow:'hidden' }}>
-      <div style={{ padding:'20px 22px 14px', borderBottom:`1px solid ${T.border}` }}>
-        <div style={{ display:'flex', alignItems:'center', gap:9, marginBottom:4 }}>
-          <span style={{ color:BRAND_DEEP, display:'flex' }}><Ico.FlaskConical/></span>
-          <h1 style={{ fontFamily:SANS, fontSize:18, fontWeight:600, color:T.fg1,
-            letterSpacing:'-0.3px' }}>Studio</h1>
-        </div>
-        <p style={{ fontFamily:SANS, fontSize:12.5, color:T.fg3 }}>
-          Run AI research actions on papers and topics
-        </p>
-      </div>
-
-      <div style={{ flex:1, overflowY:'auto', padding:'16px 22px 0' }}>
-        <ActionList activeId={actionId} onSelect={setActionId} />
-
-        <div style={{ height:1, background:T.border, margin:'18px 0 16px' }} />
-
-        <div style={{ marginBottom:12, fontFamily:MONO, fontSize:10, fontWeight:500,
-            color:T.fg4, letterSpacing:'0.7px', textTransform:'uppercase',
-            display:'flex', alignItems:'center', gap:8 }}>
-          <span>{action.label}</span>
-          <span style={{ flex:1, height:1, background:T.border }} />
-        </div>
-
-        <div style={{ display:'flex', flexDirection:'column', gap:14, paddingBottom:16 }}>
-          <Form state={state} set={set} />
-        </div>
-      </div>
-
-      <div style={{ padding:'14px 22px 18px', borderTop:`1px solid ${T.border}`,
-          background:T.bg, flexShrink:0 }}>
-        {gating ? (
-          <FreeTierGate onCancel={()=>setGating(false)} onProceed={()=>{ setGating(false); onRun(); }} />
-        ) : (
-          <PrimaryBtn full icon={<Ico.Play/>} onClick={handleRunClick}>
-            {runLabel(action)}
-          </PrimaryBtn>
-        )}
-      </div>
-    </aside>
-  );
-}
-
-// ─── LOG STREAM ───────────────────────────────────────────────────────────────
-const PHASE_TONE = {
-  info: 'info', plan: 'info', search: 'info', fetch: 'info', parse: 'info',
-  synth: 'info', save: 'info', done: 'info',
-  warn: 'warn', cost: 'warn',
-  error: 'error',
-};
-
-function LogLine({ phase, text, live }) {
-  const T = useTheme();
-  const tone = PHASE_TONE[phase] || 'info';
-  const phaseColor = tone === 'warn' ? T.amberText : tone === 'error' ? T.redText : BRAND_DEEP;
-  const phaseBg    = tone === 'warn' ? T.amberBg   : tone === 'error' ? T.redBg   : BRAND+'1c';
-  const rowBg      = tone === 'warn' ? T.amberBg   : tone === 'error' ? T.redBg   : 'transparent';
-  const rowBorder  = tone === 'warn' ? AMBER_BORDER : tone === 'error' ? '#E53535' : 'transparent';
-  return (
-    <div className={'log-line' + (live ? ' live' : '')}
-      style={{ display:'flex', gap:10, padding:'5px 12px 5px 10px',
-        background: rowBg, borderLeft: `2px solid ${rowBorder}`,
-        borderRadius:'2px 4px 4px 2px', alignItems:'flex-start' }}>
-      <span style={{ fontFamily:MONO, fontSize:9.5, fontWeight:600,
-          letterSpacing:'0.6px', textTransform:'uppercase',
-          color: phaseColor, background: phaseBg, padding:'2px 6px', borderRadius:4,
-          flexShrink:0, marginTop:1 }}>
-        {phase}
-      </span>
-      <span style={{ fontFamily:SANS, fontSize:12.5, color:T.fg2,
-          lineHeight:1.5, flex:1, wordBreak:'break-word' }}>
-        {text}
-        {live && (
-          <span style={{ marginLeft:4 }}>
-            <span className="thinking-dot"/><span className="thinking-dot"/><span className="thinking-dot"/>
-          </span>
-        )}
-      </span>
-    </div>
-  );
-}
-
-// ─── RESULT VARIANTS ──────────────────────────────────────────────────────────
-function ResultResearchSuccess({ topic }) {
-  const T = useTheme();
-  return (
-    <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
-      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-        <span style={{ color:BRAND_DEEP, display:'flex' }}><Ico.CheckCircle/></span>
-        <span style={{ fontFamily:SANS, fontSize:14, fontWeight:600, color:T.fg1 }}>Done</span>
-        <span style={{ fontFamily:MONO, fontSize:10, color:T.fg4, letterSpacing:'0.5px',
-            textTransform:'uppercase' }}>· 4m 12s · 18 sources</span>
-      </div>
-      <div>
-        <Label>Output file</Label>
-        <CodeBlock>~/docent/runs/2026-05-18_deep_storm-surge/report.md</CodeBlock>
-      </div>
-      <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-        <Chip color={BRAND_DEEP}>Notebook · nb_4f2c</Chip>
-        <a href="#" style={{ display:'inline-flex', alignItems:'center', gap:5,
-            fontFamily:SANS, fontSize:12, color:T.fg2, textDecoration:'none',
-            padding:'4px 10px', borderRadius:9999, border:`1px solid ${T.borderMd}` }}>
-          <Ico.ExternalLink/> Vault: research/storm-surge.md
-        </a>
-      </div>
-    </div>
-  );
-}
-
-function ResultFailure() {
-  const T = useTheme();
-  return (
-    <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-        <span style={{ color:T.redText, display:'flex' }}><Ico.XCircle/></span>
-        <span style={{ fontFamily:SANS, fontSize:14, fontWeight:600, color:T.fg1 }}>Run failed</span>
-      </div>
-      <div style={{ fontFamily:SANS, fontSize:12.5, color:T.fg2, lineHeight:1.55 }}>
-        Anthropic backend returned <span style={{ fontFamily:MONO, fontSize:11.5 }}>401 unauthorized</span>.
-        The API key is missing or invalid.
-      </div>
-      <div>
-        <Label>Fix</Label>
-        <CodeBlock>{`docent config set anthropic_api_key sk-ant-...`}</CodeBlock>
-      </div>
-    </div>
-  );
-}
-
-function ResultSearch({ query }) {
-  const T = useTheme();
-  const rows = [
-    { title:'Storm surge attribution under non-stationary sea level rise', year:2024, authors:'Lin, N. · Emanuel, K.', source:'arXiv' },
-    { title:'Bayesian inundation forecasting on US Atlantic coast', year:2023, authors:'Park, J. · Walsh, K. · Vitart, F.', source:'JGR' },
-    { title:'Compound flooding from tropical cyclones: a review', year:2022, authors:'Wahl, T. · Jain, S. · Bender, J.', source:'Nat. Geo.' },
-    { title:'High-resolution coupled modeling of coastal flood risk', year:2024, authors:'Marsooli, R. · Lin, N.', source:'PNAS' },
-    { title:'Tide-surge-wave interaction in shallow estuaries', year:2021, authors:'Vatvani, D. · Zijlema, M.', source:'Ocean Eng.' },
-  ];
-  return (
-    <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-      <div style={{ fontFamily:SANS, fontSize:12.5, color:T.fg3 }}>
-        {rows.length} results · query <span style={{ fontFamily:MONO, color:T.fg2 }}>"{query || 'storm surge inundation'}"</span>
-      </div>
-      <div style={{ border:`1px solid ${T.border}`, borderRadius:8, overflow:'hidden' }}>
-        <table style={{ width:'100%', borderCollapse:'collapse' }}>
-          <thead>
-            <tr style={{ background:T.surface, borderBottom:`1px solid ${T.border}` }}>
-              {['Title','Year','Authors','Source',''].map((c,i) => (
-                <th key={i} style={{ padding:'8px 12px', textAlign: i===4?'right':'left',
-                    fontFamily:MONO, fontSize:10, fontWeight:500, color:T.fg4,
-                    letterSpacing:'0.6px', textTransform:'uppercase' }}>{c}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r,i) => (
-              <tr key={i} style={{ borderBottom: i<rows.length-1 ? `1px solid ${T.border}` : 'none' }}>
-                <td style={{ padding:'10px 12px', fontFamily:SANS, fontSize:13, color:T.fg1,
-                    lineHeight:1.4 }}>
-                  <a href="#" style={{ color:T.fg1, textDecoration:'none',
-                      display:'inline-flex', alignItems:'center', gap:5 }}>
-                    {r.title}
-                    <span style={{ color:T.fg4, opacity:0.5, display:'flex' }}><Ico.ExternalLink/></span>
-                  </a>
-                </td>
-                <td style={{ padding:'10px 12px', fontFamily:MONO, fontSize:11, color:T.fg3,
-                    letterSpacing:'0.3px', whiteSpace:'nowrap' }}>{r.year}</td>
-                <td style={{ padding:'10px 12px', fontFamily:SANS, fontSize:12, color:T.fg3,
-                    whiteSpace:'nowrap' }}>{r.authors}</td>
-                <td style={{ padding:'10px 12px', fontFamily:MONO, fontSize:10, color:T.fg4,
-                    letterSpacing:'0.4px', textTransform:'uppercase', whiteSpace:'nowrap' }}>{r.source}</td>
-                <td style={{ padding:'8px 12px', textAlign:'right' }}>
-                  <GhostBtn size="sm">Look up</GhostBtn>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function ResultGetPaper() {
-  const T = useTheme();
-  const [more, setMore] = React.useState(false);
-  const abstract = `We present a high-resolution coupled ocean-atmosphere model for storm surge attribution on the US Atlantic coast. The framework combines tropical cyclone synthetic tracks with a barotropic surge solver and applies Bayesian downscaling to convert ensemble forecasts into actionable inundation depth probabilities. Validation against historical events including Sandy (2012), Florence (2018), and Ian (2022) shows skill improvements of 12–18% over the prior generation of operational systems.`;
-  const overview = `This paper extends Lin & Emanuel (2019) by adding non-stationary sea level rise priors to the Bayesian framework. The key novelty is the joint treatment of tide–surge–wave coupling in shallow estuaries — historically a major source of bias in operational forecasts. The authors release open-source code (GPL-3) and the trained surrogate model. For a graduate-level reader, the methodology section is dense but the results are compelling. Section 4.2 on hindcast skill is the most actionable for downstream users. The discussion acknowledges that intensity scaling under warmer climates remains uncertain and recommends future work coupling with a CMIP6 ensemble.`;
-  return (
-    <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
-      <div>
-        <div style={{ fontFamily:SANS, fontSize:16, fontWeight:600, color:T.fg1,
-            lineHeight:1.35, marginBottom:6, textWrap:'pretty' }}>
-          High-resolution coupled modeling of coastal flood risk under non-stationary sea level rise
-        </div>
-        <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap',
-            fontFamily:SANS, fontSize:12, color:T.fg3 }}>
-          <span>Marsooli, R. · Lin, N. · Emanuel, K.</span>
-          <span style={{ color:T.gray200 }}>·</span>
-          <span style={{ fontFamily:MONO, fontSize:10, color:T.fg4, letterSpacing:'0.4px',
-            textTransform:'uppercase' }}>PNAS 2024</span>
-          <span style={{ color:T.gray200 }}>·</span>
-          <span style={{ fontFamily:MONO, fontSize:10, color:T.fg4, letterSpacing:'0.4px' }}>
-            arXiv:2401.12345
-          </span>
-        </div>
-      </div>
-      <div>
-        <Label>Abstract</Label>
-        <div style={{ maxHeight:140, overflowY:'auto', background:T.surface,
-            border:`1px solid ${T.border}`, borderRadius:8, padding:'12px 14px',
-            fontFamily:SANS, fontSize:13, color:T.fg2, lineHeight:1.55 }}>
-          {abstract}
-        </div>
-      </div>
-      <div>
-        <Label>AI overview</Label>
-        <div style={{ fontFamily:SANS, fontSize:13, color:T.fg2, lineHeight:1.6 }}>
-          {more ? overview : overview.slice(0, 600) + '…'}
-          <button onClick={()=>setMore(m=>!m)}
-            style={{ marginLeft:6, background:'transparent', border:'none', cursor:'pointer',
-              fontFamily:SANS, fontSize:12, fontWeight:500, color:BRAND_DEEP, padding:0 }}>
-            {more ? 'Show less' : 'Show more'}
-          </button>
-        </div>
-      </div>
-      <div>
-        <a href="#" style={{ display:'inline-flex', alignItems:'center', gap:6,
-            padding:'6px 14px', borderRadius:9999, background:BRAND, color:'#0d0d0d',
-            fontFamily:SANS, fontSize:12.5, fontWeight:600, textDecoration:'none' }}>
-          <Ico.ExternalLink/> Open on arXiv
-        </a>
-      </div>
-    </div>
-  );
-}
-
-function PerspectiveSection({ title, color, body }) {
-  const T = useTheme();
-  const [open, setOpen] = React.useState(false);
-  return (
-    <div style={{ border:`1px solid ${T.border}`, borderRadius:8, overflow:'hidden' }}>
-      <button onClick={()=>setOpen(o=>!o)}
-        style={{ width:'100%', display:'flex', alignItems:'center', gap:8,
-          padding:'10px 14px', background:'transparent', border:'none', cursor:'pointer',
-          fontFamily:SANS, fontSize:13, fontWeight:500, color:T.fg1, textAlign:'left' }}>
-        <span style={{ width:8, height:8, borderRadius:'50%', background:color, flexShrink:0 }} />
-        {title}
-        <span style={{ marginLeft:'auto', color:T.fg4, display:'flex' }}>
-          {open ? <Ico.ChevronDown/> : <Ico.ChevronRight/>}
-        </span>
-      </button>
-      {open && (
-        <div style={{ padding:'0 14px 12px', fontFamily:SANS, fontSize:12.5, color:T.fg2,
-            lineHeight:1.6, borderTop:`1px solid ${T.border}` }}>
-          <div style={{ paddingTop:10 }}>{body}</div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ResultNotebook() {
-  const T = useTheme();
-  return (
-    <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
-      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-        <span style={{ color:BRAND_DEEP, display:'flex' }}><Ico.CheckCircle/></span>
-        <span style={{ fontFamily:SANS, fontSize:14, fontWeight:600, color:T.fg1 }}>
-          Notebook updated
-        </span>
-      </div>
-      <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-        <Chip color={BRAND_DEEP}>18 sources added</Chip>
-        <Chip color={AMBER}>2 failed</Chip>
-        <Chip color={'#3772cf'}>5 from NLM web</Chip>
-      </div>
-      <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
-        <span style={{ display:'inline-flex', alignItems:'center', gap:5,
-            padding:'3px 10px', borderRadius:9999, background:BRAND+'22', color:BRAND_DEEP,
-            fontFamily:MONO, fontSize:11, fontWeight:600, letterSpacing:'0.5px',
-            textTransform:'uppercase' }}>
-          <Ico.CheckCircle/> Quality gate · clean
-        </span>
-        <span style={{ fontFamily:SANS, fontSize:12, color:T.fg3 }}>
-          0 contradictions · 1 gap noted
-        </span>
-      </div>
-      <div>
-        <Label>Perspectives</Label>
-        <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-          <PerspectiveSection title="Practitioner" color="#3772cf"
-            body="Section 4.2 hindcast skill is directly usable; you can replace the prior Lin & Emanuel (2019) module with this one and expect 12–18% improvement. Note that the surrogate model is GPU-only above 4km resolution." />
-          <PerspectiveSection title="Skeptic" color={AMBER}
-            body="The validation set leans on three named storms. Generalization to compound events (rain + surge) is unclear and the paper does not run a leave-one-out cross-check across decades." />
-          <PerspectiveSection title="Beginner" color={BRAND_DEEP}
-            body="Read Section 1 and the figures in Section 5 first. Skip the Bayesian downscaling derivation (Sections 3.2–3.4) unless you specifically need the math — the headline result holds without it." />
-        </div>
-      </div>
-      <div style={{ background:T.amberBg, borderLeft:`3px solid ${AMBER_BORDER}`,
-          borderRadius:'4px 8px 8px 4px', padding:'12px 14px',
-          display:'flex', flexDirection:'column', gap:8 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:7,
-            color:T.amberText, fontFamily:SANS, fontSize:12.5, fontWeight:600 }}>
-          <Ico.AlertTriangle /> Save this notebook ID
-        </div>
-        <div style={{ fontFamily:SANS, fontSize:12, color:T.amberText, lineHeight:1.5 }}>
-          A new notebook was created. Run this once to make it the default:
-        </div>
-        <CodeBlock>{`docent config set notebook_id nb_4f2c`}</CodeBlock>
-      </div>
-    </div>
-  );
-}
-
-function ResultConfigShow() {
-  const T = useTheme();
-  const rows = [
-    ['default_backend',     'anthropic'],
-    ['notebook_id',         'nb_4f2c'],
-    ['vault_path',          '~/docent/vault'],
-    ['anthropic_api_key',   'sk-a...xZ9q'],
-    ['openai_api_key',      'sk-p...4Aj1'],
-    ['groq_api_key',        '(not set)'],
-    ['gemini_api_key',      '(not set)'],
-    ['tavily_api_key',      'tvly...kQ2m'],
-    ['mendeley_token',      'eyJh...A8wL'],
-    ['max_research_minutes','30'],
-  ];
-  return (
-    <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-      <div style={{ fontFamily:SANS, fontSize:12.5, color:T.fg3 }}>
-        Configuration (10 keys)
-      </div>
-      <div style={{ border:`1px solid ${T.border}`, borderRadius:8, overflow:'hidden' }}>
-        {rows.map(([k, v], i) => {
-          const unset = v === '(not set)';
-          return (
-            <div key={k} style={{ display:'grid', gridTemplateColumns:'minmax(180px, 0.4fr) 1fr',
-                gap:14, padding:'9px 14px',
-                borderBottom: i<rows.length-1 ? `1px solid ${T.border}` : 'none',
-                background: i%2===0 ? 'transparent' : T.surface,
-                alignItems:'center' }}>
-              <span style={{ fontFamily:MONO, fontSize:11, color:T.fg2,
-                letterSpacing:'0.3px' }}>{k}</span>
-              <span style={{ fontFamily:MONO, fontSize:11,
-                color: unset ? T.fg4 : T.fg1,
-                fontStyle: unset ? 'italic' : 'normal' }}>{v}</span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function ResultConfigSet() {
-  const T = useTheme();
-  return (
-    <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-        <span style={{ color:BRAND_DEEP, display:'flex' }}><Ico.CheckCircle/></span>
-        <span style={{ fontFamily:SANS, fontSize:14, fontWeight:600, color:T.fg1 }}>Key saved</span>
-      </div>
-      <div style={{ fontFamily:SANS, fontSize:12.5, color:T.fg2, lineHeight:1.6 }}>
-        <span style={{ fontFamily:MONO, fontSize:11.5, color:T.fg1 }}>anthropic_api_key</span>
-        {' was written to:'}
-      </div>
-      <CodeBlock>~/.docent/config.toml</CodeBlock>
-    </div>
-  );
-}
-
-// ─── OUTPUT PANEL ─────────────────────────────────────────────────────────────
-function OutputEmpty() {
-  const T = useTheme();
-  return (
-    <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center',
-        justifyContent:'center', gap:12, padding:24 }}>
-      <div style={{ width:56, height:56, borderRadius:14, background:BRAND+'1c',
-          display:'flex', alignItems:'center', justifyContent:'center', color:BRAND_DEEP }}>
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-             strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M10 2v7.31"/><path d="M14 9.3V1.99"/><path d="M8.5 2h7"/>
-          <path d="M14 9.3a6.5 6.5 0 1 1-4 0"/><path d="M5.52 16h12.96"/>
-        </svg>
-      </div>
-      <div style={{ fontFamily:SANS, fontSize:15, fontWeight:600, color:T.fg1 }}>
-        Run a research action
-      </div>
-      <div style={{ fontFamily:SANS, fontSize:13, color:T.fg3, textAlign:'center', maxWidth:320 }}>
-        Select an action on the left and fill in the form to get started.
-      </div>
-    </div>
-  );
-}
-
-function OutputPanel({ action, state, status, logs, onStop, onReset }) {
-  const T = useTheme();
-  const breadcrumb = action.label + (
-    state.topic ? ` · ${state.topic}` :
-    state.query ? ` · ${state.query}` :
-    state.artifact ? ` · ${state.artifact}` :
-    state.artifactA && state.artifactB ? ` · ${state.artifactA} vs ${state.artifactB}` :
-    state.arxivId ? ` · ${state.arxivId}` :
-    state.cfgKey ? ` · ${state.cfgKey}` : ''
-  );
-
-  const isResult = status === 'success' || status === 'failure';
-  const isRunning = status === 'running';
-  const isEmpty = status === 'idle';
-
-  // Result selection based on action
-  function renderResult() {
-    if (status === 'failure') return <ResultFailure />;
-    switch (action.id) {
-      case 'search':
-      case 'scholarly':  return <ResultSearch query={state.query} />;
-      case 'getpaper':   return <ResultGetPaper />;
-      case 'notebook':   return <ResultNotebook />;
-      case 'cfgshow':    return <ResultConfigShow />;
-      case 'cfgset':     return <ResultConfigSet />;
-      default:           return <ResultResearchSuccess topic={state.topic} />;
-    }
-  }
-
-  const logRef = React.useRef(null);
-  React.useEffect(() => {
-    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
-  }, [logs.length]);
-
-  return (
-    <section style={{ flex:1, display:'flex', flexDirection:'column', minWidth:0,
-        background:T.bg, overflow:'hidden' }}>
-
-      {/* Output header */}
-      {!isEmpty && (
-        <div style={{ flexShrink:0, padding:'14px 24px',
-            borderBottom:`1px solid ${T.border}`,
-            display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}>
-          <div style={{ display:'flex', alignItems:'center', gap:10, minWidth:0 }}>
-            {isRunning && (
-              <span style={{ width:8, height:8, borderRadius:'50%', background:BRAND,
-                animation:'logo-dot-blink 1.2s step-end infinite', flexShrink:0 }} />
-            )}
-            <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0 }}>
-              <span style={{ fontFamily:SANS, fontSize:13, fontWeight:500, color:T.fg1,
-                  whiteSpace:'nowrap' }}>
-                {action.label}
-              </span>
-              <span style={{ fontFamily:SANS, fontSize:13, color:T.gray200 }}>·</span>
-              <span style={{ fontFamily:MONO, fontSize:11.5, color:T.fg3,
-                  letterSpacing:'0.2px', overflow:'hidden', textOverflow:'ellipsis',
-                  whiteSpace:'nowrap', minWidth:0 }}>
-                {breadcrumb.replace(action.label + ' · ', '') || '—'}
-              </span>
-            </div>
-          </div>
-          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-            {isRunning && (
-              <GhostBtn icon={<Ico.Square/>} onClick={onStop} danger>Stop</GhostBtn>
-            )}
-            {isResult && (
-              <GhostBtn onClick={onReset}>Clear</GhostBtn>
-            )}
-          </div>
-        </div>
-      )}
-
-      <div style={{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column' }}>
-        {isEmpty && <OutputEmpty />}
-
-        {(isRunning || isResult) && logs.length > 0 && (
-          <div ref={logRef} style={{ padding:'14px 22px',
-              borderBottom: isResult ? `1px solid ${T.border}` : 'none',
-              maxHeight: isResult ? 260 : 'none', overflowY: isResult ? 'auto' : 'visible' }}>
-            <div style={{ fontFamily:MONO, fontSize:10, fontWeight:500, color:T.fg4,
-                letterSpacing:'0.7px', textTransform:'uppercase', marginBottom:8,
-                paddingLeft:2 }}>
-              Activity log
-            </div>
-            <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
-              {logs.map((l, i) => (
-                <LogLine key={i} phase={l.phase} text={l.text}
-                  live={isRunning && i === logs.length - 1} />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {isResult && (
-          <div style={{ padding:'18px 24px 24px' }}>
-            {renderResult()}
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
-// ─── SCRIPTED LOGS (per action) ───────────────────────────────────────────────
-const SCRIPTS = {
-  deep: [
-    { phase:'plan',   text:'Decomposing topic into 4 sub-questions' },
-    { phase:'search', text:'arXiv: 47 candidates; filtering by relevance' },
-    { phase:'search', text:'Semantic Scholar: 18 candidates' },
-    { phase:'fetch',  text:'Downloading 12 PDFs in parallel' },
-    { phase:'parse',  text:'Extracting sections, tables, figures' },
-    { phase:'cost',   text:'Estimated synthesis cost: $0.42 (4k tokens)' },
-    { phase:'synth',  text:'Drafting outline → 7 sections, 18 citations' },
-    { phase:'synth',  text:'Writing body paragraphs (section 3 of 7)' },
-    { phase:'save',   text:'Wrote report.md and citations.bib' },
-    { phase:'done',   text:'Run complete in 4m 12s' },
-  ],
-  notebook: [
-    { phase:'plan',   text:'Loading sources.json (24 entries)' },
-    { phase:'fetch',  text:'Resolving DOIs and arXiv IDs' },
-    { phase:'parse',  text:'Quality gate: scanning for contradictions' },
-    { phase:'search', text:'NLM web research: 5 supplementary sources' },
-    { phase:'synth',  text:'Generating perspectives (3 personas)' },
-    { phase:'warn',   text:'2 sources failed quality gate (broken DOI)' },
-    { phase:'save',   text:'Notebook nb_4f2c updated' },
-    { phase:'done',   text:'18 sources added in 1m 38s' },
-  ],
-  search: [
-    { phase:'search', text:'Querying arXiv API' },
-    { phase:'parse',  text:'Ranking by recency × citation count' },
-    { phase:'done',   text:'5 results' },
-  ],
-  scholarly: [
-    { phase:'search', text:'Querying Semantic Scholar' },
-    { phase:'search', text:'Cross-referencing with arXiv' },
-    { phase:'done',   text:'5 results' },
-  ],
-  getpaper: [
-    { phase:'fetch',  text:'Resolving arXiv:2401.12345' },
-    { phase:'parse',  text:'Extracting abstract and metadata' },
-    { phase:'synth',  text:'Generating AI overview' },
-    { phase:'done',   text:'Paper details ready' },
-  ],
-  cfgshow: [{ phase:'done', text:'Loaded ~/.docent/config.toml' }],
-  cfgset:  [{ phase:'save', text:'Writing ~/.docent/config.toml' }, { phase:'done', text:'Key saved' }],
-};
-const scriptFor = (id) => SCRIPTS[id] || SCRIPTS.deep;
-
 // ─── APP ──────────────────────────────────────────────────────────────────────
+const {
+  SANS, MONO, BRAND, BRAND_DEEP,
+  makeTheme, ThemeCtx, useTheme,
+  Ico, ACTION_PHASES, scriptFor, findAction, ALL_ACTIONS,
+  Sidebar, StatusBanner,
+  LeftColumn, CmdKPalette, PresetSaveModal,
+  OutputPanel, HistoryDrawer,
+} = window;
+
+function timeAgo(ts) {
+  const diff = (Date.now() - ts) / 1000;
+  if (diff < 60) return `${Math.floor(diff)}s ago`;
+  if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
+  return `${Math.floor(diff/86400)}d ago`;
+}
+
+function actionSummary(action, s) {
+  switch (action.id) {
+    case 'deep': case 'lit': case 'draft':       return s.topic;
+    case 'peer': case 'replicate': case 'audit': return s.artifact;
+    case 'compare':                              return `${s.artifactA} vs ${s.artifactB}`;
+    case 'search': case 'scholarly':             return s.query;
+    case 'getpaper':                             return s.arxivId;
+    case 'cfgset':                               return s.cfgKey;
+    case 'notebook':                             return 'notebook build';
+    case 'cfgshow':                              return 'all keys';
+  }
+  return '';
+}
+
 function App() {
   const [tweaks, setTweak] = window.useTweaks(/*EDITMODE-BEGIN*/{
     "darkMode": true,
-    "demoState": "custom",
-    "demoAction": "cfgshow"
+    "demoState": "success",
+    "demoAction": "deep",
+    "historyOpen": false
   }/*EDITMODE-END*/);
 
   const dark = !!tweaks.darkMode;
   const T = React.useMemo(() => makeTheme(dark), [dark]);
 
   // form state — superset of all action forms
-  const [actionId, setActionId] = React.useState('deep');
+  const [actionId, setActionId] = React.useState(tweaks.demoAction || 'deep');
   const [state, setState] = React.useState({
     topic: 'storm surge inundation under climate change',
     backend: 'Anthropic',
@@ -1359,61 +108,167 @@ function App() {
   });
   const set = (k, v) => setState(s => ({ ...s, [k]: v }));
 
-  const [status, setStatus] = React.useState('running'); // idle | running | success | failure
-  const [logs, setLogs] = React.useState(() => scriptFor('deep').slice(0, 6));
+  // Run state — initial derives from current tweak demoState
+  const initialDemo = React.useMemo(() => {
+    const script = scriptFor(actionId);
+    const s = tweaks.demoState;
+    if (s === 'empty') return { status:'idle', logs:[], sources:[], currentPhase:null };
+    if (s === 'success') return { status:'success', logs:script, sources:script.flatMap(l=>l.sources||[]),
+                                  currentPhase:script[script.length-1]?.phase || null };
+    if (s === 'failure') return { status:'failure',
+                                  logs:[...script.slice(0,3), { phase:'error', text:'Anthropic backend returned 401 unauthorized' }],
+                                  sources:[], currentPhase:script[2]?.phase || null };
+    // default to running
+    const cut = Math.max(2, script.length - 3);
+    const partial = script.slice(0, cut);
+    return { status:'running', logs:partial, sources:partial.flatMap(l=>l.sources||[]),
+             currentPhase:partial[partial.length-1]?.phase || null };
+  }, []); // only on mount
+  const [status, setStatus] = React.useState(initialDemo.status);
+  const [logs, setLogs] = React.useState(initialDemo.logs);
+  const [sources, setSources] = React.useState(initialDemo.sources);
+  const [currentPhase, setCurrentPhase] = React.useState(initialDemo.currentPhase);
   const [gating, setGating] = React.useState(false);
-  const runRef = React.useRef({ timer: null, idx: 0 });
 
+  // Cmd-K & history & presets
+  const [cmdKOpen, setCmdKOpen] = React.useState(false);
+  const [historyOpen, setHistoryOpen] = React.useState(!!tweaks.historyOpen);
+  const [savePresetOpen, setSavePresetOpen] = React.useState(false);
+  const [recents, setRecents] = React.useState(['deep']);
+  const [presets, setPresets] = React.useState([
+    { id: 'p1', name: 'Weekly storm-surge scan', actionId: 'deep',
+      params: { topic:'storm surge inundation under climate change', backend:'Anthropic', dest:'Notebook', guides:[] }},
+    { id: 'p2', name: 'Compare LLM reasoning papers', actionId: 'compare',
+      params: { artifactA:'2401.12345', artifactB:'2310.06825', backend:'Anthropic', guides:[] }},
+  ]);
+
+  // Run history
+  const [runs, setRuns] = React.useState([
+    { id:'r1', actionId:'deep',    actionLabel:'Deep research',
+      detail:'storm surge inundation under climate change', status:'success',
+      timeAgo:'12m ago', startedAt: Date.now() - 12*60*1000,
+      state:{ topic:'storm surge inundation under climate change', backend:'Anthropic', dest:'Notebook', guides:[] },
+      logs: scriptFor('deep'), sources: scriptFor('deep').find(l=>l.sources)?.sources || [],
+      currentPhase:'save' },
+    { id:'r2', actionId:'notebook', actionLabel:'To notebook',
+      detail:'18 sources · clean', status:'success',
+      timeAgo:'1h ago', startedAt: Date.now() - 60*60*1000,
+      state:{ outPath:'', srcPath:'', maxSources:20, nlm:true, gate:true, persp:true },
+      logs: scriptFor('notebook'), sources:[], currentPhase:'save' },
+    { id:'r3', actionId:'peer',    actionLabel:'Peer review',
+      detail:'2401.12345', status:'failure',
+      timeAgo:'2h ago', startedAt: Date.now() - 2*60*60*1000,
+      state:{ artifact:'2401.12345', backend:'Anthropic', guides:[] },
+      logs: [...scriptFor('peer').slice(0,2), { phase:'error', text:'Anthropic backend returned 401 unauthorized' }],
+      sources:[], currentPhase:'parse' },
+    { id:'r4', actionId:'scholarly', actionLabel:'Scholarly search',
+      detail:'transformer interpretability', status:'success',
+      timeAgo:'3h ago', startedAt: Date.now() - 3*60*60*1000,
+      state:{ query:'transformer interpretability', maxResults:10 },
+      logs: scriptFor('scholarly'), sources:[], currentPhase:'save' },
+  ]);
+  const [currentRunId, setCurrentRunId] = React.useState(null);
+
+  const runRef = React.useRef({ timer:null, idx:0 });
+  const firstRenderRef = React.useRef(true);
   const action = findAction(actionId);
 
-  // Sync from tweaks for design exploration
+  // One-way sync: tweaks.demoAction → actionId (changes from tweak panel)
   React.useEffect(() => {
+    if (firstRenderRef.current) return;
     if (tweaks.demoAction && tweaks.demoAction !== actionId) {
       setActionId(tweaks.demoAction);
     }
   }, [tweaks.demoAction]);
 
+  // One-way sync: actionId → tweaks.demoAction (changes from UI)
   React.useEffect(() => {
-    // when action changes via UI, also tell tweaks
+    if (firstRenderRef.current) return;
     if (tweaks.demoAction !== actionId) setTweak('demoAction', actionId);
   }, [actionId]);
 
+  // Demo state override (from tweaks)
   React.useEffect(() => {
+    if (firstRenderRef.current) return;
     const s = tweaks.demoState;
-    if (!s) return;
+    if (!s || s === 'custom') return;
     stopRun();
-    if (s === 'empty') { setStatus('idle'); setLogs([]); }
-    else if (s === 'running') { setStatus('running'); setLogs(scriptFor(actionId).slice(0, Math.max(1, scriptFor(actionId).length - 4))); }
-    else if (s === 'success') { setStatus('success'); setLogs(scriptFor(actionId)); }
+    const script = scriptFor(actionId);
+    if (s === 'empty') { setStatus('idle'); setLogs([]); setSources([]); setCurrentPhase(null); }
+    else if (s === 'running') {
+      setStatus('running');
+      const cut = Math.max(2, script.length - 3);
+      const partial = script.slice(0, cut);
+      setLogs(partial);
+      setSources(partial.flatMap(l => l.sources || []));
+      setCurrentPhase(partial[partial.length - 1]?.phase || null);
+    }
+    else if (s === 'success') {
+      setStatus('success');
+      setLogs(script);
+      setSources(script.flatMap(l => l.sources || []));
+      setCurrentPhase(script[script.length - 1]?.phase || null);
+    }
     else if (s === 'failure') {
       setStatus('failure');
       setLogs([
-        ...scriptFor(actionId).slice(0, 3),
+        ...script.slice(0, Math.min(3, script.length)),
         { phase:'error', text:'Anthropic backend returned 401 unauthorized' },
       ]);
+      setSources([]);
+      setCurrentPhase(script[Math.min(2, script.length-1)]?.phase || null);
     }
   }, [tweaks.demoState, actionId]);
 
+  // Mark first render as complete after mount
+  React.useEffect(() => { firstRenderRef.current = false; }, []);
+
   function stopRun() {
     if (runRef.current.timer) { clearTimeout(runRef.current.timer); runRef.current.timer = null; }
+  }
+
+  function pushRunToHistory(finalStatus) {
+    const detail = actionSummary(action, state);
+    const newRun = {
+      id: 'r' + Date.now(),
+      actionId,
+      actionLabel: action.label,
+      detail,
+      status: finalStatus,
+      timeAgo: 'just now',
+      startedAt: Date.now(),
+      state: { ...state },
+      logs: [...logs],
+      sources: [...sources],
+      currentPhase,
+    };
+    setRuns(prev => [newRun, ...prev]);
   }
 
   function startRun() {
     stopRun();
     const script = scriptFor(actionId);
     setLogs([]);
+    setSources([]);
     setStatus('running');
+    setCurrentRunId(null);
+    setCurrentPhase(script[0]?.phase || null);
+    setRecents(prev => [actionId, ...prev.filter(x => x !== actionId)].slice(0, 4));
     runRef.current.idx = 0;
     const tick = () => {
       const i = runRef.current.idx;
       if (i >= script.length) {
         setStatus('success');
+        pushRunToHistory('success');
         runRef.current.timer = null;
         return;
       }
-      setLogs(prev => [...prev, script[i]]);
+      const line = script[i];
+      setLogs(prev => [...prev, line]);
+      if (line.sources) setSources(prev => [...prev, ...line.sources]);
+      setCurrentPhase(line.phase);
       runRef.current.idx = i + 1;
-      runRef.current.timer = setTimeout(tick, 650 + Math.random()*200);
+      runRef.current.timer = setTimeout(tick, 650 + Math.random()*220);
     };
     tick();
   }
@@ -1422,43 +277,141 @@ function App() {
   function handleStop() {
     stopRun();
     setStatus('success');
+    pushRunToHistory('success');
   }
   function handleReset() {
     stopRun();
     setStatus('idle');
-    setLogs([]);
+    setLogs([]); setSources([]); setCurrentPhase(null);
     setTweak('demoState', 'empty');
   }
+
+  function handlePipeToNotebook() {
+    setActionId('notebook');
+    set('srcPath', '~/docent/runs/current/sources.json');
+    setStatus('idle');
+    setLogs([]); setSources([]);
+  }
+
+  function handleSelectPreset(p) {
+    setActionId(p.actionId);
+    setState(s => ({ ...s, ...p.params }));
+  }
+  function handleDeletePreset(id) {
+    setPresets(prev => prev.filter(p => p.id !== id));
+  }
+  function handleSavePreset(name) {
+    const newPreset = {
+      id: 'p' + Date.now(),
+      name,
+      actionId,
+      params: { ...state },
+    };
+    setPresets(prev => [newPreset, ...prev]);
+  }
+
+  function handleLoadRun(id) {
+    const r = runs.find(x => x.id === id);
+    if (!r) return;
+    stopRun();
+    setActionId(r.actionId);
+    setState(s => ({ ...s, ...r.state }));
+    setLogs(r.logs);
+    setSources(r.sources || []);
+    setCurrentPhase(r.currentPhase);
+    setStatus(r.status === 'running' ? 'success' : r.status);
+    setCurrentRunId(r.id);
+    setTweak('demoState', 'custom');
+  }
+
+  // Sidebar current-run signal (for the live phase pill)
+  const currentRunForSidebar = status === 'running'
+    ? { status:'running', currentPhase: (currentPhase || 'run').slice(0,7) }
+    : null;
+
+  // ⌘K shortcut
+  React.useEffect(() => {
+    function onKey(e) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setCmdKOpen(o => !o);
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && status !== 'running' && !gating) {
+        e.preventDefault();
+        handleRun();
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [status, gating, actionId, state]);
 
   return (
     <ThemeCtx.Provider value={T}>
       <div style={{ display:'flex', height:'100vh', width:'100vw', overflow:'hidden',
           background:T.bg, color:T.fg1, transition:'background 0.2s, color 0.2s' }}>
-        <Sidebar active="studio" />
+        <Sidebar active="studio" currentRun={currentRunForSidebar} />
         <div style={{ flex:1, display:'flex', flexDirection:'column', minWidth:0, overflow:'hidden' }}>
-          <StatusBanner dark={dark} setDark={v=>setTweak('darkMode', v)} />
+          <StatusBanner
+            dark={dark} setDark={v=>setTweak('darkMode', v)}
+            onOpenCmdK={()=>setCmdKOpen(true)}
+            onOpenHistory={()=>{ const next = !historyOpen; setHistoryOpen(next); setTweak('historyOpen', next); }}
+            historyOpen={historyOpen} runCount={runs.length} />
           <div style={{ flex:1, display:'flex', minHeight:0, overflow:'hidden' }}>
             <LeftColumn
-              actionId={actionId} setActionId={setActionId}
+              actionId={actionId} setActionId={(id)=>{ setActionId(id); }}
               state={state} set={set}
               onRun={handleRun}
-              gating={gating} setGating={setGating} />
+              gating={gating} setGating={setGating}
+              presets={presets}
+              onDeletePreset={handleDeletePreset}
+              onSelectPreset={handleSelectPreset}
+              onOpenCmdK={()=>setCmdKOpen(true)}
+              isRunning={status === 'running'}
+              onStop={handleStop} />
             <OutputPanel
               action={action} state={state}
-              status={status} logs={logs}
-              onStop={handleStop} onReset={handleReset} />
+              status={status} logs={logs} sources={sources}
+              currentPhase={currentPhase}
+              onReset={handleReset}
+              onSaveAsPreset={()=>setSavePresetOpen(true)}
+              onPipeToNotebook={handlePipeToNotebook} />
+            {historyOpen && (
+              <div className="history-drawer">
+                <HistoryDrawer
+                  runs={runs}
+                  currentRunId={currentRunId}
+                  onSelect={handleLoadRun}
+                  onClose={()=>{ setHistoryOpen(false); setTweak('historyOpen', false); }}
+                  onClear={()=>setRuns([])} />
+              </div>
+            )}
           </div>
         </div>
+
+        {cmdKOpen && (
+          <CmdKPalette
+            onClose={()=>setCmdKOpen(false)}
+            onSelect={(a)=>setActionId(a.id)}
+            recents={recents} />
+        )}
+        {savePresetOpen && (
+          <PresetSaveModal
+            onClose={()=>setSavePresetOpen(false)}
+            onSave={handleSavePreset}
+            suggested={action.label + ' · ' + (actionSummary(action, state) || '').slice(0,30)} />
+        )}
 
         <window.TweaksPanel>
           <window.TweakToggle label="Dark Mode" value={tweaks.darkMode}
             onChange={v => setTweak('darkMode', v)} />
           <window.TweakSelect label="Demo State" value={tweaks.demoState}
-            options={['empty','running','success','failure']}
+            options={['empty','running','success','failure','custom']}
             onChange={v => setTweak('demoState', v)} />
           <window.TweakSelect label="Demo Action" value={tweaks.demoAction}
             options={ALL_ACTIONS.map(a => a.id)}
             onChange={v => setTweak('demoAction', v)} />
+          <window.TweakToggle label="Show History" value={tweaks.historyOpen}
+            onChange={v => { setTweak('historyOpen', v); setHistoryOpen(v); }} />
         </window.TweaksPanel>
       </div>
     </ThemeCtx.Provider>

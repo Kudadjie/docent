@@ -29,6 +29,9 @@
   --red-bg:       #FEF2F2;
   --red-text:     #B91C1C;
   --code-bg:      #fafafa;
+  --code-border:  rgba(0,0,0,0.05);
+  --overlay:      rgba(0,0,0,0.25);
+  --amber-bg-strong: #FFEFD5;
 
   --sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --mono: "SFMono-Regular", Consolas, "Liberation Mono", ui-monospace, monospace;
@@ -54,6 +57,10 @@
   --red-bg:       rgba(212,86,86,0.12);
   --red-text:     #F87171;
   --code-bg:      #0a0a0a;
+  --code-border:  rgba(255,255,255,0.08);
+  --overlay:      rgba(0,0,0,0.55);
+  --amber-bg-strong: rgba(245,158,11,0.18);
+  --amber-border: rgba(245,158,11,0.45);
 }
 
 /* ── Animations ────────────────────────────────────────────────── */
@@ -75,6 +82,10 @@
 }
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: none; }
 }
 
 /* ── Base ──────────────────────────────────────────────────────── */
@@ -111,6 +122,8 @@ body {
 .thinking-dot:nth-child(3) { animation-delay: 0.3s; }
 
 /* ── Paper row interaction ─────────────────────────────────────── */
+.action-row:hover .row-action { opacity: 1 !important; }
+.src-chip { animation: fadeInUp 0.2s ease forwards; }
 .paper-row { transition: background 0.1s; }
 .paper-row .row-actions { opacity: 0; transition: opacity 0.12s; }
 .paper-row:hover .row-actions { opacity: 1; }

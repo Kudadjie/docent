@@ -1,11 +1,19 @@
 'use client';
 
-import { Sun, Moon, Bell, RefreshCw, Info, AlertTriangle, XCircle, X } from 'lucide-react';
+import { Sun, Moon, Bell, RefreshCw, Info, AlertTriangle, XCircle, X, Search } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import type { BannerCounts } from '@/lib/types';
 import { useNotifications, type AppNotification } from '@/lib/notifications';
 
 export type DotState = 'idle' | 'working' | 'error' | 'done';
+
+const KBD_STYLE: React.CSSProperties = {
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+  minWidth: 18, height: 18, padding: '0 5px',
+  background: 'var(--gray100)', border: '1px solid var(--border-md)',
+  borderRadius: 4, fontFamily: 'var(--mono)', fontSize: 10,
+  color: 'var(--fg3)', fontWeight: 500,
+};
 
 const DOT_COLOR: Record<DotState, string> = {
   idle:    '#18E299',
@@ -29,6 +37,11 @@ interface Props {
   banner?: BannerCounts;
   lastUpdated?: string | null;
   databaseCount?: number | null;
+  // Studio-page extras — all optional
+  onOpenCmdK?: () => void;
+  onOpenHistory?: () => void;
+  historyOpen?: boolean;
+  runCount?: number;
 }
 
 function formatAge(iso: string): string {
@@ -203,6 +216,10 @@ export default function StatusBanner({
   banner,
   lastUpdated,
   databaseCount,
+  onOpenCmdK,
+  onOpenHistory,
+  historyOpen,
+  runCount,
 }: Props) {
   const showStats = !!banner;
   const queueTotal = banner ? banner.queued + banner.reading : 0;
@@ -243,6 +260,28 @@ export default function StatusBanner({
       )}
 
       <div style={{ flex: 1 }} />
+
+      {/* Studio: ⌘K quick-action pill */}
+      {onOpenCmdK && (
+        <button onClick={onOpenCmdK}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '3px 8px 3px 10px', borderRadius: 9999, border: '1px solid var(--border-md)', background: 'transparent', cursor: 'pointer', color: 'var(--fg3)', fontFamily: 'var(--sans)', fontSize: 11 }}>
+          <Search size={12} strokeWidth={1.5} />
+          <span>Quick action</span>
+          <span style={{ display: 'inline-flex', gap: 2 }}>
+            <span style={KBD_STYLE}>⌘</span><span style={KBD_STYLE}>K</span>
+          </span>
+        </button>
+      )}
+
+      {/* Studio: history toggle */}
+      {onOpenHistory && (
+        <button onClick={onOpenHistory} title="Run history"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 9999, border: `1px solid ${historyOpen ? '#18E299' : 'var(--border-md)'}`, background: historyOpen ? 'rgba(24,226,153,0.10)' : 'transparent', cursor: 'pointer', color: historyOpen ? '#0fa76e' : 'var(--fg3)', fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+          <RefreshCw size={11} strokeWidth={2} />
+          History
+          {(runCount ?? 0) > 0 && <span style={{ color: historyOpen ? '#0fa76e' : 'var(--fg4)' }}>· {runCount}</span>}
+        </button>
+      )}
 
       {/* Notification bell */}
       <div style={{ position: 'relative' }}>

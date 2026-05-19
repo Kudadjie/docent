@@ -52,10 +52,11 @@ const UTILITY_NAV: NavItem[] = [
 interface Props {
   active: string;
   queueCount: number;
-  dark?: boolean; // if passed, overrides localStorage; if omitted, Sidebar reads localStorage itself
+  dark?: boolean;
+  currentRun?: { status: 'running'; currentPhase: string } | null;
 }
 
-export default function Sidebar({ active, queueCount, dark: darkProp }: Props) {
+export default function Sidebar({ active, queueCount, dark: darkProp, currentRun }: Props) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
   const [localDark, setLocalDark] = useState(false);
@@ -200,7 +201,12 @@ export default function Sidebar({ active, queueCount, dark: darkProp }: Props) {
                   {item.icon}
                 </span>
                 <span>{item.label}</span>
-                {item.id === 'reading' && isActive && (
+                {item.id === 'studio' && currentRun?.status === 'running' ? (
+                  <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--amber-text)', background: 'var(--amber-bg)', padding: '2px 7px', borderRadius: 9999, letterSpacing: '0.3px', textTransform: 'uppercase', fontWeight: 600 }}>
+                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#F59E0B', animation: 'logo-dot-blink 0.9s step-end infinite' }} />
+                    {currentRun.currentPhase}
+                  </span>
+                ) : item.id === 'reading' && isActive && (
                   <span
                     style={{
                       marginLeft: 'auto',

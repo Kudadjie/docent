@@ -6,6 +6,12 @@
 > `HANDOFF.md` (Reading) all apply unchanged here. See `design_system/` for tokens
 > and `designs/Reading.html` for the reference shell.
 
+> **v2 — May 2026.** This page picked up a large second pass: run history, presets,
+> a `⌘K` action palette, a phase-progress strip, live source chips, command preview,
+> cost estimate, Compare diff view, "Add to Reading" handoff, drag-drop guide files,
+> resumable-run sidebar pill, "Pipe → next action" chaining, polished dark mode,
+> and a collapsible event-log summary. See **v2 additions** at the bottom of this doc.
+
 ## New / changed since last handoff
 
 | Area | What's new |
@@ -378,8 +384,292 @@ Same baseline as the Reading handoff, plus:
 - **Re-run with edits.** No way to clone a previous run's form yet.
 - **Long-running over MCP.** The amber timeout warning is a placeholder until
   there is a real server-side keepalive or async-result pickup path.
-- **Diff view for Compare.** The prototype routes Compare to the generic
-  research-success view; Compare should eventually render a side-by-side diff.
+- **Diff view for Compare.** ✅ Shipped in v2 — see below.
 - **Auth flow for paid backends.** Selecting Anthropic/OpenAI/etc. should
   prompt for a key if none is set, then hand off to the existing config-set
   flow.
+
+---
+
+# v2 additions
+
+The v2 pass adds 15 enhancements without changing the layout grid or any
+design tokens. Everything is additive over v1.
+
+## 1. Source files
+
+The page is now split for maintainability:
+
+```
+designs/
+├── Studio.html             ← shell + App composition + render
+├── Studio v1.html          ← archived initial cut, for reference
+├── studio-shared.jsx       ← theme, icons, primitives, constants, Sidebar, StatusBanner
+├── studio-form.jsx         ← LeftColumn + forms + CommandPreview + CostEstimate
+│                             + FreeTierGate + CmdKPalette + PresetSaveModal
+└── studio-output.jsx       ← OutputPanel + PhaseStrip + SourceChips + LogStream
+                              + all Result variants + HistoryDrawer
+```
+
+The `.jsx` modules export everything through `window.<name>` since each
+`<script type="text/babel">` gets its own scope. Standard pattern; no extra
+glue needed in production.
+
+## 2. Status banner additions
+
+Three new affordances sit to the right of the stat pills, left of the
+dark-mode toggle:
+
+- **`Quick action ⌘K`** — searchable mono pill that opens the Cmd-K palette.
+  Border 1px medium, transparent bg, mono 11.
+- **`History · N`** — toggle for the right-side history drawer. Active state
+  uses brand-deep text on brand-tint bg with brand border.
+- The existing dark-mode toggle and Synced indicator are unchanged.
+
+## 3. Sidebar — live phase pill
+
+When a run is in progress, the **Studio** nav item replaces its count-pill
+slot with a live phase indicator: a small mono uppercase pill (e.g. `SYNTH`)
+with a pulsing amber dot. Uses the existing `amberBg`/`amberText` tokens.
+Lets users wander to Reading/Dashboard and still see the run's current phase
+at a glance. When the run ends, the pill disappears.
+
+## 4. Cmd-K action palette
+
+Press `⌘K` (or click the banner pill) to open a centered overlay.
+
+- Width 560, max-height 70vh, radius 14, soft drop shadow, dark backdrop.
+- Top: search input + Esc kbd hint.
+- Body: vertical list of all 13 actions. Each row has an icon (Sparkles for
+  Research, Search for Utilities, Layers for Config), action label, short
+  description (e.g. "Multi-source synthesis on a topic"), and a mono
+  uppercase group label on the right.
+- When no query: shows a "Recent" header with the user's last 4 actions
+  (Clock icon).
+- Keyboard: ↑/↓ navigates, Enter selects, Esc closes.
+- Footer strip with kbd hints and a result count.
+
+Selecting an action sets `actionId` and dismisses the palette. The action
+list on the left scrolls to the chosen item (visually, no scrollIntoView call).
+
+## 5. Pinned presets
+
+The action list grows a fourth group **at the top**: `Presets` (Pin icon).
+Each preset row is a normal action button but tagged with a Bookmark icon
+and a hover-revealed trash button.
+
+- Click a preset → loads its `actionId` and merges its `params` into the
+  form state.
+- "Save as preset" button appears on the research-success result block. It
+  opens a small modal (`PresetSaveModal`) — name input + Save / Cancel.
+- Presets persist as in-memory state for now. In production, persist to
+  localStorage or the user's Docent config.
+
+## 6. Command preview
+
+Below every form (except the two config actions, which are trivial), a
+small `CodeBlock small` shows the equivalent `docent` CLI command rebuilt
+from the current form state. Updates live as the user edits.
+
+- Label: `Equivalent CLI` (left) + `copy & paste` mono micro hint (right).
+- Block has its standard top-right copy affordance (tap-to-clipboard).
+- Argument quoting: strings with whitespace or quotes get double-quoted with
+  escaped internal quotes.
+- Flag conventions in `commandFor`:
+  - Topic actions: `--topic`, `--backend`, `--out`, `--pipe`, `--guide`
+  - Artifact actions: positional artifact + `--backend` + `--guide`
+  - Compare: positional A B + `--backend`
+  - Search/scholarly: positional query + `--max N`
+  - Notebook: `--output`, `--sources`, `--max-sources`, `--no-nlm`,
+    `--no-quality-gate`, `--no-perspectives`
+
+## 7. Cost & time estimate
+
+A small `CostEstimate` block sits in the footer of the left column, just
+above the Run button (and above the free-tier gate when it's open).
+
+- Surface: gray-100 bg, 1px border, radius 8, Clock icon + label/value column +
+  backend tag on the right.
+- Estimate label: `ESTIMATE` (mono micro), value: `$0.42 · ~5 min` (mono 12, weight 600).
+- For Free backend: shows `Free · ~2 min` with `no API key` instead of the backend name.
+- Action-specific defaults baked into `COST_BASE`. Config actions return
+  `null` (no estimate shown).
+- Hidden during a live run (the activity log carries that information).
+
+## 8. Run button — keyboard hint
+
+Run button now shows `⌘ ↵` kbd glyphs on the right of the label so the
+keyboard shortcut is discoverable. `⌘+Enter` triggers Run when the form is
+ready and no gate is active.
+
+## 9. Stop button moved
+
+While running, the Run button slot becomes a full-width **Stop run** ghost
+button (red text, square icon, 1px border, transparent bg) instead of being
+in the output header. Keeps the cancel action adjacent to where the user's
+attention is.
+
+## 10. Phase strip
+
+A horizontal segmented bar above the activity log shows the action's full
+phase progression:
+
+`PLAN ── SEARCH ── FETCH ── PARSE ── SYNTH ── SAVE`
+
+- Each phase is a dot + mono uppercase label.
+- **Done** phases: 7px brand-green dot, label in `brand-deep`, connecting
+  line in brand-green.
+- **Current** phase (only while running): slightly larger 9px amber dot
+  with `logo-dot-blink` animation, label in `amberText`.
+- **Future** phases: 7px `gray-200` dot, label in `fg-muted`, connecting line
+  in `border-subtle`.
+- The phase list per action lives in `ACTION_PHASES` (e.g. `notebook` has
+  `plan/fetch/parse/search/synth/save`, search-only has 3 stages).
+
+## 11. Live source chips
+
+While the run is in a `fetch` phase, the right pane shows a row of source
+chips above the log:
+
+- Header row: `SOURCES COLLECTED` (mono micro) + brand-tinted count pill.
+- Each chip: pill (gray-100 bg, 1px border, radius 9999), truncated title +
+  mono source/year on the right.
+- Animation: each chip fades in on first appear (`fadeInUp` 0.2s).
+- Drives from `line.sources` in the log script; each fetched-papers log line
+  can attach an array of `{ title, year, src }`.
+
+## 12. Collapsible event log
+
+After a run finishes, the activity log collapses to a single button:
+
+`▸ N EVENTS  Show activity log`
+
+(small ghost pill, surface bg, border subtle). Click to expand back to a
+scroll region (max-height 240, with a "▾ Collapse" link). Running state is
+always expanded.
+
+## 13. Run history drawer
+
+A 300px right-edge drawer (toggled from the banner `History` button) lists
+all completed runs newest-first.
+
+- Each row: status dot (brand-green / amber-running / red-failed) + action
+  label + relative time + detail line in mono.
+- Active (currently displayed) run gets a brand-tinted bg + brand border.
+- Header has counts and **Clear all** (trash icon) + **Close** (X).
+- Empty state: history icon + "No runs yet" message.
+- Selecting a run loads its full state (form values + logs + sources +
+  result) back into the main panel. Status is preserved.
+
+## 14. Compare result — diff view
+
+The `compare` action now routes to its own result component
+(`ResultCompare`) instead of the generic research success view.
+
+- Header line: CheckCircle + `Comparison complete` + finding count.
+- **Two paper headers** side-by-side (Paper A in `info-blue`, Paper B in
+  `brand-deep`), each in a bordered surface card.
+- **Three-column grid** with cards: `Only in A` (blue) · `Shared`
+  (brand-deep) · `Only in B` (brand-deep). Each item is a surface card
+  with a 1px border.
+- **Contradictions** section underneath: amber callout panels (left border,
+  amber bg) listing labeled disagreements between A and B.
+- Output file path in a CodeBlock at the bottom.
+
+## 15. Get paper — Add to Reading
+
+The `getpaper` success view gains a brand-green primary pill **`Add to
+Reading`** (Plus icon) next to the existing `Open on arXiv` ghost link.
+On click it flips to `Added to Reading` with a CheckCircle icon and stays
+disabled (idempotent). Wires into the Reading queue from the previous
+handoff — for production, post to whatever endpoint the Reading page reads
+from.
+
+## 16. Pipe → next action
+
+The Output destination segmented control on topic-form actions gains a 4th
+option: `Pipe →`. When selected and a research run completes, the success
+result panel appends a brand-tinted callout:
+
+> `[pipe icon]` **Piped to To notebook** · sources file pre-filled with
+> this run's output    `[Continue →]`
+
+Clicking Continue switches `actionId` to `notebook`, pre-fills the sources
+path field with the previous run's output, and resets the output panel to
+idle so the user can review the notebook form and re-run.
+
+## 17. Drag-drop guide files
+
+The whole left column accepts dropped files when the active action supports
+guides (topic / artifact / compare).
+
+- On drag-over with files: a brand-tinted overlay covers the column with a
+  dashed brand-deep border and a centered "Drop to add as guide file"
+  message + upload icon.
+- On drop: extracted file names are appended to `state.guides`. (In
+  production, upload the file blob and store the server path.)
+
+## 18. Dark-mode polish
+
+Three surfaces got contrast bumps for dark mode:
+
+- `card`: `#141414` → `#171717` so cards lift cleanly off the page bg.
+- `amberBg` (in-log warn rows + callouts): 0.12 → 0.13 alpha, with a stronger
+  `amberBorder` token (rgba(245,158,11,0.45) vs the prior solid amber).
+- `codeBg` and `codeBorder`: dedicated tokens (`#0a0a0a` + 0.08 alpha) so
+  code blocks read as a deliberate surface and not a sliver of border.
+
+The light-mode palette is unchanged.
+
+## 19. Keyboard shortcuts
+
+Now wired globally:
+
+| Shortcut | Action |
+|---|---|
+| `⌘ K` / `Ctrl K` | Open Cmd-K palette (toggle) |
+| `⌘ ↵` / `Ctrl ↵` | Run current action (skipped if a free-tier gate is open) |
+| `Esc` (in palette / modal / gate) | Cancel & close |
+| `↑` `↓` (in palette) | Navigate results |
+| `↵` (in palette) | Select highlighted result |
+
+`Kbd` is a new shared primitive — a small monospace 18×18 box with
+gray-100 bg + border medium + mono 10. Used in the banner pill and the Run
+button hint.
+
+## 20. New state shape (v2)
+
+```ts
+interface StudioState {
+  actionId: string;
+  form: FormState;           // unchanged from v1
+  status: 'idle' | 'running' | 'success' | 'failure';
+  logs:        { phase: string; text: string; sources?: Source[] }[];
+  sources:     Source[];      // accumulated during the run
+  currentPhase: string | null;
+  // v2 additions
+  cmdKOpen: boolean;
+  historyOpen: boolean;
+  savePresetOpen: boolean;
+  recents: string[];          // recent action IDs, max 4
+  presets: Preset[];
+  runs: Run[];                // newest first
+  currentRunId: string | null; // null = live run; non-null = viewing a past run
+  gating: boolean;
+}
+
+interface Run {
+  id: string;
+  actionId: string;
+  actionLabel: string;
+  detail: string;             // short summary line (topic / artifact / query)
+  status: 'running' | 'success' | 'failure';
+  timeAgo: string;            // pre-computed for display
+  startedAt: number;
+  state: Partial<FormState>;  // form snapshot
+  logs: LogLine[];
+  sources: Source[];
+  currentPhase: string | null;
+}
+```
+
