@@ -3,13 +3,21 @@
 // Plus Cmd-K palette and Preset-save modal
 
 const {
-  SANS, MONO, BRAND, BRAND_DEEP, AMBER, AMBER_BORDER, RED,
+  SANS, MONO, BRAND, BRAND_DEEP, AMBER, AMBER_BORDER, RED, BLUE, VIOLET, PINK,
   useTheme, Ico,
   ACTIONS, ALL_ACTIONS, findAction, BACKENDS, ACTION_PHASES,
   commandFor, costEstimate,
   PrimaryBtn, GhostBtn, PillToggle, Segmented, Input, Label, Field, Note,
   Toggle, Stepper, CodeBlock, Chip, Kbd,
 } = window;
+
+// Group-identity hues for the action sidebar — each section gets its own dot color.
+const GROUP_COLOR = {
+  Presets:   VIOLET,
+  Research:  BLUE,
+  Utilities: AMBER_BORDER,
+  Config:    BRAND_DEEP,
+};
 
 // ─── ACTION LIST ──────────────────────────────────────────────────────────────
 function ActionList({ activeId, onSelect, presets, onDeletePreset, onSelectPreset }) {
@@ -51,9 +59,11 @@ function ActionList({ activeId, onSelect, presets, onDeletePreset, onSelectPrese
     <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
       {presets && presets.length > 0 && (
         <div>
-          <div style={{ padding:'0 4px 6px', display:'flex', alignItems:'center', gap:6,
+          <div style={{ padding:'0 4px 6px', display:'flex', alignItems:'center', gap:7,
               fontFamily:MONO, fontSize:10, fontWeight:500,
               color:T.fg4, letterSpacing:'0.7px', textTransform:'uppercase' }}>
+            <span style={{ width:6, height:6, borderRadius:'50%', background:GROUP_COLOR.Presets,
+              boxShadow:`0 0 0 3px ${GROUP_COLOR.Presets}22`, flexShrink:0 }} />
             <Ico.Pin/> Presets
           </div>
           <div style={{ display:'flex', flexDirection:'column', gap:1 }}>
@@ -66,17 +76,23 @@ function ActionList({ activeId, onSelect, presets, onDeletePreset, onSelectPrese
           </div>
         </div>
       )}
-      {Object.entries(ACTIONS).map(([key, group]) => (
-        <div key={key}>
-          <div style={{ padding:'0 4px 6px', fontFamily:MONO, fontSize:10, fontWeight:500,
-              color:T.fg4, letterSpacing:'0.7px', textTransform:'uppercase' }}>
-            {group.label}
+      {Object.entries(ACTIONS).map(([key, group]) => {
+        const groupHue = GROUP_COLOR[group.label] || BRAND;
+        return (
+          <div key={key}>
+            <div style={{ padding:'0 4px 6px', display:'flex', alignItems:'center', gap:7,
+                fontFamily:MONO, fontSize:10, fontWeight:500,
+                color:T.fg4, letterSpacing:'0.7px', textTransform:'uppercase' }}>
+              <span style={{ width:6, height:6, borderRadius:'50%', background:groupHue,
+                boxShadow:`0 0 0 3px ${groupHue}22`, flexShrink:0 }} />
+              {group.label}
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:1 }}>
+              {group.items.map(it => row(it, it.id === activeId, false, ()=>onSelect(it.id)))}
+            </div>
           </div>
-          <div style={{ display:'flex', flexDirection:'column', gap:1 }}>
-            {group.items.map(it => row(it, it.id === activeId, false, ()=>onSelect(it.id)))}
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -427,8 +443,18 @@ function LeftColumn({ actionId, setActionId, state, set, onRun, gating, setGatin
       style={{ width:380, flexShrink:0, height:'100%',
         borderRight:`1px solid ${T.border}`, background:T.bg,
         display:'flex', flexDirection:'column', overflow:'hidden', position:'relative' }}>
+      {/* Hero wash — bleeds behind header + top of action list */}
+      <div aria-hidden="true" style={{ position:'absolute', inset:'0 0 auto 0',
+        height:240, pointerEvents:'none', zIndex:0,
+        background: T.dark ?
+          `radial-gradient(ellipse 480px 280px at 30% -10%, ${BRAND}1f, transparent 60%),
+           radial-gradient(ellipse 360px 220px at 90% 10%, ${VIOLET}14, transparent 60%)` :
+          `radial-gradient(ellipse 480px 280px at 30% -10%, ${BRAND}26, transparent 60%),
+           radial-gradient(ellipse 360px 220px at 90% 10%, ${VIOLET}1c, transparent 60%)`,
+      }} />
 
-      <div style={{ padding:'18px 22px 12px', borderBottom:`1px solid ${T.border}`,
+      <div style={{ position:'relative', zIndex:1, padding:'18px 22px 12px',
+          borderBottom:`1px solid ${T.border}`,
           display:'flex', alignItems:'center', justifyContent:'space-between', gap:10 }}>
         <div>
           <div style={{ display:'flex', alignItems:'center', gap:9, marginBottom:3 }}>
@@ -450,7 +476,7 @@ function LeftColumn({ actionId, setActionId, state, set, onRun, gating, setGatin
         </button>
       </div>
 
-      <div style={{ flex:1, overflowY:'auto', padding:'14px 22px 0' }}>
+      <div style={{ position:'relative', zIndex:1, flex:1, overflowY:'auto', padding:'14px 22px 0' }}>
         <ActionList
           activeId={state.activePresetId ? 'preset:'+state.activePresetId : actionId}
           onSelect={setActionId}

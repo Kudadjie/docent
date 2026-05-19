@@ -2,11 +2,26 @@
 // Output panel + phase strip + source chips + log + result variants + history drawer
 
 const {
-  SANS, MONO, BRAND, BRAND_DEEP, AMBER, AMBER_BORDER, RED, BLUE,
+  SANS, MONO, BRAND, BRAND_DEEP, AMBER, AMBER_BORDER, RED, BLUE, VIOLET, PINK,
   useTheme, Ico,
   ACTION_PHASES, PHASE_LABELS, PHASE_TONE, findAction,
   PrimaryBtn, GhostBtn, Chip, CodeBlock, Label, Kbd,
 } = window;
+
+// Per-phase identity colors — each phase gets its own hue so the phase strip
+// reads as a small rainbow rather than a wall of green.
+const PHASE_COLOR = {
+  plan:   VIOLET,
+  search: BLUE,
+  fetch:  AMBER_BORDER,
+  parse:  PINK,
+  synth:  BRAND,
+  save:   BRAND_DEEP,
+  done:   BRAND_DEEP,
+  cost:   AMBER_BORDER,
+  warn:   AMBER_BORDER,
+  error:  '#E53535',
+};
 
 // ─── PHASE STRIP ──────────────────────────────────────────────────────────────
 function PhaseStrip({ actionId, completedPhases, currentPhase, status }) {
@@ -18,17 +33,22 @@ function PhaseStrip({ actionId, completedPhases, currentPhase, status }) {
       {phases.map((p, i) => {
         const done = completedPhases.has(p);
         const current = p === currentPhase && status === 'running';
-        const future = !done && !current;
-        const tone = current ? 'current' : done ? 'done' : 'future';
+        const phaseHue = PHASE_COLOR[p] || BRAND;
 
-        const dotColor = current ? AMBER_BORDER : done ? BRAND : T.gray200;
-        const labelColor = current ? T.amberText : done ? BRAND_DEEP : T.fg4;
-        const lineColor = (done || (current && i > 0)) ? BRAND : T.border;
+        const dotColor   = current ? phaseHue : done ? phaseHue : T.gray200;
+        const labelColor = current ? phaseHue : done ? T.fg2    : T.fg4;
+        // Connecting line blends from this dot's color toward the next.
+        const nextHue = PHASE_COLOR[phases[i+1]] || phaseHue;
+        const showLine = done || (current && i > 0);
+        const lineBg = showLine
+          ? `linear-gradient(90deg, ${phaseHue}aa, ${nextHue}66)`
+          : T.border;
         return (
           <React.Fragment key={p}>
             <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
               <span style={{ width:done?7:current?9:7, height:done?7:current?9:7, borderRadius:'50%',
                 background: dotColor, flexShrink:0,
+                boxShadow: (done||current) ? `0 0 0 3px ${phaseHue}1a` : 'none',
                 animation: current ? 'logo-dot-blink 1.1s step-end infinite' : 'none',
                 transition:'all 0.15s' }} />
               <span style={{ fontFamily:MONO, fontSize:10, fontWeight: current?600:500,
@@ -37,7 +57,7 @@ function PhaseStrip({ actionId, completedPhases, currentPhase, status }) {
               </span>
             </div>
             {i < phases.length - 1 && (
-              <div style={{ flex:1, height:1, background:lineColor, margin:'0 10px',
+              <div style={{ flex:1, height:1, background: lineBg, margin:'0 10px',
                 transition:'background 0.25s' }} />
             )}
           </React.Fragment>
@@ -186,9 +206,20 @@ function LogStream({ logs, status }) {
 function OutputEmpty() {
   const T = useTheme();
   return (
-    <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center',
-        justifyContent:'center', gap:14, padding:24 }}>
-      <div style={{ width:56, height:56, borderRadius:14, background:BRAND+'1c',
+    <div style={{ flex:1, position:'relative', display:'flex', flexDirection:'column',
+        alignItems:'center', justifyContent:'center', gap:14, padding:24, overflow:'hidden' }}>
+      <div aria-hidden="true" style={{ position:'absolute', inset:0, pointerEvents:'none',
+        background: T.dark ?
+          `radial-gradient(ellipse 480px 320px at 50% 40%, ${BRAND}14, transparent 60%),
+           radial-gradient(ellipse 380px 260px at 30% 70%, ${VIOLET}10, transparent 60%),
+           radial-gradient(ellipse 380px 260px at 75% 30%, ${BLUE}10, transparent 60%)` :
+          `radial-gradient(ellipse 480px 320px at 50% 40%, ${BRAND}1f, transparent 60%),
+           radial-gradient(ellipse 380px 260px at 30% 70%, ${VIOLET}14, transparent 60%),
+           radial-gradient(ellipse 380px 260px at 75% 30%, ${BLUE}14, transparent 60%)`,
+      }} />
+      <div style={{ position:'relative', width:56, height:56, borderRadius:14,
+          background:`linear-gradient(135deg, ${BRAND}33, ${VIOLET}22)`,
+          border:`1px solid ${BRAND}33`,
           display:'flex', alignItems:'center', justifyContent:'center', color:BRAND_DEEP }}>
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor"
              strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -196,10 +227,11 @@ function OutputEmpty() {
           <path d="M14 9.3a6.5 6.5 0 1 1-4 0"/><path d="M5.52 16h12.96"/>
         </svg>
       </div>
-      <div style={{ fontFamily:SANS, fontSize:15, fontWeight:600, color:T.fg1 }}>
+      <div style={{ position:'relative', fontFamily:SANS, fontSize:15, fontWeight:600, color:T.fg1 }}>
         Run a research action
       </div>
-      <div style={{ fontFamily:SANS, fontSize:13, color:T.fg3, textAlign:'center', maxWidth:340 }}>
+      <div style={{ position:'relative', fontFamily:SANS, fontSize:13, color:T.fg3,
+          textAlign:'center', maxWidth:340 }}>
         Select an action on the left and fill in the form, or press <Kbd>⌘</Kbd><Kbd>K</Kbd> to
         quick-jump.
       </div>
@@ -713,10 +745,22 @@ function OutputPanel({ action, state, status, logs, sources, currentPhase,
 
   return (
     <section style={{ flex:1, display:'flex', flexDirection:'column', minWidth:0,
-        background:T.bg, overflow:'hidden' }}>
+        background:T.bg, overflow:'hidden', position:'relative' }}>
+      {/* Hero wash — bleeds behind the output header */}
+      <div aria-hidden="true" style={{ position:'absolute', inset:'0 0 auto 0',
+        height:280, pointerEvents:'none', zIndex:0,
+        background: T.dark ?
+          `radial-gradient(ellipse 520px 280px at 12% 0%, ${BRAND}14, transparent 60%),
+           radial-gradient(ellipse 640px 320px at 60% 10%, ${BLUE}14, transparent 60%),
+           radial-gradient(ellipse 480px 260px at 92% 0%, ${PINK}12, transparent 60%)` :
+          `radial-gradient(ellipse 520px 280px at 12% 0%, ${BRAND}1c, transparent 60%),
+           radial-gradient(ellipse 640px 320px at 60% 10%, ${BLUE}1c, transparent 60%),
+           radial-gradient(ellipse 480px 260px at 92% 0%, ${PINK}1a, transparent 60%)`,
+      }} />
 
       {!isEmpty && (
         <div style={{ flexShrink:0, padding:'14px 24px',
+            position:'relative', zIndex:1,
             borderBottom:`1px solid ${T.border}`,
             display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}>
           <div style={{ display:'flex', alignItems:'center', gap:10, minWidth:0 }}>
@@ -747,7 +791,8 @@ function OutputPanel({ action, state, status, logs, sources, currentPhase,
         </div>
       )}
 
-      <div style={{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column' }}>
+      <div style={{ position:'relative', zIndex:1, flex:1, overflowY:'auto',
+          display:'flex', flexDirection:'column' }}>
         {isEmpty && <OutputEmpty />}
 
         {(isRunning || isResult) && (

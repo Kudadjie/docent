@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ecosystem — Docent</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="studio-shared.jsx"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body, #root { height: 100%; width: 100%; }
+body { font-family: 'Inter', system-ui, sans-serif; -webkit-font-smoothing: antialiased; overflow:hidden; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.22); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(128,128,128,0.4); }
+
+@keyframes logo-dot-blink { 0%,100%{opacity:1} 50%{opacity:0.15} }
+@keyframes fadeInUp { from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:none;} }
+
+.tool-card { transition: border-color 0.15s ease, background 0.15s ease; }
+.tool-card:hover { border-color: var(--card-hover-border) !important; }
+.attr-row:hover { background: var(--row-hover) !important; }
+.tap { transition: transform 0.05s ease, background 0.12s ease; }
+.tap:active { transform: scale(0.985); }
+.cta-link { transition: color 0.12s, gap 0.12s; }
+.cta-link:hover { gap: 8px !important; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {
+  SANS, MONO, BRAND, BRAND_DEEP, BLUE, AMBER, RED,
+  makeTheme, ThemeCtx, useTheme,
+  Ico, Sidebar, StatusBanner,
+  GhostBtn, CodeBlock, Chip, Kbd,
+} = window;
+
+// ─── DATA ─────────────────────────────────────────────────────────────────────
+const TOOLS = [
+  {
+    id: 'academic-research-skills',
+    name: 'Academic Research Skills',
+    author: 'Anthropic',
+    license: 'MIT',
+    Icon: Ico.Sparkles,
+    accent: BRAND,
+    description:
+      'A collection of agent skills for academic workflows — literature review, peer review, methods audits, citation triage. Drops into any Claude-compatible runtime (Claude Code, Skills, MCP).',
+    whenToUse:
+      'When you want Docent’s research workflows available inside a different agent — your editor, your shell, or a teammate’s Claude project — without rewriting prompts.',
+    install: 'claude skills install @anthropic/academic-research',
+    repo: 'github.com/anthropic/skills',
+  },
+  {
+    id: 'feynman',
+    name: 'Feynman',
+    author: 'feynman-lab',
+    license: 'Apache-2.0',
+    Icon: Ico.Cpu,
+    accent: BLUE,
+    description:
+      'A local-first reasoning gateway that routes academic queries through fine-tuned small models. Citation-aware, runs offline, and exposes the same OpenAI-compatible interface Docent already speaks.',
+    whenToUse:
+      'When your work involves embargoed or sensitive material that should never leave your machine — or you simply want a $0 default backend with respectable quality on lit-review tasks.',
+    install: 'pip install feynman-cli && feynman serve',
+    repo: 'github.com/feynman-lab/feynman',
+  },
+  {
+    id: 'notebooklm',
+    name: 'NotebookLM',
+    author: 'Google',
+    license: 'Proprietary · free tier',
+    Icon: Ico.Book,
+    accent: BRAND_DEEP,
+    description:
+      'A web-based research notebook that grounds answers in the sources you upload. Docent can export any run’s sources + report into a notebook your collaborators can open in their browser.',
+    whenToUse:
+      'When you need to hand a research artifact to a non-technical collaborator — an advisor, a co-author, a reviewer — who shouldn’t need to install a CLI to read it.',
+    install: 'docent to-notebook --export notebooklm',
+    repo: 'notebooklm.google.com',
+  },
+];
+
+// Attribution rows — open-source patterns adopted into Docent
+const INSIDE = [
+  { area: 'CLI framework',     name: 'Click',         note: 'Argument parsing & sub-commands',          license: 'BSD-3' },
+  { area: 'Streaming UI',      name: 'Rich',          note: 'Phase-tagged log rendering in the TTY',    license: 'MIT'   },
+  { area: 'PDF extraction',    name: 'pypdf + GROBID',note: 'Headings, sections, references',           license: 'BSD-3 / Apache-2.0' },
+  { area: 'Source schema',     name: 'Pydantic',      note: 'Validated source + run records',           license: 'MIT'   },
+  { area: 'HTTP',              name: 'httpx',         note: 'arXiv, Semantic Scholar, NLM clients',     license: 'BSD-3' },
+  { area: 'Search ranking',    name: 'rank_bm25',     note: 'Local relevance scoring for candidate set', license: 'Apache-2.0' },
+  { area: 'Diff view',         name: 'difflib',       note: 'Compare\u00a0action shared/divergent claims', license: 'PSF' },
+  { area: 'Config',            name: 'TOML + platformdirs', note: '~/.docent/config.toml resolution', license: 'MIT' },
+];
+
+// ─── SHARED CHROME ────────────────────────────────────────────────────────────
+function SectionLabel({ children, dot=BRAND, Right }) {
+  const T = useTheme();
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:10, marginTop:56, marginBottom:18 }}>
+      <span style={{ width:6, height:6, borderRadius:'50%', background:dot, flexShrink:0,
+        boxShadow:`0 0 0 3px ${dot}1a` }} />
+      <span style={{ fontFamily:MONO, fontSize:11, fontWeight:600, color:T.fg2,
+        letterSpacing:'0.9px', textTransform:'uppercase' }}>{children}</span>
+      <span style={{ flex:1, height:1, background:T.border }} />
+      {Right && <div style={{ flexShrink:0 }}>{Right}</div>}
+    </div>
+  );
+}
+
+// ─── TOOL CARD ────────────────────────────────────────────────────────────────
+function ToolCard({ tool, index }) {
+  const T = useTheme();
+  const { name, author, license, Icon, accent, description, whenToUse, install, repo } = tool;
+  const num = String(index + 1).padStart(2, '0');
+  return (
+    <article className="tool-card"
+      style={{
+        ['--card-hover-border']: T.dark ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.12)',
+        background: T.card,
+        border:`1px solid ${T.border}`,
+        borderRadius:16,
+        padding:'26px 28px 24px',
+        marginTop: index === 0 ? 0 : 16,
+      }}>
+      {/* Header row */}
+      <header style={{ display:'flex', alignItems:'flex-start', gap:14, marginBottom:14 }}>
+        <div style={{ width:40, height:40, borderRadius:10, flexShrink:0,
+            background: accent + '1a', color: accent,
+            display:'flex', alignItems:'center', justifyContent:'center' }}>
+          <span style={{ display:'flex', transform:'scale(1.15)' }}><Icon/></span>
+        </div>
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap',
+              marginBottom:5 }}>
+            <h2 style={{ fontFamily:SANS, fontSize:19, fontWeight:600, color:T.fg1,
+              letterSpacing:'-0.35px', lineHeight:1.2 }}>{name}</h2>
+            <span style={{ fontFamily:MONO, fontSize:10.5, fontWeight:500, color:T.fg4,
+              letterSpacing:'0.5px' }}>{num}</span>
+          </div>
+          <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
+            <Chip>{author}</Chip>
+            <Chip color={T.dark ? '#8a8a8a' : '#666'}>{license}</Chip>
+          </div>
+        </div>
+        <a href={`https://${repo}`} target="_blank" rel="noreferrer"
+          className="cta-link"
+          style={{ display:'inline-flex', alignItems:'center', gap:5,
+            fontFamily:MONO, fontSize:11, color:T.fg4, textDecoration:'none',
+            letterSpacing:'0.3px', flexShrink:0, padding:'4px 0' }}>
+          {repo} <Ico.ExternalLink/>
+        </a>
+      </header>
+
+      {/* Description */}
+      <p style={{ fontFamily:SANS, fontSize:14, lineHeight:1.65, color:T.fg2,
+        maxWidth: 640, textWrap:'pretty' }}>{description}</p>
+
+      {/* When to use */}
+      <div style={{ marginTop:18, paddingLeft:14,
+          borderLeft:`2px solid ${accent}66` }}>
+        <div style={{ fontFamily:MONO, fontSize:10, fontWeight:600, color:accent,
+          letterSpacing:'0.8px', textTransform:'uppercase', marginBottom:5 }}>
+          When to use
+        </div>
+        <p style={{ fontFamily:SANS, fontSize:13.5, lineHeight:1.6, color:T.fg2,
+          maxWidth: 620, textWrap:'pretty' }}>{whenToUse}</p>
+      </div>
+
+      {/* Install block */}
+      <div style={{ marginTop:20 }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between',
+            marginBottom:6 }}>
+          <span style={{ fontFamily:MONO, fontSize:10, fontWeight:500, color:T.fg4,
+            letterSpacing:'0.7px', textTransform:'uppercase' }}>Install</span>
+          <span style={{ fontFamily:MONO, fontSize:10, color:T.fg4, letterSpacing:'0.3px' }}>
+            copy & paste
+          </span>
+        </div>
+        <InstallBlock command={install} />
+      </div>
+    </article>
+  );
+}
+
+// Slightly customized install code block — leading `$` prompt + bigger hit-area copy
+function InstallBlock({ command }) {
+  const T = useTheme();
+  const [copied, setCopied] = React.useState(false);
+  function copy() {
+    navigator.clipboard?.writeText(command);
+    setCopied(true);
+    setTimeout(()=>setCopied(false), 1300);
+  }
+  return (
+    <div style={{ position:'relative', background:T.dark ? '#0a0a0a' : '#0d0d0d',
+        border:`1px solid ${T.dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)'}`,
+        borderRadius:10, padding:'12px 48px 12px 14px',
+        fontFamily:MONO, fontSize:12.5, color:'#ededed',
+        lineHeight:1.5, letterSpacing:'0.2px', wordBreak:'break-all' }}>
+      <span style={{ color:BRAND, marginRight:9, userSelect:'none' }}>$</span>
+      <span>{command}</span>
+      <button onClick={copy} className="tap" title={copied ? 'Copied' : 'Copy command'}
+        style={{ position:'absolute', top:6, right:6,
+          width:30, height:30, borderRadius:7, border:'none',
+          background: copied ? BRAND+'22' : 'transparent',
+          color: copied ? BRAND : 'rgba(255,255,255,0.55)',
+          cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+        {copied ? <Ico.CheckCircle/> : <Ico.Copy/>}
+      </button>
+    </div>
+  );
+}
+
+// ─── INSIDE DOCENT TABLE ──────────────────────────────────────────────────────
+function InsideTable() {
+  const T = useTheme();
+  return (
+    <div style={{
+        ['--row-hover']: T.dark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.015)',
+        background:T.card, border:`1px solid ${T.border}`, borderRadius:14,
+        overflow:'hidden' }}>
+      {/* Header row */}
+      <div style={{ display:'grid',
+          gridTemplateColumns:'160px 1fr 130px',
+          padding:'10px 18px',
+          background: T.dark ? 'rgba(255,255,255,0.025)' : '#fafafa',
+          borderBottom:`1px solid ${T.border}`,
+          fontFamily:MONO, fontSize:10, fontWeight:600, color:T.fg4,
+          letterSpacing:'0.8px', textTransform:'uppercase' }}>
+        <div>Area</div>
+        <div>Library &amp; usage</div>
+        <div style={{ textAlign:'right' }}>License</div>
+      </div>
+      {INSIDE.map((row, i) => (
+        <div key={row.area} className="attr-row" style={{ display:'grid',
+            gridTemplateColumns:'160px 1fr 130px',
+            padding:'12px 18px',
+            alignItems:'center',
+            borderBottom: i < INSIDE.length - 1 ? `1px solid ${T.border}` : 'none',
+            transition:'background 0.12s' }}>
+          <div style={{ fontFamily:SANS, fontSize:12.5, fontWeight:500, color:T.fg2 }}>
+            {row.area}
+          </div>
+          <div style={{ display:'flex', flexDirection:'column', gap:2, minWidth:0 }}>
+            <div style={{ fontFamily:MONO, fontSize:12, fontWeight:600, color:T.fg1,
+              letterSpacing:'0.2px' }}>{row.name}</div>
+            <div style={{ fontFamily:SANS, fontSize:12.5, color:T.fg3, lineHeight:1.45 }}>
+              {row.note}
+            </div>
+          </div>
+          <div style={{ textAlign:'right', fontFamily:MONO, fontSize:11,
+            color:T.fg3, letterSpacing:'0.3px' }}>{row.license}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── FOOTER CTA ───────────────────────────────────────────────────────────────
+function FooterCTA() {
+  const T = useTheme();
+  return (
+    <div style={{ marginTop:24, padding:'28px 32px',
+        background: T.dark ? 'rgba(24,226,153,0.05)' : '#f4fef9',
+        border:`1px solid ${T.dark ? 'rgba(24,226,153,0.18)' : 'rgba(15,167,110,0.18)'}`,
+        borderRadius:16,
+        display:'flex', alignItems:'center', gap:24, flexWrap:'wrap' }}>
+      <div style={{ flex:'1 1 380px', minWidth:0 }}>
+        <h3 style={{ fontFamily:SANS, fontSize:17, fontWeight:600, color:T.fg1,
+          letterSpacing:'-0.25px', marginBottom:5 }}>
+          Know a tool that pairs well with Docent?
+        </h3>
+        <p style={{ fontFamily:SANS, fontSize:13.5, color:T.fg3, lineHeight:1.6,
+          maxWidth: 560, textWrap:'pretty' }}>
+          Open a GitHub issue with the tool name, a one-line description, and the install
+          command. We review additions every release cycle.
+        </p>
+      </div>
+      <a href="https://github.com/docent-ai/docent/issues/new?template=ecosystem.md"
+        target="_blank" rel="noreferrer" className="tap"
+        style={{ display:'inline-flex', alignItems:'center', gap:8,
+          padding:'10px 18px', borderRadius:9999,
+          background:'#0d0d0d', color:'#ededed',
+          fontFamily:SANS, fontSize:13, fontWeight:500, textDecoration:'none',
+          border:`1px solid ${T.dark ? 'rgba(255,255,255,0.12)' : 'transparent'}` }}>
+        <Ico.Github/>
+        Open an issue
+        <Ico.ArrowRight/>
+      </a>
+    </div>
+  );
+}
+
+// ─── APP ──────────────────────────────────────────────────────────────────────
+function App() {
+  const [tweaks, setTweak] = window.useTweaks(/*EDITMODE-BEGIN*/{
+    "darkMode": false,
+    "accentVariety": true,
+    "showAttribution": true
+  }/*EDITMODE-END*/);
+  const dark = !!tweaks.darkMode;
+  const T = React.useMemo(() => makeTheme(dark), [dark]);
+
+  // optionally flatten all tool accents to the brand color
+  const tools = React.useMemo(() => TOOLS.map(t => ({
+    ...t,
+    accent: tweaks.accentVariety ? t.accent : BRAND,
+  })), [tweaks.accentVariety]);
+
+  return (
+    <ThemeCtx.Provider value={T}>
+      <div style={{ display:'flex', height:'100vh', width:'100vw', overflow:'hidden',
+          background:T.bg, color:T.fg1, transition:'background 0.2s, color 0.2s' }}>
+        <Sidebar active="ecosystem" />
+        <div style={{ flex:1, display:'flex', flexDirection:'column', minWidth:0, overflow:'hidden' }}>
+          <StatusBanner
+            dark={dark} setDark={v=>setTweak('darkMode', v)}
+            onOpenCmdK={()=>{}}
+            runCount={0} />
+
+          {/* Scroll region */}
+          <div style={{ flex:1, overflow:'auto', minHeight:0 }}>
+            <div style={{ maxWidth: 860, margin:'0 auto',
+                padding:'64px 32px 96px' }}>
+
+              {/* Hero */}
+              <header>
+                <div style={{ display:'inline-flex', alignItems:'center', gap:7,
+                    padding:'4px 11px 4px 9px', borderRadius:9999,
+                    background: T.gray100, border:`1px solid ${T.border}`,
+                    marginBottom:18 }}>
+                  <span style={{ width:5, height:5, borderRadius:'50%', background:BRAND,
+                    animation:'logo-dot-blink 1.6s step-end infinite' }} />
+                  <span style={{ fontFamily:MONO, fontSize:10.5, fontWeight:500,
+                    color:T.fg3, letterSpacing:'0.6px', textTransform:'uppercase' }}>
+                    Curated · updated {new Date().toLocaleDateString('en', { month:'short', year:'numeric' })}
+                  </span>
+                </div>
+                <h1 style={{ fontFamily:SANS, fontSize:44, fontWeight:600,
+                  color:T.fg1, letterSpacing:'-1.1px', lineHeight:1.05,
+                  marginBottom:14 }}>
+                  Ecosystem
+                </h1>
+                <p style={{ fontFamily:SANS, fontSize:17, lineHeight:1.55, color:T.fg3,
+                  maxWidth: 620, textWrap:'pretty' }}>
+                  Companion tools that pair with Docent. Hand off a run to a notebook,
+                  swap the reasoning backend, or bring Docent’s workflows into your
+                  editor.
+                </p>
+              </header>
+
+              {/* Companion tools */}
+              <SectionLabel dot={BRAND}
+                Right={
+                  <span style={{ fontFamily:MONO, fontSize:10.5, color:T.fg4,
+                    letterSpacing:'0.4px' }}>
+                    {tools.length} tools
+                  </span>
+                }>
+                Companion tools
+              </SectionLabel>
+
+              <div>
+                {tools.map((t, i) => <ToolCard key={t.id} tool={t} index={i} />)}
+              </div>
+
+              {/* Inside Docent */}
+              {tweaks.showAttribution && (
+                <>
+                  <SectionLabel dot={BLUE}
+                    Right={
+                      <span style={{ fontFamily:MONO, fontSize:10.5, color:T.fg4,
+                        letterSpacing:'0.4px' }}>
+                        {INSIDE.length} libraries
+                      </span>
+                    }>
+                    Inside Docent
+                  </SectionLabel>
+                  <p style={{ fontFamily:SANS, fontSize:13.5, lineHeight:1.6, color:T.fg3,
+                    maxWidth: 620, marginBottom:18, marginTop:-6, textWrap:'pretty' }}>
+                    Open-source patterns we adopted, lightly adapted, into Docent’s codebase.
+                    Each entry links to the upstream project in our <span style={{ fontFamily:MONO,
+                      fontSize:12.5, color:T.fg2 }}>ATTRIBUTIONS.md</span>.
+                  </p>
+                  <InsideTable />
+                </>
+              )}
+
+              {/* Footer CTA */}
+              <SectionLabel dot={BRAND_DEEP}>Contribute</SectionLabel>
+              <FooterCTA />
+
+              {/* Tiny page footer */}
+              <div style={{ marginTop:48, paddingTop:24,
+                  borderTop:`1px solid ${T.border}`,
+                  display:'flex', alignItems:'center', justifyContent:'space-between',
+                  flexWrap:'wrap', gap:12 }}>
+                <span style={{ fontFamily:MONO, fontSize:11, color:T.fg4,
+                  letterSpacing:'0.4px' }}>
+                  docent.dev/ecosystem
+                </span>
+                <div style={{ display:'flex', gap:6 }}>
+                  <GhostBtn size="sm" icon={<Ico.Github/>}>Repo</GhostBtn>
+                  <GhostBtn size="sm" icon={<Ico.Book/>}>Docs</GhostBtn>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+
+        <window.TweaksPanel>
+          <window.TweakToggle label="Dark Mode" value={tweaks.darkMode}
+            onChange={v => setTweak('darkMode', v)} />
+          <window.TweakToggle label="Per-tool accent colors" value={tweaks.accentVariety}
+            onChange={v => setTweak('accentVariety', v)} />
+          <window.TweakToggle label="Show Inside Docent table" value={tweaks.showAttribution}
+            onChange={v => setTweak('showAttribution', v)} />
+        </window.TweaksPanel>
+      </div>
+    </ThemeCtx.Provider>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

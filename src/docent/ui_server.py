@@ -2,13 +2,16 @@
 
 import asyncio
 import json
+import os
+import subprocess
+import sys
 import tomllib
 from pathlib import Path
 from typing import Any, Optional
 
 import httpx
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -711,6 +714,168 @@ async def _stream_studio_run(studio_action: str, args: dict[str, Any]):
                 break
     finally:
         await thread
+
+
+# ── File-system helpers ───────────────────────────────────────────────────────
+
+@app.get("/api/fs/read")
+async def fs_read(path: str = Query(...)) -> JSONResponse:
+    """Read a text file from the local filesystem (for Markdown preview)."""
+    try:
+        p = Path(path).expanduser()
+        if not p.is_file():
+            return JSONResponse({"error": f"File not found: {path}"}, status_code=404)
+        size = p.stat().st_size
+        if size > 500_000:
+            return JSONResponse({"error": "File too large to preview (>500 KB)"}, status_code=400)
+        content = p.read_text(encoding="utf-8", errors="replace")
+        return JSONResponse({"content": content})
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.get("/api/fs/open")
+async def fs_open(path: str = Query(...)) -> JSONResponse:
+    """Open a file or its parent folder in the OS file manager."""
+    try:
+        p = Path(path).expanduser()
+        target = p if p.is_dir() else p.parent
+        if sys.platform == "win32":
+            os.startfile(str(target))  # type: ignore[attr-defined]
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(target)])
+        else:
+            subprocess.Popen(["xdg-open", str(target)])
+        return JSONResponse({"ok": True})
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+class FsPickBody(BaseModel):
+    extensions: list[str] = []
+    title: str = "Select files"
+
+
+@app.post("/api/fs/pick")
+async def fs_pick(body: FsPickBody) -> JSONResponse:
+    """Open a native OS file-picker dialog and return selected paths."""
+    def _pick() -> list[str]:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        root.wm_attributes("-topmost", True)  # type: ignore[arg-type]
+        ftypes: list[tuple[str, str]] = []
+        if body.extensions:
+            ftypes.append(("Supported files", " ".join("*" + e for e in body.extensions)))
+        ftypes.append(("All files", "*.*"))
+        paths = filedialog.askopenfilenames(
+            title=body.title,
+            filetypes=ftypes,
+        )
+        root.destroy()
+        return list(paths)
+
+    try:
+        selected = await asyncio.to_thread(_pick)
+        return JSONResponse({"paths": selected})
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+# ── Studio outputs ─────────────────────────────────────────────────────────────
+
+@app.get("/api/studio/outputs")
+async def studio_outputs() -> JSONResponse:
+    """List recent research output files from the configured output directory."""
+    try:
+        from docent.config import load_settings
+        settings = await asyncio.to_thread(load_settings)
+        output_dir = settings.research.output_dir.expanduser()
+    except Exception:
+        return JSONResponse({"files": [], "output_dir": None})
+
+    if not output_dir.is_dir():
+        return JSONResponse({"files": [], "output_dir": str(output_dir)})
+
+    files = []
+    try:
+        for f in sorted(output_dir.rglob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)[:30]:
+            try:
+                stat = f.stat()
+                files.append({
+                    "path": str(f),
+                    "name": f.name,
+                    "folder": f.parent.name,
+                    "size": stat.st_size,
+                    "mtime": stat.st_mtime,
+                })
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    return JSONResponse({"files": files, "output_dir": str(output_dir)})
+
+
+# ── OpenCode server management ─────────────────────────────────────────────────
+
+_opencode_proc: Optional[subprocess.Popen] = None  # type: ignore[type-arg]
+
+
+@app.post("/api/opencode/start")
+async def opencode_start() -> JSONResponse:
+    global _opencode_proc
+    # Check if already reachable
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            r = await client.get("http://127.0.0.1:4096/global/health")
+            if r.status_code == 200:
+                return JSONResponse({"ok": True, "status": "already_running"})
+    except Exception:
+        pass
+    try:
+        flags = 0
+        if sys.platform == "win32":
+            flags = subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
+        _opencode_proc = subprocess.Popen(
+            ["opencode", "serve", "--port", "4096"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=flags,
+        )
+        # Give it a moment to start
+        await asyncio.sleep(1.5)
+        return JSONResponse({"ok": True, "status": "started", "pid": _opencode_proc.pid})
+    except FileNotFoundError:
+        return JSONResponse({"ok": False, "error": "opencode not found — install: npm install -g opencode"}, status_code=500)
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
+
+@app.post("/api/opencode/stop")
+async def opencode_stop() -> JSONResponse:
+    global _opencode_proc
+    if _opencode_proc is not None:
+        try:
+            _opencode_proc.terminate()
+            _opencode_proc = None
+            return JSONResponse({"ok": True, "status": "stopped"})
+        except Exception as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+    return JSONResponse({"ok": True, "status": "not_running"})
+
+
+@app.get("/api/opencode/status")
+async def opencode_status() -> JSONResponse:
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            r = await client.get("http://127.0.0.1:4096/global/health")
+            if r.status_code == 200:
+                return JSONResponse({"running": True})
+    except Exception:
+        pass
+    return JSONResponse({"running": False})
 
 
 @app.post("/api/studio/run")

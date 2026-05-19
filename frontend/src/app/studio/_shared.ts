@@ -1,7 +1,7 @@
 // Shared types, constants, and pure functions for the Studio page.
 // No React — imported by both _form.tsx and _output.tsx.
 
-export type Status = 'idle' | 'running' | 'success' | 'failure';
+export type Status = 'idle' | 'running' | 'success' | 'failure' | 'stopped';
 export type ActionId =
   | 'deep' | 'lit' | 'peer' | 'compare' | 'draft' | 'replicate' | 'audit'
   | 'search' | 'getpaper' | 'scholarly' | 'notebook'
@@ -39,7 +39,7 @@ export interface RunRecord {
   actionId: ActionId;
   actionLabel: string;
   detail: string;
-  status: 'success' | 'failure' | 'running';
+  status: 'success' | 'failure' | 'running' | 'stopped';
   timeAgo: string;
   startedAt: number;
   state: Partial<FormState>;
@@ -91,13 +91,25 @@ export const BACKENDS = ['Free', 'Feynman', 'Docent', 'Groq', 'Gemini', 'OpenRou
 // ── Phases ─────────────────────────────────────────────────────────────────────
 
 export const PHASE_LABELS: Record<string, string> = {
+  // generic
   plan: 'Plan', search: 'Search', fetch: 'Fetch', parse: 'Parse',
   synth: 'Synth', save: 'Save', done: 'Done', cost: 'Cost', warn: 'Warn', error: 'Error',
+  // free-tier backend
+  web_search: 'Web', paper_search: 'Papers', compile: 'Compile',
+  // docent pipeline backend
+  search_plan: 'Plan', write: 'Write', review: 'Review', refine: 'Refine',
+  verify: 'Verify', verify_citations: 'Citations', research: 'Research',
+  // action-specific
+  compare: 'Compare', analyze: 'Analyze', audit: 'Audit',
 };
 
 export const PHASE_TONE: Record<string, 'info' | 'warn' | 'error'> = {
   plan: 'info', search: 'info', fetch: 'info', parse: 'info',
   synth: 'info', save: 'info', done: 'info',
+  web_search: 'info', paper_search: 'info', compile: 'info',
+  search_plan: 'info', write: 'info', review: 'info', refine: 'info',
+  verify: 'info', verify_citations: 'info', research: 'info',
+  compare: 'info', analyze: 'info', audit: 'info',
   cost: 'warn', warn: 'warn', error: 'error',
 };
 

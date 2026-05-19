@@ -15,6 +15,10 @@ import {
 const BRAND      = '#18E299';
 const BRAND_DEEP = '#0fa76e';
 const RED        = '#D45656';
+const INDIGO     = '#6366f1';
+const INDIGO_DIM = '#a8b0f7';
+const AMBER_HDR  = '#F59E0B';
+const BLUE_HDR   = '#3B82F6';
 
 // ── Primitives ─────────────────────────────────────────────────────────────────
 
@@ -40,10 +44,10 @@ export function PrimaryBtn({ icon, children, onClick, disabled, full, size = 'md
     <button onClick={onClick} disabled={disabled} style={{
       display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7,
       padding: pad, borderRadius: 9999,
-      background: disabled ? '#a8e8cf' : BRAND,
-      color: '#0d0d0d', fontFamily: 'var(--sans)', fontSize: fs, fontWeight: 600,
+      background: disabled ? INDIGO_DIM : INDIGO,
+      color: '#fff', fontFamily: 'var(--sans)', fontSize: fs, fontWeight: 600,
       border: 'none', cursor: disabled ? 'not-allowed' : 'pointer',
-      width: full ? '100%' : 'auto', opacity: disabled ? 0.7 : 1,
+      width: full ? '100%' : 'auto', opacity: disabled ? 0.65 : 1,
       transition: 'opacity 0.12s',
     }}>
       {icon}{children}
@@ -238,12 +242,12 @@ export function Chip({ color, children, icon }: { color?: string; children: Reac
 
 // ── Action list ────────────────────────────────────────────────────────────────
 
-function ActionRow({ id, label, isActive, isPreset, onClick, onDelete }: {
-  id: string; label: string; isActive: boolean; isPreset?: boolean;
+function ActionRow({ id, label, desc, isActive, isPreset, onClick, onDelete }: {
+  id: string; label: string; desc?: string; isActive: boolean; isPreset?: boolean;
   onClick: () => void; onDelete?: (e: React.MouseEvent) => void;
 }) {
   return (
-    <div className="action-row" style={{ position: 'relative', display: 'flex', alignItems: 'center', borderRadius: 6, background: isActive ? BRAND + '1f' : 'transparent', transition: 'background 0.1s' }}>
+    <div className="action-row" title={desc} style={{ position: 'relative', display: 'flex', alignItems: 'center', borderRadius: 6, background: isActive ? BRAND + '1f' : 'transparent', transition: 'background 0.1s' }}>
       <button onClick={onClick} style={{
         flex: 1, textAlign: 'left', padding: '6px 10px', borderRadius: 6, border: 'none',
         background: 'transparent', cursor: 'pointer', fontFamily: 'var(--sans)', fontSize: 12.5,
@@ -263,6 +267,12 @@ function ActionRow({ id, label, isActive, isPreset, onClick, onDelete }: {
     </div>
   );
 }
+
+const GROUP_ACCENT: Record<string, string> = {
+  research:  AMBER_HDR,
+  utilities: BLUE_HDR,
+  config:    'var(--fg4)',
+};
 
 function ActionList({ activeId, onSelect, presets, onDeletePreset, onSelectPreset }: {
   activeId: string;
@@ -288,18 +298,24 @@ function ActionList({ activeId, onSelect, presets, onDeletePreset, onSelectPrese
           </div>
         </div>
       )}
-      {ACTIONS.map(group => (
-        <div key={group.key}>
-          <div style={{ padding: '0 4px 6px', fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 500, color: 'var(--fg4)', letterSpacing: '0.7px', textTransform: 'uppercase' }}>{group.label}</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-            {group.items.map(item => (
-              <ActionRow key={item.id} id={item.id} label={item.label}
-                isActive={item.id === activeId}
-                onClick={() => onSelect(item.id as ActionId)} />
-            ))}
+      {ACTIONS.map(group => {
+        const accent = GROUP_ACCENT[group.key] ?? 'var(--fg4)';
+        return (
+          <div key={group.key}>
+            <div style={{ padding: '0 4px 6px', display: 'flex', alignItems: 'center', gap: 5, fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 500, color: 'var(--fg4)', letterSpacing: '0.7px', textTransform: 'uppercase' }}>
+              <span style={{ width: 5, height: 5, borderRadius: '50%', background: accent, flexShrink: 0 }} />
+              {group.label}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              {group.items.map(item => (
+                <ActionRow key={item.id} id={item.id} label={item.label} desc={item.desc}
+                  isActive={item.id === activeId}
+                  onClick={() => onSelect(item.id as ActionId)} />
+              ))}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -327,14 +343,35 @@ function BackendSelector({ value, onChange, freeDisabled }: {
 function GuideFiles({ files, setFiles }: { files: string[]; setFiles: (f: string[]) => void }) {
   const [open, setOpen] = useState(files.length > 0);
   const [draft, setDraft] = useState('');
+  const [picking, setPicking] = useState(false);
+
+  async function handleBrowse() {
+    setPicking(true);
+    try {
+      const r = await fetch('/api/fs/pick', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ extensions: ['.pdf', '.md', '.txt', '.docx'], title: 'Select guide files' }),
+      });
+      const j = await r.json() as { paths?: string[]; error?: string };
+      if (j.paths && j.paths.length > 0) {
+        const newPaths = j.paths.filter(p => !files.includes(p));
+        setFiles([...files, ...newPaths]);
+        setOpen(true);
+      }
+    } catch { /* ignore */ } finally {
+      setPicking(false);
+    }
+  }
+
   return (
     <div>
-      <button onClick={() => setOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px 0', color: 'var(--fg3)', fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500 }}>
+      <button onClick={() => setOpen(o => !o)} title="PDFs or text files used to give context or steer the research. The AI reads these alongside the topic." style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px 0', color: 'var(--fg3)', fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500 }}>
         <span style={{ display: 'flex', transition: 'transform 0.12s', transform: open ? 'rotate(0deg)' : 'rotate(-90deg)' }}>
           <ChevronDown size={14} strokeWidth={2} />
         </span>
         Add guide files
-        <span style={{ color: 'var(--fg4)', fontWeight: 400 }}> (optional · or drop PDFs)</span>
+        <span style={{ color: 'var(--fg4)', fontWeight: 400 }}> (optional · PDFs / docs that steer the research)</span>
         {files.length > 0 && (
           <span style={{ marginLeft: 4, fontFamily: 'var(--mono)', fontSize: 10, color: BRAND_DEEP, background: BRAND + '1f', padding: '1px 6px', borderRadius: 9999 }}>{files.length}</span>
         )}
@@ -346,6 +383,11 @@ function GuideFiles({ files, setFiles }: { files: string[]; setFiles: (f: string
             <button onClick={() => { if (draft.trim()) { setFiles([...files, draft.trim()]); setDraft(''); } }}
               style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border-md)', background: 'var(--gray100)', color: 'var(--fg2)', fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
               <Plus size={14} strokeWidth={2} /> Add
+            </button>
+            <button onClick={handleBrowse} disabled={picking}
+              title="Open file picker to browse your machine"
+              style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border-md)', background: 'var(--gray100)', color: 'var(--fg2)', fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500, cursor: picking ? 'wait' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, opacity: picking ? 0.6 : 1 }}>
+              <Upload size={13} strokeWidth={1.6} /> Browse
             </button>
           </div>
           {files.length > 0 && (
@@ -371,19 +413,42 @@ function GuideFiles({ files, setFiles }: { files: string[]; setFiles: (f: string
 
 type SetFn = (k: keyof FormState, v: unknown) => void;
 
+const BACKEND_NOTES: Record<string, string> = {
+  Free:       'Tavily search + source aggregation. No API key, no AI synthesis.',
+  Feynman:    'Autonomous deep-research agent. Runs 3–30 min.',
+  Docent:     'Native 6-stage synthesis pipeline. Requires OpenCode server.',
+  Groq:       'Fast LLM synthesis via Groq. Requires groq_api_key.',
+  Gemini:     'Google Gemini synthesis. Requires gemini_api_key.',
+  OpenRouter: 'Synthesis via OpenRouter. Supports many models.',
+  Anthropic:  'Claude synthesis. Requires anthropic_api_key.',
+  OpenAI:     'GPT-4o synthesis. Requires openai_api_key.',
+  Ollama:     'Local model inference. Ollama server must be running.',
+  'LM Studio': 'Local inference via LM Studio server.',
+};
+
+const DEST_NOTES: Record<string, string> = {
+  Local:      'Saved to your configured docent research folder.',
+  Notebook:   'Uploaded to NotebookLM after the run.',
+  'Pipe →':   'Output fed directly into the next action\'s input — use to chain actions.',
+};
+
 function FormTopic({ state, set }: { state: FormState; set: SetFn }) {
+  const backendNote = BACKEND_NOTES[state.backend] ?? 'Runs 3–30 min. May time out over MCP.';
+  const destNote    = DEST_NOTES[state.dest] ?? '';
   return <>
     <Field label="Topic">
       <StudioInput value={state.topic} onChange={v => set('topic', v)} placeholder="e.g. storm surge inundation under climate change" />
     </Field>
     <Field label="Backend">
       <BackendSelector value={state.backend} onChange={v => set('backend', v)} />
-      {state.backend === 'Free'
-        ? <Note icon={<Sparkles size={12} strokeWidth={1.4} />}>No API key needed.</Note>
-        : <Note tone="warn">Runs 3–30 min. May time out over MCP.</Note>}
+      <Note icon={state.backend === 'Free' ? <Sparkles size={12} strokeWidth={1.4} /> : undefined}
+        tone={state.backend !== 'Free' && state.backend !== 'Docent' ? undefined : undefined}>
+        {backendNote}
+      </Note>
     </Field>
-    <Field label="Output destination" hint="Pipe → chains result into next action">
-      <Segmented value={state.dest} onChange={v => set('dest', v)} options={['Local', 'Notebook', 'Vault', 'Pipe →']} />
+    <Field label="Output destination">
+      <Segmented value={state.dest} onChange={v => set('dest', v)} options={['Local', 'Notebook', 'Pipe →']} />
+      {destNote && <Note>{destNote}</Note>}
     </Field>
     <GuideFiles files={state.guides} setFiles={v => set('guides', v)} />
   </>;
@@ -463,10 +528,55 @@ function FormCfgShow() {
   return <div style={{ fontFamily: 'var(--sans)', fontSize: 12.5, color: 'var(--fg3)', lineHeight: 1.5 }}>Display current configuration values. API keys are masked.</div>;
 }
 
+const CFG_KEY_OPTIONS: { key: string; label: string }[] = [
+  { key: 'tavily_api_key',          label: 'Tavily API key' },
+  { key: 'semantic_scholar_api_key', label: 'Semantic Scholar API key' },
+  { key: 'alphaxiv_api_key',        label: 'AlphaXiv API key' },
+  { key: 'groq_api_key',            label: 'Groq API key' },
+  { key: 'groq_model',              label: 'Groq model' },
+  { key: 'gemini_api_key',          label: 'Gemini API key' },
+  { key: 'gemini_model',            label: 'Gemini model' },
+  { key: 'openrouter_api_key',      label: 'OpenRouter API key' },
+  { key: 'openrouter_model',        label: 'OpenRouter model' },
+  { key: 'mistral_api_key',         label: 'Mistral API key' },
+  { key: 'mistral_model',           label: 'Mistral model' },
+  { key: 'cerebras_api_key',        label: 'Cerebras API key' },
+  { key: 'cerebras_model',          label: 'Cerebras model' },
+  { key: 'feynman_model',           label: 'Feynman model override' },
+  { key: 'feynman_timeout',         label: 'Feynman timeout (s)' },
+  { key: 'output_dir',              label: 'Research output directory' },
+  { key: 'studio_backend',          label: 'Default backend' },
+  { key: 'notebooklm_notebook_id',  label: 'NotebookLM notebook ID' },
+  { key: 'notebooklm_source_limit', label: 'NotebookLM source limit' },
+  { key: 'tavily_research_timeout', label: 'Tavily research timeout (s)' },
+  { key: 'ollama_model',            label: 'Ollama model' },
+  { key: 'ollama_base_url',         label: 'Ollama base URL' },
+  { key: 'lm_studio_model',         label: 'LM Studio model' },
+  { key: 'lm_studio_base_url',      label: 'LM Studio base URL' },
+];
+
 function FormCfgSet({ state, set }: { state: FormState; set: SetFn }) {
+  const [focus, setFocus] = useState(false);
   return <>
-    <Field label="Key"><StudioInput value={state.cfgKey} onChange={v => set('cfgKey', v)} placeholder="anthropic_api_key" mono /></Field>
-    <Field label="Value"><StudioInput value={state.cfgVal} onChange={v => set('cfgVal', v)} placeholder="sk-ant-…" mono /></Field>
+    <Field label="Key">
+      <select value={state.cfgKey} onChange={e => set('cfgKey', e.target.value)}
+        onFocus={() => setFocus(true)} onBlur={() => setFocus(false)}
+        style={{
+          width: '100%', padding: '8px 12px',
+          border: `1px solid ${focus ? INDIGO : 'var(--border-md)'}`,
+          borderRadius: 8, fontFamily: 'var(--mono)', fontSize: 12.5,
+          color: 'var(--fg1)', background: 'var(--bg)', outline: 'none',
+          transition: 'border-color 0.15s', cursor: 'pointer',
+        }}>
+        <option value="">— select a key —</option>
+        {CFG_KEY_OPTIONS.map(o => (
+          <option key={o.key} value={o.key}>{o.label} ({o.key})</option>
+        ))}
+      </select>
+    </Field>
+    <Field label="Value">
+      <StudioInput value={state.cfgVal} onChange={v => set('cfgVal', v)} placeholder="Paste value here…" mono />
+    </Field>
   </>;
 }
 
@@ -555,7 +665,26 @@ export function LeftColumn({ actionId, setActionId, state, set, onRun, gating, s
   const [dragHover, setDragHover] = useState(false);
   const supportsGuides = ['topic', 'artifact', 'compare'].includes(action.form);
 
+  const runDisabled = (() => {
+    if (action.form === 'topic')    return !state.topic.trim();
+    if (action.form === 'artifact') return !state.artifact.trim();
+    if (action.form === 'compare')  return !state.artifactA.trim() || !state.artifactB.trim();
+    if (action.form === 'search')   return !state.query.trim();
+    if (action.form === 'getpaper') return !state.arxivId.trim();
+    return false;
+  })();
+
+  const runDisabledTitle = (() => {
+    if (action.form === 'topic' && !state.topic.trim())         return 'Enter a topic to run';
+    if (action.form === 'artifact' && !state.artifact.trim())   return 'Enter an artifact to run';
+    if (action.form === 'compare' && (!state.artifactA.trim() || !state.artifactB.trim())) return 'Enter both artifacts to run';
+    if (action.form === 'search' && !state.query.trim())        return 'Enter a query to run';
+    if (action.form === 'getpaper' && !state.arxivId.trim())    return 'Enter an arXiv ID to run';
+    return undefined;
+  })();
+
   function handleRunClick() {
+    if (runDisabled) return;
     const usesFree = action.form === 'topic' && state.backend === 'Free';
     if (usesFree) setGating(true); else onRun();
   }
@@ -579,10 +708,10 @@ export function LeftColumn({ actionId, setActionId, state, set, onRun, gating, s
 
   return (
     <aside onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}
-      style={{ width: 380, flexShrink: 0, height: '100%', borderRight: '1px solid var(--border)', background: 'var(--bg)', display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
+      style={{ width: 380, flexShrink: 0, height: '100%', borderRight: '1px solid var(--border)', background: 'transparent', display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
 
-      <div style={{ padding: '18px 22px 12px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, background: `linear-gradient(135deg, ${BRAND}0d 0%, transparent 65%)` }}>
-        <div>
+      <div style={{ padding: '18px 22px 12px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+        <div style={{ position: 'relative' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 3 }}>
             <span style={{ color: BRAND_DEEP, display: 'flex' }}><FlaskConical size={16} strokeWidth={1.5} /></span>
             <h1 style={{ fontFamily: 'var(--sans)', fontSize: 18, fontWeight: 600, color: 'var(--fg1)', letterSpacing: '-0.3px', margin: 0 }}>Studio</h1>
@@ -590,7 +719,7 @@ export function LeftColumn({ actionId, setActionId, state, set, onRun, gating, s
           <p style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg3)', margin: 0 }}>Run AI research actions</p>
         </div>
         <button onClick={onOpenCmdK} title="Quick action (Ctrl+K)"
-          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border-md)', background: 'var(--gray100)', cursor: 'pointer', color: 'var(--fg3)' }}>
+          style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border-md)', background: 'var(--gray100)', cursor: 'pointer', color: 'var(--fg3)' }}>
           <Search size={14} strokeWidth={1.5} />
           <span style={{ display: 'inline-flex', gap: 2 }}><Kbd>Ctrl</Kbd><Kbd>K</Kbd></span>
         </button>
@@ -612,7 +741,7 @@ export function LeftColumn({ actionId, setActionId, state, set, onRun, gating, s
         </div>
       </div>
 
-      <div style={{ padding: '12px 22px 18px', borderTop: '1px solid var(--border)', background: 'var(--bg)', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 -4px 16px rgba(0,0,0,0.05)' }}>
+      <div style={{ padding: '12px 22px 18px', borderTop: '1px solid var(--border)', background: 'transparent', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 -4px 16px rgba(0,0,0,0.04)' }}>
         {!gating && !isRunning && <CostEstimate actionId={actionId} backend={state.backend} />}
         {gating ? (
           <FreeTierGate onCancel={() => setGating(false)} onProceed={() => { setGating(false); onRun(); }} />
@@ -621,12 +750,14 @@ export function LeftColumn({ actionId, setActionId, state, set, onRun, gating, s
             <Square size={12} strokeWidth={2} /> Stop run
           </button>
         ) : (
-          <PrimaryBtn full icon={<Play size={13} strokeWidth={2} />} onClick={handleRunClick}>
-            {runLabel(action)}
-            <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 3, opacity: 0.7 }}>
-              <Kbd>Ctrl</Kbd><Kbd>↵</Kbd>
-            </span>
-          </PrimaryBtn>
+          <span title={runDisabledTitle} style={{ display: 'block' }}>
+            <PrimaryBtn full icon={<Play size={13} strokeWidth={2} />} onClick={handleRunClick} disabled={runDisabled}>
+              {runLabel(action)}
+              <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 3, opacity: 0.7 }}>
+                <Kbd>Ctrl</Kbd><Kbd>↵</Kbd>
+              </span>
+            </PrimaryBtn>
+          </span>
         )}
       </div>
 

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { LayoutDashboard, BookOpen, FlaskConical, BookText, Settings } from 'lucide-react';
+import { LayoutDashboard, BookOpen, FlaskConical, BookText, Settings, Globe2 } from 'lucide-react';
 import WelcomeModal, { type UserProfile } from './WelcomeModal';
 
 interface NavItem {
@@ -35,6 +35,12 @@ const PLUGIN_NAV: NavItem[] = [
 ];
 
 const UTILITY_NAV: NavItem[] = [
+  {
+    id: 'ecosystem',
+    href: '/ecosystem',
+    label: 'Ecosystem',
+    icon: <Globe2 size={15} strokeWidth={1.5} />,
+  },
   {
     id: 'docs',
     href: '/docs',

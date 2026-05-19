@@ -10,6 +10,10 @@ const AMBER = '#C37D0D';
 const AMBER_BORDER = '#F59E0B';
 const RED = '#D45656';
 const BLUE = '#3772cf';
+// Complementary accents — used decoratively (hero washes, phase strips, section dots).
+// Same chroma family as brand green; never used for primary CTAs.
+const VIOLET = '#8B5CF6';
+const PINK = '#EC78A8';
 
 // ─── THEME ────────────────────────────────────────────────────────────────────
 function makeTheme(dark) {
@@ -134,6 +138,29 @@ const Ico = {
     <path d="M3 12h6"/><path d="M15 12h6"/>
     <rect x="9" y="8" width="6" height="8" rx="1"/>
   </>, 13),
+  Boxes: ico(<>
+    <path d="M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L11 19.61"/>
+    <path d="m7 16.5-4.74-2.85"/><path d="m7 16.5 5-3"/><path d="M7 16.5v5.17"/>
+    <path d="M12 13.63V8.37a2 2 0 0 0-.97-1.71l-3-1.8a2 2 0 0 0-2.06 0l-3 1.8A2 2 0 0 0 2 8.37v3.24"/>
+    <path d="m17 16.5-5-3"/><path d="m17 16.5 4.74-2.85"/><path d="M17 16.5v5.17"/>
+    <path d="M22 14.63v3.24a2 2 0 0 1-.97 1.71l-3 1.8a2 2 0 0 1-2.06 0L13 19.61"/>
+  </>),
+  Github: ico(<path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/>, 13),
+  Terminal: ico(<><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></>, 13),
+  Package: ico(<>
+    <path d="m7.5 4.27 9 5.15"/>
+    <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
+    <path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>
+  </>),
+  Book: ico(<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/>),
+  Cpu: ico(<>
+    <rect x="4" y="4" width="16" height="16" rx="2" ry="2"/>
+    <rect x="9" y="9" width="6" height="6"/>
+    <line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/>
+    <line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/>
+    <line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/>
+    <line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/>
+  </>),
 };
 
 // ─── ACTIONS ──────────────────────────────────────────────────────────────────
@@ -582,6 +609,29 @@ function Kbd({ children }) {
   );
 }
 
+// ─── HERO WASH ────────────────────────────────────────────────────────────────
+// Atmospheric multi-color gradient backdrop for page headers.
+// Subtle in light mode, dimmer in dark mode. Pass `tones=[c1,c2,c3]` to vary.
+function HeroWash({ tones, height=320, opacity, children }) {
+  const T = useTheme();
+  const [c1, c2, c3] = tones || [BRAND, BLUE, VIOLET];
+  const a = opacity || (T.dark ? 0.18 : 0.22);
+  const a2 = T.dark ? 0.10 : 0.14;
+  const a3 = T.dark ? 0.07 : 0.10;
+  const bg = `
+    radial-gradient(ellipse 760px 360px at 12% -10%, ${c1}${Math.round(a*255).toString(16).padStart(2,'0')}, transparent 60%),
+    radial-gradient(ellipse 600px 320px at 85% 0%,   ${c2}${Math.round(a2*255).toString(16).padStart(2,'0')}, transparent 60%),
+    radial-gradient(ellipse 520px 280px at 50% 30%,  ${c3}${Math.round(a3*255).toString(16).padStart(2,'0')}, transparent 60%)
+  `;
+  return (
+    <div style={{ position:'relative' }}>
+      <div aria-hidden="true" style={{ position:'absolute', inset:'0 0 auto 0',
+        height, pointerEvents:'none', background:bg, zIndex:0 }} />
+      <div style={{ position:'relative', zIndex:1 }}>{children}</div>
+    </div>
+  );
+}
+
 // ─── DOCENT WORDMARK ──────────────────────────────────────────────────────────
 function DocentWordmark() {
   const T = useTheme();
@@ -611,6 +661,7 @@ function Sidebar({ active, currentRun }) {
     { id:'dashboard', label:'Dashboard', Icon: Ico.LayoutDashboard, count:null },
     { id:'reading',   label:'Reading',   Icon: Ico.BookOpen,        count:12 },
     { id:'studio',    label:'Studio',    Icon: Ico.FlaskConical,    count:null },
+    { id:'ecosystem', label:'Ecosystem', Icon: Ico.Boxes,           count:null },
   ];
   const runningPhase = currentRun && currentRun.status === 'running' ? currentRun.currentPhase : null;
   return (
@@ -735,7 +786,7 @@ function StatusBanner({ dark, setDark, onOpenCmdK, onOpenHistory, historyOpen, r
 // ─── EXPORT ALL TO WINDOW ─────────────────────────────────────────────────────
 Object.assign(window, {
   // constants
-  SANS, MONO, BRAND, BRAND_DEEP, BRAND_LIGHT, AMBER, AMBER_BORDER, RED, BLUE,
+  SANS, MONO, BRAND, BRAND_DEEP, BRAND_LIGHT, AMBER, AMBER_BORDER, RED, BLUE, VIOLET, PINK,
   // theme
   makeTheme, ThemeCtx, useTheme,
   // icons
@@ -748,5 +799,5 @@ Object.assign(window, {
   PrimaryBtn, GhostBtn, PillToggle, Segmented, Input, Label, Field, Note,
   Toggle, Stepper, CodeBlock, Chip, Kbd,
   // chrome
-  DocentWordmark, StatusIndicator, Sidebar, StatusBanner,
+  DocentWordmark, StatusIndicator, Sidebar, StatusBanner, HeroWash,
 });

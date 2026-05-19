@@ -1,13 +1,14 @@
 # CONTEXT - resume hint for next session
 
-**Current Task:** Studio backend wired — SSE streaming endpoint live, free research runs end-to-end.
+**Current Task:** Design overhaul from Claude Design v2 files — gradient wash, fonts, ecosystem page, all pages updated.
 
 **Key Decisions:**
-- `POST /api/studio/run` streams ProgressEvents as SSE; frontend reads with fetch + ReadableStream
-- `_preflight_free_backend` now skips interactive prompts when `confirmed=True` (not just `via_mcp`); keeps `via_mcp=False` so output file gets human-readable footer, not MCP synthesis prompt
-- `_serialize` imported from `mcp_server` into `ui_server` (was NameError on first live run)
+- Hero gradient uses 3 colours (BRAND green #18E299 + blue #3B82F6 + violet #8B5CF6) via CSS var `--hero-grad`
+- Inter + Geist Mono fonts added via Google Fonts in layout.tsx
+- Ecosystem page at /ecosystem — violet accent for companion tools, pink for contribute section
+- User is running `npm run dev` (Next.js dev server) not `docent ui`
 
 **Next Steps:**
-1. Wire result panels — `renderResult()` in `_output.tsx` still shows mock data; parse `done.raw` JSON to show real output file path, sources count, etc.
-2. Test non-free backends (Feynman, Groq) through the UI
-3. Tag v1.2.0 once Studio backend fully verified
+1. User reviews the live design — ask for feedback on colours/layout
+2. Tag v1.2.0 once fully verified
+3. Build with `python scripts/build_ui.py` before any release

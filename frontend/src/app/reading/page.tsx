@@ -517,15 +517,17 @@ ${sectionsHtml}
         {/* Page header */}
         <div
           style={{
+            position: 'relative',
             padding: '20px 24px 0',
             borderBottom: '1px solid var(--border)',
             flexShrink: 0,
-            background: 'linear-gradient(135deg, #18E29910 0%, transparent 65%)',
           }}
         >
+          <div aria-hidden className="hero-wash" />
           {/* Title row */}
           <div
             style={{
+              position: 'relative',
               display: 'flex',
               alignItems: 'flex-start',
               justifyContent: 'space-between',
@@ -583,6 +585,7 @@ ${sectionsHtml}
           {/* Action bar */}
           <div
             style={{
+              position: 'relative',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',

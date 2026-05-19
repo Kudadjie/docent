@@ -2,42 +2,15 @@
 
 /* ── Design tokens ─────────────────────────────────────────────── */
 :root {
+  /* ── Always dark ─────────────────────────────────────── */
   --brand:        #18E299;
   --brand-light:  #d4fae8;
   --brand-deep:   #0fa76e;
-
-  --bg:           #f6f5f3;  /* warm off-white — main chrome/workspace */
-  --bg-subtle:    #ebebea;  /* sidebar, status banner — slightly darker */
-  --bg-card:      #ffffff;  /* modals, elevated panels — pure white for hierarchy */
-  --fg1:          #0d0d0d;
-  --fg2:          #333333;
-  --fg3:          #666666;
-  --fg4:          #888888;
-  --gray100:      #e9e9e7;
-  --gray200:      #dadad8;
-  --border:       rgba(0,0,0,0.08);
-  --border-md:    rgba(0,0,0,0.13);
-  --logo-border:  #0d0d0d;
-  --row-hover:    #eeecea;
-
+  --violet:       #8B5CF6;
+  --blue-hero:    #3B82F6;
   --error:        #D45656;
   --warning:      #C37D0D;
 
-  --amber-bg:     #FFF7ED;
-  --amber-text:   #B45309;
-  --amber-border: #F59E0B;
-  --red-bg:       #FEF2F2;
-  --red-text:     #B91C1C;
-  --code-bg:      #fafafa;
-  --code-border:  rgba(0,0,0,0.05);
-  --overlay:      rgba(0,0,0,0.25);
-  --amber-bg-strong: #FFEFD5;
-
-  --sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --mono: "SFMono-Regular", Consolas, "Liberation Mono", ui-monospace, monospace;
-}
-
-[data-theme="dark"] {
   --bg:           #0d0d0d;
   --bg-subtle:    #111111;
   --bg-card:      #141414;
@@ -52,15 +25,23 @@
   --logo-border:  rgba(255,255,255,0.22);
   --row-hover:    #1a1a1a;
 
-  --amber-bg:     rgba(245,158,11,0.10);
-  --amber-text:   #F5A623;
-  --red-bg:       rgba(212,86,86,0.12);
-  --red-text:     #F87171;
-  --code-bg:      #0a0a0a;
-  --code-border:  rgba(255,255,255,0.08);
-  --overlay:      rgba(0,0,0,0.55);
+  --hero-grad:
+    radial-gradient(ellipse 700px 280px at 12% 0%, #18E2991c, transparent 60%),
+    radial-gradient(ellipse 540px 240px at 88% 20%, #3B82F618, transparent 60%),
+    radial-gradient(ellipse 460px 200px at 50% 80%, #8B5CF612, transparent 60%);
+
+  --amber-bg:        rgba(245,158,11,0.10);
   --amber-bg-strong: rgba(245,158,11,0.18);
-  --amber-border: rgba(245,158,11,0.45);
+  --amber-text:      #F5A623;
+  --amber-border:    rgba(245,158,11,0.45);
+  --red-bg:          rgba(212,86,86,0.12);
+  --red-text:        #F87171;
+  --code-bg:         #0a0a0a;
+  --code-border:     rgba(255,255,255,0.08);
+  --overlay:         rgba(0,0,0,0.55);
+
+  --sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mono: 'Geist Mono', 'SFMono-Regular', Consolas, ui-monospace, monospace;
 }
 
 /* ── Animations ────────────────────────────────────────────────── */
@@ -128,6 +109,15 @@ body {
 .paper-row .row-actions { opacity: 0; transition: opacity 0.12s; }
 .paper-row:hover .row-actions { opacity: 1; }
 .row-fade { animation: fadeInUp 0.18s ease forwards; }
+
+/* ── Hero gradient wash utility ────────────────────────────────── */
+/* Usage: wrap a page header in position:relative, add a sibling div.hero-wash */
+.hero-wash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: var(--hero-grad);
+}
 
 @media (prefers-reduced-motion: reduce) {
   .row-fade { animation: none; }

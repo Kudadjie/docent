@@ -1,7 +1,7 @@
 """Pydantic input/result models for all StudioTool actions."""
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from docent.core.shapes import (
     ErrorShape,
@@ -80,6 +80,13 @@ _TO_NOTEBOOK_FIELD = Field(
 class DeepInputs(BaseModel):
     topic: str = Field(..., description="Research topic or question.")
     backend: str = Field("feynman", description=_BACKEND_DEEP_DESC, json_schema_extra={"enum": _BACKEND_ENUM})
+
+    @field_validator('topic')
+    @classmethod
+    def _topic_not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError('Topic is required and cannot be empty.')
+        return v.strip()
     output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
     to_notebook: bool = _TO_NOTEBOOK_FIELD
     guide_files: list[str] = _GUIDE_FILES_FIELD
@@ -96,6 +103,13 @@ class DeepInputs(BaseModel):
 class LitInputs(BaseModel):
     topic: str = Field(..., description="Research topic or question.")
     backend: str = Field("feynman", description=_BACKEND_DEEP_DESC, json_schema_extra={"enum": _BACKEND_ENUM})
+
+    @field_validator('topic')
+    @classmethod
+    def _topic_not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError('Topic is required and cannot be empty.')
+        return v.strip()
     output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
     to_notebook: bool = _TO_NOTEBOOK_FIELD
     guide_files: list[str] = _GUIDE_FILES_FIELD
@@ -204,6 +218,13 @@ class DraftInputs(BaseModel):
     backend: str = Field("feynman", description="Research backend — ask the user which to use. Options: 'feynman' (requires Feynman CLI; slow via MCP — suggest terminal instead), 'docent' (requires OpenCode server + API credits).")
     output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
     guide_files: list[str] = _GUIDE_FILES_FIELD
+
+    @field_validator('topic')
+    @classmethod
+    def _topic_not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError('Topic is required and cannot be empty.')
+        return v.strip()
 
 
 class ReplicateInputs(BaseModel):

@@ -5,9 +5,9 @@ import Sidebar from '@/components/Sidebar';
 import StatusBanner, { type DotState } from '@/components/StatusBanner';
 import { useDarkMode } from '@/hooks/useDarkMode';
 import { LeftColumn, CmdKPalette, PresetSaveModal } from './_form';
-import { OutputPanel, HistoryDrawer } from './_output';
+import { OutputPanel, HistoryDrawer, OutputsPanel } from './_output';
 import {
-  ACTION_PHASES, ACTIONS, findAction, actionSummary,
+  ACTIONS, findAction, actionSummary,
   type ActionId, type ActionMeta, type FormState,
   type LogEntry, type Source, type Preset, type RunRecord, type Status,
 } from './_shared';
@@ -24,18 +24,30 @@ const DEFAULT_FORM: FormState = {
 export default function StudioPage() {
   const { dark, toggleDark } = useDarkMode();
 
-  // ── Form state ──────────────────────────────────────────────────────────────
-  const [actionId, setActionId] = useState<ActionId>('deep');
-  const [form, setForm] = useState<FormState>(DEFAULT_FORM);
+  // ── Form state (sessionStorage-persisted so tab navigation doesn't reset it) ─
+  const [actionId, setActionId] = useState<ActionId>(() => {
+    try { return (sessionStorage.getItem('studio-actionId') as ActionId) || 'deep'; } catch { return 'deep'; }
+  });
+  const [form, setForm] = useState<FormState>(() => {
+    try {
+      const s = sessionStorage.getItem('studio-form');
+      return s ? { ...DEFAULT_FORM, ...(JSON.parse(s) as Partial<FormState>) } : DEFAULT_FORM;
+    } catch { return DEFAULT_FORM; }
+  });
   const set = useCallback((k: keyof FormState, v: unknown) => {
     setForm(s => ({ ...s, [k]: v }));
   }, []);
+
+  // Persist form + actionId to sessionStorage
+  useEffect(() => { try { sessionStorage.setItem('studio-actionId', actionId); } catch {} }, [actionId]);
+  useEffect(() => { try { sessionStorage.setItem('studio-form', JSON.stringify(form)); } catch {} }, [form]);
 
   // ── Run state ───────────────────────────────────────────────────────────────
   const [status, setStatus]           = useState<Status>('idle');
   const [logs, setLogs]               = useState<LogEntry[]>([]);
   const [sources, setSources]         = useState<Source[]>([]);
   const [currentPhase, setCurrentPhase] = useState<string | null>(null);
+  const [doneData, setDoneData]         = useState<Record<string, unknown> | null>(null);
   const [gating, setGating]           = useState(false);
   const abortRef  = useRef<AbortController | null>(null);
   const stoppedRef = useRef(false);
@@ -43,6 +55,7 @@ export default function StudioPage() {
   // ── Overlay / panel state ───────────────────────────────────────────────────
   const [cmdKOpen, setCmdKOpen]           = useState(false);
   const [historyOpen, setHistoryOpen]     = useState(false);
+  const [outputsOpen, setOutputsOpen]     = useState(false);
   const [savePresetOpen, setSavePresetOpen] = useState(false);
 
   // ── Presets ─────────────────────────────────────────────────────────────────
@@ -50,9 +63,18 @@ export default function StudioPage() {
   const [activePresetId, setActivePresetId] = useState<string | null>(null);
   const [recents, setRecents] = useState<ActionId[]>(['deep']);
 
-  // ── Run history ─────────────────────────────────────────────────────────────
-  const [runs, setRuns]               = useState<RunRecord[]>([]);
+  // ── Run history (localStorage-persisted) ────────────────────────────────────
+  const [runs, setRuns] = useState<RunRecord[]>(() => {
+    try {
+      const stored = localStorage.getItem('docent-studio-runs');
+      return stored ? (JSON.parse(stored) as RunRecord[]) : [];
+    } catch { return []; }
+  });
   const [currentRunId, setCurrentRunId] = useState<string | null>(null);
+
+  useEffect(() => {
+    try { localStorage.setItem('docent-studio-runs', JSON.stringify(runs)); } catch { /* quota */ }
+  }, [runs]);
 
   const action = findAction(actionId);
 
@@ -61,7 +83,7 @@ export default function StudioPage() {
     if (abortRef.current) { abortRef.current.abort(); abortRef.current = null; }
   }
 
-  function pushRun(finalStatus: 'success' | 'failure', finalLogs: LogEntry[], finalSources: Source[], finalPhase: string | null) {
+  function pushRun(finalStatus: 'success' | 'failure' | 'stopped', finalLogs: LogEntry[], finalSources: Source[], finalPhase: string | null) {
     const detail = actionSummary(action, form);
     setRuns(prev => [{
       id: 'r' + Date.now(),
@@ -85,9 +107,10 @@ export default function StudioPage() {
     const collectedSources: Source[] = [];
     setLogs([]);
     setSources([]);
+    setDoneData(null);
     setStatus('running');
     setCurrentRunId(null);
-    setCurrentPhase(ACTION_PHASES[actionId]?.[0] ?? null);
+    setCurrentPhase(null);
     setRecents(prev => [actionId, ...prev.filter(x => x !== actionId)].slice(0, 4) as ActionId[]);
 
     const controller = new AbortController();
@@ -156,6 +179,9 @@ export default function StudioPage() {
               setCurrentPhase(entry.phase);
             } else if (evt.type === 'done') {
               finalStatus = (evt.status as 'success' | 'failure') ?? 'success';
+              if (evt.raw) {
+                try { const parsed = JSON.parse(evt.raw as string) as Record<string, unknown>; setDoneData(parsed); } catch {}
+              }
               break outer;
             } else if (evt.type === 'error') {
               const entry: LogEntry = { phase: 'error', text: String(evt.message) };
@@ -190,11 +216,11 @@ export default function StudioPage() {
   function handleStop() {
     stoppedRef.current = true;
     stopRun();
-    setStatus('success');
-    pushRun('success', logs, sources, currentPhase);
+    setStatus('stopped');
+    pushRun('stopped', logs, sources, currentPhase);
   }
   function handleReset() {
-    stopRun(); setStatus('idle'); setLogs([]); setSources([]); setCurrentPhase(null);
+    stopRun(); setStatus('idle'); setLogs([]); setSources([]); setCurrentPhase(null); setDoneData(null);
   }
 
   function handlePipeToNotebook() {
@@ -228,7 +254,7 @@ export default function StudioPage() {
     setLogs(r.logs);
     setSources(r.sources ?? []);
     setCurrentPhase(r.currentPhase);
-    setStatus(r.status === 'running' ? 'success' : r.status);
+    setStatus(r.status === 'running' ? 'success' : r.status as Status);
     setCurrentRunId(r.id);
   }
 
@@ -239,7 +265,14 @@ export default function StudioPage() {
         e.preventDefault(); setCmdKOpen(o => !o);
       }
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && status !== 'running' && !gating) {
-        e.preventDefault(); handleRun();
+        e.preventDefault();
+        const a = action;
+        if (a.form === 'topic' && !form.topic.trim()) return;
+        if (a.form === 'artifact' && !form.artifact.trim()) return;
+        if (a.form === 'compare' && (!form.artifactA.trim() || !form.artifactB.trim())) return;
+        if (a.form === 'search' && !form.query.trim()) return;
+        if (a.form === 'getpaper' && !form.arxivId.trim()) return;
+        handleRun();
       }
     }
     window.addEventListener('keydown', onKey);
@@ -252,7 +285,7 @@ export default function StudioPage() {
     ? { status: 'running' as const, currentPhase: (currentPhase ?? 'run').slice(0, 7) }
     : null;
 
-  const dotState: DotState = status === 'running' ? 'working' : status === 'failure' ? 'error' : status === 'success' ? 'done' : 'idle';
+  const dotState: DotState = status === 'running' ? 'working' : status === 'failure' ? 'error' : (status === 'success' || status === 'stopped') ? 'done' : 'idle';
 
   const suggestedPresetName = action.label + ' · ' + (actionSummary(action, form) || '').slice(0, 30);
 
@@ -266,8 +299,13 @@ export default function StudioPage() {
           onOpenHistory={() => setHistoryOpen(o => !o)}
           historyOpen={historyOpen}
           runCount={runs.length}
+          onOpenOutputs={() => setOutputsOpen(o => !o)}
+          outputsOpen={outputsOpen}
         />
-        <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
+        <div style={{
+          flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden',
+          background: 'linear-gradient(135deg, rgba(24,226,153,0.07) 0%, rgba(139,92,246,0.04) 45%, transparent 75%)',
+        }}>
           <LeftColumn
             actionId={actionId} setActionId={id => { setActionId(id); setActivePresetId(null); }}
             state={form} set={set}
@@ -285,6 +323,7 @@ export default function StudioPage() {
             action={action} state={form}
             status={status} logs={logs} sources={sources}
             currentPhase={currentPhase}
+            doneData={doneData}
             onReset={handleReset}
             onSaveAsPreset={() => setSavePresetOpen(true)}
             onPipeToNotebook={handlePipeToNotebook}
@@ -297,6 +336,11 @@ export default function StudioPage() {
                 onClose={() => setHistoryOpen(false)}
                 onClear={() => setRuns([])}
               />
+            </div>
+          )}
+          {outputsOpen && (
+            <div style={{ animation: 'slideInRight 0.18s ease forwards' }}>
+              <OutputsPanel onClose={() => setOutputsOpen(false)} />
             </div>
           )}
         </div>

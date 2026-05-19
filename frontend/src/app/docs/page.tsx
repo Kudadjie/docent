@@ -11,6 +11,7 @@ type Section = {
 
 const SECTIONS: Section[] = [
   { id: 'overview', label: 'Overview' },
+  { id: 'studio', label: 'Studio' },
   { id: 'reading-queue', label: 'Reading Queue' },
   { id: 'cli', label: 'CLI Reference' },
   { id: 'mcp', label: 'MCP Setup' },
@@ -215,8 +216,13 @@ export default function DocsPage() {
             ))}
           </div>
 
-          {/* Content */}
-          <div style={{ flex: 1, padding: '28px 40px', overflow: 'auto', maxWidth: 820 }}>
+          {/* Content — hero wash bleeding from the top via background-image */}
+          <div style={{ flex: 1, padding: '28px 40px', overflow: 'auto', maxWidth: 820,
+            backgroundImage: 'var(--hero-grad)',
+            backgroundRepeat: 'no-repeat',
+            backgroundSize: '100% 320px',
+            backgroundAttachment: 'local',
+          }}>
 
             {/* Overview */}
             <Card>
@@ -239,6 +245,64 @@ docent reading sync-from-mendeley   (pulls metadata + order)
 Reading queue  →  next / start / done / export …
        ↓
 docent serve  →  Claude MCP  (or this UI)`}</CodeBlock>
+            </Card>
+
+            {/* Studio */}
+            <Card>
+              <SectionHeading id="studio">Studio</SectionHeading>
+              <Prose>
+                The Studio is Docent&apos;s research engine. Choose an action, fill in a topic or artifact,
+                select a backend, and run. Results stream live — you can see each phase as it progresses.
+                Use the UI at <Code>localhost:7432</Code> or call commands directly from the terminal.
+              </Prose>
+
+              <SubHeading>Research actions</SubHeading>
+              <CommandTable rows={[
+                { cmd: 'docent studio deep-research --topic "…"', desc: 'Multi-source synthesis: search → fetch → write → verify → review. Best for broad topic briefs.' },
+                { cmd: 'docent studio lit --topic "…"', desc: 'Literature review: search academic databases and compile a structured review.' },
+                { cmd: 'docent studio review --artifact <arXiv/PDF/URL>', desc: 'Peer-review critique of a single paper.' },
+                { cmd: 'docent studio compare --artifact-a <A> --artifact-b <B>', desc: 'Side-by-side analysis of two papers — shared findings, divergent claims, contradictions.' },
+                { cmd: 'docent studio draft --topic "…"', desc: 'Draft a section or writeup from gathered sources.' },
+                { cmd: 'docent studio replicate --artifact <arXiv/PDF>', desc: 'Replication protocol: what experiments, what data, what tools.' },
+                { cmd: 'docent studio audit --artifact <arXiv/PDF>', desc: 'Methods and evidence audit: data availability, statistical validity, reproducibility.' },
+              ]} />
+
+              <SubHeading>Utility actions</SubHeading>
+              <CommandTable rows={[
+                { cmd: 'docent studio search-papers --query "…"', desc: 'Search arXiv for papers matching a query.' },
+                { cmd: 'docent studio scholarly-search --query "…"', desc: 'Search Semantic Scholar.' },
+                { cmd: 'docent studio get-paper --arxiv-id 2401.12345', desc: 'Fetch full metadata and abstract for an arXiv paper.' },
+                { cmd: 'docent studio to-notebook', desc: 'Push research output and sources into a NotebookLM notebook.' },
+              ]} />
+
+              <SubHeading>Backends</SubHeading>
+              <CommandTable rows={[
+                { cmd: '--backend free', desc: 'Default. Tavily web search + Semantic Scholar academic search. No AI synthesis, no API key required.' },
+                { cmd: '--backend feynman', desc: 'Autonomous deep-research via Feynman CLI agent. Requires feynman installed and an LLM API key.' },
+                { cmd: '--backend docent', desc: 'Native 6-stage pipeline (planner → search → fetch → write → verify → review). Requires OpenCode server.' },
+                { cmd: '--backend groq / gemini / openrouter / …', desc: 'LLM-powered synthesis using your configured API key for that provider.' },
+              ]} />
+
+              <SubHeading>Output destinations</SubHeading>
+              <CommandTable rows={[
+                { cmd: '--output local', desc: 'Default. Save to ~/.docent/research/ (or configured output_dir).' },
+                { cmd: '--output notebook', desc: 'Upload output and sources to your NotebookLM notebook.' },
+              ]} />
+
+              <SubHeading>Guide files</SubHeading>
+              <Prose>
+                Attach PDFs or text files to steer the research. Pass one or more with{' '}
+                <Code>--guide-files path/to/file.pdf</Code>. In the Studio UI, use the{' '}
+                Browse button to pick files from your machine, or drag and drop onto the form.
+              </Prose>
+
+              <SubHeading>Config keys</SubHeading>
+              <CommandTable rows={[
+                { cmd: 'docent studio config-set --key output_dir --value "~/research"', desc: 'Set the directory where research output files are saved.' },
+                { cmd: 'docent studio config-set --key tavily_api_key --value tvly-…', desc: 'Set Tavily API key for web search.' },
+                { cmd: 'docent studio config-set --key groq_api_key --value gsk_…', desc: 'Set Groq API key for fast AI synthesis.' },
+                { cmd: 'docent studio config-show', desc: 'Show all current studio config values (API keys masked).' },
+              ]} />
             </Card>
 
             {/* Reading Queue */}

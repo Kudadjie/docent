@@ -1,6 +1,6 @@
 'use client';
 
-import { Sun, Moon, Bell, RefreshCw, Info, AlertTriangle, XCircle, X, Search } from 'lucide-react';
+import { Bell, RefreshCw, Info, AlertTriangle, XCircle, X, Search } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import type { BannerCounts } from '@/lib/types';
 import { useNotifications, type AppNotification } from '@/lib/notifications';
@@ -30,8 +30,8 @@ const DOT_ANIM: Record<DotState, string> = {
 };
 
 interface Props {
-  dark: boolean;
-  onToggleDark: () => void;
+  dark?: boolean;
+  onToggleDark?: () => void;
   dotState?: DotState;
   // Reading-page extras — all optional; omit on non-reading pages
   banner?: BannerCounts;
@@ -42,6 +42,8 @@ interface Props {
   onOpenHistory?: () => void;
   historyOpen?: boolean;
   runCount?: number;
+  onOpenOutputs?: () => void;
+  outputsOpen?: boolean;
 }
 
 function formatAge(iso: string): string {
@@ -220,6 +222,8 @@ export default function StatusBanner({
   onOpenHistory,
   historyOpen,
   runCount,
+  onOpenOutputs,
+  outputsOpen,
 }: Props) {
   const showStats = !!banner;
   const queueTotal = banner ? banner.queued + banner.reading : 0;
@@ -283,6 +287,15 @@ export default function StatusBanner({
         </button>
       )}
 
+      {/* Studio: outputs panel toggle */}
+      {onOpenOutputs && (
+        <button onClick={onOpenOutputs} title="Research outputs"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 9999, border: `1px solid ${outputsOpen ? '#18E299' : 'var(--border-md)'}`, background: outputsOpen ? 'rgba(24,226,153,0.10)' : 'transparent', cursor: 'pointer', color: outputsOpen ? '#0fa76e' : 'var(--fg3)', fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+          <Search size={11} strokeWidth={2} />
+          Outputs
+        </button>
+      )}
+
       {/* Notification bell */}
       <div style={{ position: 'relative' }}>
         <button
@@ -321,25 +334,6 @@ export default function StatusBanner({
         )}
       </div>
 
-      {/* Dark mode toggle */}
-      <button
-        onClick={onToggleDark}
-        aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
-        style={{
-          display: 'inline-flex', alignItems: 'center', gap: 5,
-          padding: '3px 10px', border: '1px solid var(--border-md)',
-          borderRadius: 9999, background: 'transparent',
-          cursor: 'pointer', color: 'var(--fg4)',
-        }}
-      >
-        {dark ? <Sun size={12} strokeWidth={2} /> : <Moon size={12} strokeWidth={2} />}
-        <span style={{
-          fontFamily: 'var(--mono)', fontSize: 10,
-          textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--fg4)',
-        }}>
-          {dark ? 'Light' : 'Dark'}
-        </span>
-      </button>
 
       {/* Activity label + status pill */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
