@@ -512,15 +512,19 @@ def main(
     from docent.utils.paths import logs_dir
     configure_logging(verbose=settings.verbose, log_dir=logs_dir())
 
-    # Show the startup banner when running interactively (not piped, not serve/setup/doctor).
-    _banner_skip = (
-        ctx.invoked_subcommand in ("setup", "doctor", "serve", None)
-        or settings.no_color
-        or not __import__("sys").stdout.isatty()
-    )
+    # Show the startup banner when running interactively.
+    # For `serve`, print to stderr so the MCP JSON-RPC stdout stream is unaffected.
+    # Skip only for setup/doctor which manage their own output, and non-TTY contexts.
+    import sys as _sys
+    _is_tty = _sys.stdout.isatty() or _sys.stderr.isatty()
+    _banner_skip = settings.no_color or not _is_tty or ctx.invoked_subcommand in ("setup", "doctor")
     if not _banner_skip:
         from docent._banner import print_banner
-        print_banner(get_console())
+        if ctx.invoked_subcommand == "serve":
+            from rich.console import Console as _RC
+            print_banner(_RC(stderr=True, highlight=False))
+        else:
+            print_banner(get_console())
 
     # Skip startup prompts for commands that manage their own output or that run
     # as a stdio server (serve) where stdout must be pure JSON-RPC.
