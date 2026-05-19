@@ -520,6 +520,7 @@ ${sectionsHtml}
             padding: '20px 24px 0',
             borderBottom: '1px solid var(--border)',
             flexShrink: 0,
+            background: 'linear-gradient(135deg, #18E29910 0%, transparent 65%)',
           }}
         >
           {/* Title row */}
@@ -724,12 +725,14 @@ ${sectionsHtml}
                     padding: '8px 14px',
                     border: 'none',
                     borderBottom: isActive ? '2px solid #18E299' : '2px solid transparent',
-                    background: 'transparent',
+                    background: isActive ? 'rgba(24,226,153,0.06)' : 'transparent',
+                    borderRadius: '6px 6px 0 0',
                     fontFamily: 'var(--sans)',
                     fontSize: 13,
                     fontWeight: isActive ? 500 : 400,
                     color: isActive ? 'var(--fg1)' : 'var(--fg4)',
                     cursor: 'pointer',
+                    transition: 'background 0.12s',
                   }}
                 >
                   {label}
@@ -739,8 +742,9 @@ ${sectionsHtml}
                       fontSize: 10,
                       padding: '1px 6px',
                       borderRadius: 9999,
-                      background: isActive ? 'var(--gray100)' : 'transparent',
-                      color: isActive ? 'var(--fg2)' : 'var(--fg4)',
+                      background: isActive ? '#18E2991c' : 'transparent',
+                      color: isActive ? '#0fa76e' : 'var(--fg4)',
+                      transition: 'all 0.12s',
                     }}
                   >
                     {count}
@@ -752,20 +756,22 @@ ${sectionsHtml}
         </div>
 
         {/* Table */}
-        <PaperTable
-          entries={filtered}
-          newIds={newIds}
-          highlightId={highlightId}
-          activeFilter={filter}
-          hasSearch={!!search.trim()}
-          dark={dark}
-          onMarkDone={handleMarkDone}
-          onEdit={(entry) => setEditEntry(entry)}
-          onStart={handleStart}
-          onMoveUp={handleMoveUp}
-          onMoveDown={handleMoveDown}
-          onShowDetail={(entry) => setDetailEntry(entry)}
-        />
+        <div style={{ flex: 1, overflow: 'hidden', background: 'var(--bg-card)' }}>
+          <PaperTable
+            entries={filtered}
+            newIds={newIds}
+            highlightId={highlightId}
+            activeFilter={filter}
+            hasSearch={!!search.trim()}
+            dark={dark}
+            onMarkDone={handleMarkDone}
+            onEdit={(entry) => setEditEntry(entry)}
+            onStart={handleStart}
+            onMoveUp={handleMoveUp}
+            onMoveDown={handleMoveDown}
+            onShowDetail={(entry) => setDetailEntry(entry)}
+          />
+        </div>
       </main>
 
       {/* Info modal */}

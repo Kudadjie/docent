@@ -2,12 +2,12 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Sidebar from '@/components/Sidebar';
-import StatusBanner from '@/components/StatusBanner';
+import StatusBanner, { type DotState } from '@/components/StatusBanner';
 import { useDarkMode } from '@/hooks/useDarkMode';
 import { LeftColumn, CmdKPalette, PresetSaveModal } from './_form';
 import { OutputPanel, HistoryDrawer } from './_output';
 import {
-  ACTIONS, findAction, scriptFor, actionSummary,
+  ACTION_PHASES, ACTIONS, findAction, actionSummary,
   type ActionId, type ActionMeta, type FormState,
   type LogEntry, type Source, type Preset, type RunRecord, type Status,
 } from './_shared';
@@ -37,7 +37,8 @@ export default function StudioPage() {
   const [sources, setSources]         = useState<Source[]>([]);
   const [currentPhase, setCurrentPhase] = useState<string | null>(null);
   const [gating, setGating]           = useState(false);
-  const runRef = useRef<{ timer: ReturnType<typeof setTimeout> | null; idx: number }>({ timer: null, idx: 0 });
+  const abortRef  = useRef<AbortController | null>(null);
+  const stoppedRef = useRef(false);
 
   // ── Overlay / panel state ───────────────────────────────────────────────────
   const [cmdKOpen, setCmdKOpen]           = useState(false);
@@ -55,9 +56,9 @@ export default function StudioPage() {
 
   const action = findAction(actionId);
 
-  // ── Timer helpers ───────────────────────────────────────────────────────────
+  // ── Run helpers ─────────────────────────────────────────────────────────────
   function stopRun() {
-    if (runRef.current.timer) { clearTimeout(runRef.current.timer); runRef.current.timer = null; }
+    if (abortRef.current) { abortRef.current.abort(); abortRef.current = null; }
   }
 
   function pushRun(finalStatus: 'success' | 'failure', finalLogs: LogEntry[], finalSources: Source[], finalPhase: string | null) {
@@ -77,43 +78,117 @@ export default function StudioPage() {
     }, ...prev]);
   }
 
-  function startRun() {
+  async function startRun() {
     stopRun();
-    const script = scriptFor(actionId);
+    stoppedRef.current = false;
     const collectedLogs: LogEntry[] = [];
     const collectedSources: Source[] = [];
     setLogs([]);
     setSources([]);
     setStatus('running');
     setCurrentRunId(null);
-    setCurrentPhase(script[0]?.phase ?? null);
+    setCurrentPhase(ACTION_PHASES[actionId]?.[0] ?? null);
     setRecents(prev => [actionId, ...prev.filter(x => x !== actionId)].slice(0, 4) as ActionId[]);
-    runRef.current.idx = 0;
 
-    const tick = () => {
-      const i = runRef.current.idx;
-      if (i >= script.length) {
-        setStatus('success');
-        pushRun('success', collectedLogs, collectedSources, collectedLogs[collectedLogs.length - 1]?.phase ?? null);
-        runRef.current.timer = null;
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    try {
+      const res = await fetch('/api/studio/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action_id: actionId,
+          topic:      form.topic,
+          backend:    form.backend.toLowerCase(),
+          dest:       form.dest.toLowerCase().replace(' →', '').trim(),
+          guides:     form.guides,
+          artifact:   form.artifact,
+          artifact_a: form.artifactA,
+          artifact_b: form.artifactB,
+          query:      form.query,
+          max_results: form.maxResults,
+          arxiv_id:   form.arxivId,
+          out_path:   form.outPath,
+          src_path:   form.srcPath,
+          max_sources: form.maxSources,
+          nlm:  form.nlm,
+          gate: form.gate,
+          persp: form.persp,
+          cfg_key: form.cfgKey,
+          cfg_val: form.cfgVal,
+        }),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => 'Unknown error');
+        const entry: LogEntry = { phase: 'error', text: errText };
+        collectedLogs.push(entry);
+        setLogs([entry]);
+        if (!stoppedRef.current) { setStatus('failure'); pushRun('failure', collectedLogs, [], 'error'); }
         return;
       }
-      const line = script[i];
-      collectedLogs.push(line);
-      setLogs(prev => [...prev, line]);
-      if (line.sources) {
-        collectedSources.push(...line.sources);
-        setSources(prev => [...prev, ...(line.sources ?? [])]);
+
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      let finalStatus: 'success' | 'failure' = 'success';
+      let lastPhase: string | null = null;
+
+      try {
+        outer: while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split('\n');
+          buf = lines.pop() ?? '';
+          for (const raw of lines) {
+            if (!raw.startsWith('data: ')) continue;
+            let evt: Record<string, unknown>;
+            try { evt = JSON.parse(raw.slice(6)); } catch { continue; }
+
+            if (evt.type === 'log') {
+              const entry: LogEntry = { phase: String(evt.phase), text: String(evt.text) };
+              collectedLogs.push(entry);
+              setLogs(prev => [...prev, entry]);
+              lastPhase = entry.phase;
+              setCurrentPhase(entry.phase);
+            } else if (evt.type === 'done') {
+              finalStatus = (evt.status as 'success' | 'failure') ?? 'success';
+              break outer;
+            } else if (evt.type === 'error') {
+              const entry: LogEntry = { phase: 'error', text: String(evt.message) };
+              collectedLogs.push(entry);
+              setLogs(prev => [...prev, entry]);
+              finalStatus = 'failure';
+              lastPhase = 'error';
+              break outer;
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
       }
-      setCurrentPhase(line.phase);
-      runRef.current.idx = i + 1;
-      runRef.current.timer = setTimeout(tick, 650 + Math.random() * 220);
-    };
-    tick();
+
+      if (!stoppedRef.current) {
+        setStatus(finalStatus);
+        pushRun(finalStatus, collectedLogs, collectedSources, lastPhase);
+      }
+    } catch (err: unknown) {
+      if ((err as Error)?.name === 'AbortError') return;
+      const entry: LogEntry = { phase: 'error', text: err instanceof Error ? err.message : String(err) };
+      collectedLogs.push(entry);
+      setLogs(prev => [...prev, entry]);
+      if (!stoppedRef.current) { setStatus('failure'); pushRun('failure', collectedLogs, [], 'error'); }
+    } finally {
+      if (abortRef.current === controller) abortRef.current = null;
+    }
   }
 
-  function handleRun()  { startRun(); }
+  function handleRun()  { void startRun(); }
   function handleStop() {
+    stoppedRef.current = true;
     stopRun();
     setStatus('success');
     pushRun('success', logs, sources, currentPhase);
@@ -177,6 +252,8 @@ export default function StudioPage() {
     ? { status: 'running' as const, currentPhase: (currentPhase ?? 'run').slice(0, 7) }
     : null;
 
+  const dotState: DotState = status === 'running' ? 'working' : status === 'failure' ? 'error' : status === 'success' ? 'done' : 'idle';
+
   const suggestedPresetName = action.label + ' · ' + (actionSummary(action, form) || '').slice(0, 30);
 
   return (
@@ -184,7 +261,7 @@ export default function StudioPage() {
       <Sidebar active="studio" queueCount={0} dark={dark} currentRun={currentRunForSidebar} />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
         <StatusBanner
-          dark={dark} onToggleDark={toggleDark} dotState="idle"
+          dark={dark} onToggleDark={toggleDark} dotState={dotState}
           onOpenCmdK={() => setCmdKOpen(true)}
           onOpenHistory={() => setHistoryOpen(o => !o)}
           historyOpen={historyOpen}

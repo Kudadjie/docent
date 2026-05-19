@@ -268,7 +268,7 @@ export default function StatusBanner({
           <Search size={12} strokeWidth={1.5} />
           <span>Quick action</span>
           <span style={{ display: 'inline-flex', gap: 2 }}>
-            <span style={KBD_STYLE}>⌘</span><span style={KBD_STYLE}>K</span>
+            <span style={KBD_STYLE}>Ctrl</span><span style={KBD_STYLE}>K</span>
           </span>
         </button>
       )}

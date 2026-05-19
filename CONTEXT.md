@@ -1,13 +1,13 @@
 # CONTEXT - resume hint for next session
 
-**Current Task:** Studio UI built (mock data). Settings page updated with doctor + API keys.
+**Current Task:** Studio backend wired — SSE streaming endpoint live, free research runs end-to-end.
 
 **Key Decisions:**
-- Studio page uses simulated streaming (setTimeout); real backend wiring is next session
-- `/api/doctor` runs 19 checks in parallel; settings page auto-runs it on load
-- Settings API keys section uses `SecretKeyRow` — always edits empty, never exposes raw value
+- `POST /api/studio/run` streams ProgressEvents as SSE; frontend reads with fetch + ReadableStream
+- `_preflight_free_backend` now skips interactive prompts when `confirmed=True` (not just `via_mcp`); keeps `via_mcp=False` so output file gets human-readable footer, not MCP synthesis prompt
+- `_serialize` imported from `mcp_server` into `ui_server` (was NameError on first live run)
 
 **Next Steps:**
-1. Wire Studio to real backend: add `/api/studio/run` SSE endpoint → replace mock streaming
-2. Wire sync actions (search-papers, get-paper, config-show/set) as JSON endpoints
-3. Tag v1.2.0 once Studio backend is live
+1. Wire result panels — `renderResult()` in `_output.tsx` still shows mock data; parse `done.raw` JSON to show real output file path, sources count, etc.
+2. Test non-free backends (Feynman, Groq) through the UI
+3. Tag v1.2.0 once Studio backend fully verified

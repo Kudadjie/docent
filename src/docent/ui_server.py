@@ -9,12 +9,12 @@ from typing import Any, Optional
 import httpx
 import uvicorn
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from docent.core.invoke import run_action
-from docent.mcp_server import invoke_action
+from docent.mcp_server import invoke_action, _serialize
 from docent.utils.paths import root_dir
 
 UI_DIST = Path(__file__).parent / "ui_dist"
@@ -541,6 +541,167 @@ async def get_doctor() -> JSONResponse:
         _key_row("Cerebras", "cerebras_api_key", "cloud.cerebras.ai"),
     ]
     return JSONResponse(checks)
+
+
+# ── Studio run endpoint ──────────────────────────────────────────────────────
+
+_STUDIO_ACTION_MAP: dict[str, str] = {
+    'deep':      'deep-research',
+    'lit':       'lit',
+    'peer':      'review',
+    'compare':   'compare',
+    'draft':     'draft',
+    'replicate': 'replicate',
+    'audit':     'audit',
+    'search':    'search-papers',
+    'scholarly': 'scholarly-search',
+    'getpaper':  'get-paper',
+    'notebook':  'to-notebook',
+    'cfgshow':   'config-show',
+    'cfgset':    'config-set',
+}
+
+_BACKEND_NORM: dict[str, str] = {
+    'free': 'free', 'feynman': 'feynman', 'docent': 'docent',
+    'groq': 'groq', 'gemini': 'gemini', 'openrouter': 'openrouter',
+    'anthropic': 'anthropic', 'openai': 'openai',
+    'ollama': 'ollama', 'lm studio': 'lm_studio', 'lm_studio': 'lm_studio',
+    'mistral': 'mistral', 'cerebras': 'cerebras',
+}
+
+
+class StudioRunBody(BaseModel):
+    action_id: str
+    topic: str = ""
+    backend: str = "free"
+    dest: str = "local"
+    guides: list[str] = []
+    artifact: str = ""
+    artifact_a: str = ""
+    artifact_b: str = ""
+    query: str = ""
+    max_results: int = 10
+    arxiv_id: str = ""
+    out_path: str = ""
+    src_path: str = ""
+    max_sources: int = 20
+    nlm: bool = True
+    gate: bool = True
+    persp: bool = True
+    cfg_key: str = ""
+    cfg_val: str = ""
+
+
+def _form_to_studio_args(action_id: str, body: StudioRunBody) -> dict[str, Any]:
+    studio_action = _STUDIO_ACTION_MAP[action_id]
+    backend = _BACKEND_NORM.get(body.backend.lower().replace(' ', '_'), 'free')
+    dest = body.dest.lower().replace(' →', '').strip()
+
+    if studio_action in ('deep-research', 'lit', 'draft'):
+        return {
+            'topic': body.topic, 'backend': backend,
+            'output': dest, 'guide_files': body.guides, 'confirmed': True,
+        }
+    if studio_action in ('review', 'replicate', 'audit'):
+        return {'artifact': body.artifact, 'backend': backend, 'output': dest, 'guide_files': body.guides}
+    if studio_action == 'compare':
+        return {
+            'artifact_a': body.artifact_a, 'artifact_b': body.artifact_b,
+            'backend': backend, 'output': dest, 'guide_files': body.guides,
+        }
+    if studio_action == 'search-papers':
+        return {'query': body.query, 'max_results': body.max_results}
+    if studio_action == 'scholarly-search':
+        return {'query': body.query, 'max_results': body.max_results}
+    if studio_action == 'get-paper':
+        return {'arxiv_id': body.arxiv_id}
+    if studio_action == 'to-notebook':
+        return {
+            'output_file': body.out_path or None,
+            'sources_file': body.src_path or None,
+            'max_sources': body.max_sources,
+            'run_nlm_research': body.nlm,
+            'run_quality_gate': body.gate,
+            'run_perspectives': body.persp,
+        }
+    if studio_action == 'config-show':
+        return {}
+    if studio_action == 'config-set':
+        return {'key': body.cfg_key, 'value': body.cfg_val}
+    return {}
+
+
+async def _stream_studio_run(studio_action: str, args: dict[str, Any]):
+    """Async generator — yields SSE `data:` lines for a studio run."""
+    import inspect as _inspect
+    from pydantic import BaseModel as _BM
+
+    loop = asyncio.get_running_loop()
+    q: asyncio.Queue = asyncio.Queue()
+
+    def _run_in_thread() -> None:
+        from docent.core import ProgressEvent, run_action
+        from docent.core.invoke import make_context
+        # via_mcp=False: keeps human-readable output format (not MCP synthesis prompts).
+        # confirmed=True is passed in args for free-tier runs — _preflight_free_backend
+        # checks that flag directly and skips the interactive TTY confirm.
+        ctx = make_context(via_mcp=False)
+        try:
+            raw = run_action('studio', studio_action, args, context=ctx)
+        except BaseException as exc:
+            loop.call_soon_threadsafe(q.put_nowait, ('error', str(exc)))
+            return
+
+        if not _inspect.isgenerator(raw):
+            loop.call_soon_threadsafe(q.put_nowait, ('done', raw))
+            return
+
+        try:
+            while True:
+                try:
+                    evt = next(raw)
+                    if isinstance(evt, ProgressEvent):
+                        loop.call_soon_threadsafe(q.put_nowait, ('event', evt))
+                except StopIteration as stop:
+                    loop.call_soon_threadsafe(q.put_nowait, ('done', stop.value))
+                    return
+        except BaseException as exc:
+            loop.call_soon_threadsafe(q.put_nowait, ('error', str(exc)))
+
+    def _sse(data: dict) -> str:
+        return f"data: {json.dumps(data)}\n\n"
+
+    thread = loop.run_in_executor(None, _run_in_thread)
+    try:
+        while True:
+            kind, payload = await q.get()
+            if kind == 'event':
+                evt = payload
+                if evt.message:
+                    yield _sse({'type': 'log', 'phase': evt.phase, 'text': evt.message, 'level': evt.level})
+            elif kind == 'done':
+                result = payload
+                ok = not isinstance(result, _BM) or bool(getattr(result, 'ok', True))
+                yield _sse({'type': 'done', 'status': 'success' if ok else 'failure', 'raw': _serialize(result)})
+                break
+            elif kind == 'error':
+                yield _sse({'type': 'error', 'message': str(payload)})
+                break
+    finally:
+        await thread
+
+
+@app.post("/api/studio/run")
+async def studio_run(body: StudioRunBody):
+    if body.action_id not in _STUDIO_ACTION_MAP:
+        return JSONResponse({'error': f'Unknown action: {body.action_id!r}'}, status_code=400)
+    studio_action = _STUDIO_ACTION_MAP[body.action_id]
+    args = _form_to_studio_args(body.action_id, body)
+    return StreamingResponse(
+        _stream_studio_run(studio_action, args),
+        media_type='text/event-stream',
+        headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'},
+    )
 
 
 if UI_DIST.is_dir():

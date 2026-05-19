@@ -144,16 +144,29 @@ function LogStream({ logs, status }: { logs: LogEntry[]; status: string }) {
 
 function OutputEmpty() {
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, padding: 24 }}>
-      <div style={{ width: 56, height: 56, borderRadius: 14, background: BRAND + '1c', display: 'flex', alignItems: 'center', justifyContent: 'center', color: BRAND_DEEP }}>
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M10 2v7.31"/><path d="M14 9.3V1.99"/><path d="M8.5 2h7"/>
-          <path d="M14 9.3a6.5 6.5 0 1 1-4 0"/><path d="M5.52 16h12.96"/>
-        </svg>
-      </div>
-      <div style={{ fontFamily: 'var(--sans)', fontSize: 15, fontWeight: 600, color: 'var(--fg1)' }}>Run a research action</div>
-      <div style={{ fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--fg3)', textAlign: 'center', maxWidth: 340 }}>
-        Select an action on the left and fill in the form, or press <Kbd>⌘</Kbd><Kbd>K</Kbd> to quick-jump.
+    <div style={{
+      flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      padding: '48px 32px',
+      backgroundImage: 'radial-gradient(circle, var(--gray200) 1px, transparent 1px)',
+      backgroundSize: '24px 24px',
+    }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, maxWidth: 380, textAlign: 'center' }}>
+        <div style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          padding: '4px 12px', borderRadius: 9999,
+          background: BRAND + '1c', border: `1px solid ${BRAND + '44'}`,
+          fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 600,
+          color: BRAND_DEEP, letterSpacing: '1.5px', textTransform: 'uppercase',
+        }}>
+          <span style={{ width: 5, height: 5, borderRadius: '50%', background: BRAND, display: 'inline-block' }} />
+          Ready
+        </div>
+        <div style={{ fontFamily: 'var(--sans)', fontSize: 24, fontWeight: 700, color: 'var(--fg1)', letterSpacing: '-0.5px', lineHeight: 1.2 }}>
+          Run a research action
+        </div>
+        <div style={{ fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--fg3)', lineHeight: 1.75, maxWidth: 320 }}>
+          Select an action on the left, fill in the form, then run — or press <Kbd>Ctrl</Kbd><Kbd>K</Kbd> to quick-jump.
+        </div>
       </div>
     </div>
   );
@@ -521,7 +534,7 @@ export function OutputPanel({ action, state, status, logs, sources, currentPhase
   }
 
   return (
-    <section style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, background: 'var(--bg)', overflow: 'hidden' }}>
+    <section style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, background: 'var(--bg-card)', overflow: 'hidden' }}>
       {!isEmpty && (
         <div style={{ flexShrink: 0, padding: '14px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>

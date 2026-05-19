@@ -220,11 +220,12 @@ export const scriptFor = (id: ActionId): LogEntry[] => SCRIPTS[id] ?? SCRIPTS.de
 
 // ── CLI command preview ────────────────────────────────────────────────────────
 
+// Frontend action ID → studio CLI action name
 const SUBCMD: Record<string, string> = {
-  deep: 'deep-research', lit: 'lit-review', peer: 'peer-review',
+  deep: 'deep-research', lit: 'lit', peer: 'review',
   compare: 'compare', draft: 'draft', replicate: 'replicate', audit: 'audit',
-  search: 'search', scholarly: 'scholarly-search', getpaper: 'get-paper',
-  notebook: 'to-notebook', cfgshow: 'config show', cfgset: 'config set',
+  search: 'search-papers', scholarly: 'scholarly-search', getpaper: 'get-paper',
+  notebook: 'to-notebook', cfgshow: 'config-show', cfgset: 'config-set',
 };
 
 function quoteIfNeeded(v: string | undefined): string {
@@ -235,42 +236,41 @@ function quoteIfNeeded(v: string | undefined): string {
 
 export function commandFor(actionId: ActionId, s: FormState): string {
   const sub = SUBCMD[actionId] ?? actionId;
-  const parts = ['docent', sub];
+  const parts = ['docent', 'studio', sub];
   const backend = (s.backend ?? '').toLowerCase();
   switch (actionId) {
     case 'deep': case 'lit': case 'draft':
       parts.push('--topic', quoteIfNeeded(s.topic));
       if (backend) parts.push('--backend', backend);
-      if (s.dest && s.dest !== 'Local') parts.push('--out', s.dest.toLowerCase().replace(' →', ''));
-      if (s.dest === 'Pipe →') parts.push('--pipe', 'notebook');
-      (s.guides ?? []).forEach(g => parts.push('--guide', quoteIfNeeded(g)));
+      if (s.dest && s.dest !== 'Local') parts.push('--output', s.dest.toLowerCase().replace(' →', '').trim());
+      (s.guides ?? []).forEach(g => parts.push('--guide-files', quoteIfNeeded(g)));
       break;
     case 'peer': case 'replicate': case 'audit':
-      parts.push(quoteIfNeeded(s.artifact));
+      parts.push('--artifact', quoteIfNeeded(s.artifact));
       if (backend && backend !== 'free') parts.push('--backend', backend);
-      (s.guides ?? []).forEach(g => parts.push('--guide', quoteIfNeeded(g)));
+      (s.guides ?? []).forEach(g => parts.push('--guide-files', quoteIfNeeded(g)));
       break;
     case 'compare':
-      parts.push(quoteIfNeeded(s.artifactA), quoteIfNeeded(s.artifactB));
+      parts.push('--artifact-a', quoteIfNeeded(s.artifactA), '--artifact-b', quoteIfNeeded(s.artifactB));
       if (backend && backend !== 'free') parts.push('--backend', backend);
-      (s.guides ?? []).forEach(g => parts.push('--guide', quoteIfNeeded(g)));
+      (s.guides ?? []).forEach(g => parts.push('--guide-files', quoteIfNeeded(g)));
       break;
     case 'search': case 'scholarly':
-      parts.push(quoteIfNeeded(s.query), '--max', String(s.maxResults ?? 10));
+      parts.push('--query', quoteIfNeeded(s.query), '--max-results', String(s.maxResults ?? 10));
       break;
     case 'getpaper':
-      parts.push(quoteIfNeeded(s.arxivId));
+      parts.push('--arxiv-id', quoteIfNeeded(s.arxivId));
       break;
     case 'notebook':
-      if (s.outPath) parts.push('--output', quoteIfNeeded(s.outPath));
-      if (s.srcPath) parts.push('--sources', quoteIfNeeded(s.srcPath));
+      if (s.outPath) parts.push('--output-file', quoteIfNeeded(s.outPath));
+      if (s.srcPath) parts.push('--sources-file', quoteIfNeeded(s.srcPath));
       parts.push('--max-sources', String(s.maxSources ?? 20));
-      if (!s.nlm)  parts.push('--no-nlm');
-      if (!s.gate) parts.push('--no-quality-gate');
-      if (!s.persp) parts.push('--no-perspectives');
+      if (!s.nlm)  parts.push('--no-run-nlm-research');
+      if (!s.gate) parts.push('--no-run-quality-gate');
+      if (!s.persp) parts.push('--no-run-perspectives');
       break;
     case 'cfgset':
-      parts.push(quoteIfNeeded(s.cfgKey), quoteIfNeeded(s.cfgVal));
+      parts.push('--key', quoteIfNeeded(s.cfgKey), '--value', quoteIfNeeded(s.cfgVal));
       break;
   }
   return parts.join(' ');

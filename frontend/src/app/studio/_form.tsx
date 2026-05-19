@@ -250,7 +250,7 @@ function ActionRow({ id, label, isActive, isPreset, onClick, onDelete }: {
         fontWeight: isActive ? 500 : 400, color: isActive ? BRAND_DEEP : 'var(--fg2)',
         display: 'flex', alignItems: 'center', gap: 0,
       }}>
-        <span style={{ width: 4, height: 4, borderRadius: '50%', background: isActive ? BRAND : 'transparent', marginRight: 9, flexShrink: 0 }} />
+        <span style={{ width: isActive ? 3 : 4, height: isActive ? 14 : 4, borderRadius: isActive ? 2 : '50%', background: isActive ? BRAND_DEEP : 'transparent', marginRight: 9, flexShrink: 0, transition: 'all 0.15s' }} />
         {isPreset && <span style={{ color: isActive ? BRAND_DEEP : 'var(--fg4)', display: 'flex', marginRight: 6 }}><Bookmark size={13} strokeWidth={1.5} /></span>}
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
       </button>
@@ -581,7 +581,7 @@ export function LeftColumn({ actionId, setActionId, state, set, onRun, gating, s
     <aside onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}
       style={{ width: 380, flexShrink: 0, height: '100%', borderRight: '1px solid var(--border)', background: 'var(--bg)', display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
 
-      <div style={{ padding: '18px 22px 12px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+      <div style={{ padding: '18px 22px 12px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, background: `linear-gradient(135deg, ${BRAND}0d 0%, transparent 65%)` }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 3 }}>
             <span style={{ color: BRAND_DEEP, display: 'flex' }}><FlaskConical size={16} strokeWidth={1.5} /></span>
@@ -589,10 +589,10 @@ export function LeftColumn({ actionId, setActionId, state, set, onRun, gating, s
           </div>
           <p style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg3)', margin: 0 }}>Run AI research actions</p>
         </div>
-        <button onClick={onOpenCmdK} title="Quick action (⌘K)"
-          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '5px 8px', borderRadius: 7, border: '1px solid var(--border-md)', background: 'transparent', cursor: 'pointer', color: 'var(--fg3)' }}>
+        <button onClick={onOpenCmdK} title="Quick action (Ctrl+K)"
+          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border-md)', background: 'var(--gray100)', cursor: 'pointer', color: 'var(--fg3)' }}>
           <Search size={14} strokeWidth={1.5} />
-          <Kbd>⌘K</Kbd>
+          <span style={{ display: 'inline-flex', gap: 2 }}><Kbd>Ctrl</Kbd><Kbd>K</Kbd></span>
         </button>
       </div>
 
@@ -612,7 +612,7 @@ export function LeftColumn({ actionId, setActionId, state, set, onRun, gating, s
         </div>
       </div>
 
-      <div style={{ padding: '12px 22px 18px', borderTop: '1px solid var(--border)', background: 'var(--bg)', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ padding: '12px 22px 18px', borderTop: '1px solid var(--border)', background: 'var(--bg)', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 -4px 16px rgba(0,0,0,0.05)' }}>
         {!gating && !isRunning && <CostEstimate actionId={actionId} backend={state.backend} />}
         {gating ? (
           <FreeTierGate onCancel={() => setGating(false)} onProceed={() => { setGating(false); onRun(); }} />
@@ -624,7 +624,7 @@ export function LeftColumn({ actionId, setActionId, state, set, onRun, gating, s
           <PrimaryBtn full icon={<Play size={13} strokeWidth={2} />} onClick={handleRunClick}>
             {runLabel(action)}
             <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 3, opacity: 0.7 }}>
-              <Kbd>⌘</Kbd><Kbd>↵</Kbd>
+              <Kbd>Ctrl</Kbd><Kbd>↵</Kbd>
             </span>
           </PrimaryBtn>
         )}
