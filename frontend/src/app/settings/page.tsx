@@ -1031,12 +1031,13 @@ export default function SettingsPage() {
                       {/* Steps */}
                       <div style={{ padding: '14px 18px', background: 'rgba(59,130,246,0.04)', borderBottom: '1px solid rgba(59,130,246,0.15)' }}>
                         <div style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600, color: 'var(--fg1)', marginBottom: 10 }}>
-                          Google Drive — three steps
+                          Google Drive — four steps
                         </div>
                         {[
                           { n: '1', text: <>Go to <a href="https://console.cloud.google.com" target="_blank" rel="noreferrer" style={{ color: '#3B82F6', textDecoration: 'none', fontWeight: 500 }}>console.cloud.google.com</a> → create or select a project → enable the <strong style={{ color: 'var(--fg1)' }}>Google Drive API</strong>.</> },
                           { n: '2', text: <>Credentials → Create Credentials → <strong style={{ color: 'var(--fg1)' }}>OAuth client ID</strong> → Application type: <strong style={{ color: 'var(--fg1)' }}>Desktop app</strong> → Download JSON.</> },
-                          { n: '3', text: <>Paste the downloaded file contents below and click <strong style={{ color: 'var(--fg1)' }}>Save</strong>. A browser window will open for sign-in on the first backup run.</> },
+                          { n: '3', text: <><strong style={{ color: 'var(--fg1)' }}>OAuth consent screen</strong> → scroll to <strong style={{ color: 'var(--fg1)' }}>Test users</strong> → Add users → enter your Google account email. <span style={{ color: '#C37D0D' }}>Skip this and you'll get an "access denied" error.</span></> },
+                          { n: '4', text: <>Paste the downloaded credentials JSON below and click <strong style={{ color: 'var(--fg1)' }}>Save</strong>. A browser window will open for sign-in on the first backup run.</> },
                         ].map(({ n, text }) => (
                           <div key={n} style={{ display: 'flex', gap: 12, marginBottom: 8, alignItems: 'flex-start' }}>
                             <span style={{ fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700, color: '#3B82F6', background: 'rgba(59,130,246,0.12)', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>{n}</span>
