@@ -87,6 +87,10 @@ async def install_backup_deps() -> JSONResponse:
             )
         )
         if result.returncode == 0:
+            # Flush Python's import caches so the freshly-installed packages
+            # are visible to this running process without a restart.
+            import importlib
+            importlib.invalidate_caches()
             return JSONResponse({"ok": True})
         return JSONResponse(
             {"ok": False, "error": (result.stderr or result.stdout or "pip failed").strip()[-300:]},
