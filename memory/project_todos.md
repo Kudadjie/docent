@@ -23,7 +23,7 @@ Last updated: 2026-05-15 (hardening sprint: §4 executor process-group kill, §9
 11. ~~**Medium debt: `edit --status` bypass**~~ — DONE 2026-05-13 (`_apply_status_transition` helper; timestamps stamped correctly)
 12. ~~**`docent doctor`**~~ — DONE 2026-05-13 (10-check table, subprocess-free, 327 tests green)
 13. ~~**`docent setup`**~~ — DONE 2026-05-13 (re-runnable guided config wizard)
-14. **Real-life tests #10–#19** (can happen in parallel with above; #10 blocked on feynman reinstall + credits)
+14. ~~**Real-life tests #10–#19**~~ — DONE (all passed, see memory/tasks/done/studio_real_life_tests.md)
 
 ---
 

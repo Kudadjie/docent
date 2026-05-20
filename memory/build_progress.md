@@ -37,8 +37,8 @@ Docent is a Python CLI "control center" for grad-school workflows. Design lives 
 - [x] Phase 1.5: Research tool renamed → `studio` plugin; `deep` action → `deep-research` — 2026-05-14 (commit 42ccba7)
 - [x] Phase 1.5: `studio search-papers` + `studio get-paper` (alphaxiv-py SDK, async→sync wrapper); `alphaxiv-py>=0.5.0` dep; Python bumped 3.11→3.13 — 2026-05-14 (398 tests green)
 - [x] `docent doctor` extended: checks `alphaxiv-py` + `notebooklm-py` with PyPI update hints (`check_pypi()`) — 2026-05-14
-- [ ] Real-life tests #10–#19 (can happen in parallel; #10 blocked on feynman reinstall + credits)
-- [ ] Next: Tag v1.2.0 release (AFTER all of the above)
+- [x] Real-life tests #10–#19 — all passed (see memory/tasks/done/studio_real_life_tests.md)
+- [ ] Next: Tag v1.2.0 release (UI real-life tests must pass first — see memory/tasks/v120_ui_tests.md)
 
 ## Status as of 2026-05-06 (Step 12 shipped — plugin discovery + reading as bundled plugin; Step 13 next — Full MCP adapter)
 
