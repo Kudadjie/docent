@@ -1,4 +1,4 @@
-export type Status = 'queued' | 'reading' | 'done';
+export type Status = 'queued' | 'reading' | 'done' | 'removed';
 export type PaperType = 'paper' | 'book' | 'book_chapter';
 
 export interface QueueEntry {
@@ -18,6 +18,10 @@ export interface QueueEntry {
   mendeley_id: string | null;
   started: string | null;
   finished: string | null;
+  not_in_mendeley?: boolean;
+  not_in_parent_collection?: boolean;
+  manually_kept?: boolean;
+  manually_kept_at?: string | null;
 }
 
 export interface BannerCounts {

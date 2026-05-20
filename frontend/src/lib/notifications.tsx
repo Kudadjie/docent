@@ -57,7 +57,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   const addNotification = useCallback((n: Omit<AppNotification, 'id' | 'timestamp' | 'read'>) => {
     setNotifications(prev => {
-      const isDupe = prev.some(p => p.title === n.title && p.body === n.body && !p.read);
+      const isDupe = prev.some(p => p.title === n.title && p.body === n.body);
       if (isDupe) return prev;
       const notif: AppNotification = {
         ...n,

@@ -85,6 +85,7 @@ async def get_config() -> JSONResponse:
         "reading": {
             "database_dir": cfg.get("database_dir", None),
             "queue_collection": cfg.get("queue_collection", "Docent-Queue"),
+            "reference_manager": cfg.get("reference_manager", "mendeley"),
         },
         "research": research,
     })

@@ -313,7 +313,9 @@ export default function StudioPage() {
         />
         <div style={{
           flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden',
-          background: 'linear-gradient(135deg, rgba(24,226,153,0.07) 0%, rgba(139,92,246,0.04) 45%, transparent 75%)',
+          background: dark
+            ? 'linear-gradient(135deg, rgba(24,226,153,0.07) 0%, rgba(139,92,246,0.04) 45%, transparent 75%)'
+            : 'linear-gradient(135deg, rgba(24,226,153,0.22) 0%, rgba(139,92,246,0.13) 45%, transparent 75%)',
         }}>
           <LeftColumn
             actionId={actionId} setActionId={id => { setActionId(id); setActivePresetId(null); }}

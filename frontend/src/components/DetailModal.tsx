@@ -1,6 +1,6 @@
 'use client';
 
-import { X } from 'lucide-react';
+import { X, AlertTriangle, BookmarkCheck, Info } from 'lucide-react';
 import StatusBadge from './StatusBadge';
 import type { QueueEntry } from '@/lib/types';
 
@@ -111,6 +111,54 @@ export default function DetailModal({ entry, dark, onClose }: Props) {
             )}
           </div>
 
+          {/* Library status banner — only when a flag is set */}
+          {(entry.not_in_mendeley || entry.manually_kept || entry.not_in_parent_collection) && (
+            <div style={{ borderRadius: 8, border: '1px solid var(--border-md)', overflow: 'hidden' }}>
+              {entry.manually_kept && (
+                <div style={{ display: 'flex', gap: 10, padding: '10px 14px', background: 'var(--bg-subtle)' }}>
+                  <BookmarkCheck size={14} strokeWidth={1.5} color="var(--fg4)" style={{ flexShrink: 0, marginTop: 1 }} />
+                  <div>
+                    <div style={{ fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500, color: 'var(--fg1)' }}>
+                      Kept manually — not in reference manager
+                    </div>
+                    <div style={{ fontFamily: 'var(--sans)', fontSize: 11, color: 'var(--fg3)', marginTop: 2 }}>
+                      This entry is no longer in your reference manager collection but has been manually retained in your reading queue.
+                      {entry.manually_kept_at && (
+                        <> Decision recorded on <strong style={{ color: 'var(--fg2)' }}>{fmt(entry.manually_kept_at)}</strong>.</>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+              {entry.not_in_mendeley && !entry.manually_kept && (
+                <div style={{ display: 'flex', gap: 10, padding: '10px 14px', background: 'rgba(195,125,13,0.06)' }}>
+                  <AlertTriangle size={14} strokeWidth={1.5} color="#C37D0D" style={{ flexShrink: 0, marginTop: 1 }} />
+                  <div>
+                    <div style={{ fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500, color: 'var(--fg1)' }}>
+                      Not in reference manager collection
+                    </div>
+                    <div style={{ fontFamily: 'var(--sans)', fontSize: 11, color: 'var(--fg3)', marginTop: 2 }}>
+                      This entry was flagged during the last sync — its ID is no longer found in your collection. Review it from the reading page.
+                    </div>
+                  </div>
+                </div>
+              )}
+              {entry.not_in_parent_collection && (
+                <div style={{ display: 'flex', gap: 10, padding: '10px 14px', background: 'rgba(59,130,246,0.05)', borderTop: (entry.not_in_mendeley || entry.manually_kept) ? '1px solid var(--border)' : undefined }}>
+                  <Info size={14} strokeWidth={1.5} color="#3B82F6" style={{ flexShrink: 0, marginTop: 1 }} />
+                  <div>
+                    <div style={{ fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500, color: 'var(--fg1)' }}>
+                      Sub-collection only
+                    </div>
+                    <div style={{ fontFamily: 'var(--sans)', fontSize: 11, color: 'var(--fg3)', marginTop: 2 }}>
+                      Found in sub-collection <strong style={{ color: 'var(--fg2)' }}>{entry.category ?? 'unknown'}</strong> but no longer in the parent queue collection.
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Grid fields */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <Field label="Added">{fmt(entry.added)}</Field>
@@ -130,7 +178,7 @@ export default function DetailModal({ entry, dark, onClose }: Props) {
           </Field>
 
           {entry.mendeley_id && (
-            <Field label="Mendeley ID">
+            <Field label="Reference ID">
               <span style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>{entry.mendeley_id}</span>
             </Field>
           )}

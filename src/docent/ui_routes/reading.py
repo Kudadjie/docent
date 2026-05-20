@@ -31,6 +31,7 @@ _ACTION_MAP: dict[str, tuple[str, str]] = {
     "move-down": ("reading", "move-down"),
     "sync": ("reading", "sync-from-mendeley"),
     "queue-clear": ("reading", "queue-clear"),
+    "clear-library-flag": ("reading", "clear-library-flag"),
 }
 
 
@@ -83,6 +84,26 @@ def get_queue() -> JSONResponse:
         if p.is_dir():
             database_count = sum(1 for _ in p.rglob("*.pdf"))
     return JSONResponse({"entries": entries, "banner": banner, "last_updated": last_updated, "database_count": database_count})
+
+
+@router.get("/api/database")
+def get_database() -> JSONResponse:
+    """Return the list of PDF filenames in the configured database/watch folder."""
+    from pathlib import Path
+    from datetime import datetime, timezone
+    reading_cfg = _read_config_reading()
+    db_dir = reading_cfg.get("database_dir")
+    if not db_dir:
+        return JSONResponse({"database_dir": None, "pdfs": [], "last_checked": datetime.now(timezone.utc).isoformat()})
+    p = Path(db_dir).expanduser()
+    if not p.is_dir():
+        return JSONResponse({"database_dir": str(p), "pdfs": [], "last_checked": datetime.now(timezone.utc).isoformat()})
+    pdfs = sorted(f.name for f in p.rglob("*.pdf"))
+    return JSONResponse({
+        "database_dir": str(p),
+        "pdfs": pdfs,
+        "last_checked": datetime.now(timezone.utc).isoformat(),
+    })
 
 
 @router.post("/api/actions")

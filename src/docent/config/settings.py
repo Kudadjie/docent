@@ -70,7 +70,8 @@ class ReadingSettings(BaseModel):
 
     database_dir: Path | None = None
     mendeley_mcp_command: list[str] | None = None  # e.g. ["uvx", "mendeley-mcp"]; None -> default in mendeley_client.
-    queue_collection: str = "Docent-Queue"  # Mendeley collection name that defines reading-queue membership.
+    queue_collection: str = "Docent-Queue"  # Collection name that defines reading-queue membership.
+    reference_manager: str = "mendeley"     # Active backend: "mendeley" | "zotero" (future).
 
 
 class Settings(BaseSettings):

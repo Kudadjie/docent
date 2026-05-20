@@ -12,23 +12,23 @@ Run these before tagging v1.2.0. Start with `docent ui` and open http://localhos
 - [/] Scroll through the paper list (should NOT be clipped — list must scroll)
 - [/] "How to add?" button opens the modal (purple button)
 - [/] "Sync Mendeley" button shows spinner ≥ 1.5s, then shows success/error toast (green button) - Just says syncing... (thats fine - docent pill status shows)
-- [ ] "Refresh" button shows "Refreshing…" for at least 1.5 seconds before resolving
-- [ ] "Export Documents" opens a print dialog
-- [ ] "Next" highlights and scrolls to the top queued entry
-- [ ] "Stats" modal opens and shows queue breakdown
-- [ ] Row action: mark entry as Done → entry moves to Done filter
-- [ ] Row action: Edit modal opens, saves successfully
-- [ ] Row action: Detail modal opens with full paper info
-- [ ] Row action: Move up / Move down reorders correctly
-- [ ] Server error banner appears if server is unavailable
-- [ ] Filter + search state persists in URL (navigate away and back)
-- [ ] Filter dropdown (right-side) shows item counts and selects correctly
+- [/] "Refresh" button shows "Refreshing…" for at least 1.5 seconds before resolving
+- [/] "Export Documents" opens a print dialog
+- [/] "Next" highlights and scrolls to the top queued entry
+- [/] "Stats" modal opens and shows queue breakdown
+- [/] Row action: mark entry as Done → entry moves to Done filter
+- [/] Row action: Edit modal opens, saves successfully
+- [/] Row action: Detail modal opens with full paper info
+- [/] Row action: Move up / Move down reorders correctly
+- [/] Server error banner appears if server is unavailable
+- [/] Filter + search state persists in URL (navigate away and back) — fixed: now also persists in sessionStorage so nav-link-back works
+- [/] Filter dropdown (right-side) shows item counts and selects correctly
 
 ---
 
 ## Studio Page
 
-- [ ] Action list loads and shows Research + Utility groups with colored dots
+- [/] Action list loads and shows Research + Utility groups with colored dots
 - [ ] Selecting an action changes the form fields on the right
 - [ ] Ctrl+K opens the quick-action palette; selecting navigates to that action
 - [ ] "Run AI-powered academic actions" subtitle visible under Studio heading
@@ -135,5 +135,5 @@ Run these before tagging v1.2.0. Start with `docent ui` and open http://localhos
 
 - [ ] No console errors on any page
 - [ ] No 404s for API calls during normal use
-- [ ] Dark mode is consistent across all pages (light mode removed)
+- [ ] Dark/light mode toggle works and persists across page navigations (toggle in StatusBanner)
 - [ ] All pages load without white flash

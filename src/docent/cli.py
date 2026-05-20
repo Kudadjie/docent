@@ -1083,7 +1083,19 @@ def ui_command(
     get_console().print("[dim]Press Ctrl+C to stop.[/]\n")
     if not no_browser:
         webbrowser.open(url)
-    run_server(port=port)
+    try:
+        run_server(port=port)
+    except OSError as exc:
+        if "address already in use" in str(exc).lower() or getattr(exc, "errno", None) in (98, 48, 10048):
+            get_console().print(
+                f"\n[red]Port {port} is already in use.[/]\n"
+                f"[dim]Another instance of [bold]docent ui[/bold] is probably already running.\n"
+                f"Close that terminal or find and kill the process:[/]\n"
+                f"  [cyan]Windows:[/]  netstat -ano | findstr :{port}\n"
+                f"  [cyan]Mac/Linux:[/] lsof -i :{port}"
+            )
+            raise typer.Exit(1)
+        raise
 
 
 @app.command("serve", help="Start the Docent MCP server (stdio transport).")

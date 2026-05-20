@@ -428,7 +428,7 @@ function SectionCard({ icon, title, description, children }: {
 }) {
   return (
     <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
-      <div style={{ padding: '16px 20px 14px', borderBottom: '1px solid var(--border)', background: 'linear-gradient(135deg, #18E29908 0%, transparent 60%)' }}>
+      <div style={{ padding: '16px 20px 14px', borderBottom: '1px solid var(--border)', background: 'linear-gradient(135deg, #18E29920 0%, transparent 60%)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
           {icon}
           <h2 style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600, color: 'var(--fg1)', margin: 0 }}>
@@ -633,7 +633,7 @@ export default function SettingsPage() {
       const res = await fetch('/api/actions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'queue-clear' }),
+        body: JSON.stringify({ action: 'queue-clear', confirmed: true }),
       });
       const body = await res.json().catch(() => ({})) as Record<string, string>;
       if (!res.ok) {
@@ -715,7 +715,7 @@ export default function SettingsPage() {
                 <div style={{
                   padding: '16px 20px 14px', borderBottom: '1px solid var(--border)',
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  background: 'linear-gradient(135deg, #18E29908 0%, transparent 60%)',
+                  background: 'linear-gradient(135deg, #18E29920 0%, transparent 60%)',
                 }}>
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>

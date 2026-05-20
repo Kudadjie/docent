@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { LayoutDashboard, BookOpen, FlaskConical, BookText, Settings, Globe2 } from 'lucide-react';
+import { LayoutDashboard, BookOpen, FlaskConical, BookText, Settings, Globe2, GripVertical } from 'lucide-react';
 import WelcomeModal, { type UserProfile } from './WelcomeModal';
 
 const NAV_ORDER_KEY = 'docent:nav-order';
@@ -82,6 +82,7 @@ export default function Sidebar({ active, queueCount, dark: darkProp, currentRun
   const [navOrder, setNavOrder] = useState<string[]>(REORDERABLE_IDS);
   const dragId = useRef<string | null>(null);
   const dragOverId = useRef<string | null>(null);
+  const [hoveredNavId, setHoveredNavId] = useState<string | null>(null);
 
   useEffect(() => {
     if (darkProp === undefined) {
@@ -235,6 +236,8 @@ export default function Sidebar({ active, queueCount, dark: darkProp, currentRun
                 onDragStart={isDraggable ? () => onDragStart(item.id) : undefined}
                 onDragOver={isDraggable ? (e) => onDragOver(e, item.id) : undefined}
                 onDrop={isDraggable ? onDrop : undefined}
+                onMouseEnter={() => setHoveredNavId(item.id)}
+                onMouseLeave={() => setHoveredNavId(null)}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -251,7 +254,7 @@ export default function Sidebar({ active, queueCount, dark: darkProp, currentRun
                   fontWeight: isActive ? 500 : 400,
                   transition: 'background 0.1s, color 0.1s',
                   boxShadow: isActive ? 'rgba(0,0,0,0.04) 0px 1px 3px' : 'none',
-                  cursor: isDraggable ? 'grab' : 'default',
+                  cursor: 'pointer',
                 }}
               >
                 <span style={{ display: 'flex', color: isActive ? '#0fa76e' : 'var(--fg4)' }}>
@@ -263,7 +266,7 @@ export default function Sidebar({ active, queueCount, dark: darkProp, currentRun
                     <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#F59E0B', animation: 'logo-dot-blink 0.9s step-end infinite' }} />
                     {currentRun.currentPhase}
                   </span>
-                ) : item.id === 'reading' && isActive && (
+                ) : item.id === 'reading' && isActive ? (
                   <span
                     style={{
                       marginLeft: 'auto',
@@ -280,13 +283,30 @@ export default function Sidebar({ active, queueCount, dark: darkProp, currentRun
                   >
                     {queueCount}
                   </span>
-                )}
+                ) : isDraggable && hoveredNavId === item.id ? (
+                  <span style={{ marginLeft: 'auto', color: 'var(--fg4)', display: 'flex', opacity: 0.5 }}>
+                    <GripVertical size={12} strokeWidth={1.5} />
+                  </span>
+                ) : null}
               </Link>
             );
           })}
         </div>
 
         {/* Utility nav (Docs + Settings) — pinned above user footer */}
+        <div
+          style={{
+            padding: '4px 18px 8px',
+            fontFamily: 'var(--mono)',
+            fontSize: 9,
+            color: 'var(--fg4)',
+            letterSpacing: '0.5px',
+            textTransform: 'uppercase',
+            opacity: 0.7,
+          }}
+        >
+          Drag tabs to reorder
+        </div>
         <div
           style={{
             padding: '8px 8px',

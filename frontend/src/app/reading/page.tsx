@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useDarkMode } from '@/hooks/useDarkMode';
-import { RefreshCw, Download, Printer, Search, Filter, HelpCircle, BookOpen, ArrowRight, BarChart2 } from 'lucide-react';
+import { RefreshCw, Download, Printer, Search, Filter, HelpCircle, BookOpen, ArrowRight, BarChart2, ArrowUpDown, AlertTriangle, Info, X, Trash2, BookmarkCheck } from 'lucide-react';
 
 import Sidebar from '@/components/Sidebar';
 import StatusBanner from '@/components/StatusBanner';
@@ -14,9 +14,13 @@ import DetailModal from '@/components/DetailModal';
 import Toast, { type ToastData } from '@/components/Toast';
 import type { QueueData, QueueEntry, FilterValue, BannerCounts } from '@/lib/types';
 
+// ── Types ─────────────────────────────────────────────────────────
+type SortBy = 'order' | 'date-newest' | 'date-oldest' | 'deadline' | 'status';
+type QuickFilter = 'has-deadline' | 'past-due' | 'not-in-library';
+
 // ── Helpers ──────────────────────────────────────────────────────
 function applyFilter(entries: QueueEntry[], filter: FilterValue): QueueEntry[] {
-  if (filter === 'all') return entries;
+  if (filter === 'all') return entries.filter(e => e.status !== 'removed');
   return entries.filter((e) => e.status === filter);
 }
 
@@ -31,17 +35,66 @@ function applySearch(entries: QueueEntry[], q: string): QueueEntry[] {
   );
 }
 
-const FILTERS: { value: FilterValue; label: string }[] = [
+function applyQuickFilter(entries: QueueEntry[], quick: Set<QuickFilter>): QueueEntry[] {
+  if (quick.size === 0) return entries;
+  return entries.filter(e => {
+    if (quick.has('has-deadline') && !e.deadline) return false;
+    if (quick.has('past-due') && (!e.deadline || new Date(e.deadline).getTime() >= Date.now())) return false;
+    if (quick.has('not-in-library') && !e.not_in_mendeley && !e.manually_kept && !e.not_in_parent_collection) return false;
+    return true;
+  });
+}
+
+function applySort(entries: QueueEntry[], sortBy: SortBy): QueueEntry[] {
+  switch (sortBy) {
+    case 'order':
+      return [
+        ...entries.filter(e => e.status !== 'done' && e.status !== 'removed').sort((a, b) => a.order - b.order),
+        ...entries.filter(e => e.status === 'done'),
+        ...entries.filter(e => e.status === 'removed'),
+      ];
+    case 'date-newest':
+      return [...entries].sort((a, b) => new Date(b.added).getTime() - new Date(a.added).getTime());
+    case 'date-oldest':
+      return [...entries].sort((a, b) => new Date(a.added).getTime() - new Date(b.added).getTime());
+    case 'deadline':
+      return [...entries].sort((a, b) => {
+        if (!a.deadline && !b.deadline) return 0;
+        if (!a.deadline) return 1;
+        if (!b.deadline) return -1;
+        return new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
+      });
+    case 'status': {
+      const order: Record<string, number> = { reading: 0, queued: 1, done: 2, removed: 3 };
+      return [...entries].sort((a, b) => (order[a.status] ?? 4) - (order[b.status] ?? 4));
+    }
+    default:
+      return entries;
+  }
+}
+
+const STATUS_FILTERS: { value: FilterValue; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'reading', label: 'Reading' },
   { value: 'queued', label: 'Queued' },
   { value: 'done', label: 'Done' },
 ];
 
+// Keep legacy alias
+const FILTERS = STATUS_FILTERS;
+
 function countByStatus(entries: QueueEntry[], status: FilterValue): number {
-  if (status === 'all') return entries.length;
+  if (status === 'all') return entries.filter(e => e.status !== 'removed').length;
   return entries.filter((e) => e.status === status).length;
 }
+
+const SORT_OPTIONS: { value: SortBy; label: string }[] = [
+  { value: 'order', label: 'Reading order' },
+  { value: 'date-newest', label: 'Newest added' },
+  { value: 'date-oldest', label: 'Oldest added' },
+  { value: 'deadline', label: 'Deadline (soonest)' },
+  { value: 'status', label: 'Status' },
+];
 
 // ── Ghost button ──────────────────────────────────────────────────
 function GhostBtn({
@@ -86,6 +139,7 @@ function GhostBtn({
   );
 }
 
+
 // ── Page ──────────────────────────────────────────────────────────
 export default function ReadingPage() {
   const { dark, toggleDark } = useDarkMode();
@@ -102,9 +156,19 @@ export default function ReadingPage() {
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const [urlReady, setUrlReady] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
+  const [sortOpen, setSortOpen] = useState(false);
+  const [sortBy, setSortBy] = useState<SortBy>('order');
+  const [quickFilters, setQuickFilters] = useState<Set<QuickFilter>>(new Set());
   const [serverError, setServerError] = useState(false);
   const [queueCollection, setQueueCollection] = useState<string>('Docent-Queue');
+  const [refManagerName, setRefManagerName] = useState<string>('Mendeley');
+  const [flaggedModal, setFlaggedModal] = useState(false);
+  const [parentFlaggedModal, setParentFlaggedModal] = useState(false);
+  const [dbModal, setDbModal] = useState(false);
+  const [dbData, setDbData] = useState<{ database_dir: string | null; pdfs: string[]; last_checked: string } | null>(null);
+  const [dbLoading, setDbLoading] = useState(false);
   const filterRef = useRef<HTMLDivElement>(null);
+  const sortRef = useRef<HTMLDivElement>(null);
   const autoSyncedRef = useRef(false);
 
   // Fetch queue
@@ -131,45 +195,77 @@ export default function ReadingPage() {
   useEffect(() => {
     fetch('/api/config')
       .then(r => r.json())
-      .then((d: { reading: { queue_collection: string } }) => {
+      .then((d: { reading: { queue_collection: string; reference_manager?: string } }) => {
         if (d.reading?.queue_collection) setQueueCollection(d.reading.queue_collection);
+        if (d.reading?.reference_manager) {
+          const name = d.reading.reference_manager;
+          setRefManagerName(name.charAt(0).toUpperCase() + name.slice(1));
+        }
       })
       .catch(() => {});
   }, []);
 
-  // Read filter + search from URL on mount
+  // Read filter + search from URL on mount; fall back to sessionStorage
   useEffect(() => {
     queueMicrotask(() => {
       const params = new URLSearchParams(window.location.search);
-      const f = params.get('filter');
-      if (f && ['all', 'reading', 'queued', 'done'].includes(f)) setFilter(f as FilterValue);
-      const q = params.get('q');
-      if (q) setSearch(q);
+      const VALID_FILTERS = ['all', 'reading', 'queued', 'done', 'removed'];
+
+      const urlFilter = params.get('filter');
+      if (urlFilter && VALID_FILTERS.includes(urlFilter)) {
+        setFilter(urlFilter as FilterValue);
+      } else {
+        try {
+          const stored = sessionStorage.getItem('docent:reading:filter');
+          if (stored && VALID_FILTERS.includes(stored)) setFilter(stored as FilterValue);
+        } catch {}
+      }
+
+      const urlQ = params.get('q');
+      if (urlQ) {
+        setSearch(urlQ);
+      } else {
+        try {
+          const stored = sessionStorage.getItem('docent:reading:search');
+          if (stored) setSearch(stored);
+        } catch {}
+      }
+
+      const urlSort = params.get('sort');
+      if (urlSort && ['order', 'date-newest', 'date-oldest', 'deadline', 'status'].includes(urlSort)) {
+        setSortBy(urlSort as SortBy);
+      }
+
       setUrlReady(true);
     });
   }, []);
 
-  // Write filter + search to URL whenever they change (after initial read)
+  // Write filter + search to URL and sessionStorage whenever they change
   useEffect(() => {
     if (!urlReady) return;
     const params = new URLSearchParams();
     if (filter !== 'all') params.set('filter', filter);
     if (search) params.set('q', search);
+    if (sortBy !== 'order') params.set('sort', sortBy);
     const qs = params.toString();
     window.history.replaceState(null, '', qs ? `?${qs}` : window.location.pathname);
-  }, [filter, search, urlReady]);
+    try {
+      sessionStorage.setItem('docent:reading:filter', filter);
+      if (search) sessionStorage.setItem('docent:reading:search', search);
+      else sessionStorage.removeItem('docent:reading:search');
+    } catch {}
+  }, [filter, search, sortBy, urlReady]);
 
-  // Close filter dropdown on outside click
+  // Close filter/sort dropdowns on outside click
   useEffect(() => {
-    if (!filterOpen) return;
+    if (!filterOpen && !sortOpen) return;
     function handle(e: MouseEvent) {
-      if (filterRef.current && !filterRef.current.contains(e.target as Node)) {
-        setFilterOpen(false);
-      }
+      if (filterRef.current && !filterRef.current.contains(e.target as Node)) setFilterOpen(false);
+      if (sortRef.current && !sortRef.current.contains(e.target as Node)) setSortOpen(false);
     }
     document.addEventListener('mousedown', handle);
     return () => document.removeEventListener('mousedown', handle);
-  }, [filterOpen]);
+  }, [filterOpen, sortOpen]);
 
   // 30s polling — re-reads queue.json from disk, no CLI call
   useEffect(() => {
@@ -195,7 +291,7 @@ export default function ReadingPage() {
       .then((body: Record<string, string>) => {
         if (body.ok) {
           const clean = (body.stdout ?? '').replace(/\x1b\[[0-9;]*m/g, '').trim();
-          setToast({ type: 'success', message: clean.slice(0, 160) || 'Mendeley sync complete.' });
+          setToast({ type: 'success', message: clean.slice(0, 160) || `${refManagerName} sync complete.` });
           refresh();
         }
       })
@@ -227,7 +323,7 @@ export default function ReadingPage() {
         // Sync exits 0 even for handled failures (wrong collection, auth error).
         // Only show success if the count pattern is present in stdout.
         const stdout = body.stdout ?? '';
-        if (/\d+ added.*?\d+ unchanged.*?\d+ removed/.test(stdout)) {
+        if (/\d+ added.*?\d+ unchanged/.test(stdout)) {
           setToast({ type: 'success', message: toastSuccess(action, stdout) });
         } else {
           const clean = stdout.replace(/\x1b\[[0-9;]*m/g, '').trim();
@@ -245,21 +341,25 @@ export default function ReadingPage() {
 
   function toastSuccess(action: string, stdout: string): string {
     if (action === 'sync') {
-      // stdout contains "X added, Y unchanged, Z removed, W failed."
-      const m = stdout.match(/(\d+) added.*?(\d+) unchanged.*?(\d+) removed/);
-      if (m) {
-        const [, added, unchanged, removed] = m;
-        const parts = [];
-        if (Number(added) > 0)     parts.push(`${added} added`);
-        if (Number(removed) > 0)   parts.push(`${removed} removed`);
-        if (Number(unchanged) > 0) parts.push(`${unchanged} unchanged`);
-        if (parts.length === 0)    parts.push('Nothing changed');
-        return `Mendeley sync — ${parts.join(', ')}.`;
+      // stdout: "X added, Y unchanged[, Z flagged (...)][, W cleared (...)], N failed."
+      if (/\d+ added.*?\d+ unchanged/.test(stdout)) {
+        const addedM = stdout.match(/(\d+) added/);
+        const flaggedM = stdout.match(/(\d+) flagged/);
+        const clearedM = stdout.match(/(\d+) cleared/);
+        const parts: string[] = [];
+        const added = addedM ? Number(addedM[1]) : 0;
+        const flagged = flaggedM ? Number(flaggedM[1]) : 0;
+        const cleared = clearedM ? Number(clearedM[1]) : 0;
+        if (added > 0) parts.push(`${added} added`);
+        if (flagged > 0) parts.push(`${flagged} flagged`);
+        if (cleared > 0) parts.push(`${cleared} returned`);
+        if (parts.length === 0) parts.push('Nothing changed');
+        return `${refManagerName} sync — ${parts.join(', ')}.`;
       }
       // CLI exited 0 but printed a warning (wrong collection name, auth issue, etc.)
       const clean = stdout.replace(/\x1b\[[0-9;]*m/g, '').trim();
       if (clean) return clean.slice(0, 160);
-      return 'Mendeley sync complete.';
+      return `${refManagerName} sync complete.`;
     }
     if (action === 'scan')   return 'Folder scan complete.';
     if (action === 'done')   return 'Marked as done.';
@@ -267,18 +367,22 @@ export default function ReadingPage() {
     if (action === 'edit')      return 'Entry updated.';
     if (action === 'move-up')   return 'Moved up.';
     if (action === 'move-down') return 'Moved down.';
+    if (action === 'remove') return 'Removed from queue.';
+    if (action === 'clear-library-flag') return 'Kept in queue.';
     return 'Done.';
   }
 
   function toastError(action: string, detail: string): string {
     const label: Record<string, string> = {
-      sync:   'Mendeley sync failed',
+      sync:   `${refManagerName} sync failed`,
       scan:   'Scan failed',
       done:   'Could not mark done',
       start:  'Could not start entry',
       edit:        'Could not update entry',
       'move-up':   'Could not move up',
       'move-down': 'Could not move down',
+      'remove':    'Could not remove entry',
+      'clear-library-flag': 'Could not clear flag',
     };
     // Strip ANSI escape codes and Rich markup from CLI output
     const clean = detail.replace(/\x1b\[[0-9;]*m/g, '').trim();
@@ -300,6 +404,28 @@ export default function ReadingPage() {
 
   async function handleMoveDown(id: string) {
     await runAction('move-down', id);
+  }
+
+  async function fetchDbData() {
+    setDbLoading(true);
+    try {
+      const res = await fetch('/api/database');
+      if (res.ok) setDbData(await res.json());
+    } catch {}
+    finally { setDbLoading(false); }
+  }
+
+  function handleOpenDatabase() {
+    setDbModal(true);
+    fetchDbData();
+  }
+
+  async function handleClearLibraryFlag(id: string) {
+    await runAction('clear-library-flag', id);
+  }
+
+  async function handleRemoveEntry(id: string) {
+    await runAction('remove', id);
   }
 
   function handleNext() {
@@ -453,7 +579,15 @@ ${sectionsHtml}
 
   const entries: QueueEntry[] = data?.entries ?? [];
   const banner: BannerCounts = data?.banner ?? { queued: 0, reading: 0, done: 0 };
-  const filtered = applySearch(applyFilter(entries, filter), search);
+  const flaggedEntries = entries.filter(e => e.not_in_mendeley && e.status !== 'removed');
+  const parentFlaggedEntries = entries.filter(e => e.not_in_parent_collection && e.status !== 'removed');
+  const filtered = applySort(
+    applyQuickFilter(
+      applySearch(applyFilter(entries, filter), search),
+      quickFilters,
+    ),
+    sortBy,
+  );
 
   return (
     <div
@@ -513,7 +647,68 @@ ${sectionsHtml}
           banner={banner}
           lastUpdated={data?.last_updated ?? null}
           databaseCount={data?.database_count ?? null}
+          onOpenDatabase={handleOpenDatabase}
         />
+
+        {/* Not-in-library warning banner */}
+        {flaggedEntries.length > 0 && (
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            gap: 12, padding: '8px 20px', flexShrink: 0,
+            background: 'rgba(195,125,13,0.08)', borderBottom: '1px solid rgba(195,125,13,0.2)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <AlertTriangle size={13} strokeWidth={2} color="#C37D0D" />
+              <span style={{ fontFamily: 'var(--sans)', fontSize: 12, color: '#C37D0D' }}>
+                {flaggedEntries.length} {flaggedEntries.length === 1 ? 'entry is' : 'entries are'} no longer in your {refManagerName} collection.
+              </span>
+            </div>
+            <button
+              onClick={() => setFlaggedModal(true)}
+              style={{
+                fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500,
+                color: '#C37D0D', background: 'transparent',
+                border: '1px solid rgba(195,125,13,0.35)',
+                borderRadius: 6, padding: '3px 10px', cursor: 'pointer', whiteSpace: 'nowrap',
+              }}
+            >
+              Review
+            </button>
+          </div>
+        )}
+
+        {/* Sub-collection-only warning banner */}
+        {parentFlaggedEntries.length > 0 && (
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            gap: 12, padding: '8px 20px', flexShrink: 0,
+            background: 'rgba(59,130,246,0.06)', borderBottom: '1px solid rgba(59,130,246,0.15)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Info size={13} strokeWidth={2} color="#3B82F6" style={{ flexShrink: 0 }} />
+              <span style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg1)' }}>
+                <strong style={{ fontWeight: 500 }}>
+                  {parentFlaggedEntries.length} {parentFlaggedEntries.length === 1 ? 'entry' : 'entries'}
+                </strong>
+                {' '}
+                <span style={{ color: 'var(--fg3)' }}>
+                  {parentFlaggedEntries.length === 1 ? 'is' : 'are'} in a sub-collection but no longer in the parent <strong style={{ fontWeight: 500, color: 'var(--fg2)' }}>{queueCollection}</strong> collection.
+                </span>
+              </span>
+            </div>
+            <button
+              onClick={() => setParentFlaggedModal(true)}
+              style={{
+                fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500,
+                color: 'var(--fg2)', background: 'transparent',
+                border: '1px solid var(--border-md)',
+                borderRadius: 6, padding: '3px 10px', cursor: 'pointer', whiteSpace: 'nowrap',
+              }}
+            >
+              Review
+            </button>
+          </div>
+        )}
 
         {/* Page header */}
         <div
@@ -568,8 +763,8 @@ ${sectionsHtml}
               >
                 Local reading queue · {entries.length} {entries.length === 1 ? 'entry' : 'entries'}{' '}
               <span style={{ color: 'var(--fg4)' }}>·</span>{' '}
-              <span title="Entries are added and removed by syncing with Mendeley. Docent does not edit your Mendeley library.">
-                managed via Mendeley
+              <span title={`Entries are added and removed by syncing with ${refManagerName}. Docent does not edit your library.`}>
+                managed via {refManagerName}
               </span>
               </p>
             </div>
@@ -577,7 +772,7 @@ ${sectionsHtml}
             {/* How to add button */}
             <button
               onClick={() => setShowInfo(true)}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 9999, border: '1px solid rgba(139,92,246,0.35)', background: 'rgba(139,92,246,0.1)', color: '#a78bfa', fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap' }}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 14px', borderRadius: 9999, border: '1px solid #8B5CF6', background: '#8B5CF6', color: '#ffffff', fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap' }}
             >
               <HelpCircle size={14} strokeWidth={1.5} />
               How to add?
@@ -608,10 +803,24 @@ ${sectionsHtml}
               </GhostBtn>
               <button
                 onClick={handleSync}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 9999, border: '1px solid rgba(24,226,153,0.4)', background: 'rgba(24,226,153,0.1)', color: '#0fa76e', fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                disabled={busy === 'sync'}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '4px 14px', borderRadius: 9999, border: '1px solid #18E299', background: '#18E299', color: '#0a1f15', fontFamily: 'var(--sans)', cursor: busy === 'sync' ? 'wait' : 'pointer', whiteSpace: 'nowrap' }}
               >
-                <Download size={14} strokeWidth={1.5} />
-                {busy === 'sync' ? 'Syncing…' : 'Sync Mendeley'}
+                <RefreshCw
+                  size={13}
+                  strokeWidth={2}
+                  style={{ animation: busy === 'sync' ? 'spin 0.75s linear infinite' : 'none', flexShrink: 0 }}
+                />
+                <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 0 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.2 }}>
+                    {busy === 'sync' ? 'Syncing…' : 'Sync'}
+                  </span>
+                  {busy !== 'sync' && (
+                    <span style={{ fontSize: 9, fontWeight: 400, opacity: 0.65, lineHeight: 1.2 }}>
+                      from {refManagerName}
+                    </span>
+                  )}
+                </span>
               </button>
               <GhostBtn icon={<Printer size={14} strokeWidth={1.5} />} onClick={handleExport}>
                 Export Documents
@@ -624,7 +833,7 @@ ${sectionsHtml}
               </GhostBtn>
             </div>
 
-            {/* Right: search + filter */}
+            {/* Right: search + sort + filter */}
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <div style={{ position: 'relative' }}>
                 <span
@@ -659,14 +868,64 @@ ${sectionsHtml}
                   }}
                 />
               </div>
+
+              {/* Sort dropdown */}
+              <div ref={sortRef} style={{ position: 'relative' }}>
+                <GhostBtn
+                  icon={<ArrowUpDown size={14} strokeWidth={1.5} />}
+                  onClick={() => { setSortOpen(o => !o); setFilterOpen(false); }}
+                  active={sortBy !== 'order'}
+                >
+                  {sortBy === 'order' ? 'Sort' : (SORT_OPTIONS.find(s => s.value === sortBy)?.label ?? 'Sort')}
+                </GhostBtn>
+                {sortOpen && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      right: 0,
+                      top: 'calc(100% + 4px)',
+                      zIndex: 20,
+                      background: 'var(--bg)',
+                      border: '1px solid var(--border-md)',
+                      borderRadius: 8,
+                      boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+                      minWidth: 170,
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <div style={{ padding: '6px 14px 4px', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--fg4)', letterSpacing: '0.6px', textTransform: 'uppercase' }}>Sort by</div>
+                    {SORT_OPTIONS.map(({ value, label }) => (
+                      <button
+                        key={value}
+                        onClick={() => { setSortBy(value); setSortOpen(false); }}
+                        style={{
+                          display: 'block', width: '100%', padding: '8px 14px',
+                          textAlign: 'left', border: 'none',
+                          background: sortBy === value ? 'rgba(24,226,153,0.08)' : 'transparent',
+                          color: sortBy === value ? '#0fa76e' : 'var(--fg2)',
+                          fontFamily: 'var(--sans)', fontSize: 13,
+                          fontWeight: sortBy === value ? 500 : 400, cursor: 'pointer',
+                        }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               {/* Filter dropdown */}
               <div ref={filterRef} style={{ position: 'relative' }}>
                 <GhostBtn
                   icon={<Filter size={14} strokeWidth={1.5} />}
-                  onClick={() => setFilterOpen(o => !o)}
-                  active={filter !== 'all'}
+                  onClick={() => { setFilterOpen(o => !o); setSortOpen(false); }}
+                  active={filter !== 'all' || quickFilters.size > 0}
                 >
-                  {filter === 'all' ? 'Filter' : FILTERS.find(f => f.value === filter)?.label ?? 'Filter'}
+                  {filter === 'all' && quickFilters.size === 0
+                    ? 'Filter'
+                    : filter !== 'all'
+                    ? FILTERS.find(f => f.value === filter)?.label ?? 'Filter'
+                    : `Filter (${quickFilters.size})`}
                 </GhostBtn>
                 {filterOpen && (
                   <div
@@ -679,26 +938,23 @@ ${sectionsHtml}
                       border: '1px solid var(--border-md)',
                       borderRadius: 8,
                       boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
-                      minWidth: 120,
+                      minWidth: 160,
                       overflow: 'hidden',
                     }}
                   >
+                    {/* Status filters */}
+                    <div style={{ padding: '6px 14px 4px', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--fg4)', letterSpacing: '0.6px', textTransform: 'uppercase' }}>Status</div>
                     {FILTERS.map(({ value, label }) => (
                       <button
                         key={value}
                         onClick={() => { setFilter(value); setFilterOpen(false); }}
                         style={{
-                          display: 'block',
-                          width: '100%',
-                          padding: '8px 14px',
-                          textAlign: 'left',
-                          border: 'none',
+                          display: 'block', width: '100%', padding: '7px 14px',
+                          textAlign: 'left', border: 'none',
                           background: filter === value ? 'rgba(24,226,153,0.08)' : 'transparent',
                           color: filter === value ? '#0fa76e' : 'var(--fg2)',
-                          fontFamily: 'var(--sans)',
-                          fontSize: 13,
-                          fontWeight: filter === value ? 500 : 400,
-                          cursor: 'pointer',
+                          fontFamily: 'var(--sans)', fontSize: 13,
+                          fontWeight: filter === value ? 500 : 400, cursor: 'pointer',
                         }}
                       >
                         {label}
@@ -707,6 +963,64 @@ ${sectionsHtml}
                         </span>
                       </button>
                     ))}
+
+                    {/* Quick filters */}
+                    <div style={{ margin: '4px 14px', borderTop: '1px solid var(--border)' }} />
+                    <div style={{ padding: '2px 14px 4px', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--fg4)', letterSpacing: '0.6px', textTransform: 'uppercase' }}>Quick filters</div>
+                    {([
+                      { key: 'has-deadline' as QuickFilter, label: 'Has deadline' },
+                      { key: 'past-due' as QuickFilter, label: 'Past due' },
+                      { key: 'not-in-library' as QuickFilter, label: 'Not in library', count: flaggedEntries.length + parentFlaggedEntries.length },
+                    ]).map(({ key, label, count }) => {
+                      const active = quickFilters.has(key);
+                      return (
+                        <button
+                          key={key}
+                          onClick={() => {
+                            setQuickFilters(prev => {
+                              const next = new Set(prev);
+                              if (next.has(key)) next.delete(key); else next.add(key);
+                              return next;
+                            });
+                          }}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 8,
+                            width: '100%', padding: '7px 14px',
+                            textAlign: 'left', border: 'none',
+                            background: active ? 'rgba(24,226,153,0.08)' : 'transparent',
+                            color: active ? '#0fa76e' : 'var(--fg2)',
+                            fontFamily: 'var(--sans)', fontSize: 13,
+                            fontWeight: active ? 500 : 400, cursor: 'pointer',
+                          }}
+                        >
+                          <span style={{
+                            width: 14, height: 14, borderRadius: 3, flexShrink: 0,
+                            border: `1.5px solid ${active ? '#18E299' : 'var(--border-md)'}`,
+                            background: active ? '#18E299' : 'transparent',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          }}>
+                            {active && <span style={{ width: 6, height: 6, borderRadius: 1, background: '#0a1f15' }} />}
+                          </span>
+                          {label}
+                          {count !== undefined && count > 0 && (
+                            <span style={{ marginLeft: 'auto', fontFamily: 'var(--mono)', fontSize: 10, color: '#C37D0D' }}>{count}</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                    {quickFilters.size > 0 && (
+                      <button
+                        onClick={() => { setQuickFilters(new Set()); setFilterOpen(false); }}
+                        style={{
+                          display: 'block', width: '100%', padding: '6px 14px 8px',
+                          textAlign: 'left', border: 'none', background: 'transparent',
+                          color: 'var(--fg4)', fontFamily: 'var(--sans)', fontSize: 11,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Clear quick filters
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -815,6 +1129,300 @@ ${sectionsHtml}
 
       {/* Toast notifications */}
       {toast && <Toast toast={toast} onDismiss={() => setToast(null)} />}
+
+      {/* Database folder inspector modal */}
+      {dbModal && (
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'var(--overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+          onClick={(e) => { if (e.target === e.currentTarget) setDbModal(false); }}
+        >
+          <div style={{ background: 'var(--bg-card)', borderRadius: 12, border: '1px solid var(--border-md)', boxShadow: '0 16px 48px rgba(0,0,0,0.3)', width: '100%', maxWidth: 560, maxHeight: '82vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+
+            {/* Header */}
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontFamily: 'var(--sans)', fontSize: 15, fontWeight: 600, color: 'var(--fg1)' }}>Watch folder</div>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--fg4)', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {dbData?.database_dir ?? 'Not configured'}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                <button
+                  onClick={fetchDbData}
+                  disabled={dbLoading}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 6, border: '1px solid var(--border-md)', background: 'transparent', color: 'var(--fg3)', fontFamily: 'var(--sans)', fontSize: 12, cursor: dbLoading ? 'wait' : 'pointer' }}
+                >
+                  <RefreshCw size={12} strokeWidth={1.5} style={dbLoading ? { animation: 'spin 0.75s linear infinite' } : {}} />
+                  {dbLoading ? 'Scanning…' : 'Refresh'}
+                </button>
+                <button onClick={() => setDbModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--fg4)', display: 'flex' }}>
+                  <X size={16} strokeWidth={1.5} />
+                </button>
+              </div>
+            </div>
+
+            {/* Info note */}
+            <div style={{ padding: '10px 20px', borderBottom: '1px solid var(--border)', background: 'var(--bg-subtle)', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+              <Info size={13} strokeWidth={1.5} color="var(--fg4)" style={{ flexShrink: 0, marginTop: 1 }} />
+              <span style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg3)', lineHeight: 1.5 }}>
+                PDFs dropped here are auto-imported by {refManagerName}. Docent counts files but cannot reliably match filenames to queue entries — check {refManagerName} to see which entries have PDFs attached.
+              </span>
+            </div>
+
+            {/* Count pill */}
+            <div style={{ padding: '10px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 18, fontWeight: 700, color: 'var(--fg1)' }}>
+                {dbData?.pdfs.length ?? '—'}
+              </span>
+              <span style={{ fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--fg3)' }}>PDF{(dbData?.pdfs.length ?? 0) !== 1 ? 's' : ''} in folder</span>
+              {dbData?.last_checked && (
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--fg4)', marginLeft: 'auto' }}>
+                  checked {new Date(dbData.last_checked).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+            </div>
+
+            {/* Filename list */}
+            <div style={{ overflowY: 'auto', flex: 1 }}>
+              {dbLoading && !dbData && (
+                <div style={{ padding: '32px 20px', textAlign: 'center', color: 'var(--fg4)', fontFamily: 'var(--sans)', fontSize: 13 }}>Scanning folder…</div>
+              )}
+              {!dbData?.database_dir && !dbLoading && (
+                <div style={{ padding: '32px 20px', textAlign: 'center', color: 'var(--fg4)', fontFamily: 'var(--sans)', fontSize: 13 }}>
+                  No watch folder configured — set one in Settings → Reading.
+                </div>
+              )}
+              {dbData?.pdfs.length === 0 && dbData.database_dir && (
+                <div style={{ padding: '32px 20px', textAlign: 'center', color: 'var(--fg4)', fontFamily: 'var(--sans)', fontSize: 13 }}>
+                  No PDFs found in this folder.
+                </div>
+              )}
+              {(dbData?.pdfs ?? []).map((pdf, i) => (
+                <div
+                  key={pdf}
+                  style={{
+                    padding: '7px 20px',
+                    borderBottom: '1px solid var(--border)',
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.015)',
+                  }}
+                >
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--fg4)', minWidth: 28, textAlign: 'right', flexShrink: 0 }}>{i + 1}</span>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--fg2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pdf}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sub-collection-only review modal */}
+      {parentFlaggedModal && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, zIndex: 50,
+            background: 'var(--overlay)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 24,
+          }}
+          onClick={(e) => { if (e.target === e.currentTarget) setParentFlaggedModal(false); }}
+        >
+          <div style={{
+            background: 'var(--bg-card)', borderRadius: 12,
+            border: '1px solid var(--border-md)',
+            boxShadow: '0 16px 48px rgba(0,0,0,0.3)',
+            width: '100%', maxWidth: 600, maxHeight: '82vh',
+            display: 'flex', flexDirection: 'column', overflow: 'hidden',
+          }}>
+            {/* Header */}
+            <div style={{
+              padding: '16px 20px', borderBottom: '1px solid var(--border)',
+              display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12,
+            }}>
+              <div>
+                <div style={{ fontFamily: 'var(--sans)', fontSize: 15, fontWeight: 600, color: 'var(--fg1)' }}>
+                  Sub-collection only
+                </div>
+                <div style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg4)', marginTop: 2, lineHeight: 1.5 }}>
+                  These entries are in a sub-collection but were removed from the parent <strong style={{ color: 'var(--fg2)' }}>{queueCollection}</strong> collection.
+                  Docent still tracks them because it syncs all sub-collections. You have two options.
+                </div>
+              </div>
+              <button onClick={() => setParentFlaggedModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--fg4)', display: 'flex', flexShrink: 0 }}>
+                <X size={16} strokeWidth={1.5} />
+              </button>
+            </div>
+
+            {/* Instructions */}
+            <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', background: 'var(--bg-subtle)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div style={{ padding: '12px 14px', borderRadius: 8, border: '1px solid rgba(99,102,241,0.2)', background: 'rgba(99,102,241,0.05)' }}>
+                  <div style={{ fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 600, color: '#6366F1', marginBottom: 6 }}>
+                    Option A — Add back to parent
+                  </div>
+                  <div style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg3)', lineHeight: 1.55 }}>
+                    In Mendeley, drag the entry into the <strong style={{ color: 'var(--fg2)' }}>{queueCollection}</strong> collection directly (not just a sub-collection). Re-sync when done.
+                  </div>
+                </div>
+                <div style={{ padding: '12px 14px', borderRadius: 8, border: '1px solid rgba(212,86,86,0.2)', background: 'rgba(212,86,86,0.04)' }}>
+                  <div style={{ fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 600, color: '#D45656', marginBottom: 6 }}>
+                    Option B — Remove entirely
+                  </div>
+                  <div style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg3)', lineHeight: 1.55 }}>
+                    In Mendeley, right-click the entry and choose <em>Remove from collection</em> for each sub-collection it belongs to. Re-sync when done.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Entry list */}
+            <div style={{ overflowY: 'auto', flex: 1, padding: '8px 0' }}>
+              {parentFlaggedEntries.map(entry => (
+                <div
+                  key={entry.id}
+                  style={{
+                    padding: '10px 20px', borderBottom: '1px solid var(--border)',
+                  }}
+                >
+                  <div style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500, color: 'var(--fg1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {entry.title || entry.id}
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, marginTop: 3, flexWrap: 'wrap' }}>
+                    {entry.authors && (
+                      <span style={{ fontFamily: 'var(--sans)', fontSize: 11, color: 'var(--fg4)' }}>{entry.authors}</span>
+                    )}
+                    {entry.category && (
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: '#6366F1', background: 'rgba(99,102,241,0.08)', padding: '1px 7px', borderRadius: 9999 }}>
+                        {entry.category}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Footer */}
+            <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setParentFlaggedModal(false)}
+                style={{
+                  fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500,
+                  color: 'var(--fg2)', background: 'var(--gray100)',
+                  border: '1px solid var(--border-md)',
+                  borderRadius: 8, padding: '6px 16px', cursor: 'pointer',
+                }}
+              >
+                Close — I&apos;ll fix it in {refManagerName}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Not-in-library review modal */}
+      {flaggedModal && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, zIndex: 50,
+            background: 'var(--overlay)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 24,
+          }}
+          onClick={(e) => { if (e.target === e.currentTarget) setFlaggedModal(false); }}
+        >
+          <div style={{
+            background: 'var(--bg-card)', borderRadius: 12,
+            border: '1px solid var(--border-md)',
+            boxShadow: '0 16px 48px rgba(0,0,0,0.3)',
+            width: '100%', maxWidth: 560, maxHeight: '80vh',
+            display: 'flex', flexDirection: 'column', overflow: 'hidden',
+          }}>
+            {/* Header */}
+            <div style={{
+              padding: '16px 20px', borderBottom: '1px solid var(--border)',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            }}>
+              <div>
+                <div style={{ fontFamily: 'var(--sans)', fontSize: 15, fontWeight: 600, color: 'var(--fg1)' }}>
+                  Not in library
+                </div>
+                <div style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg4)', marginTop: 2 }}>
+                  These entries are no longer in your {refManagerName} collection. Remove or keep them.
+                </div>
+              </div>
+              <button onClick={() => setFlaggedModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--fg4)', display: 'flex' }}>
+                <X size={16} strokeWidth={1.5} />
+              </button>
+            </div>
+
+            {/* Entry list */}
+            <div style={{ overflowY: 'auto', flex: 1, padding: '8px 0' }}>
+              {flaggedEntries.length === 0 ? (
+                <div style={{ padding: '32px 20px', textAlign: 'center', color: 'var(--fg4)', fontFamily: 'var(--sans)', fontSize: 13 }}>
+                  All clear — no flagged entries.
+                </div>
+              ) : (
+                flaggedEntries.map(entry => (
+                  <div
+                    key={entry.id}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 12,
+                      padding: '10px 20px', borderBottom: '1px solid var(--border)',
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500, color: 'var(--fg1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {entry.title || entry.id}
+                      </div>
+                      {entry.authors && (
+                        <div style={{ fontFamily: 'var(--sans)', fontSize: 11, color: 'var(--fg4)', marginTop: 2 }}>
+                          {entry.authors}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                      <button
+                        onClick={async () => {
+                          await handleClearLibraryFlag(entry.id);
+                          if (flaggedEntries.length <= 1) setFlaggedModal(false);
+                        }}
+                        title="Keep in queue"
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 4,
+                          padding: '4px 10px', borderRadius: 6,
+                          border: '1px solid var(--border-md)',
+                          background: 'transparent', color: 'var(--fg2)',
+                          fontFamily: 'var(--sans)', fontSize: 12, cursor: 'pointer',
+                        }}
+                      >
+                        <BookmarkCheck size={12} strokeWidth={1.5} />
+                        Keep
+                      </button>
+                      <button
+                        onClick={async () => {
+                          await handleRemoveEntry(entry.id);
+                          if (flaggedEntries.length <= 1) setFlaggedModal(false);
+                        }}
+                        title="Remove from queue"
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 4,
+                          padding: '4px 10px', borderRadius: 6,
+                          border: '1px solid rgba(212,86,86,0.3)',
+                          background: 'rgba(212,86,86,0.08)', color: '#D45656',
+                          fontFamily: 'var(--sans)', fontSize: 12, cursor: 'pointer',
+                        }}
+                      >
+                        <Trash2 size={12} strokeWidth={1.5} />
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

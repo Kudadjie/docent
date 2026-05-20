@@ -90,7 +90,33 @@ class _LocalhostGuard(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+import re as _re
+
+class _RSCPathRewrite(BaseHTTPMiddleware):
+    """Rewrite Next.js RSC payload URLs so StaticFiles can resolve them.
+
+    Next.js client router requests:  /{route}/__next.{seg}.__PAGE__.txt
+    Static export creates files at:  /{route}/__next.{seg}/__PAGE__.txt
+
+    The router encodes the sub-directory with a dot; the export uses a real
+    directory separator.  This middleware translates before StaticFiles sees it.
+    """
+    _pat = _re.compile(r"(/__next\.[^/]+)\.__PAGE__\.txt$")
+
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        path = request.url.path
+        m = self._pat.search(path)
+        if m:
+            new_path = path[: m.start()] + m.group(1) + "/__PAGE__.txt"
+            scope = dict(request.scope)
+            scope["path"] = new_path
+            scope["raw_path"] = new_path.encode("latin-1")
+            request = Request(scope, request.receive, request._send)
+        return await call_next(request)
+
+
 app = FastAPI(docs_url=None, redoc_url=None)
+app.add_middleware(_RSCPathRewrite)   # must be before LocalhostGuard so the rewrite fires first
 app.add_middleware(_LocalhostGuard)
 
 
@@ -524,6 +550,7 @@ def run_server(host: str = "127.0.0.1", port: int = 7432) -> None:
         app,
         host=host,
         port=port,
+        access_log=False,   # suppress per-request INFO lines; errors still surface as exceptions
         # Disable response buffering so SSE events reach the browser immediately.
         # h11_max_incomplete_event_size=None prevents h11 from buffering partial events.
         h11_max_incomplete_event_size=16 * 1024 * 1024,

@@ -24,6 +24,30 @@ from pydantic import BaseModel
 
 _logger = logging.getLogger(__name__)
 
+# Increment this when queue.json needs a structural migration.
+# Rule: additive field additions do NOT require a version bump (Pydantic handles
+# them via defaults).  Only renames, removals, or type changes need a bump + a
+# corresponding _migrate_vN_to_vM() function below.
+_QUEUE_SCHEMA_VERSION = 1
+
+
+def _infer_schema_version(entries: list[dict[str, Any]]) -> int:
+    """Guess the schema version from the first entry's keys.
+
+    Keep this logic cheap and conservative — when in doubt return the lowest
+    plausible version so the migration guard runs.
+    """
+    return 1  # only one version exists today; extend as migrations are added
+
+
+def _run_migrations(entries: list[dict[str, Any]], from_version: int) -> list[dict[str, Any]]:
+    """Apply all pending migrations in order from *from_version* to _QUEUE_SCHEMA_VERSION."""
+    # Example shape for future use:
+    #   if from_version < 2:
+    #       entries = _migrate_v1_to_v2(entries)
+    # Nothing to do yet — v1 is current.
+    return entries
+
 
 class BannerCounts(BaseModel):
     queued: int = 0
@@ -67,10 +91,18 @@ class ReadingQueueStore:
         if not self.queue_path.exists():
             return []
         try:
-            return json.loads(self.queue_path.read_text(encoding="utf-8"))
+            entries: list[dict[str, Any]] = json.loads(self.queue_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             _logger.warning("queue.json is corrupt (%s) — treating as empty queue", exc)
             return []
+        detected = _infer_schema_version(entries)
+        if detected < _QUEUE_SCHEMA_VERSION:
+            _logger.info(
+                "queue.json schema v%d detected; migrating to v%d",
+                detected, _QUEUE_SCHEMA_VERSION,
+            )
+            entries = _run_migrations(entries, detected)
+        return entries
 
     def load_index(self) -> dict[str, dict[str, Any]]:
         if not self.index_path.exists():

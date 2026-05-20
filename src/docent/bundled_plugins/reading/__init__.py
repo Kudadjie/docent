@@ -45,6 +45,7 @@ from .mendeley_sync import (
 )
 from .reading_store import ReadingQueueStore
 from .mendeley_cache import MendeleyCache
+from .mendeley_backend import MendeleyBackend
 from .mendeley_client import (
     list_documents as mendeley_list_documents,
     list_folders as mendeley_list_folders,
@@ -52,7 +53,7 @@ from .mendeley_client import (
 
 
 _DEFAULT_DATABASE_DIR = "~/Documents/Papers"
-_KNOWN_READING_KEYS = {"database_dir", "queue_collection", "mendeley_mcp_command"}
+_KNOWN_READING_KEYS = {"database_dir", "queue_collection", "mendeley_mcp_command", "reference_manager"}
 
 @register_tool
 class ReadingQueue(Tool):
@@ -448,21 +449,45 @@ class ReadingQueue(Tool):
         )
 
     @action(
-        description="Reconcile the local reading queue with a Mendeley collection (default 'Docent-Queue').",
+        description="Reconcile the local reading queue with the configured reference manager collection (default 'Docent-Queue').",
         input_schema=SyncFromMendeleyInputs,
         name="sync-from-mendeley",
     )
     def sync_from_mendeley(self, inputs: SyncFromMendeleyInputs, context: Context):
         collection_name = context.settings.reading.queue_collection
         launch_command = context.settings.reading.mendeley_mcp_command
+        backend = MendeleyBackend(launch_command)
         return sync_from_mendeley_run(
             self._store,
             collection_name,
-            launch_command,
+            backend,
             inputs.dry_run,
             self._mendeley_cache(),
             self._log_event,
         )
+
+    @action(
+        description="Keep an entry in the reading queue despite it being absent from the reference manager collection. Records that the user made this choice.",
+        input_schema=IdOnlyInputs,
+        name="clear-library-flag",
+    )
+    def clear_library_flag(self, inputs: IdOnlyInputs, context: Context) -> MutationResult:
+        from datetime import datetime, timezone
+        with self._store.lock():
+            queue = self._store.load_queue()
+            entry = self._find_entry(queue, inputs.id)
+            if not entry:
+                return self._not_found(inputs.id, queue)
+            entry["not_in_mendeley"] = False
+            entry["manually_kept"] = True
+            entry["manually_kept_at"] = datetime.now(timezone.utc).isoformat()
+            self._store.save_queue(queue)
+            self._log_event("keep_entry", id=inputs.id, manually_kept=True)
+            return MutationResult(
+                ok=True, id=inputs.id, entry=QueueEntry(**entry),
+                queue_size=len(queue), banner=self._store.banner_counts(),
+                message=f"Kept {inputs.id!r} — marked as manually retained (not in library).",
+            )
 
     # ------------------------------------------------------------------
     # Ordering helpers

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { CheckCircle, Pencil, BookOpen, Play, ChevronUp, ChevronDown } from 'lucide-react';
+import { CheckCircle, Pencil, BookOpen, Play, ChevronUp, ChevronDown, AlertTriangle, BookmarkCheck, FolderOpen } from 'lucide-react';
 import StatusBadge from './StatusBadge';
 import OrderIndicator from './OrderIndicator';
 import type { QueueEntry, FilterValue } from '@/lib/types';
@@ -115,6 +115,42 @@ function PaperRow({
               </span>
             )}
           </div>
+
+          {/* Status badges row */}
+          {(entry.not_in_mendeley || entry.manually_kept || entry.not_in_parent_collection) && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+              {entry.not_in_mendeley && (
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  <AlertTriangle size={11} strokeWidth={2} color="#C37D0D" />
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: '#C37D0D', letterSpacing: '0.3px', textTransform: 'uppercase', fontWeight: 600 }}>
+                    Not in library
+                  </span>
+                </div>
+              )}
+              {entry.manually_kept && (
+                <div
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                  title={entry.manually_kept_at ? `Kept on ${new Date(entry.manually_kept_at).toLocaleDateString()}` : 'Manually kept in queue'}
+                >
+                  <BookmarkCheck size={11} strokeWidth={2} color="var(--fg4)" />
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--fg4)', letterSpacing: '0.3px', textTransform: 'uppercase', fontWeight: 500 }}>
+                    Kept · not in library
+                  </span>
+                </div>
+              )}
+              {entry.not_in_parent_collection && (
+                <div
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                  title={`In sub-collection "${entry.category ?? 'unknown'}" but not in the parent queue collection`}
+                >
+                  <FolderOpen size={11} strokeWidth={2} color="#6366F1" />
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: '#6366F1', letterSpacing: '0.3px', textTransform: 'uppercase', fontWeight: 600 }}>
+                    Sub-collection only
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Sub-line: authors · category+year */}
           <div
@@ -312,11 +348,12 @@ function IconBtn({
   );
 }
 
-const EMPTY_MSG: Record<FilterValue, string> = {
-  all:     'Your queue is empty — sync Mendeley to get started.',
-  queued:  'No queued papers — sync Mendeley to pull new ones.',
-  reading: 'Nothing in progress — start reading a queued paper.',
-  done:    'No papers marked as done yet.',
+const EMPTY_MSG: Partial<Record<FilterValue, string>> = {
+  all:     'Your queue is empty — sync your library to get started.',
+  queued:  'No queued entries — sync your library to pull new ones.',
+  reading: 'Nothing in progress — start reading a queued entry.',
+  done:    'No entries marked as done yet.',
+  removed: 'No entries removed from your library.',
 };
 
 interface Props {
@@ -336,7 +373,7 @@ interface Props {
 
 export default function PaperTable({ entries, newIds, highlightId, activeFilter, hasSearch, dark, onMarkDone, onEdit, onStart, onMoveUp, onMoveDown, onShowDetail }: Props) {
   if (entries.length === 0) {
-    const msg = hasSearch ? 'No papers match your search.' : EMPTY_MSG[activeFilter];
+    const msg = hasSearch ? 'No entries match your search.' : (EMPTY_MSG[activeFilter] ?? 'No entries found.');
     return (
       <div
         style={{
@@ -356,12 +393,6 @@ export default function PaperTable({ entries, newIds, highlightId, activeFilter,
     );
   }
 
-  // Sort entries: non-done by order ascending, then append done entries
-  const sortedEntries = [
-    ...entries.filter(e => e.status !== 'done').sort((a, b) => a.order - b.order),
-    ...entries.filter(e => e.status === 'done'),
-  ];
-
   return (
     <div style={{ flex: 1, overflowY: 'auto' }}>
       <table
@@ -377,7 +408,7 @@ export default function PaperTable({ entries, newIds, highlightId, activeFilter,
               background: 'var(--bg)',
             }}
           >
-            {['Paper', 'Status', 'Order', 'Added', ''].map((col, i) => (
+            {['Entry', 'Status', 'Order', 'Added', ''].map((col, i) => (
               <th
                 key={i}
                 scope="col"
@@ -399,7 +430,7 @@ export default function PaperTable({ entries, newIds, highlightId, activeFilter,
           </tr>
         </thead>
         <tbody>
-          {sortedEntries.map((entry) => (
+          {entries.map((entry) => (
             <PaperRow
               key={entry.id}
               entry={entry}

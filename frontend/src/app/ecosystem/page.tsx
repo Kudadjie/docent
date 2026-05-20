@@ -279,10 +279,14 @@ export default function EcosystemPage() {
         {/* Scrollable content — ecosystem uses BRAND + VIOLET + PINK gradient */}
         <div style={{
           flex: 1, overflow: 'auto', minHeight: 0,
-          backgroundImage: `
+          backgroundImage: dark ? `
             radial-gradient(ellipse 700px 320px at 10% 0%, ${BRAND}22, transparent 60%),
             radial-gradient(ellipse 560px 260px at 85% 15%, ${VIOLET}18, transparent 60%),
             radial-gradient(ellipse 480px 220px at 50% 75%, ${PINK}10, transparent 60%)
+          ` : `
+            radial-gradient(ellipse 700px 320px at 10% 0%, ${BRAND}44, transparent 60%),
+            radial-gradient(ellipse 560px 260px at 85% 15%, ${VIOLET}36, transparent 60%),
+            radial-gradient(ellipse 480px 220px at 50% 75%, ${PINK}20, transparent 60%)
           `,
           backgroundRepeat: 'no-repeat',
           backgroundSize: '100% 100%',

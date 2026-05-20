@@ -1,6 +1,6 @@
 'use client';
 
-import { Bell, RefreshCw, Info, AlertTriangle, XCircle, X, Search } from 'lucide-react';
+import { Bell, RefreshCw, Info, AlertTriangle, XCircle, X, Search, Sun, Moon, FolderOpen } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import type { BannerCounts } from '@/lib/types';
@@ -38,6 +38,7 @@ interface Props {
   banner?: BannerCounts;
   lastUpdated?: string | null;
   databaseCount?: number | null;
+  onOpenDatabase?: () => void;
   // Studio-page extras — all optional
   onOpenCmdK?: () => void;
   onOpenHistory?: () => void;
@@ -235,6 +236,7 @@ export default function StatusBanner({
   banner,
   lastUpdated,
   databaseCount,
+  onOpenDatabase,
   onOpenCmdK,
   onOpenHistory,
   historyOpen,
@@ -275,7 +277,34 @@ export default function StatusBanner({
       {showStats && (
         <>
           <Stat label="Queue" value={queueTotal} />
-          <Stat label="Database" value={databaseCount ?? '—'} />
+          {/* Folder PDFs — clickable to open the database inspector */}
+          {onOpenDatabase ? (
+            <button
+              onClick={onOpenDatabase}
+              title="PDFs in your Mendeley watch folder — click to inspect"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 7,
+                background: 'transparent', border: 'none', cursor: 'pointer', padding: 0,
+              }}
+            >
+              <span style={{
+                fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 500,
+                color: 'var(--fg4)', letterSpacing: '0.7px', textTransform: 'uppercase',
+                display: 'flex', alignItems: 'center', gap: 4,
+              }}>
+                <FolderOpen size={11} strokeWidth={1.5} />
+                Folder
+              </span>
+              <span style={{
+                fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600,
+                color: 'var(--fg1)', letterSpacing: '0.4px',
+              }}>
+                {databaseCount ?? '—'}
+              </span>
+            </button>
+          ) : (
+            <Stat label="Folder" value={databaseCount ?? '—'} />
+          )}
           <Stat label="Done" value={banner!.done} />
         </>
       )}
@@ -310,6 +339,23 @@ export default function StatusBanner({
           style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 9999, border: `1px solid ${outputsOpen ? '#18E299' : 'var(--border-md)'}`, background: outputsOpen ? 'rgba(24,226,153,0.10)' : 'transparent', cursor: 'pointer', color: outputsOpen ? '#0fa76e' : 'var(--fg3)', fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.5px', textTransform: 'uppercase' }}>
           <Search size={11} strokeWidth={2} />
           Outputs
+        </button>
+      )}
+
+      {/* Dark / light toggle */}
+      {_onToggleDark && (
+        <button
+          onClick={_onToggleDark}
+          aria-label={_dark ? 'Switch to light mode' : 'Switch to dark mode'}
+          title={_dark ? 'Light mode' : 'Dark mode'}
+          style={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            width: 28, height: 28, borderRadius: 9999,
+            background: 'transparent', border: '1px solid var(--border-md)',
+            cursor: 'pointer', color: 'var(--fg4)',
+          }}
+        >
+          {_dark ? <Sun size={12} strokeWidth={2} /> : <Moon size={12} strokeWidth={2} />}
         </button>
       )}
 

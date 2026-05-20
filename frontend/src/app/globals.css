@@ -44,6 +44,36 @@
   --mono: 'Geist Mono', 'SFMono-Regular', Consolas, ui-monospace, monospace;
 }
 
+/* ── Light mode overrides ──────────────────────────────────────── */
+[data-theme="light"] {
+  --bg:           #f8f9fa;
+  --bg-subtle:    #f0f2f5;
+  --bg-card:      #ffffff;
+  --fg1:          #0d1117;
+  --fg2:          #24292f;
+  --fg3:          #57606a;
+  --fg4:          #8c959f;
+  --gray100:      #eaeef2;
+  --gray200:      #d0d7de;
+  --border:       rgba(0,0,0,0.08);
+  --border-md:    rgba(0,0,0,0.13);
+  --logo-border:  rgba(0,0,0,0.18);
+  --row-hover:    #f3f6fa;
+  --overlay:      rgba(0,0,0,0.4);
+  --code-bg:      #f3f6fa;
+  --code-border:  rgba(0,0,0,0.10);
+  --amber-bg:        rgba(245,158,11,0.10);
+  --amber-bg-strong: rgba(245,158,11,0.18);
+  --amber-text:      #B45309;
+  --amber-border:    rgba(245,158,11,0.4);
+  --red-bg:          rgba(212,86,86,0.10);
+  --red-text:        #DC2626;
+  --hero-grad:
+    radial-gradient(ellipse 700px 280px at 12% 0%, #18E29940, transparent 60%),
+    radial-gradient(ellipse 540px 240px at 88% 20%, #3B82F62e, transparent 60%),
+    radial-gradient(ellipse 460px 200px at 50% 80%, #8B5CF624, transparent 60%);
+}
+
 /* ── Animations ────────────────────────────────────────────────── */
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(4px); }

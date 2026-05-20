@@ -40,6 +40,10 @@ class QueueEntry(BaseModel):
     mendeley_id: str | None = None
     started: str | None = None    # ISO timestamp when status -> reading.
     finished: str | None = None   # ISO timestamp when status -> done.
+    not_in_mendeley: bool = False          # Flagged absent from all collections; cleared when it returns.
+    not_in_parent_collection: bool = False # In a sub-collection only (removed from the root); cleared when re-added to parent.
+    manually_kept: bool = False            # User chose to keep this entry after it was flagged as not_in_mendeley.
+    manually_kept_at: str | None = None    # ISO timestamp of that decision.
 
     @field_validator("deadline", mode="before")
     @classmethod
@@ -299,8 +303,11 @@ class SyncFromMendeleyInputs(BaseModel):
 class SyncFromMendeleyResult(BaseModel):
     """Per-doc buckets after running sync-from-mendeley.
 
-    `added`: {id, mendeley_id, title}; `unchanged`: entry ids; `removed`:
-    entry ids (status flipped to 'removed'); `failed`: {mendeley_id, error};
+    `added`: {id, mendeley_id, title}; `unchanged`: entry ids;
+    `flagged`: entry ids newly marked not_in_mendeley (pending user decision);
+    `removed`: entry ids with status='removed' (set by user action, not sync);
+    `cleared`: entry ids whose not_in_mendeley flag was cleared (back in collection);
+    `failed`: {mendeley_id, error};
     dry-run variants populate only when dry_run=True.
     `message` carries early-exit reasons (collection missing, MCP transport error).
     """
@@ -308,7 +315,11 @@ class SyncFromMendeleyResult(BaseModel):
     folder_id: str | None
     added: list[dict[str, str]]
     unchanged: list[str]
-    removed: list[str]
+    flagged: list[str] = []            # newly flagged as not_in_mendeley (absent from all collections)
+    cleared: list[str] = []            # not_in_mendeley / manually_kept cleared (returned to collection)
+    not_in_parent: list[str] = []      # newly flagged as not_in_parent_collection (in sub only)
+    cleared_parent: list[str] = []     # not_in_parent_collection cleared (re-added to root)
+    removed: list[str] = []            # kept for dry-run compat; always empty from live sync
     failed: list[dict[str, str]]
     dry_run_added: list[dict[str, str]]
     dry_run_removed: list[str]
@@ -325,13 +336,22 @@ class SyncFromMendeleyResult(BaseModel):
             MessageShape(text=f"Collection: {self.queue_collection}", level="info"),
             MetricShape(label="Added", value=len(actual_added)),
             MetricShape(label="Unchanged", value=len(self.unchanged)),
-            MetricShape(label="Removed", value=len(actual_removed)),
+            MetricShape(label="Flagged (not in any collection)", value=len(self.flagged)),
+            MetricShape(label="Flagged (sub-collection only)", value=len(self.not_in_parent)),
+            MetricShape(label="Cleared (returned to collection)", value=len(self.cleared)),
+            MetricShape(label="Cleared (returned to parent)", value=len(self.cleared_parent)),
+            MetricShape(label="Removed (dry-run)", value=len(actual_removed)),
             MetricShape(label="Failed", value=len(self.failed)),
         ]
         if actual_added:
             shapes.append(DataTableShape(
                 columns=["id", "title"],
                 rows=[[item.get("id", ""), item.get("title", "")[:60]] for item in actual_added[:10]],
+            ))
+        if self.flagged:
+            shapes.append(DataTableShape(
+                columns=["entry id"],
+                rows=[[eid] for eid in self.flagged[:10]],
             ))
         if self.failed:
             shapes.append(DataTableShape(

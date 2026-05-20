@@ -21,6 +21,14 @@ export default function DashboardPage() {
           gap: 8,
           color: 'var(--fg4)',
           fontFamily: 'var(--sans)',
+          backgroundImage: `
+            ${dark
+              ? 'linear-gradient(135deg, rgba(24,226,153,0.07) 0%, rgba(139,92,246,0.04) 45%, transparent 75%)'
+              : 'linear-gradient(135deg, rgba(24,226,153,0.22) 0%, rgba(139,92,246,0.13) 45%, transparent 75%)'
+            },
+            radial-gradient(circle, var(--gray200) 1px, transparent 1px)
+          `,
+          backgroundSize: 'cover, 24px 24px',
         }}>
           <span style={{ fontSize: 32, opacity: 0.3 }}>◻</span>
           <span style={{ fontSize: 13 }}>Dashboard — coming soon</span>
