@@ -277,6 +277,20 @@ async def get_doctor() -> JSONResponse:
             return _row("alphaXiv", "OK", ax_v, f"key configured ({_mask_key(key)})")
         return _row("alphaXiv", "SKIP", ax_v, "No key — get free key at alphaxiv.org/settings")
 
+    def _drive_backup_row() -> dict:
+        from docent.bundled_plugins.backup.drive_client import credentials_file_exists
+        if credentials_file_exists():
+            # Verify the optional deps are importable too
+            try:
+                import google.oauth2.credentials  # noqa: F401
+                import google_auth_oauthlib  # noqa: F401
+                import googleapiclient  # noqa: F401
+                return _row("Drive Backup", "OK", detail="Credentials configured — run 'docent backup'")
+            except ImportError:
+                return _row("Drive Backup", "WARN",
+                            detail="Credentials found but dependencies missing — run: pip install 'docent-cli[backup]'")
+        return _row("Drive Backup", "SKIP", detail="Optional — run 'docent backup --setup' to configure")
+
     def _reading_db_row() -> dict:
         db = cfg_reading.get("database_dir")
         if db is None:
@@ -309,7 +323,10 @@ async def get_doctor() -> JSONResponse:
         asyncio.to_thread(_notebooklm_sync),
         asyncio.to_thread(_alphaxiv_sync),
     )
-    db_row = await asyncio.to_thread(_reading_db_row)
+    db_row, drive_row = await asyncio.gather(
+        asyncio.to_thread(_reading_db_row),
+        asyncio.to_thread(_drive_backup_row),
+    )
 
     checks = [
         profile_row,
@@ -324,6 +341,7 @@ async def get_doctor() -> JSONResponse:
         nlm_row,
         ax_row,
         db_row,
+        drive_row,
         _key_row("Tavily", "tavily_api_key",
                  "Not set — get free key at app.tavily.com. Falls back to DuckDuckGo.", warn_if_missing=True),
         _key_row("Semantic Scholar", "semantic_scholar_api_key",

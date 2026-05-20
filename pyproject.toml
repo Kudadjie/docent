@@ -37,6 +37,13 @@ dependencies = [
     "tenacity>=9.0",
 ]
 
+[project.optional-dependencies]
+backup = [
+    "google-api-python-client>=2.100",
+    "google-auth-oauthlib>=1.0",
+    "google-auth-httplib2>=0.2",
+]
+
 [project.urls]
 Homepage = "https://github.com/Kudadjie/docent"
 Repository = "https://github.com/Kudadjie/docent"
