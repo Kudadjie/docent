@@ -206,11 +206,18 @@ async def get_doctor() -> JSONResponse:
         from docent.bundled_plugins.studio.feynman import _feynman_version_from_package_json
         version = _feynman_version_from_package_json(feynman_cmd)
 
+        # package.json lookup can fail on non-standard npm layouts (e.g. Windows
+        # with a global prefix outside APPDATA) — fall back to npm list.
+        if not version or version == "?":
+            npm_ver = await _get_npm_installed("@companion-ai/feynman")
+            if npm_ver:
+                version = npm_ver
+
         latest = await _fetch_npm_latest("@companion-ai/feynman")
-        if latest and version != "?" and not _version_at_least(version, latest):
+        if latest and version and version not in ("?", "unknown") and not _version_at_least(version, latest):
             return _row("Feynman CLI", "WARN", version,
                         f"update available: {latest} — npm install -g @companion-ai/feynman@latest")
-        return _row("Feynman CLI", "OK", version or "?")
+        return _row("Feynman CLI", "OK", version if version and version != "?" else "unknown")
 
     def _notebooklm_sync() -> dict:
         try:

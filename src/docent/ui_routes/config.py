@@ -1,6 +1,7 @@
 """Config and user profile endpoints."""
 import asyncio
 import json
+import os
 from pathlib import Path
 
 from fastapi import APIRouter
@@ -8,6 +9,13 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 router = APIRouter()
+
+
+def _norm_path(raw: str | None) -> str | None:
+    """Normalize a stored path string — collapses double backslashes on Windows."""
+    if not raw:
+        return raw
+    return os.path.normpath(raw)
 
 from docent.core.invoke import run_action
 
@@ -83,7 +91,7 @@ async def get_config() -> JSONResponse:
     research = {k: _mask_key(rcfg.get(k)) for k in _RESEARCH_KEY_FIELDS}
     return JSONResponse({
         "reading": {
-            "database_dir": cfg.get("database_dir", None),
+            "database_dir": _norm_path(cfg.get("database_dir", None)),
             "queue_collection": cfg.get("queue_collection", "Docent-Queue"),
             "reference_manager": cfg.get("reference_manager", "mendeley"),
         },
@@ -105,7 +113,7 @@ async def post_config(body: ConfigBody) -> JSONResponse:
         return JSONResponse({
             "ok": True,
             "reading": {
-                "database_dir": cfg.get("database_dir", None),
+                "database_dir": _norm_path(cfg.get("database_dir", None)),
                 "queue_collection": cfg.get("queue_collection", "Docent-Queue"),
             }
         })
