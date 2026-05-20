@@ -227,6 +227,22 @@ async def download_local_zip(background_tasks: BackgroundTasks) -> FileResponse:
 
 # ── Restore ───────────────────────────────────────────────────────────────────
 
+class DeleteBody(BaseModel):
+    backup_id: str
+
+
+@router.post("/api/backup/delete")
+async def delete_drive_backup(body: DeleteBody) -> JSONResponse:
+    """Permanently delete a backup from Google Drive."""
+    from docent.bundled_plugins.backup.drive_client import get_service, delete_backup
+    try:
+        service = await asyncio.to_thread(get_service)
+        await asyncio.to_thread(delete_backup, service, body.backup_id)
+        return JSONResponse({"ok": True})
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
+
 class RestoreBody(BaseModel):
     backup_id: str
 

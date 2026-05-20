@@ -547,6 +547,7 @@ export default function SettingsPage() {
   const [downloading, setDownloading] = useState(false);
   const [restoringId, setRestoringId] = useState<string | null>(null);
   const [confirmRestoreId, setConfirmRestoreId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [showSetup, setShowSetup] = useState(false);
   const [credentialsText, setCredentialsText] = useState('');
   const [savingCreds, setSavingCreds] = useState(false);
@@ -671,6 +672,24 @@ export default function SettingsPage() {
       }
     } catch { setToast({ type: 'error', message: 'Install request failed' }); signalDot('error'); }
     finally { setInstallingDeps(false); }
+  }
+
+  async function handleDeleteBackup(backupId: string) {
+    setDeletingId(backupId);
+    try {
+      const res = await fetch('/api/backup/delete', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ backup_id: backupId }),
+      });
+      const data = await res.json() as { ok: boolean; error?: string };
+      if (data.ok) {
+        setDriveBackups(prev => prev ? prev.filter(b => b.id !== backupId) : null);
+        setToast({ type: 'success', message: 'Backup deleted from Google Drive.' });
+      } else {
+        setToast({ type: 'error', message: data.error ?? 'Delete failed' });
+      }
+    } catch { setToast({ type: 'error', message: 'Delete request failed' }); }
+    finally { setDeletingId(null); }
   }
 
   async function handleSaveCredentials() {
@@ -1194,10 +1213,22 @@ export default function SettingsPage() {
                                     </button>
                                   </>
                                 ) : (
-                                  <button onClick={() => setConfirmRestoreId(b.id)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: 'var(--sans)', fontSize: 11, color: 'var(--fg3)', background: 'transparent', border: '1px solid var(--border-md)', borderRadius: 5, padding: '3px 10px', cursor: 'pointer' }}>
-                                    <RotateCcw size={11} strokeWidth={1.5} />
-                                    Restore
-                                  </button>
+                                  <>
+                                    <button onClick={() => setConfirmRestoreId(b.id)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: 'var(--sans)', fontSize: 11, color: 'var(--fg3)', background: 'transparent', border: '1px solid var(--border-md)', borderRadius: 5, padding: '3px 10px', cursor: 'pointer' }}>
+                                      <RotateCcw size={11} strokeWidth={1.5} />
+                                      Restore
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteBackup(b.id)}
+                                      disabled={deletingId === b.id}
+                                      title="Delete from Google Drive"
+                                      style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, borderRadius: 5, border: '1px solid var(--border-md)', background: 'transparent', color: deletingId === b.id ? 'var(--fg4)' : '#D45656', cursor: deletingId === b.id ? 'wait' : 'pointer' }}
+                                    >
+                                      {deletingId === b.id
+                                        ? <RefreshCw size={11} strokeWidth={1.5} style={{ animation: 'spin 1s linear infinite' }} />
+                                        : <Trash2 size={11} strokeWidth={1.5} />}
+                                    </button>
+                                  </>
                                 )}
                               </div>
                             </div>
