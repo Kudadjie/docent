@@ -535,6 +535,11 @@ export default function SettingsPage() {
   // ── Backup state ───────────────────────────────────────────────────────────
   interface BackupStatus { credentials_configured: boolean; deps_installed: boolean; token_exists: boolean; install_cmd: string | null }
   interface DriveBackup { id: string; name: string; size_mb: number; created: string }
+  function fmtSize(mb: number): string {
+    if (mb >= 1) return `${mb.toFixed(1)} MB`;
+    const kb = Math.round(mb * 1024);
+    return kb > 0 ? `${kb} KB` : '< 1 KB';
+  }
   const [backupStatus, setBackupStatus] = useState<BackupStatus | null>(null);
   const [driveBackups, setDriveBackups] = useState<DriveBackup[] | null>(null);
   const [loadingBackups, setLoadingBackups] = useState(false);
@@ -616,7 +621,7 @@ export default function SettingsPage() {
       const data = await res.json() as { ok: boolean; archive_name?: string; size_mb?: number; files_excluded?: number; error?: string };
       if (data.ok) {
         const excWarn = (data.files_excluded ?? 0) > 0 ? ` (${data.files_excluded} file(s) >100 MB excluded)` : '';
-        setToast({ type: 'success', message: `Backed up to Google Drive — ${data.size_mb} MB${excWarn}` });
+        setToast({ type: 'success', message: `Backed up to Google Drive — ${fmtSize(data.size_mb ?? 0)}${excWarn}` });
         signalDot('done');
         setDriveBackups(null); // force refresh on next open
       } else {
@@ -1176,7 +1181,7 @@ export default function SettingsPage() {
                           {driveBackups.map(b => (
                             <div key={b.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: 0, padding: '10px 16px', borderBottom: '1px solid var(--border)', alignItems: 'center' }}>
                               <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--fg2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: 16 }}>{b.name}</span>
-                              <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--fg4)', paddingRight: 16, textAlign: 'right' }}>{b.size_mb} MB</span>
+                              <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--fg4)', paddingRight: 16, textAlign: 'right' }}>{fmtSize(b.size_mb)}</span>
                               <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--fg4)', paddingRight: 16, textAlign: 'right' }}>{b.created}</span>
                               <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                                 {confirmRestoreId === b.id ? (
