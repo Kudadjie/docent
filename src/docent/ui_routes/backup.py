@@ -90,6 +90,11 @@ async def install_backup_deps() -> JSONResponse:
             lambda: _sp.run(
                 [
                     sys.executable, "-m", "pip", "install",
+                    # --upgrade-strategy only-if-needed prevents pip from
+                    # upgrading already-installed packages (including docent
+                    # itself) — avoids the WinError 32 "file in use" error
+                    # when docent.exe is running while pip tries to overwrite it.
+                    "--upgrade-strategy", "only-if-needed",
                     "google-api-python-client>=2.100",
                     "google-auth-oauthlib>=1.0",
                     "google-auth-httplib2>=0.2",
