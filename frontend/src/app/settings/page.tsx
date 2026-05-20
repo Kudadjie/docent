@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Settings, Trash2, Pencil, Check, X, BookOpen, RefreshCw, Activity, Key, EyeOff, Zap } from 'lucide-react';
+import { Settings, Trash2, Pencil, Check, X, BookOpen, RefreshCw, Activity, Key, EyeOff, Zap, HardDriveDownload, CloudUpload, RotateCcw, AlertTriangle } from 'lucide-react';
 import Sidebar from '@/components/Sidebar';
 import StatusBanner, { type DotState } from '@/components/StatusBanner';
 import Toast, { type ToastData } from '@/components/Toast';
@@ -531,6 +531,17 @@ export default function SettingsPage() {
   const [doctorChecks, setDoctorChecks] = useState<DoctorCheck[] | null>(null);
   const [loadingDoctor, setLoadingDoctor] = useState(false);
   const [dotState, setDotState] = useState<DotState>('idle');
+
+  // ── Backup state ───────────────────────────────────────────────────────────
+  interface BackupStatus { credentials_configured: boolean; deps_installed: boolean; token_exists: boolean; install_cmd: string | null }
+  interface DriveBackup { id: string; name: string; size_mb: number; created: string }
+  const [backupStatus, setBackupStatus] = useState<BackupStatus | null>(null);
+  const [driveBackups, setDriveBackups] = useState<DriveBackup[] | null>(null);
+  const [loadingBackups, setLoadingBackups] = useState(false);
+  const [backingUp, setBackingUp] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
+  const [confirmRestoreId, setConfirmRestoreId] = useState<string | null>(null);
   const dotResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function signalDot(state: DotState) {
@@ -577,6 +588,64 @@ export default function SettingsPage() {
     runDoctor();
   }, []);
   /* eslint-enable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
+
+  // ── Backup handlers ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    fetch('/api/backup/status').then(r => r.json()).then(setBackupStatus).catch(() => {});
+  }, []);
+
+  async function loadDriveBackups() {
+    setLoadingBackups(true);
+    try {
+      const res = await fetch('/api/backup/list');
+      const data = await res.json() as { ok: boolean; backups?: DriveBackup[]; error?: string };
+      if (data.ok) setDriveBackups(data.backups ?? []);
+      else setToast({ type: 'error', message: data.error ?? 'Failed to list backups' });
+    } catch { setToast({ type: 'error', message: 'Could not reach backup service' }); }
+    finally { setLoadingBackups(false); }
+  }
+
+  async function handleBackupToDrive() {
+    setBackingUp(true); signalDot('working');
+    try {
+      const res = await fetch('/api/backup/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ local_only: false }) });
+      const data = await res.json() as { ok: boolean; archive_name?: string; size_mb?: number; files_excluded?: number; error?: string };
+      if (data.ok) {
+        const excWarn = (data.files_excluded ?? 0) > 0 ? ` (${data.files_excluded} file(s) >100 MB excluded)` : '';
+        setToast({ type: 'success', message: `Backed up to Google Drive — ${data.size_mb} MB${excWarn}` });
+        signalDot('done');
+        setDriveBackups(null); // force refresh on next open
+      } else {
+        setToast({ type: 'error', message: data.error ?? 'Backup failed' });
+        signalDot('error');
+      }
+    } catch { setToast({ type: 'error', message: 'Backup request failed' }); signalDot('error'); }
+    finally { setBackingUp(false); }
+  }
+
+  function handleDownloadZip() {
+    setDownloading(true);
+    const a = document.createElement('a');
+    a.href = '/api/backup/download';
+    a.click();
+    setTimeout(() => setDownloading(false), 3000);
+  }
+
+  async function handleRestoreFromDrive(backupId: string, name: string) {
+    setRestoringId(backupId); setConfirmRestoreId(null); signalDot('working');
+    try {
+      const res = await fetch('/api/backup/restore', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ backup_id: backupId }) });
+      const data = await res.json() as { ok: boolean; restored_from?: string; error?: string };
+      if (data.ok) {
+        setToast({ type: 'success', message: `Restored from ${data.restored_from}. Restart docent ui to apply.` });
+        signalDot('done');
+      } else {
+        setToast({ type: 'error', message: data.error ?? 'Restore failed' });
+        signalDot('error');
+      }
+    } catch { setToast({ type: 'error', message: 'Restore request failed' }); signalDot('error'); }
+    finally { setRestoringId(null); }
+  }
 
   async function handleSaveReading(key: keyof ReadingConfig, value: string) {
     signalDot('working');
@@ -825,6 +894,159 @@ export default function SettingsPage() {
             {/* OpenCode server */}
             <section style={{ gridColumn: '1 / -1' }}>
               <OpenCodeSection />
+            </section>
+
+            {/* Backup & Restore — full width */}
+            <section style={{ gridColumn: '1 / -1' }}>
+              <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
+                {/* Header */}
+                <div style={{ padding: '16px 20px 14px', borderBottom: '1px solid var(--border)', background: 'linear-gradient(135deg, #3B82F620 0%, transparent 60%)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                      <HardDriveDownload size={14} strokeWidth={1.5} color="#3B82F6" />
+                      <h2 style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600, color: 'var(--fg1)', margin: 0 }}>Backup & Restore</h2>
+                    </div>
+                    <p style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg4)', margin: 0 }}>
+                      Snapshot your queue, config, and research outputs. Files over 100 MB are excluded.
+                    </p>
+                  </div>
+                </div>
+
+                <div style={{ padding: '20px' }}>
+                  {/* Status row */}
+                  {backupStatus && (
+                    <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 8, background: 'var(--bg-subtle)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                      {backupStatus.credentials_configured && backupStatus.deps_installed ? (
+                        <>
+                          <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#18E299', flexShrink: 0 }} />
+                          <span style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg2)' }}>
+                            Google Drive configured{backupStatus.token_exists ? ' · authenticated' : ' · will authenticate on first run'}
+                          </span>
+                        </>
+                      ) : backupStatus.credentials_configured && !backupStatus.deps_installed ? (
+                        <>
+                          <AlertTriangle size={13} strokeWidth={2} color="#C37D0D" />
+                          <span style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg2)' }}>
+                            Credentials found but dependencies missing —
+                            <code style={{ fontFamily: 'var(--mono)', fontSize: 11, background: 'var(--gray100)', padding: '1px 5px', borderRadius: 4, marginLeft: 4 }}>
+                              {backupStatus.install_cmd}
+                            </code>
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--fg4)', flexShrink: 0 }} />
+                          <span style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg3)' }}>
+                            Google Drive not configured — run
+                            <code style={{ fontFamily: 'var(--mono)', fontSize: 11, background: 'var(--gray100)', padding: '1px 5px', borderRadius: 4, margin: '0 4px' }}>docent backup --setup</code>
+                            in a terminal to set up credentials.
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Action buttons */}
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 20 }}>
+                    {/* Drive backup */}
+                    <button
+                      onClick={handleBackupToDrive}
+                      disabled={backingUp || !backupStatus?.credentials_configured || !backupStatus?.deps_installed}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 7,
+                        padding: '7px 16px', borderRadius: 8,
+                        border: '1px solid rgba(59,130,246,0.4)',
+                        background: 'rgba(59,130,246,0.08)', color: '#3B82F6',
+                        fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500,
+                        cursor: (backingUp || !backupStatus?.credentials_configured || !backupStatus?.deps_installed) ? 'not-allowed' : 'pointer',
+                        opacity: (!backupStatus?.credentials_configured || !backupStatus?.deps_installed) ? 0.5 : 1,
+                      }}
+                    >
+                      <CloudUpload size={14} strokeWidth={1.5} style={{ animation: backingUp ? 'spin 1s linear infinite' : 'none' }} />
+                      {backingUp ? 'Backing up…' : 'Backup to Drive'}
+                    </button>
+
+                    {/* Local zip download */}
+                    <button
+                      onClick={handleDownloadZip}
+                      disabled={downloading}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 7,
+                        padding: '7px 16px', borderRadius: 8,
+                        border: '1px solid var(--border-md)',
+                        background: 'transparent', color: 'var(--fg2)',
+                        fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500,
+                        cursor: downloading ? 'wait' : 'pointer',
+                      }}
+                    >
+                      <HardDriveDownload size={14} strokeWidth={1.5} />
+                      {downloading ? 'Preparing…' : 'Download local zip'}
+                    </button>
+
+                    {/* List Drive backups */}
+                    {backupStatus?.credentials_configured && backupStatus?.deps_installed && (
+                      <button
+                        onClick={() => { if (driveBackups === null) loadDriveBackups(); else setDriveBackups(null); }}
+                        disabled={loadingBackups}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 7,
+                          padding: '7px 16px', borderRadius: 8,
+                          border: '1px solid var(--border-md)',
+                          background: 'transparent', color: 'var(--fg3)',
+                          fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 400,
+                          cursor: loadingBackups ? 'wait' : 'pointer',
+                        }}
+                      >
+                        <RefreshCw size={13} strokeWidth={1.5} style={{ animation: loadingBackups ? 'spin 1s linear infinite' : 'none' }} />
+                        {driveBackups !== null ? 'Hide Drive backups' : 'Show Drive backups'}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Drive backup list */}
+                  {driveBackups !== null && (
+                    <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+                      {driveBackups.length === 0 ? (
+                        <div style={{ padding: '20px', textAlign: 'center', fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--fg4)' }}>
+                          No backups found in Google Drive.
+                        </div>
+                      ) : (
+                        <>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: 0, background: 'var(--bg-subtle)', borderBottom: '1px solid var(--border)', padding: '7px 16px' }}>
+                            {['Name', 'Size', 'Date', ''].map((h, i) => (
+                              <span key={i} style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--fg4)', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: i > 1 ? 'right' : 'left', paddingRight: i < 3 ? 16 : 0 }}>{h}</span>
+                            ))}
+                          </div>
+                          {driveBackups.map(b => (
+                            <div key={b.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: 0, padding: '10px 16px', borderBottom: '1px solid var(--border)', alignItems: 'center' }}>
+                              <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--fg2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: 16 }}>{b.name}</span>
+                              <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--fg4)', paddingRight: 16, textAlign: 'right' }}>{b.size_mb} MB</span>
+                              <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--fg4)', paddingRight: 16, textAlign: 'right' }}>{b.created}</span>
+                              <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                                {confirmRestoreId === b.id ? (
+                                  <>
+                                    <button onClick={() => handleRestoreFromDrive(b.id, b.name)} disabled={restoringId === b.id} style={{ fontFamily: 'var(--sans)', fontSize: 11, fontWeight: 600, color: '#fff', background: '#D45656', border: 'none', borderRadius: 5, padding: '3px 10px', cursor: 'pointer' }}>
+                                      {restoringId === b.id ? 'Restoring…' : 'Confirm'}
+                                    </button>
+                                    <button onClick={() => setConfirmRestoreId(null)} style={{ fontFamily: 'var(--sans)', fontSize: 11, color: 'var(--fg3)', background: 'transparent', border: '1px solid var(--border-md)', borderRadius: 5, padding: '3px 10px', cursor: 'pointer' }}>
+                                      Cancel
+                                    </button>
+                                  </>
+                                ) : (
+                                  <button onClick={() => setConfirmRestoreId(b.id)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: 'var(--sans)', fontSize: 11, color: 'var(--fg3)', background: 'transparent', border: '1px solid var(--border-md)', borderRadius: 5, padding: '3px 10px', cursor: 'pointer' }}>
+                                    <RotateCcw size={11} strokeWidth={1.5} />
+                                    Restore
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
             </section>
 
             {/* Danger zone — full width */}
