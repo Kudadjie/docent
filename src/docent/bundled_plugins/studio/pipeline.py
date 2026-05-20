@@ -19,7 +19,7 @@ from typing import Generator
 from docent.core import ProgressEvent
 
 from .backend import StudioBackend
-from .search import fetch_page, paper_search, web_search, tavily_research  # kept for direct callers
+from .search import fetch_page, tavily_research  # kept for direct callers
 from .search import academic_search_parallel  # kept for direct callers
 from .search_adapter import DefaultSearchAdapter, SearchAdapter
 

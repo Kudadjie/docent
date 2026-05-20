@@ -191,7 +191,7 @@ class TestDeepFeynman:
 
         fake_output = str(output_dir / "storm-surge-ghana-deep.md")
         with patch(
-            "docent.bundled_plugins.studio._run_feynman",
+            "docent.bundled_plugins.studio._research._run_feynman",
             return_value=(0, fake_output, ""),
         ):
             result = _drain(tool.deep_research(DeepInputs(topic="storm surge Ghana"), ctx))
@@ -210,7 +210,7 @@ class TestDeepFeynman:
         ctx = _mock_context(output_dir=output_dir, feynman_command=["feynman"])
 
         with patch(
-            "docent.bundled_plugins.studio._run_feynman",
+            "docent.bundled_plugins.studio._research._run_feynman",
             return_value=(0, None, ""),
         ):
             result = _drain(tool.deep_research(DeepInputs(topic="storm surge Ghana"), ctx))
@@ -225,7 +225,7 @@ class TestDeepFeynman:
         ctx = _mock_context(output_dir=output_dir, feynman_command=["feynman"])
 
         with patch(
-            "docent.bundled_plugins.studio._run_feynman",
+            "docent.bundled_plugins.studio._research._run_feynman",
             return_value=(1, None, "quota exceeded"),
         ):
             result = _drain(tool.deep_research(DeepInputs(topic="storm surge Ghana"), ctx))
@@ -258,7 +258,7 @@ class TestLitFeynman:
 
         fake_output = str(output_dir / "climate-change-lit.md")
         with patch(
-            "docent.bundled_plugins.studio._run_feynman",
+            "docent.bundled_plugins.studio._research._run_feynman",
             return_value=(0, fake_output, ""),
         ):
             result = _drain(tool.lit(LitInputs(topic="climate change"), ctx))
@@ -278,7 +278,7 @@ class TestReviewFeynman:
 
         fake_output = str(output_dir / "2401-12345-review.md")
         with patch(
-            "docent.bundled_plugins.studio._run_feynman",
+            "docent.bundled_plugins.studio._research._run_feynman",
             return_value=(0, fake_output, ""),
         ):
             result = _drain(tool.review(ReviewInputs(artifact="2401.12345"), ctx))
@@ -323,7 +323,7 @@ class TestConfigActions:
         ctx = _mock_context(output_dir=tmp_path)
         fake_config = Path("/fake/config.toml")
 
-        with patch("docent.bundled_plugins.studio.write_setting", return_value=fake_config) as mock_ws, \
+        with patch("docent.bundled_plugins.studio._config_actions.write_setting", return_value=fake_config) as mock_ws, \
              patch("docent.utils.paths.config_file", return_value=fake_config):
             result = tool.config_set(ConfigSetInputs(key="output_dir", value="/new/path"), ctx)
 
@@ -521,7 +521,7 @@ class TestToNotebook:
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
         with patch(
-            "docent.bundled_plugins.studio._nlm_push",
+            "docent.bundled_plugins.studio._notebook_actions._nlm_push",
             new=_make_nlm_push(notebook_id="nb-feynman", sources_added=1),
         ):
             result = self._run(tool, ToNotebookInputs(), ctx)
@@ -536,7 +536,7 @@ class TestToNotebook:
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
         with patch(
-            "docent.bundled_plugins.studio._nlm_push",
+            "docent.bundled_plugins.studio._notebook_actions._nlm_push",
             new=_make_nlm_push(notebook_id="new-nb-id", sources_added=2,
                                message="Notebook ready. new-nb-id"),
         ):
@@ -553,7 +553,7 @@ class TestToNotebook:
         md_file, _ = self._write_research_files(output_dir, slug="climate-lit")
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
-        with patch("docent.bundled_plugins.studio._nlm_push", new=_make_nlm_push(notebook_id="nb-x")):
+        with patch("docent.bundled_plugins.studio._notebook_actions._nlm_push", new=_make_nlm_push(notebook_id="nb-x")):
             result = self._run(tool, ToNotebookInputs(output_file=str(md_file)), ctx)
         assert result.ok is True
         assert "climate-lit" in result.output_file
@@ -563,7 +563,7 @@ class TestToNotebook:
         self._write_research_files(output_dir)
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
-        with patch("docent.bundled_plugins.studio._nlm_push", new=_make_nlm_push(notebook_id="nb-x")):
+        with patch("docent.bundled_plugins.studio._notebook_actions._nlm_push", new=_make_nlm_push(notebook_id="nb-x")):
             result = self._run(tool, ToNotebookInputs(), ctx)
         urls_content = (Path(result.package_dir) / "sources_urls.txt").read_text()
         lines = [l for l in urls_content.strip().splitlines() if l]
@@ -574,7 +574,7 @@ class TestToNotebook:
         self._write_research_files(output_dir)
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
-        with patch("docent.bundled_plugins.studio._nlm_push", new=_make_nlm_push(notebook_id="nb-x")):
+        with patch("docent.bundled_plugins.studio._notebook_actions._nlm_push", new=_make_nlm_push(notebook_id="nb-x")):
             result = self._run(tool, ToNotebookInputs(max_sources=2), ctx)
         assert result.sources_count == 2
         urls_content = (Path(result.package_dir) / "sources_urls.txt").read_text()
@@ -586,7 +586,7 @@ class TestToNotebook:
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
         with patch(
-            "docent.bundled_plugins.studio._nlm_push",
+            "docent.bundled_plugins.studio._notebook_actions._nlm_push",
             new=_make_nlm_push(notebook_id="nb-abc123", sources_added=2, sources_failed=0),
         ):
             result = self._run(tool, ToNotebookInputs(notebook_id="nb-abc123"), ctx)
@@ -600,7 +600,7 @@ class TestToNotebook:
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
         with (
-            patch("docent.bundled_plugins.studio._nlm_push",
+            patch("docent.bundled_plugins.studio._notebook_actions._nlm_push",
                   new=_make_nlm_push(ok=False, notebook_id=None, sources_added=0,
                                      message="NLM not found")),
             patch("webbrowser.open") as mock_browser,
@@ -617,7 +617,7 @@ class TestToNotebook:
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
         with (
-            patch("docent.bundled_plugins.studio._nlm_push",
+            patch("docent.bundled_plugins.studio._notebook_actions._nlm_push",
                   new=_make_nlm_push(ok=False, notebook_id=None, sources_added=0,
                                      message="Auth expired")),
             patch("webbrowser.open") as mock_browser,
@@ -634,7 +634,7 @@ class TestToNotebook:
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
         with patch(
-            "docent.bundled_plugins.studio._nlm_push",
+            "docent.bundled_plugins.studio._notebook_actions._nlm_push",
             new=_make_nlm_push(notebook_id="nb-abc123", sources_added=1, sources_failed=5),
         ):
             result = self._run(tool, ToNotebookInputs(notebook_id="nb-abc123"), ctx)
@@ -648,7 +648,7 @@ class TestToNotebook:
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir, notebooklm_notebook_id="config-nb-id")
         with patch(
-            "docent.bundled_plugins.studio._nlm_push",
+            "docent.bundled_plugins.studio._notebook_actions._nlm_push",
             new=_make_nlm_push(notebook_id="config-nb-id",
                                message="Notebook ready: config-nb-id"),
         ):
@@ -669,7 +669,7 @@ class TestOutputDestinations:
         fake_path = output_dir / "test-deep.md"
         fake_path.write_text(self.FAKE_MD, encoding="utf-8")
         inputs = DeepInputs(topic="test topic", **(extra_inputs or {}))
-        with patch("docent.bundled_plugins.studio._run_feynman",
+        with patch("docent.bundled_plugins.studio._research._run_feynman",
                    return_value=(0, feynman_output or str(fake_path), "")):
             return _drain(tool.deep_research(inputs, ctx))
 
@@ -731,7 +731,7 @@ class TestCompareAction:
         ctx = _mock_context(output_dir=output_dir, feynman_command=["feynman"])
 
         fake_output = str(output_dir / "2401-12345-vs-2402-67890-compare.md")
-        with patch("docent.bundled_plugins.studio._run_feynman", return_value=(0, fake_output, "")):
+        with patch("docent.bundled_plugins.studio._research._run_feynman", return_value=(0, fake_output, "")):
             result = _drain(
                 tool.compare(CompareInputs(artifact_a="2401.12345", artifact_b="2402.67890"), ctx)
             )
@@ -746,7 +746,7 @@ class TestCompareAction:
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir, feynman_command=["feynman"])
 
-        with patch("docent.bundled_plugins.studio._run_feynman", return_value=(1, None, '{"errorMessage": "{}"}')) :
+        with patch("docent.bundled_plugins.studio._research._run_feynman", return_value=(1, None, '{"errorMessage": "{}"}')) :
             result = _drain(
                 tool.compare(CompareInputs(artifact_a="2401.12345", artifact_b="2402.67890"), ctx)
             )
@@ -759,7 +759,7 @@ class TestCompareAction:
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir, feynman_command=["feynman"])
 
-        with patch("docent.bundled_plugins.studio._run_feynman", return_value=(0, None, "")):
+        with patch("docent.bundled_plugins.studio._research._run_feynman", return_value=(0, None, "")):
             result = _drain(
                 tool.compare(CompareInputs(artifact_a="2401.12345", artifact_b="2402.67890"), ctx)
             )
@@ -807,7 +807,7 @@ class TestDraftAction:
         ctx = _mock_context(output_dir=output_dir, feynman_command=["feynman"])
 
         fake_output = str(output_dir / "storm-surge-draft.md")
-        with patch("docent.bundled_plugins.studio._run_feynman", return_value=(0, fake_output, "")):
+        with patch("docent.bundled_plugins.studio._research._run_feynman", return_value=(0, fake_output, "")):
             result = _drain(tool.draft(DraftInputs(topic="storm surge modelling"), ctx))
 
         assert result.ok is True
@@ -819,7 +819,7 @@ class TestDraftAction:
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir, feynman_command=["feynman"])
 
-        with patch("docent.bundled_plugins.studio._run_feynman", return_value=(1, None, '{"errorMessage": "{}"}')):
+        with patch("docent.bundled_plugins.studio._research._run_feynman", return_value=(1, None, '{"errorMessage": "{}"}')):
             result = _drain(tool.draft(DraftInputs(topic="storm surge modelling"), ctx))
 
         assert result.ok is False
@@ -882,7 +882,7 @@ class TestReplicateAction:
         ctx = _mock_context(output_dir=output_dir, feynman_command=["feynman"])
 
         fake_output = str(output_dir / "2401-12345-replicate.md")
-        with patch("docent.bundled_plugins.studio._run_feynman", return_value=(0, fake_output, "")):
+        with patch("docent.bundled_plugins.studio._research._run_feynman", return_value=(0, fake_output, "")):
             result = _drain(tool.replicate(ReplicateInputs(artifact="2401.12345"), ctx))
 
         assert result.ok is True
@@ -894,7 +894,7 @@ class TestReplicateAction:
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir, feynman_command=["feynman"])
 
-        with patch("docent.bundled_plugins.studio._run_feynman", return_value=(0, None, "")):
+        with patch("docent.bundled_plugins.studio._research._run_feynman", return_value=(0, None, "")):
             result = _drain(tool.replicate(ReplicateInputs(artifact="2401.12345"), ctx))
 
         assert result.ok is True
@@ -935,7 +935,7 @@ class TestAuditAction:
         ctx = _mock_context(output_dir=output_dir, feynman_command=["feynman"])
 
         fake_output = str(output_dir / "2401-12345-audit.md")
-        with patch("docent.bundled_plugins.studio._run_feynman", return_value=(0, fake_output, "")):
+        with patch("docent.bundled_plugins.studio._research._run_feynman", return_value=(0, fake_output, "")):
             result = _drain(tool.audit(AuditInputs(artifact="2401.12345"), ctx))
 
         assert result.ok is True
@@ -947,7 +947,7 @@ class TestAuditAction:
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir, feynman_command=["feynman"])
 
-        with patch("docent.bundled_plugins.studio._run_feynman", return_value=(1, None, '{"errorMessage": "{}"}')):
+        with patch("docent.bundled_plugins.studio._research._run_feynman", return_value=(1, None, '{"errorMessage": "{}"}')):
             result = _drain(tool.audit(AuditInputs(artifact="2401.12345"), ctx))
 
         assert result.ok is False

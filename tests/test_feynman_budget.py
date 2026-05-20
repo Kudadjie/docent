@@ -75,7 +75,7 @@ class TestFindFeynman:
         monkeypatch.setenv("APPDATA", "/fake/appdata")
         npm_path = Path("/fake/appdata/npm/feynman.cmd")
         monkeypatch.setattr(
-            "docent.bundled_plugins.studio.Path.is_file",
+            "docent.bundled_plugins.studio.feynman.Path.is_file",
             lambda self: str(self).endswith("feynman.cmd"),
         )
         result = rtn._find_feynman(None)
@@ -96,7 +96,7 @@ class TestFeynmanNotFoundError:
         tool = StudioTool()
         ctx = _mock_context(output_dir=tmp_path)
         with patch(
-            "docent.bundled_plugins.studio._run_feynman",
+            "docent.bundled_plugins.studio._research._run_feynman",
             side_effect=FeynmanNotFoundError(["feynman"]),
         ):
             result = _drain(tool.deep_research(DeepInputs(topic="test"), ctx))

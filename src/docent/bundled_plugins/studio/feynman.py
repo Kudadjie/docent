@@ -7,7 +7,6 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any
 
 from docent.errors import ToolNotFoundError
 
