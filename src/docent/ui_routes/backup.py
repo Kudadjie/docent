@@ -25,19 +25,21 @@ async def backup_status() -> JSONResponse:
     creds_ok = credentials_file_exists()
     token_ok = _token_path().exists() if creds_ok else False
 
-    deps_ok = False
-    if creds_ok:
+    # Check via package metadata, not imports — immune to sys.modules caching.
+    from importlib.metadata import Distribution, PackageNotFoundError
+
+    def _installed(dist_name: str) -> bool:
         try:
-            # Flush the path-importer cache so packages installed after server
-            # start (e.g. via the UI Install button) are visible immediately.
-            import importlib
-            importlib.invalidate_caches()
-            import google.oauth2.credentials  # noqa: F401
-            import google_auth_oauthlib  # noqa: F401
-            import googleapiclient  # noqa: F401
-            deps_ok = True
-        except ImportError:
-            pass
+            Distribution.from_name(dist_name)
+            return True
+        except PackageNotFoundError:
+            return False
+
+    deps_ok = all(_installed(d) for d in [
+        "google-api-python-client",
+        "google-auth-oauthlib",
+        "google-auth-httplib2",
+    ])
 
     return JSONResponse({
         "credentials_configured": creds_ok,
@@ -86,15 +88,16 @@ async def install_backup_deps() -> JSONResponse:
     try:
         result = await asyncio.to_thread(
             lambda: _sp.run(
-                [sys.executable, "-m", "pip", "install", "docent-cli[backup]"],
+                [
+                    sys.executable, "-m", "pip", "install",
+                    "google-api-python-client>=2.100",
+                    "google-auth-oauthlib>=1.0",
+                    "google-auth-httplib2>=0.2",
+                ],
                 capture_output=True, text=True, timeout=120,
             )
         )
         if result.returncode == 0:
-            # Flush Python's import caches so the freshly-installed packages
-            # are visible to this running process without a restart.
-            import importlib
-            importlib.invalidate_caches()
             return JSONResponse({"ok": True})
         return JSONResponse(
             {"ok": False, "error": (result.stderr or result.stdout or "pip failed").strip()[-300:]},
