@@ -984,7 +984,7 @@ export default function SettingsPage() {
                           Google Drive — three steps
                         </div>
                         {[
-                          { n: '1', text: <>Go to <strong style={{ color: 'var(--fg1)' }}>console.cloud.google.com</strong> → create or select a project → enable the <strong style={{ color: 'var(--fg1)' }}>Google Drive API</strong>.</> },
+                          { n: '1', text: <>Go to <a href="https://console.cloud.google.com" target="_blank" rel="noreferrer" style={{ color: '#3B82F6', textDecoration: 'none', fontWeight: 500 }}>console.cloud.google.com</a> → create or select a project → enable the <strong style={{ color: 'var(--fg1)' }}>Google Drive API</strong>.</> },
                           { n: '2', text: <>Credentials → Create Credentials → <strong style={{ color: 'var(--fg1)' }}>OAuth client ID</strong> → Application type: <strong style={{ color: 'var(--fg1)' }}>Desktop app</strong> → Download JSON.</> },
                           { n: '3', text: <>Paste the downloaded file contents below and click <strong style={{ color: 'var(--fg1)' }}>Save</strong>. A browser window will open for sign-in on the first backup run.</> },
                         ].map(({ n, text }) => (
