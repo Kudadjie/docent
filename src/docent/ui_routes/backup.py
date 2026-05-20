@@ -28,6 +28,10 @@ async def backup_status() -> JSONResponse:
     deps_ok = False
     if creds_ok:
         try:
+            # Flush the path-importer cache so packages installed after server
+            # start (e.g. via the UI Install button) are visible immediately.
+            import importlib
+            importlib.invalidate_caches()
             import google.oauth2.credentials  # noqa: F401
             import google_auth_oauthlib  # noqa: F401
             import googleapiclient  # noqa: F401

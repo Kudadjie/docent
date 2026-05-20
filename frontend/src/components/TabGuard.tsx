@@ -1,34 +1,76 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
 
 const CHANNEL = 'docent-ui-session';
+const HEARTBEAT_MS = 3_000;  // ping every 3 s
+const EXPIRE_MS    = 9_000;  // gone if no ping for 9 s (3 missed beats)
 
 export default function TabGuard() {
   const [isDuplicate, setIsDuplicate] = useState(false);
   const [dismissed, setDismissed] = useState(false);
 
+  // Stable ID for this tab instance across re-renders
+  const myId   = useRef(Math.random().toString(36).slice(2));
+  // otherId → last-seen timestamp
+  const seenAt = useRef<Record<string, number>>({});
+
   useEffect(() => {
     if (typeof BroadcastChannel === 'undefined') return;
 
+    const id      = myId.current;
     const channel = new BroadcastChannel(CHANNEL);
 
-    channel.onmessage = (e: MessageEvent<{ type: string }>) => {
-      if (e.data?.type === 'tab-open') {
-        // An existing tab replies to tell the newcomer it's already there
-        channel.postMessage({ type: 'tab-exists' });
+    /** Remove stale entries and update duplicate state. */
+    function reckon() {
+      const now = Date.now();
+      for (const [oid, t] of Object.entries(seenAt.current)) {
+        if (now - t > EXPIRE_MS) delete seenAt.current[oid];
       }
-      if (e.data?.type === 'tab-exists') {
-        // We're the duplicate
-        setIsDuplicate(true);
+      setIsDuplicate(Object.keys(seenAt.current).length > 0);
+    }
+
+    channel.onmessage = (e: MessageEvent<{ type: string; tabId: string }>) => {
+      const { type, tabId: senderId } = e.data ?? {};
+      if (!senderId || senderId === id) return;
+
+      if (type === 'tab-open') {
+        // A new tab announced itself — reply so it knows we exist
+        channel.postMessage({ type: 'tab-exists', tabId: id });
+        seenAt.current[senderId] = Date.now();
+      } else if (type === 'tab-exists' || type === 'heartbeat') {
+        seenAt.current[senderId] = Date.now();
+      } else if (type === 'tab-close') {
+        delete seenAt.current[senderId];
       }
+      reckon();
     };
 
-    // Announce ourselves — any existing tab will reply with 'tab-exists'
-    channel.postMessage({ type: 'tab-open' });
+    // Announce arrival — existing tabs will reply with tab-exists
+    channel.postMessage({ type: 'tab-open', tabId: id });
 
-    return () => channel.close();
+    // Keep broadcasting so other tabs know we're still here
+    const heartbeatTimer = setInterval(() => {
+      channel.postMessage({ type: 'heartbeat', tabId: id });
+    }, HEARTBEAT_MS);
+
+    // Periodically evict tabs that have gone silent
+    const expiryTimer = setInterval(reckon, HEARTBEAT_MS);
+
+    // Signal clean departure on page unload
+    function onUnload() {
+      channel.postMessage({ type: 'tab-close', tabId: id });
+    }
+    window.addEventListener('beforeunload', onUnload);
+
+    return () => {
+      onUnload();
+      channel.close();
+      clearInterval(heartbeatTimer);
+      clearInterval(expiryTimer);
+      window.removeEventListener('beforeunload', onUnload);
+    };
   }, []);
 
   if (!isDuplicate || dismissed) return null;
