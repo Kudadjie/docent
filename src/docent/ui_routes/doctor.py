@@ -206,18 +206,40 @@ async def get_doctor() -> JSONResponse:
         from docent.bundled_plugins.studio.feynman import _feynman_version_from_package_json
         version = _feynman_version_from_package_json(feynman_cmd)
 
-        # package.json lookup can fail on non-standard npm layouts (e.g. Windows
-        # with a global prefix outside APPDATA) — fall back to npm list.
+        # package.json lookup can fail on non-standard npm layouts — cascade through
+        # two fallbacks before giving up.
         if not version or version == "?":
+            # Fallback 1: npm list -g (async, may fail on Windows if npm not on PATH)
             npm_ver = await _get_npm_installed("@companion-ai/feynman")
             if npm_ver:
                 version = npm_ver
 
+        if not version or version == "?":
+            # Fallback 2: run `feynman --version` directly.
+            # On Windows, .cmd wrappers require shell=True to execute.
+            try:
+                import subprocess as _sub
+                _needs_shell = sys.platform == "win32"
+                proc = await asyncio.to_thread(
+                    lambda: _sub.run(
+                        feynman_cmd + ["--version"],
+                        capture_output=True, text=True, timeout=8,
+                        shell=_needs_shell,
+                    )
+                )
+                raw = (proc.stdout or proc.stderr or "").strip()
+                if raw:
+                    # Output is usually "2.5.1" or "v2.5.1"; take first line, strip "v"
+                    version = raw.splitlines()[0].strip().lstrip("v")
+            except Exception:
+                pass
+
         latest = await _fetch_npm_latest("@companion-ai/feynman")
-        if latest and version and version not in ("?", "unknown") and not _version_at_least(version, latest):
-            return _row("Feynman CLI", "WARN", version,
+        clean_version = version if version and version not in ("?", "") else None
+        if latest and clean_version and not _version_at_least(clean_version, latest):
+            return _row("Feynman CLI", "WARN", clean_version,
                         f"update available: {latest} — npm install -g @companion-ai/feynman@latest")
-        return _row("Feynman CLI", "OK", version if version and version != "?" else "unknown")
+        return _row("Feynman CLI", "OK", clean_version or "unknown")
 
     def _notebooklm_sync() -> dict:
         try:
