@@ -4,7 +4,7 @@ Step 11.7. Wraps `mendeley_list_documents(folder_id)` only — `get_document`
 isn't wrapped yet because no reader needs the fields it adds (abstract,
 attachments) and the bulk list call already covers title/authors/year/doi.
 
-Cache file: `<cache_dir>/paper/mendeley_collection.json`.
+Cache file: `<cache_dir>/reading/mendeley_collection.json`.
 
   {
     "<folder_id>": {

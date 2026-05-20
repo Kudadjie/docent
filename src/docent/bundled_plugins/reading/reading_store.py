@@ -24,6 +24,26 @@ from pydantic import BaseModel
 
 _logger = logging.getLogger(__name__)
 
+
+def cleanup_legacy_paper_dirs() -> None:
+    """Remove stale ~/.docent/data/paper and ~/.docent/cache/paper directories.
+
+    These were the storage paths before the reading tool was renamed from
+    'paper' to 'reading'. Safe to delete once data/reading/ exists.
+    Called once at server startup.
+    """
+    import shutil
+    from docent.utils.paths import data_dir, cache_dir
+
+    for legacy in (data_dir() / "paper", cache_dir() / "paper"):
+        if legacy.exists():
+            try:
+                shutil.rmtree(legacy)
+                _logger.info("Removed legacy directory: %s", legacy)
+            except Exception as exc:
+                _logger.warning("Could not remove legacy dir %s: %s", legacy, exc)
+
+
 # Increment this when queue.json needs a structural migration.
 # Rule: additive field additions do NOT require a version bump (Pydantic handles
 # them via defaults).  Only renames, removals, or type changes need a bump + a

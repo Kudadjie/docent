@@ -589,8 +589,10 @@ if UI_DIST.is_dir():
 def run_server(host: str = "127.0.0.1", port: int = 7432) -> None:
     from docent.core import load_plugins
     from docent.tools import discover_tools
+    from docent.bundled_plugins.reading.reading_store import cleanup_legacy_paper_dirs
     discover_tools()
     load_plugins()
+    cleanup_legacy_paper_dirs()
 
     # Set up audit log
     audit_log_path = _docent_dir() / "audit.log"

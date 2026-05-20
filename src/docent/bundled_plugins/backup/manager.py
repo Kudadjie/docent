@@ -17,6 +17,9 @@ _EXCLUDE_NAMES: frozenset[str] = frozenset({
 _EXCLUDE_SUFFIXES: frozenset[str] = frozenset({".lock", ".tmp", ".pyc"})
 _EXCLUDE_DIRS: frozenset[str] = frozenset({
     "__pycache__", ".git", "ui_dist", "node_modules", ".venv", "venv",
+    # Legacy directories from when the reading tool was named "paper".
+    # The live data lives in data/reading/ and cache/reading/; these are stale.
+    "paper",
 })
 
 
