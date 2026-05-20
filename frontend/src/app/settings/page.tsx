@@ -542,6 +542,9 @@ export default function SettingsPage() {
   const [downloading, setDownloading] = useState(false);
   const [restoringId, setRestoringId] = useState<string | null>(null);
   const [confirmRestoreId, setConfirmRestoreId] = useState<string | null>(null);
+  const [showSetup, setShowSetup] = useState(false);
+  const [credentialsText, setCredentialsText] = useState('');
+  const [savingCreds, setSavingCreds] = useState(false);
   const dotResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function signalDot(state: DotState) {
@@ -645,6 +648,28 @@ export default function SettingsPage() {
       }
     } catch { setToast({ type: 'error', message: 'Restore request failed' }); signalDot('error'); }
     finally { setRestoringId(null); }
+  }
+
+  async function handleSaveCredentials() {
+    if (!credentialsText.trim()) return;
+    setSavingCreds(true);
+    try {
+      const res = await fetch('/api/backup/setup', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credentials_json: credentialsText.trim() }),
+      });
+      const data = await res.json() as { ok: boolean; error?: string };
+      if (data.ok) {
+        setToast({ type: 'success', message: 'Credentials saved. Run a backup to authenticate with Google.' });
+        setShowSetup(false);
+        setCredentialsText('');
+        // Refresh status
+        fetch('/api/backup/status').then(r => r.json()).then(setBackupStatus).catch(() => {});
+      } else {
+        setToast({ type: 'error', message: data.error ?? 'Could not save credentials' });
+      }
+    } catch { setToast({ type: 'error', message: 'Request failed' }); }
+    finally { setSavingCreds(false); }
   }
 
   async function handleSaveReading(key: keyof ReadingConfig, value: string) {
@@ -936,13 +961,93 @@ export default function SettingsPage() {
                       ) : (
                         <>
                           <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--fg4)', flexShrink: 0 }} />
-                          <span style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg3)' }}>
-                            Google Drive not configured — run
-                            <code style={{ fontFamily: 'var(--mono)', fontSize: 11, background: 'var(--gray100)', padding: '1px 5px', borderRadius: 4, margin: '0 4px' }}>docent backup --setup</code>
-                            in a terminal to set up credentials.
+                          <span style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg3)', flex: 1 }}>
+                            Google Drive not configured.
                           </span>
+                          <button
+                            onClick={() => setShowSetup(s => !s)}
+                            style={{ fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500, color: '#3B82F6', background: 'transparent', border: '1px solid rgba(59,130,246,0.3)', borderRadius: 6, padding: '3px 10px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                          >
+                            {showSetup ? 'Hide setup' : 'Set up Google Drive'}
+                          </button>
                         </>
                       )}
+                    </div>
+                  )}
+
+                  {/* Setup panel */}
+                  {showSetup && (
+                    <div style={{ marginBottom: 16, border: '1px solid rgba(59,130,246,0.25)', borderRadius: 10, overflow: 'hidden' }}>
+                      {/* Steps */}
+                      <div style={{ padding: '14px 18px', background: 'rgba(59,130,246,0.04)', borderBottom: '1px solid rgba(59,130,246,0.15)' }}>
+                        <div style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600, color: 'var(--fg1)', marginBottom: 10 }}>
+                          Google Drive — three steps
+                        </div>
+                        {[
+                          { n: '1', text: <>Go to <strong style={{ color: 'var(--fg1)' }}>console.cloud.google.com</strong> → create or select a project → enable the <strong style={{ color: 'var(--fg1)' }}>Google Drive API</strong>.</> },
+                          { n: '2', text: <>Credentials → Create Credentials → <strong style={{ color: 'var(--fg1)' }}>OAuth client ID</strong> → Application type: <strong style={{ color: 'var(--fg1)' }}>Desktop app</strong> → Download JSON.</> },
+                          { n: '3', text: <>Paste the downloaded file contents below and click <strong style={{ color: 'var(--fg1)' }}>Save</strong>. A browser window will open for sign-in on the first backup run.</> },
+                        ].map(({ n, text }) => (
+                          <div key={n} style={{ display: 'flex', gap: 12, marginBottom: 8, alignItems: 'flex-start' }}>
+                            <span style={{ fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700, color: '#3B82F6', background: 'rgba(59,130,246,0.12)', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>{n}</span>
+                            <span style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg3)', lineHeight: 1.55 }}>{text}</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Paste / upload area */}
+                      <div style={{ padding: '14px 18px' }}>
+                        <div style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg3)', marginBottom: 8 }}>
+                          Paste credentials JSON
+                          <span style={{ color: 'var(--fg4)', marginLeft: 8 }}>— or —</span>
+                          <label style={{ marginLeft: 8, color: '#3B82F6', cursor: 'pointer', fontSize: 12 }}>
+                            choose file
+                            <input
+                              type="file" accept=".json" style={{ display: 'none' }}
+                              onChange={e => {
+                                const f = e.target.files?.[0];
+                                if (!f) return;
+                                const reader = new FileReader();
+                                reader.onload = ev => setCredentialsText(ev.target?.result as string ?? '');
+                                reader.readAsText(f);
+                              }}
+                            />
+                          </label>
+                        </div>
+                        <textarea
+                          value={credentialsText}
+                          onChange={e => setCredentialsText(e.target.value)}
+                          placeholder='{"installed":{"client_id":"...","client_secret":"...",...}}'
+                          rows={5}
+                          style={{
+                            width: '100%', boxSizing: 'border-box',
+                            fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--fg2)',
+                            background: 'var(--bg-subtle)', border: '1px solid var(--border-md)',
+                            borderRadius: 7, padding: '10px 12px', resize: 'vertical', outline: 'none',
+                          }}
+                        />
+                        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                          <button
+                            onClick={handleSaveCredentials}
+                            disabled={savingCreds || !credentialsText.trim()}
+                            style={{
+                              padding: '6px 16px', borderRadius: 7,
+                              border: 'none', background: '#3B82F6', color: '#fff',
+                              fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500,
+                              cursor: (savingCreds || !credentialsText.trim()) ? 'not-allowed' : 'pointer',
+                              opacity: !credentialsText.trim() ? 0.5 : 1,
+                            }}
+                          >
+                            {savingCreds ? 'Saving…' : 'Save credentials'}
+                          </button>
+                          <button
+                            onClick={() => { setShowSetup(false); setCredentialsText(''); }}
+                            style={{ padding: '6px 14px', borderRadius: 7, border: '1px solid var(--border-md)', background: 'transparent', color: 'var(--fg3)', fontFamily: 'var(--sans)', fontSize: 13, cursor: 'pointer' }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   )}
 

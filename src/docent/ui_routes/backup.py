@@ -73,6 +73,35 @@ async def list_drive_backups() -> JSONResponse:
 
 # ── Run backup ────────────────────────────────────────────────────────────────
 
+class SetupBody(BaseModel):
+    credentials_json: str   # raw JSON string from the downloaded credentials file
+
+
+@router.post("/api/backup/setup")
+async def save_credentials(body: SetupBody) -> JSONResponse:
+    """Validate and save Google Drive OAuth credentials to ~/.docent/drive_credentials.json."""
+    import json as _json
+    from docent.bundled_plugins.backup.drive_client import _creds_path
+
+    # Basic validation — must be a valid JSON object with expected keys
+    try:
+        parsed = _json.loads(body.credentials_json)
+    except Exception:
+        return JSONResponse({"ok": False, "error": "Invalid JSON — paste the full contents of the downloaded file."}, status_code=400)
+
+    top = parsed.get("installed") or parsed.get("web")
+    if not top or "client_id" not in top:
+        return JSONResponse(
+            {"ok": False, "error": "Unrecognised credentials format. Download a Desktop app OAuth 2.0 Client ID from Google Cloud Console."},
+            status_code=400,
+        )
+
+    dest = _creds_path()
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(body.credentials_json, encoding="utf-8")
+    return JSONResponse({"ok": True, "path": str(dest)})
+
+
 class BackupBody(BaseModel):
     local_only: bool = False
 
