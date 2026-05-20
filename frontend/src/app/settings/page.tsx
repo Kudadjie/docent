@@ -967,27 +967,47 @@ export default function SettingsPage() {
                           </span>
                         </>
                       ) : backupStatus.credentials_configured && !backupStatus.deps_installed ? (
-                        <>
-                          <AlertTriangle size={13} strokeWidth={2} color="#C37D0D" />
-                          <span style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg2)', flex: 1 }}>
-                            Credentials found but dependencies missing.
-                          </span>
-                          <button
-                            onClick={handleInstallDeps}
-                            disabled={installingDeps}
-                            style={{
-                              display: 'inline-flex', alignItems: 'center', gap: 6,
-                              fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500,
-                              color: '#fff', background: '#C37D0D',
-                              border: 'none', borderRadius: 6,
-                              padding: '4px 12px', cursor: installingDeps ? 'wait' : 'pointer',
-                              whiteSpace: 'nowrap', flexShrink: 0,
-                            }}
-                          >
-                            <RefreshCw size={11} strokeWidth={2} style={{ animation: installingDeps ? 'spin 1s linear infinite' : 'none' }} />
-                            {installingDeps ? 'Installing…' : 'Install now'}
-                          </button>
-                        </>
+                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <AlertTriangle size={13} strokeWidth={2} color="#C37D0D" style={{ flexShrink: 0 }} />
+                            <span style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg2)', flex: 1 }}>
+                              Credentials found but dependencies missing.
+                            </span>
+                            <button
+                              onClick={handleInstallDeps}
+                              disabled={installingDeps}
+                              style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 6,
+                                fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500,
+                                color: '#fff', background: '#C37D0D',
+                                border: 'none', borderRadius: 6,
+                                padding: '4px 12px', cursor: installingDeps ? 'wait' : 'pointer',
+                                whiteSpace: 'nowrap', flexShrink: 0,
+                              }}
+                            >
+                              <RefreshCw size={11} strokeWidth={2} style={{ animation: installingDeps ? 'spin 1s linear infinite' : 'none' }} />
+                              {installingDeps ? 'Installing…' : 'Install now'}
+                            </button>
+                          </div>
+                          {/* Terminal command for techy users */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <code style={{
+                              flex: 1, fontFamily: 'var(--mono)', fontSize: 11,
+                              color: 'var(--fg3)', background: 'var(--gray100)',
+                              border: '1px solid var(--border)', borderRadius: 5,
+                              padding: '4px 10px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                            }}>
+                              pip install google-api-python-client google-auth-oauthlib google-auth-httplib2
+                            </code>
+                            <button
+                              onClick={() => navigator.clipboard.writeText('pip install google-api-python-client google-auth-oauthlib google-auth-httplib2').then(() => setToast({ type: 'success', message: 'Copied!' }))}
+                              title="Copy to clipboard"
+                              style={{ background: 'var(--gray100)', border: '1px solid var(--border)', borderRadius: 5, padding: '4px 8px', cursor: 'pointer', color: 'var(--fg4)', display: 'flex', flexShrink: 0 }}
+                            >
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                            </button>
+                          </div>
+                        </div>
                       ) : (
                         <>
                           <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--fg4)', flexShrink: 0 }} />
