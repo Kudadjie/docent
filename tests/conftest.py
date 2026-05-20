@@ -7,6 +7,7 @@ tests that call @register_tool don't leak into one another.
 from __future__ import annotations
 
 import os
+import socket
 import sys as _sys
 from datetime import datetime
 from pathlib import Path as _Path
@@ -15,6 +16,42 @@ from typing import Any
 import pytest
 
 from docent.core.registry import _REGISTRY
+
+# ---------------------------------------------------------------------------
+# Network guard — block all socket connections in unit tests.
+# Tests marked @pytest.mark.integration or @pytest.mark.eval are exempt.
+# ---------------------------------------------------------------------------
+
+_NETWORK_EXEMPT_MARKS = frozenset({"integration", "eval"})
+_real_socket_connect = socket.socket.connect
+
+
+_LOCALHOST_HOSTS = frozenset({"127.0.0.1", "::1", "localhost", "0.0.0.0", ""})
+
+
+def _blocked_connect(self: socket.socket, address: object) -> None:
+    # Allow loopback — Starlette TestClient and other in-process tools use it.
+    if isinstance(address, (tuple, list)):
+        host = str(address[0])
+        if host in _LOCALHOST_HOSTS:
+            return _real_socket_connect(self, address)
+    raise OSError(
+        "Unit test attempted a real external network connection. "
+        "Mark the test @pytest.mark.integration if it needs network access, "
+        f"or mock the call. Address: {address}"
+    )
+
+
+def pytest_runtest_setup(item: pytest.Item) -> None:
+    marks = {m.name for m in item.iter_markers()}
+    if marks & _NETWORK_EXEMPT_MARKS:
+        socket.socket.connect = _real_socket_connect
+    else:
+        socket.socket.connect = _blocked_connect  # type: ignore[method-assign]
+
+
+def pytest_runtest_teardown(item: pytest.Item, nextitem: pytest.Item | None) -> None:  # noqa: ARG001
+    socket.socket.connect = _real_socket_connect
 
 # Make bundled plugins importable (mirrors what plugin_loader does at runtime)
 _BUNDLED = _Path(__file__).parent.parent / "src" / "docent" / "bundled_plugins"

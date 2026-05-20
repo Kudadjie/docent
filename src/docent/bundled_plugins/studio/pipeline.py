@@ -19,7 +19,9 @@ from typing import Generator
 from docent.core import ProgressEvent
 
 from .backend import StudioBackend
-from .search import academic_search_parallel, fetch_page, paper_search, web_search, tavily_research
+from .search import fetch_page, paper_search, web_search, tavily_research  # kept for direct callers
+from .search import academic_search_parallel  # kept for direct callers
+from .search_adapter import DefaultSearchAdapter, SearchAdapter
 
 try:
     from tavily.errors import UsageLimitExceededError
@@ -216,6 +218,7 @@ def _run_pipeline(
     tavily_api_key: str | None = None,
     semantic_scholar_api_key: str | None = None,
     alphaxiv_api_key: str | None = None,
+    adapter: SearchAdapter | None = None,
 ) -> Generator[ProgressEvent, None, dict]:
     """Shared search-fetch-write-verify-review pipeline (manual mode).
 
@@ -227,6 +230,12 @@ def _run_pipeline(
         raise NetworkError(
             "No internet connection detected. Check your connection and retry."
         )
+
+    _adapter = adapter or DefaultSearchAdapter(
+        api_key=tavily_api_key,
+        semantic_scholar_api_key=semantic_scholar_api_key,
+        alphaxiv_api_key=alphaxiv_api_key,
+    )
 
     sources: list[dict] = []
     rounds = 0
@@ -272,7 +281,7 @@ def _run_pipeline(
                 total=total,
                 item=f"web: {q[:50]}",
             )
-            results = web_search(q, max_results=6, api_key=tavily_api_key)
+            results = _adapter.web_search(q, max_results=6)
             for r in results:
                 r["query"] = q
                 r["source_type"] = "web"
@@ -288,7 +297,7 @@ def _run_pipeline(
             from concurrent.futures import ThreadPoolExecutor, as_completed as _as_completed
 
             def _ss_query(q: str) -> list[dict]:
-                results = paper_search(q, max_results=4, api_key=semantic_scholar_api_key)
+                results = _adapter.paper_search(q, max_results=4)
                 for r in results:
                     r["query"] = q
                     r["source_type"] = "paper"
@@ -300,9 +309,7 @@ def _run_pipeline(
                 for q in paper_qs:
                     ss_futures_map[pool.submit(_ss_query, q)] = q
                 academic_future = pool.submit(
-                    academic_search_parallel, paper_qs,
-                    semantic_scholar_api_key=semantic_scholar_api_key,
-                    alphaxiv_api_key=alphaxiv_api_key,
+                    _adapter.academic_search_parallel, paper_qs,
                 )
                 for f in _as_completed(list(ss_futures_map) + [academic_future]):
                     try:
@@ -328,7 +335,7 @@ def _run_pipeline(
                     total=5,
                     item=url[:60],
                 )
-                s["full_text"] = fetch_page(url)
+                s["full_text"] = _adapter.fetch_page(url)
                 seen_urls.add(url)
                 fetched += 1
 
@@ -563,6 +570,7 @@ def _run_with_tavily_fallback(
     semantic_scholar_api_key: str | None = None,
     alphaxiv_api_key: str | None = None,
     tavily_research_timeout: float = 600.0,
+    adapter: SearchAdapter | None = None,
 ) -> Generator[ProgressEvent, None, dict]:
     """Tavily Research API primary path with manual pipeline fallback.
 
@@ -604,6 +612,7 @@ def _run_with_tavily_fallback(
                 tavily_api_key=None,
                 semantic_scholar_api_key=semantic_scholar_api_key,
                 alphaxiv_api_key=alphaxiv_api_key,
+                adapter=adapter,
             )
             return result
         # Other Tavily failures — try manual fallback
@@ -641,6 +650,7 @@ def _run_with_tavily_fallback(
                 tavily_api_key=None,
                 semantic_scholar_api_key=semantic_scholar_api_key,
                 alphaxiv_api_key=alphaxiv_api_key,
+                adapter=adapter,
             )
         return result
 
@@ -650,6 +660,7 @@ def _run_with_tavily_fallback(
         tavily_api_key=tavily_api_key,
         semantic_scholar_api_key=semantic_scholar_api_key,
         alphaxiv_api_key=alphaxiv_api_key,
+        adapter=adapter,
     )
     return result
 
@@ -662,6 +673,7 @@ def run_deep(
     semantic_scholar_api_key: str | None = None,
     alphaxiv_api_key: str | None = None,
     tavily_research_timeout: float = 600.0,
+    adapter: SearchAdapter | None = None,
 ) -> Generator[ProgressEvent, None, dict]:
     """Run the full deep research pipeline. Yields ProgressEvent, returns result dict."""
     return (yield from _run_with_tavily_fallback(
@@ -672,6 +684,7 @@ def run_deep(
         semantic_scholar_api_key=semantic_scholar_api_key,
         alphaxiv_api_key=alphaxiv_api_key,
         tavily_research_timeout=tavily_research_timeout,
+        adapter=adapter,
     ))
 
 
@@ -683,6 +696,7 @@ def run_lit(
     semantic_scholar_api_key: str | None = None,
     alphaxiv_api_key: str | None = None,
     tavily_research_timeout: float = 600.0,
+    adapter: SearchAdapter | None = None,
 ) -> Generator[ProgressEvent, None, dict]:
     """Run the literature review pipeline. Yields ProgressEvent, returns result dict."""
     return (yield from _run_with_tavily_fallback(
@@ -693,6 +707,7 @@ def run_lit(
         semantic_scholar_api_key=semantic_scholar_api_key,
         alphaxiv_api_key=alphaxiv_api_key,
         tavily_research_timeout=tavily_research_timeout,
+        adapter=adapter,
     ))
 
 

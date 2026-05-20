@@ -48,10 +48,17 @@ def load_settings() -> Settings:
     return Settings(**toml_data)
 
 
+_KNOWN_TOP_LEVEL_SECTIONS = frozenset({
+    "reading", "research", "tools",
+    # Root-level scalar keys (no section prefix)
+    "default_model", "verbose", "no_color", "anthropic_api_key", "openai_api_key",
+})
+
+
 def write_setting(key_path: str, value: Any) -> Path:
     """Persist a setting into config.toml under a dotted key path.
 
-    `key_path` is a dotted path like "paper.database_dir". Sections are
+    `key_path` is a dotted path like "reading.database_dir". Sections are
     created on demand. Existing TOML structure is preserved (round-trip
     via tomllib + tomli_w). Returns the config-file path written.
 
@@ -59,6 +66,12 @@ def write_setting(key_path: str, value: Any) -> Path:
     """
     if not key_path or any(not seg for seg in key_path.split(".")):
         raise ValueError(f"Invalid setting key {key_path!r}")
+    top = key_path.split(".")[0]
+    if top not in _KNOWN_TOP_LEVEL_SECTIONS:
+        raise ValueError(
+            f"Unknown config section {top!r}. "
+            f"Known sections: {sorted(_KNOWN_TOP_LEVEL_SECTIONS)}"
+        )
     _ensure_runtime_dirs()
     path = _ensure_config_file()
     with path.open("rb") as f:

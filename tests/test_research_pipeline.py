@@ -1,13 +1,11 @@
 """Unit tests for pipeline.py (run_deep, _parse_json)."""
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from docent.bundled_plugins.studio.backend import StudioBackend
-from docent.bundled_plugins.studio.oc_client import OcClient
 from docent.bundled_plugins.studio.pipeline import (
     _fetch_artifact,
     _parse_json,
@@ -15,7 +13,26 @@ from docent.bundled_plugins.studio.pipeline import (
     run_lit,
     run_review,
 )
+from docent.bundled_plugins.studio.search_adapter import FakeSearchAdapter
 from docent.core import ProgressEvent
+
+# ── shared fake adapter ────────────────────────────────────────────────────────
+
+_WEB_RESULT = {"title": "Web Result", "url": "https://example.com", "snippet": "A snippet"}
+_PAPER_RESULT = {
+    "title": "Paper Result", "url": "https://arxiv.org/abs/2401.12345",
+    "snippet": "Abstract", "authors": "Smith, J", "year": 2024,
+}
+
+
+def _fake_adapter(**overrides) -> FakeSearchAdapter:
+    defaults = dict(
+        web_results=[_WEB_RESULT],
+        paper_results=[_PAPER_RESULT],
+        page_content="Full page content",
+    )
+    defaults.update(overrides)
+    return FakeSearchAdapter(**defaults)
 
 
 def _make_oc_client(responses: dict | None = None) -> MagicMock:
@@ -125,36 +142,16 @@ class TestRunDeep:
         import docent.bundled_plugins.studio.helpers as _h
         monkeypatch.setattr(_h, "_check_connectivity", lambda *a, **kw: True)
 
-    @patch("docent.bundled_plugins.studio.pipeline.web_search")
-    @patch("docent.bundled_plugins.studio.pipeline.paper_search")
-    @patch("docent.bundled_plugins.studio.pipeline.fetch_page")
-    def test_run_deep_happy_path(self, mock_fetch, mock_paper, mock_web):
-        mock_web.return_value = [
-            {"title": "Web Result", "url": "https://example.com", "snippet": "A snippet"},
-        ]
-        mock_paper.return_value = [
-            {
-                "title": "Paper Result",
-                "url": "https://arxiv.org/abs/2401.12345",
-                "snippet": "Abstract",
-                "authors": "Smith, J",
-                "year": 2024,
-            },
-        ]
-        mock_fetch.return_value = "Full page content"
-
-        oc = _make_oc_client(
-            {
-                "planner": PLANNER_JSON,
-                "gap_eval": GAP_SUFFICIENT_JSON,
-                "writer": WRITER_OUTPUT,
-                "verifier": VERIFIER_OUTPUT,
-                "reviewer": REVIEWER_OUTPUT,
-                "refiner": REFINER_OUTPUT,
-            }
-        )
-
-        result, events = _drain(run_deep("climate change", oc))
+    def test_run_deep_happy_path(self):
+        oc = _make_oc_client({
+            "planner": PLANNER_JSON,
+            "gap_eval": GAP_SUFFICIENT_JSON,
+            "writer": WRITER_OUTPUT,
+            "verifier": VERIFIER_OUTPUT,
+            "reviewer": REVIEWER_OUTPUT,
+            "refiner": REFINER_OUTPUT,
+        })
+        result, events = _drain(run_deep("climate change", oc, adapter=_fake_adapter()))
 
         assert result["ok"] is True
         assert result["topic"] == "climate change"
@@ -163,7 +160,6 @@ class TestRunDeep:
         assert result["error"] is None
         assert result["rounds"] >= 1
         assert len(result["sources"]) > 0
-        # Should have progress events from pipeline stages
         phases = [e.phase for e in events]
         assert "search_plan" in phases
         assert "write" in phases
@@ -173,203 +169,110 @@ class TestRunDeep:
         oc.is_available.return_value = True
         oc.call.side_effect = Exception("LLM down")
 
-        result, events = _drain(run_deep("climate change", oc))
+        result, _ = _drain(run_deep("climate change", oc, adapter=_fake_adapter()))
 
         assert result["ok"] is False
         assert "Search planner failed" in result["error"]
 
-    @patch("docent.bundled_plugins.studio.pipeline.web_search")
-    @patch("docent.bundled_plugins.studio.pipeline.paper_search")
-    @patch("docent.bundled_plugins.studio.pipeline.fetch_page")
-    def test_run_deep_writer_failure(self, mock_fetch, mock_paper, mock_web):
-        mock_web.return_value = [
-            {"title": "Web Result", "url": "https://example.com", "snippet": "A snippet"},
-        ]
-        mock_paper.return_value = []
-        mock_fetch.return_value = ""
-
+    def test_run_deep_writer_failure(self):
         oc = MagicMock(spec=StudioBackend)
         oc.is_available.return_value = True
-        oc.call.side_effect = [
-            PLANNER_JSON,       # planner
-            GAP_SUFFICIENT_JSON,  # gap eval
-            Exception("Writer LLM failed"),  # writer
-        ]
+        oc.call.side_effect = [PLANNER_JSON, GAP_SUFFICIENT_JSON, Exception("Writer LLM failed")]
 
-        result, _ = _drain(run_deep("climate change", oc))
+        result, _ = _drain(run_deep("climate change", oc, adapter=_fake_adapter()))
 
         assert result["ok"] is False
         assert "Writer failed" in result["error"]
 
-    @patch("docent.bundled_plugins.studio.pipeline.web_search")
-    @patch("docent.bundled_plugins.studio.pipeline.paper_search")
-    @patch("docent.bundled_plugins.studio.pipeline.fetch_page")
-    def test_run_deep_verifier_failure_falls_back_to_draft(
-        self, mock_fetch, mock_paper, mock_web
-    ):
-        mock_web.return_value = [
-            {"title": "Web Result", "url": "https://example.com", "snippet": "A snippet"},
-        ]
-        mock_paper.return_value = []
-        mock_fetch.return_value = ""
-
+    def test_run_deep_verifier_failure_falls_back_to_draft(self):
         oc = MagicMock(spec=StudioBackend)
         oc.is_available.return_value = True
         oc.call.side_effect = [
-            PLANNER_JSON,        # planner
-            GAP_SUFFICIENT_JSON,  # gap eval
-            WRITER_OUTPUT,        # writer
-            Exception("Verifier LLM down"),  # verifier fails
-            REVIEWER_OUTPUT,      # reviewer
-            REFINER_OUTPUT,       # refiner
+            PLANNER_JSON, GAP_SUFFICIENT_JSON, WRITER_OUTPUT,
+            Exception("Verifier LLM down"), REVIEWER_OUTPUT, REFINER_OUTPUT,
         ]
-
-        result, _ = _drain(run_deep("climate change", oc))
+        result, _ = _drain(run_deep("climate change", oc, adapter=_fake_adapter()))
 
         assert result["ok"] is True
-        # Verifier failed → draft falls back to WRITER_OUTPUT, but refiner succeeds
         assert result["draft"] == REFINER_OUTPUT
 
-    @patch("docent.bundled_plugins.studio.pipeline.web_search")
-    @patch("docent.bundled_plugins.studio.pipeline.paper_search")
-    @patch("docent.bundled_plugins.studio.pipeline.fetch_page")
-    def test_run_deep_gap_eval_loops(self, mock_fetch, mock_paper, mock_web):
-        mock_web.return_value = [
-            {"title": "Initial", "url": "https://example.com/1", "snippet": "S1"},
-        ]
-        mock_paper.return_value = []
-        mock_fetch.return_value = ""
-
+    def test_run_deep_gap_eval_loops(self):
         oc = MagicMock(spec=StudioBackend)
         oc.is_available.return_value = True
         oc.call.side_effect = [
-            PLANNER_JSON,           # planner
-            GAP_INSUFFICIENT_JSON,  # gap eval round 1: not sufficient → extra fetch
-            # MAX_ROUNDS=2: loop exits after one gap eval iteration; no 2nd eval call
-            WRITER_OUTPUT,
-            VERIFIER_OUTPUT,
-            REVIEWER_OUTPUT,
-            REFINER_OUTPUT,
+            PLANNER_JSON, GAP_INSUFFICIENT_JSON,
+            WRITER_OUTPUT, VERIFIER_OUTPUT, REVIEWER_OUTPUT, REFINER_OUTPUT,
         ]
-
-        result, _ = _drain(run_deep("climate change", oc))
+        result, _ = _drain(run_deep("climate change", oc, adapter=_fake_adapter()))
 
         assert result["ok"] is True
-        assert result["rounds"] == 2  # initial fetch + 1 gap eval loop iteration
+        assert result["rounds"] == 2
 
-    @patch("docent.bundled_plugins.studio.pipeline.web_search")
-    @patch("docent.bundled_plugins.studio.pipeline.paper_search")
-    @patch("docent.bundled_plugins.studio.pipeline.fetch_page")
-    def test_run_deep_gap_eval_sufficient_stops_loop(
-        self, mock_fetch, mock_paper, mock_web
-    ):
-        mock_web.return_value = [
-            {"title": "Web Result", "url": "https://example.com", "snippet": "S"},
-        ]
-        mock_paper.return_value = []
-        mock_fetch.return_value = ""
-
+    def test_run_deep_gap_eval_sufficient_stops_loop(self):
         oc = MagicMock(spec=StudioBackend)
         oc.is_available.return_value = True
         oc.call.side_effect = [
-            PLANNER_JSON,
-            GAP_SUFFICIENT_JSON,
-            WRITER_OUTPUT,
-            VERIFIER_OUTPUT,
-            REVIEWER_OUTPUT,
-            REFINER_OUTPUT,
+            PLANNER_JSON, GAP_SUFFICIENT_JSON,
+            WRITER_OUTPUT, VERIFIER_OUTPUT, REVIEWER_OUTPUT, REFINER_OUTPUT,
         ]
-
-        result, _ = _drain(run_deep("climate change", oc))
+        result, _ = _drain(run_deep("climate change", oc, adapter=_fake_adapter()))
 
         assert result["ok"] is True
         assert result["rounds"] == 1
 
-    @patch("docent.bundled_plugins.studio.pipeline.web_search")
-    @patch("docent.bundled_plugins.studio.pipeline.paper_search")
-    @patch("docent.bundled_plugins.studio.pipeline.fetch_page")
-    def test_run_deep_deduplicates_sources(self, mock_fetch, mock_paper, mock_web):
-        mock_web.return_value = [
+    def test_run_deep_deduplicates_sources(self):
+        adapter = _fake_adapter(web_results=[
             {"title": "Dup", "url": "https://example.com", "snippet": "S1"},
             {"title": "Dup", "url": "https://example.com", "snippet": "S2"},
             {"title": "Unique", "url": "https://other.com", "snippet": "S3"},
-        ]
-        mock_paper.return_value = []
-        mock_fetch.return_value = ""
-
+        ])
         oc = MagicMock(spec=StudioBackend)
         oc.is_available.return_value = True
         oc.call.side_effect = [
-            PLANNER_JSON,
-            GAP_SUFFICIENT_JSON,
-            WRITER_OUTPUT,
-            VERIFIER_OUTPUT,
-            REVIEWER_OUTPUT,
-            REFINER_OUTPUT,
+            PLANNER_JSON, GAP_SUFFICIENT_JSON,
+            WRITER_OUTPUT, VERIFIER_OUTPUT, REVIEWER_OUTPUT, REFINER_OUTPUT,
         ]
-
-        result, _ = _drain(run_deep("climate change", oc))
+        result, _ = _drain(run_deep("climate change", oc, adapter=adapter))
 
         urls = [s.get("url") for s in result["sources"]]
         assert urls.count("https://example.com") == 1
         assert urls.count("https://other.com") == 1
 
     def test_run_deep_yields_progress_events(self):
-        """run_deep now yields ProgressEvent items during execution."""
         oc = MagicMock(spec=StudioBackend)
         oc.is_available.return_value = True
         oc.call.side_effect = Exception("fail immediately")
 
-        gen = run_deep("test topic", oc)
+        gen = run_deep("test topic", oc, adapter=_fake_adapter())
         events = []
         try:
             while True:
-                value = next(gen)
-                if isinstance(value, ProgressEvent):
-                    events.append(value)
+                v = next(gen)
+                if isinstance(v, ProgressEvent):
+                    events.append(v)
         except StopIteration:
             pass
 
-        # Should have at least the search_plan event before planner failure
         assert len(events) >= 1
         assert events[0].phase == "search_plan"
 
-    @patch("docent.bundled_plugins.studio.pipeline.web_search")
-    @patch("docent.bundled_plugins.studio.pipeline.paper_search")
-    @patch("docent.bundled_plugins.studio.pipeline.fetch_page")
-    def test_second_fetch_round_does_not_refetch_existing_pages(
-        self, mock_fetch, mock_paper, mock_web
-    ):
-        """Regression: round-2 _fetch_round must not re-fetch URLs already fetched in round 1.
-
-        Setup: exactly 5 unique URLs so round 1 fills the budget completely.
-        Round 2 (triggered by insufficient gap eval) returns the same 5 URLs —
-        all already fetched — so fetch_page must not be called again.
-        """
-        mock_web.return_value = [
+    def test_second_fetch_round_does_not_refetch_existing_pages(self):
+        """Round-2 must not re-fetch URLs already fetched in round 1."""
+        five_urls = [
             {"title": f"Result {i}", "url": f"https://example.com/{i}", "snippet": "S"}
-            for i in range(5)  # exactly 5 URLs — fills the 5-fetch budget in round 1
+            for i in range(5)
         ]
-        mock_paper.return_value = []
-        mock_fetch.return_value = "fetched content"
-
+        adapter = FakeSearchAdapter(web_results=five_urls, page_content="fetched content")
         oc = MagicMock(spec=StudioBackend)
         oc.is_available.return_value = True
         oc.call.side_effect = [
-            PLANNER_JSON,
-            GAP_INSUFFICIENT_JSON,   # triggers second fetch round with same URLs
-            GAP_SUFFICIENT_JSON,
-            WRITER_OUTPUT,
-            VERIFIER_OUTPUT,
-            REVIEWER_OUTPUT,
-            REFINER_OUTPUT,
+            PLANNER_JSON, GAP_INSUFFICIENT_JSON, GAP_SUFFICIENT_JSON,
+            WRITER_OUTPUT, VERIFIER_OUTPUT, REVIEWER_OUTPUT, REFINER_OUTPUT,
         ]
+        _drain(run_deep("climate change", oc, adapter=adapter))
 
-        _drain(run_deep("climate change", oc))
-
-        # Round 1 fetched 5 pages. Round 2 encounters the same URLs already in
-        # full_text — should add 0 new fetches. Total must remain 5.
-        assert mock_fetch.call_count == 5
+        # Round 1 fetched 5 pages; round 2 sees same URLs (already fetched) → 0 new fetches.
+        assert len(adapter.fetch_calls) == 5
 
 
 LIT_PLANNER_JSON = """{
@@ -385,38 +288,16 @@ class TestRunLit:
         import docent.bundled_plugins.studio.helpers as _h
         monkeypatch.setattr(_h, "_check_connectivity", lambda *a, **kw: True)
 
-    @patch("docent.bundled_plugins.studio.pipeline.academic_search_parallel")
-    @patch("docent.bundled_plugins.studio.pipeline.web_search")
-    @patch("docent.bundled_plugins.studio.pipeline.paper_search")
-    @patch("docent.bundled_plugins.studio.pipeline.fetch_page")
-    def test_run_lit_happy_path(self, mock_fetch, mock_paper, mock_web, mock_academic):
-        mock_academic.return_value = []
-        mock_web.return_value = [
-            {"title": "Web Result", "url": "https://example.com", "snippet": "A snippet"},
-        ]
-        mock_paper.return_value = [
-            {
-                "title": "Paper Result",
-                "url": "https://arxiv.org/abs/2401.12345",
-                "snippet": "Abstract",
-                "authors": "Smith, J",
-                "year": 2024,
-            },
-        ]
-        mock_fetch.return_value = "Full page content"
-
-        oc = _make_oc_client(
-            {
-                "planner": LIT_PLANNER_JSON,
-                "gap_eval": GAP_SUFFICIENT_JSON,
-                "writer": WRITER_OUTPUT,
-                "verifier": VERIFIER_OUTPUT,
-                "reviewer": REVIEWER_OUTPUT,
-                "refiner": REFINER_OUTPUT,
-            }
-        )
-
-        result, _ = _drain(run_lit("climate change", oc))
+    def test_run_lit_happy_path(self):
+        oc = _make_oc_client({
+            "planner": LIT_PLANNER_JSON,
+            "gap_eval": GAP_SUFFICIENT_JSON,
+            "writer": WRITER_OUTPUT,
+            "verifier": VERIFIER_OUTPUT,
+            "reviewer": REVIEWER_OUTPUT,
+            "refiner": REFINER_OUTPUT,
+        })
+        result, _ = _drain(run_lit("climate change", oc, adapter=_fake_adapter()))
 
         assert result["ok"] is True
         assert result["topic"] == "climate change"
@@ -431,35 +312,21 @@ class TestRunLit:
         oc.is_available.return_value = True
         oc.call.side_effect = Exception("LLM down")
 
-        result, _ = _drain(run_lit("climate change", oc))
+        result, _ = _drain(run_lit("climate change", oc, adapter=_fake_adapter()))
 
         assert result["ok"] is False
         assert "Search planner failed" in result["error"]
 
-    @patch("docent.bundled_plugins.studio.pipeline.academic_search_parallel")
-    @patch("docent.bundled_plugins.studio.pipeline.web_search")
-    @patch("docent.bundled_plugins.studio.pipeline.paper_search")
-    @patch("docent.bundled_plugins.studio.pipeline.fetch_page")
-    def test_run_lit_uses_lit_prompts(self, mock_fetch, mock_paper, mock_web, mock_academic):
-        mock_academic.return_value = []
-        mock_web.return_value = [
-            {"title": "Web Result", "url": "https://example.com", "snippet": "A snippet"},
-        ]
-        mock_paper.return_value = []
-        mock_fetch.return_value = ""
-
-        oc = _make_oc_client(
-            {
-                "planner": LIT_PLANNER_JSON,
-                "gap_eval": GAP_SUFFICIENT_JSON,
-                "writer": WRITER_OUTPUT,
-                "verifier": VERIFIER_OUTPUT,
-                "reviewer": REVIEWER_OUTPUT,
-                "refiner": REFINER_OUTPUT,
-            }
-        )
-
-        result, _ = _drain(run_lit("climate change", oc))
+    def test_run_lit_uses_lit_prompts(self):
+        oc = _make_oc_client({
+            "planner": LIT_PLANNER_JSON,
+            "gap_eval": GAP_SUFFICIENT_JSON,
+            "writer": WRITER_OUTPUT,
+            "verifier": VERIFIER_OUTPUT,
+            "reviewer": REVIEWER_OUTPUT,
+            "refiner": REFINER_OUTPUT,
+        })
+        result, _ = _drain(run_lit("climate change", oc, adapter=_fake_adapter()))
         assert result["ok"] is True
 
         first_call_args = oc.call.call_args_list[0]
@@ -467,30 +334,32 @@ class TestRunLit:
         assert "climate change" in first_prompt
         assert "literature review" in first_prompt.lower()
 
-    @patch("docent.bundled_plugins.studio.pipeline.academic_search_parallel")
-    @patch("docent.bundled_plugins.studio.pipeline.web_search")
-    @patch("docent.bundled_plugins.studio.pipeline.paper_search")
-    @patch("docent.bundled_plugins.studio.pipeline.fetch_page")
-    def test_run_lit_writer_failure(self, mock_fetch, mock_paper, mock_web, mock_academic):
-        mock_academic.return_value = []
-        mock_web.return_value = [
-            {"title": "Web Result", "url": "https://example.com", "snippet": "A snippet"},
-        ]
-        mock_paper.return_value = []
-        mock_fetch.return_value = ""
-
+    def test_run_lit_writer_failure(self):
         oc = MagicMock(spec=StudioBackend)
         oc.is_available.return_value = True
-        oc.call.side_effect = [
-            LIT_PLANNER_JSON,
-            GAP_SUFFICIENT_JSON,
-            Exception("Writer LLM failed"),
-        ]
+        oc.call.side_effect = [LIT_PLANNER_JSON, GAP_SUFFICIENT_JSON, Exception("Writer LLM failed")]
 
-        result, _ = _drain(run_lit("climate change", oc))
+        result, _ = _drain(run_lit("climate change", oc, adapter=_fake_adapter()))
 
         assert result["ok"] is False
         assert "Writer failed" in result["error"]
+
+    def test_fake_adapter_records_calls(self):
+        """FakeSearchAdapter call counters enable fine-grained test assertions."""
+        adapter = _fake_adapter()
+        oc = _make_oc_client({
+            "planner": LIT_PLANNER_JSON,
+            "gap_eval": GAP_SUFFICIENT_JSON,
+            "writer": WRITER_OUTPUT,
+            "verifier": VERIFIER_OUTPUT,
+            "reviewer": REVIEWER_OUTPUT,
+            "refiner": REFINER_OUTPUT,
+        })
+        _drain(run_lit("climate change", oc, adapter=adapter))
+
+        # LIT_PLANNER_JSON has 1 web query and 2 paper queries
+        assert len(adapter.web_search_calls) >= 1
+        assert len(adapter.academic_search_calls) >= 1
 
 
 class TestFetchArtifact:
@@ -599,23 +468,13 @@ class TestZeroSourceAbort:
         import docent.bundled_plugins.studio.helpers as _h
         monkeypatch.setattr(_h, "_check_connectivity", lambda *a, **kw: True)
 
-    @patch("docent.bundled_plugins.studio.pipeline.web_search")
-    @patch("docent.bundled_plugins.studio.pipeline.paper_search")
-    @patch("docent.bundled_plugins.studio.pipeline.fetch_page")
-    @patch("docent.bundled_plugins.studio.pipeline.academic_search_parallel", return_value=[])
-    def test_zero_sources_returns_error(self, mock_academic, mock_fetch, mock_paper, mock_web):
-        mock_web.return_value = []
-        mock_paper.return_value = []
-        mock_fetch.return_value = ""
-
+    def test_zero_sources_returns_error(self):
         oc = MagicMock(spec=StudioBackend)
         oc.is_available.return_value = True
-        oc.call.side_effect = [
-            PLANNER_JSON,
-            GAP_SUFFICIENT_JSON,
-        ]
+        oc.call.side_effect = [PLANNER_JSON, GAP_SUFFICIENT_JSON]
 
-        result, _ = _drain(run_deep("climate change", oc))
+        empty_adapter = FakeSearchAdapter(web_results=[], paper_results=[])
+        result, _ = _drain(run_deep("climate change", oc, adapter=empty_adapter))
 
         assert result["ok"] is False
         assert "0 sources" in result["error"]
@@ -683,51 +542,30 @@ class TestTavilyResearchPipeline:
         """When tavily_research raises, run_deep falls back to manual pipeline."""
         mock_research.side_effect = RuntimeError("Tavily research start failed: API error")
 
-        # Set up manual pipeline mocks
-        with patch("docent.bundled_plugins.studio.pipeline.web_search") as mock_web, \
-             patch("docent.bundled_plugins.studio.pipeline.paper_search") as mock_paper, \
-             patch("docent.bundled_plugins.studio.pipeline.fetch_page") as mock_fetch:
-            mock_web.return_value = [
-                {"title": "Web Result", "url": "https://example.com", "snippet": "A snippet"},
-            ]
-            mock_paper.return_value = []
-            mock_fetch.return_value = ""
-
-            oc = _make_oc_client({
-                "planner": PLANNER_JSON,
-                "gap_eval": GAP_SUFFICIENT_JSON,
-                "writer": WRITER_OUTPUT,
-                "verifier": VERIFIER_OUTPUT,
-                "reviewer": REVIEWER_OUTPUT,
-            })
-
-            result, events = _drain(run_deep("climate change", oc, tavily_api_key="tvly-test"))
+        oc = _make_oc_client({
+            "planner": PLANNER_JSON,
+            "gap_eval": GAP_SUFFICIENT_JSON,
+            "writer": WRITER_OUTPUT,
+            "verifier": VERIFIER_OUTPUT,
+            "reviewer": REVIEWER_OUTPUT,
+        })
+        result, events = _drain(
+            run_deep("climate change", oc, tavily_api_key="tvly-test", adapter=_fake_adapter())
+        )
 
         assert result["ok"] is True
-        # Should have a warning event about fallback
-        # Pipeline emits phase="tavily" level="warn" on Tavily failure fallback
         fallback_events = [e for e in events if e.phase == "tavily" and e.level == "warn"]
         assert len(fallback_events) >= 1
 
     def test_deep_no_tavily_key_uses_manual(self):
         """When no Tavily key, run_deep uses the manual pipeline."""
-        with patch("docent.bundled_plugins.studio.pipeline.web_search") as mock_web, \
-             patch("docent.bundled_plugins.studio.pipeline.paper_search") as mock_paper, \
-             patch("docent.bundled_plugins.studio.pipeline.fetch_page") as mock_fetch:
-            mock_web.return_value = [
-                {"title": "Web Result", "url": "https://example.com", "snippet": "A snippet"},
-            ]
-            mock_paper.return_value = []
-            mock_fetch.return_value = ""
-
-            oc = _make_oc_client({
-                "planner": PLANNER_JSON,
-                "gap_eval": GAP_SUFFICIENT_JSON,
-                "writer": WRITER_OUTPUT,
-                "verifier": VERIFIER_OUTPUT,
-                "reviewer": REVIEWER_OUTPUT,
-            })
-
-            result, _ = _drain(run_deep("climate change", oc, tavily_api_key=None))
+        oc = _make_oc_client({
+            "planner": PLANNER_JSON,
+            "gap_eval": GAP_SUFFICIENT_JSON,
+            "writer": WRITER_OUTPUT,
+            "verifier": VERIFIER_OUTPUT,
+            "reviewer": REVIEWER_OUTPUT,
+        })
+        result, _ = _drain(run_deep("climate change", oc, tavily_api_key=None, adapter=_fake_adapter()))
 
         assert result["ok"] is True

@@ -43,13 +43,28 @@ docent/
 │       ├── tools/              # Flat single-file tools (auto-discovered; _ prefix = skipped)
 │       │   └── __init__.py
 │       ├── bundled_plugins/    # Multi-module first-party tools (packaged with Docent)
-│       │   └── reading/        # Reading queue tool (the first bundled plugin)
-│       │       ├── __init__.py         # Re-exports ReadingQueue
-│       │       ├── reading.py          # ReadingQueue Tool class + all actions
-│       │       ├── reading_store.py    # ReadingQueueStore — persistence + state recompute
-│       │       ├── mendeley_client.py  # In-process MCP client facade (list_folders, list_documents)
-│       │       ├── mendeley_cache.py   # File-backed read-through cache (TTL 300s / 24h for folder ids)
-│       │       └── reading_notify.py   # Startup deadline check (daily dedup)
+│       │   ├── reading/        # Reading queue tool (Mendeley-backed, deadline tracking)
+│       │   │   ├── __init__.py         # Re-exports ReadingQueue
+│       │   │   ├── reading.py          # ReadingQueue Tool class + all actions
+│       │   │   ├── models.py           # Schemas — Literal status/type, YYYY-MM-DD deadline validation
+│       │   │   ├── reading_store.py    # ReadingQueueStore — atomic JSON writes, file lock, state recompute
+│       │   │   ├── mendeley_client.py  # In-process MCP client facade (list_folders, list_documents)
+│       │   │   ├── mendeley_cache.py   # File-backed read-through cache (TTL 300s / 24h for folder ids)
+│       │   │   └── reading_notify.py   # Startup deadline check (daily dedup)
+│       │   └── studio/         # Research workflows (deep research, lit review, peer review, NotebookLM)
+│       │       ├── __init__.py         # StudioTool class + all actions; path-validates read_output/save_synthesis
+│       │       ├── models.py           # Schemas — Literal output, backend validator against _BACKEND_ENUM
+│       │       ├── pipeline.py         # 6-stage manual pipeline; accepts SearchAdapter for DI
+│       │       ├── search_adapter.py   # SearchAdapter Protocol + DefaultSearchAdapter + FakeSearchAdapter
+│       │       ├── search.py           # Concrete: Tavily web search, Semantic Scholar, arXiv, page fetch
+│       │       ├── free_research.py    # Tavily Research API primary path (replaces stages 1-5)
+│       │       ├── _notebook.py        # NotebookLM push pipeline (to-notebook action)
+│       │       ├── feynman.py          # Feynman CLI wrapper
+│       │       ├── backend.py          # StudioBackend Protocol (OcClient, FeynmanBackend)
+│       │       ├── oc_client.py        # OpenCode in-process client
+│       │       ├── alphaxiv_client.py  # alphaXiv SDK wrapper
+│       │       ├── scholarly_client.py # Google Scholar / Semantic Scholar wrapper
+│       │       └── agents/             # Prompt templates for each pipeline stage
 │       └── utils/
 │           ├── paths.py        # XDG-style paths for cache, config, data
 │           └── prompt.py       # prompt_for_path with quote-strip + validation
@@ -217,4 +232,93 @@ uv run docent --version
 ```
 
 That's the whole setup.
+
+---
+
+## Layer 9: MCP Adapter (`docent serve`)
+
+`mcp_server.py` exposes every registered tool as an MCP tool over stdio.
+
+- **Tool naming**: `{tool}__{action}` with hyphens replaced by underscores (e.g. `reading__sync_from_mendeley`).
+- **Dispatch**: `invoke_action(tool, action, args)` → drains generator actions and serialises the final result as JSON.
+- **Serialisation**: `serialize_result()` lives in `core.invoke` and is shared by both the MCP and FastAPI surfaces — neither imports from the other.
+- **Consent**: Studio research actions emit suggested next steps (not mandatory commands) so the agent can ask the user before proceeding.
+- **Path safety**: `studio.read_output` and `studio.save_synthesis` validate that file paths are under `research.output_dir` or the Docent home dir before reading/writing.
+
+---
+
+## Layer 10: Web UI (`docent ui`)
+
+`ui_server.py` is a FastAPI app served on `localhost:7432`. The frontend is a Next.js static export in `ui_dist/`, bundled into the wheel.
+
+**Surfaces:**
+- `/api/action` — dispatches reading queue actions via `invoke_action_for_ui` (from `core.invoke`, not `mcp_server`).
+- `/api/studio/*` — SSE streaming for in-process studio runs; WebSocket for subprocess-based runs.
+- `/api/fs/read` (GET) — reads a file for Markdown preview; restricted to approved roots.
+- `/api/fs/open` (POST) — opens a file/folder in the OS file manager; restricted to approved roots.
+- `/api/config` (GET/POST) — reads/writes config settings.
+- `/api/doctor` — health checks.
+- `/api/opencode/*` — start/stop the OpenCode subprocess.
+
+**Security model (localhost-only):**
+- `_LocalhostGuard` middleware rejects any request whose `Origin` header is not `localhost` or `127.0.0.1`. This prevents malicious web pages from making cross-site requests to the UI server.
+- `_check_approved_path()` validates all file-path inputs against `research.output_dir` and the Docent home directory before reading or opening.
+- `/api/fs/open` is POST-only (not GET) so standard links can't trigger it.
+- Audit logging (`~/.docent/audit.log`) records sensitive operations: file open, config write, queue clear, OpenCode start/stop.
+- Bind address defaults to `127.0.0.1` — the server is never exposed beyond localhost without explicit configuration.
+
+**Studio action mapping** (`_parse_studio_body`):
+- Single source of truth for converting the UI form state into either `run_action` kwargs (in-process SSE) or CLI argv (subprocess WebSocket). Adding a new studio action requires editing only `_parse_studio_body` and `_args_to_cli`.
+
+---
+
+## Layer 11: Search Adapter (pipeline DI)
+
+`studio/search_adapter.py` defines a `SearchAdapter` Protocol with four methods: `web_search`, `paper_search`, `academic_search_parallel`, `fetch_page`.
+
+- **`DefaultSearchAdapter`** wraps the concrete functions in `search.py`. Production code creates one implicitly when `adapter=None`.
+- **`FakeSearchAdapter`** returns pre-configured lists — no network I/O. Unit tests pass it directly to `run_deep`/`run_lit` instead of monkeypatching individual module-level functions.
+- The adapter is threaded through `_run_with_tavily_fallback → _run_pipeline` as a keyword argument, making the search seam explicit and injectable.
+
+---
+
+## Layer 12: Test Taxonomy
+
+| Mark | Meaning | Run by default? |
+|------|---------|-----------------|
+| (none) | Unit test — no real I/O, all external calls mocked or faked | Yes |
+| `@pytest.mark.integration` | Requires real network or external service | No — `-m not integration` |
+| `@pytest.mark.eval` | Slow golden-set evaluation against real LLM output | No — `-m not eval` |
+
+A `_blocked_connect` socket guard in `conftest.py` raises `OSError` if a unit test accidentally opens a real external socket connection. Tests marked `integration` or `eval` are exempt.
+
+**Irreversible actions (cannot be undone from the CLI):**
+
+| Tool | Action | Effect |
+|------|--------|--------|
+| `reading` | `queue-clear --yes` | Deletes all queue entries |
+| `reading` | `done` | Sets `finished` timestamp (preserved across edits) |
+| `reading` | `start` | Sets `started` timestamp |
+| `reading` | `remove` | Marks entry `removed` (soft delete) |
+| `studio` | `save-synthesis` | Writes a new file to `output_dir` |
+
+---
+
+## Studio Backend Matrix
+
+| Backend | What it does | Via MCP? | Via terminal? | Key required |
+|---------|-------------|----------|---------------|--------------|
+| `free` | Tavily + Semantic Scholar aggregation; YOU synthesise | ✓ | ✓ | Tavily (optional, falls back to DDG) |
+| `docent` | 6-stage AI pipeline via OpenCode | ✗ (timeout) | ✓ | Provider API key |
+| `feynman` | Full Feynman CLI deep research | ✗ (timeout) | ✓ | Feynman credits |
+| `groq` | LiteLLM → Groq | ✗ (timeout) | ✓ | `GROQ_API_KEY` |
+| `gemini` | LiteLLM → Gemini | ✗ (timeout) | ✓ | `GEMINI_API_KEY` |
+| `openrouter` | LiteLLM → OpenRouter | ✗ (timeout) | ✓ | `OPENROUTER_API_KEY` |
+| `anthropic` | LiteLLM → Anthropic | ✗ (timeout) | ✓ | `ANTHROPIC_API_KEY` |
+| `openai` | LiteLLM → OpenAI | ✗ (timeout) | ✓ | `OPENAI_API_KEY` |
+| `ollama` | LiteLLM → local Ollama | ✗ (timeout) | ✓ | None |
+| `lm_studio` | LiteLLM → LM Studio | ✗ (timeout) | ✓ | None |
+| `local` | LiteLLM → custom base URL | ✗ (timeout) | ✓ | None |
+
+**Via MCP means**: a single tool call completes before the MCP connection times out. Only `free` reliably does this; all AI backends run a multi-minute pipeline. For AI backends, instruct users to run `docent studio <action> --backend <name> --topic "..."` in their terminal instead.
 

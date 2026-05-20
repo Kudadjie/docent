@@ -70,4 +70,5 @@ testpaths = ["tests"]
 addopts = "-q"
 markers = [
     "eval: slow golden-set eval tests (deselect with '-m not eval')",
+    "integration: tests that require real network access or external services (deselect with '-m not integration')",
 ]
