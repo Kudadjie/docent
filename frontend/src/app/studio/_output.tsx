@@ -141,9 +141,12 @@ function LogStream({ logs, status }: { logs: LogEntry[]; status: string }) {
   const [collapsed, setCollapsed] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
 
+  /* eslint-disable react-hooks/set-state-in-effect */
+  // Intentional: auto-expand log when a run starts
   useEffect(() => {
     if (status === 'running') setCollapsed(false);
   }, [status]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
@@ -305,7 +308,7 @@ function ResultResearchSuccess({ topic, action, dest, doneData, onSaveAsPreset, 
           </button>
         )}
         {outputFile && (
-          <button onClick={() => fetch('/api/fs/open?path=' + encodeURIComponent(outputFile))}
+          <button onClick={() => fetch('/api/fs/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: outputFile }) })}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg2)', padding: '4px 10px', borderRadius: 9999, background: 'transparent', border: '1px solid var(--border-md)', cursor: 'pointer' }}>
             <ExternalLink size={12} strokeWidth={1.5} /> Open output folder
           </button>
@@ -539,26 +542,26 @@ function ResultConfigSet({ cfgKey }: { cfgKey: string }) {
   );
 }
 
+function CompareCol({ label, items, color }: { label: string; items: string[]; color: string }) {
+  return (
+    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 600, color, letterSpacing: '0.6px', textTransform: 'uppercase' }}>
+        <span style={{ width: 5, height: 5, borderRadius: '50%', background: color }} />{label}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {items.map((it, i) => (
+          <div key={i} style={{ padding: '10px 12px', borderRadius: 8, background: 'var(--bg-subtle)', border: '1px solid var(--border)', fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg2)', lineHeight: 1.5 }}>{it}</div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ResultCompare({ a, b }: { a: string; b: string }) {
   const aOnly  = ['Uses Bayesian downscaling with priors trained on 1979–2020 reanalysis', 'Validation against Sandy, Florence, Ian (3 storms)', 'Open-source GPL-3 release of surrogate model'];
   const shared = ['Tropical cyclone synthetic tracks coupled with barotropic surge solver', 'Reports 12–18% skill improvement over operational baselines', 'Identifies tide-surge-wave coupling as primary bias source'];
   const bOnly  = ['Ensemble of 10k members vs. 1k in A', 'No code release; results table only', 'Includes inland riverine flooding component'];
   const contradictions = [{ label: 'Surrogate model resolution', a: 'A: GPU-only above 4km; CPU fallback degrades quality', b: 'B: claims CPU-only inference is "fully equivalent" at any resolution' }];
-
-  function Col({ label, items, color }: { label: string; items: string[]; color: string }) {
-    return (
-      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 600, color, letterSpacing: '0.6px', textTransform: 'uppercase' }}>
-          <span style={{ width: 5, height: 5, borderRadius: '50%', background: color }} />{label}
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {items.map((it, i) => (
-            <div key={i} style={{ padding: '10px 12px', borderRadius: 8, background: 'var(--bg-subtle)', border: '1px solid var(--border)', fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg2)', lineHeight: 1.5 }}>{it}</div>
-          ))}
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -576,9 +579,9 @@ function ResultCompare({ a, b }: { a: string; b: string }) {
         ))}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, alignItems: 'flex-start' }}>
-        <Col label="Only in A" items={aOnly}  color={BLUE} />
-        <Col label="Shared"    items={shared} color={BRAND_DEEP} />
-        <Col label="Only in B" items={bOnly}  color={BRAND_DEEP} />
+        <CompareCol label="Only in A" items={aOnly}  color={BLUE} />
+        <CompareCol label="Shared"    items={shared} color={BRAND_DEEP} />
+        <CompareCol label="Only in B" items={bOnly}  color={BRAND_DEEP} />
       </div>
       {contradictions.length > 0 && (
         <div>
@@ -757,7 +760,7 @@ export function OutputsPanel({ onClose }: { onClose: () => void }) {
       <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
         <span style={{ flex: 1, fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600, color: 'var(--fg1)' }}>Research outputs</span>
         {outputDir && (
-          <button onClick={() => fetch('/api/fs/open?path=' + encodeURIComponent(outputDir))}
+          <button onClick={() => fetch('/api/fs/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: outputDir }) })}
             title="Open output folder"
             style={{ width: 24, height: 24, border: 'none', background: 'transparent', color: 'var(--fg4)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 5 }}>
             <ExternalLink size={12} strokeWidth={1.5} />

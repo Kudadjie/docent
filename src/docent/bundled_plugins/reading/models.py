@@ -1,7 +1,10 @@
 """Reading queue models — Pydantic schemas for inputs and results."""
+from __future__ import annotations
 
+import re
+from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from docent.core.shapes import (
     DataTableShape,
@@ -14,15 +17,21 @@ from docent.core.shapes import (
 from .reading_store import BannerCounts
 
 
+EntryStatus = Literal["queued", "reading", "done", "removed"]
+EntryType = Literal["paper", "book", "book_chapter"]
+
+_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
 class QueueEntry(BaseModel):
     id: str
     title: str = ""        # Mendeley-owned snapshot; overlay refreshes on read.
     authors: str = ""      # Mendeley-owned snapshot; overlay refreshes on read.
     year: int | None = None
     doi: str | None = None
-    type: str = "paper"   # paper | book | book_chapter; mapped from Mendeley document type on sync.
+    type: EntryType = "paper"
     added: str             # ISO date
-    status: str = "queued"
+    status: EntryStatus = "queued"
     order: int = 0         # 1-based position in the reading queue; 0 = unordered.
     category: str | None = None   # Mendeley sub-collection path, e.g. "CES701" or "CES701/Topic"; None = root.
     deadline: str | None = None   # ISO date (YYYY-MM-DD), user-settable.
@@ -31,6 +40,14 @@ class QueueEntry(BaseModel):
     mendeley_id: str | None = None
     started: str | None = None    # ISO timestamp when status -> reading.
     finished: str | None = None   # ISO timestamp when status -> done.
+
+    @field_validator("deadline", mode="before")
+    @classmethod
+    def _validate_deadline(cls, v: object) -> object:
+        if v and isinstance(v, str) and v.strip():
+            if not _ISO_DATE_RE.match(v.strip()):
+                raise ValueError(f"deadline must be YYYY-MM-DD, got {v!r}")
+        return v
 
     @model_validator(mode="after")
     def _require_identifier(self) -> "QueueEntry":
@@ -77,24 +94,40 @@ class StatsInputs(BaseModel):
 
 class EditInputs(BaseModel):
     id: str = Field(..., description="Entry id to edit.")
-    status: str | None = Field(None, description="New status (queued|reading|done).")
+    status: Literal["queued", "reading", "done"] | None = Field(None, description="New status (queued|reading|done).")
     order: int | None = Field(None, description="New reading order position (1 = read first).")
-    type: str | None = Field(None, description="Entry type: paper | book | book_chapter.")
+    type: EntryType | None = Field(None, description="Entry type: paper | book | book_chapter.")
     category: str | None = Field(None, description="Override category (e.g. 'CES701'). Normally auto-detected from the Mendeley sub-collection on sync.")
     deadline: str | None = Field(None, description="New deadline (YYYY-MM-DD) or '' to clear.")
     notes: str | None = Field(None, description="New notes.")
     tags: list[str] | None = Field(None, description="Replace tag list.")
+
+    @field_validator("deadline", mode="before")
+    @classmethod
+    def _validate_deadline(cls, v: object) -> object:
+        if v and isinstance(v, str) and v.strip():
+            if not _ISO_DATE_RE.match(v.strip()):
+                raise ValueError(f"deadline must be YYYY-MM-DD, got {v!r}")
+        return v
 
 
 class SetDeadlineInputs(BaseModel):
     id: str = Field(..., description="Entry id to update.")
     deadline: str = Field(..., description="ISO date deadline (YYYY-MM-DD). Pass '' to clear the deadline.")
 
+    @field_validator("deadline", mode="before")
+    @classmethod
+    def _validate_deadline(cls, v: object) -> object:
+        if v and isinstance(v, str) and v.strip():
+            if not _ISO_DATE_RE.match(v.strip()):
+                raise ValueError(f"deadline must be YYYY-MM-DD, got {v!r}")
+        return v
+
 
 class ExportInputs(BaseModel):
-    format: str = Field("json", description="Output format: json | markdown.")
+    format: Literal["json", "markdown"] = Field("json", description="Output format: json | markdown.")
     category: str | None = Field(None, description="Filter by exact category path (e.g. 'CES701' or 'CES701/Topic').")
-    status: str | None = Field(None, description="Filter by status (queued|reading|done).")
+    status: EntryStatus | None = Field(None, description="Filter by status (queued|reading|done|removed).")
 
 
 class ConfigShowInputs(BaseModel):

@@ -1,15 +1,13 @@
 # CONTEXT - resume hint for next session
 
-**Current Task:** UI Tweak Followup.txt — all 21 items shipped (session 5).
+**Current Task:** UI Tweak Followup (21 items) + live streaming shipped. Commit fd9f6b8 on dev.
 
 **Key Decisions:**
-- Docs page: Ecosystem + Plugin Guide sections added; maxWidth removed
-- Settings: 2-column grid layout; gradient bleeds full page
-- react-markdown used for DocPreview + OutputsPanel (md-preview CSS class)
-- Sidebar logo: 48px height (matches StatusBanner) for unified top bar visual
-- DnD tab reorder: native HTML5 drag, Dashboard pinned, localStorage persists
+- Live streaming: WebSocket + CLI subprocess pipe (`DOCENT_UI_SUBPROCESS=1`). Structured `\x00DOCENT_RESULT\x00` marker in stdout gives output_file without scraping wrapped Rich output.
+- Phase log colours: violet=search, blue=write/plan, green=compile, teal=done, amber=warn, red=error.
+- Phase filter: `^[a-z][a-z0-9_]*$` drops Feynman update notices and all non-pipeline stdout noise.
 
 **Next Steps:**
-1. Run v1.2.0 UI tests from `memory/tasks/v120_ui_tests.md`
-2. Investigate #3 (real-time streaming) — test a Feynman/Docent run; verify ProgressEvents emit mid-pipeline
-3. Build static export: `python scripts/build_ui.py`, then tag v1.2.0
+1. Run v1.2.0 UI tests (`memory/tasks/v120_ui_tests.md`) — all UI items shipped, streaming works
+2. Tag v1.2.0 and build release wheel: `python scripts/build_ui.py` then tag
+3. Always use `http://localhost:7432` (not :3000) — the build step copies to `ui_dist`

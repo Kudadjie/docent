@@ -8,6 +8,15 @@ from pathlib import Path
 from docent.config import write_setting
 from docent.core import Context, ProgressEvent, Tool, action, register_tool
 
+
+def _path_under(path: Path, root: Path) -> bool:
+    """Return True if *path* is equal to or under *root* (both must be resolved)."""
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
 from ._notebook import _nlm_push, _rank_sources, _find_sources_path, ToNotebookInputs, ToNotebookResult  # noqa: F401
 from .feynman import (
     FeynmanNotFoundError,
@@ -816,7 +825,29 @@ class StudioTool(Tool):
     )
     def read_output(self, inputs: ReadOutputInputs, context: Context) -> ReadOutputResult:  # noqa: ARG002
         from pathlib import Path
-        p = Path(inputs.output_file)
+        from docent.config import load_settings
+        from docent.utils.paths import root_dir
+
+        p = Path(inputs.output_file).expanduser()
+
+        # Path must be under research.output_dir or the Docent home directory
+        try:
+            settings = load_settings()
+            output_dir = settings.research.output_dir.expanduser().resolve()
+        except Exception:
+            output_dir = None
+        docent_home = root_dir().resolve()
+        resolved = p.resolve()
+        approved = [r for r in [output_dir, docent_home] if r is not None]
+        if not any(_path_under(resolved, root) for root in approved):
+            return ReadOutputResult(
+                ok=False,
+                output_file=inputs.output_file,
+                content="",
+                word_count=0,
+                message=f"Access denied: {inputs.output_file} is outside approved Docent output directories.",
+            )
+
         if not p.exists():
             return ReadOutputResult(
                 ok=False,
@@ -852,8 +883,29 @@ class StudioTool(Tool):
     def save_synthesis(self, inputs: SaveSynthesisInputs, context: Context) -> SaveSynthesisResult:  # noqa: ARG002
         from pathlib import Path
         import datetime
+        from docent.config import load_settings
+        from docent.utils.paths import root_dir
 
-        source = Path(inputs.source_output_file)
+        source = Path(inputs.source_output_file).expanduser()
+
+        # The source file must be under an approved root — deny traversal attempts
+        try:
+            settings = load_settings()
+            output_dir = settings.research.output_dir.expanduser().resolve()
+        except Exception:
+            output_dir = None
+        docent_home = root_dir().resolve()
+        approved = [r for r in [output_dir, docent_home] if r is not None]
+        source_resolved = source.resolve() if source.exists() else source.parent.resolve()
+        if not any(_path_under(source_resolved, root) for root in approved):
+            return SaveSynthesisResult(
+                ok=False,
+                saved_file="",
+                summary="",
+                word_count=0,
+                message=f"Access denied: {inputs.source_output_file} is outside approved Docent output directories.",
+            )
+
         folder = source.parent if source.parent.exists() else Path.cwd()
         stem = source.stem.removesuffix("-free") if source.stem.endswith("-free") else source.stem
         timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")

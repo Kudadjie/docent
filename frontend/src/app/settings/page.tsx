@@ -541,15 +541,6 @@ export default function SettingsPage() {
     }
   }
 
-  useEffect(() => {
-    fetch('/api/config')
-      .then(r => r.json())
-      .then((d: ConfigData) => setConfig(d))
-      .catch(() => {});
-
-    runDoctor();
-  }, []);
-
   async function runDoctor() {
     setLoadingDoctor(true);
     signalDot('working');
@@ -574,6 +565,18 @@ export default function SettingsPage() {
       setLoadingDoctor(false);
     }
   }
+
+  /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
+  // runDoctor is stable (function declaration, not recreated per render)
+  useEffect(() => {
+    fetch('/api/config')
+      .then(r => r.json())
+      .then((d: ConfigData) => setConfig(d))
+      .catch(() => {});
+
+    runDoctor();
+  }, []);
+  /* eslint-enable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 
   async function handleSaveReading(key: keyof ReadingConfig, value: string) {
     signalDot('working');

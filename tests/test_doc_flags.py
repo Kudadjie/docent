@@ -36,11 +36,17 @@ def _schema_flags() -> set[str]:
         actions = collect_actions(tool_cls)
         if actions:
             for _, (_, meta) in actions.items():
-                for fname in meta.input_schema.model_fields:
-                    flags.add(fname.replace("_", "-"))
+                for fname, finfo in meta.input_schema.model_fields.items():
+                    flag = fname.replace("_", "-")
+                    flags.add(flag)
+                    if finfo.annotation is bool:
+                        flags.add(f"no-{flag}")
         elif tool_cls.input_schema:
-            for fname in tool_cls.input_schema.model_fields:
-                flags.add(fname.replace("_", "-"))
+            for fname, finfo in tool_cls.input_schema.model_fields.items():
+                flag = fname.replace("_", "-")
+                flags.add(flag)
+                if finfo.annotation is bool:
+                    flags.add(f"no-{flag}")
     return flags
 
 

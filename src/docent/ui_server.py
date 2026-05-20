@@ -2,25 +2,29 @@
 
 import asyncio
 import json
+import logging
 import os
 import subprocess
 import sys
 import tomllib
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import httpx
 import uvicorn
-from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi import FastAPI, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from docent.core.invoke import run_action
 from docent.mcp_server import invoke_action, _serialize
 from docent.utils.paths import root_dir
 
 UI_DIST = Path(__file__).parent / "ui_dist"
+
+_audit_logger = logging.getLogger("docent.ui.audit")
 
 
 def _docent_dir() -> Path:
@@ -42,7 +46,53 @@ def _config_file() -> Path:
 def _user_file() -> Path:
     return root_dir() / "user.json"
 
+
+def _path_under(path: Path, root: Path) -> bool:
+    """Return True if *path* is equal to or under *root* (both must be resolved)."""
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+async def _check_approved_path(path: Path) -> str | None:
+    """Return None if path is under an approved Docent root, else an error string."""
+    try:
+        resolved = path.expanduser().resolve()
+    except Exception:
+        return "Invalid path"
+    approved: list[Path] = [_docent_dir().resolve()]
+    try:
+        from docent.config import load_settings
+        settings = await asyncio.to_thread(load_settings)
+        approved.append(settings.research.output_dir.expanduser().resolve())
+    except Exception:
+        pass
+    if any(_path_under(resolved, root) for root in approved):
+        return None
+    return f"Access denied: path is outside approved Docent directories"
+
+
+def _audit(action: str, detail: str) -> None:
+    _audit_logger.info("%s | %s", action, detail)
+
+
+class _LocalhostGuard(BaseHTTPMiddleware):
+    """Reject requests whose Origin header points to a non-localhost host."""
+
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        origin = request.headers.get("origin", "")
+        if origin and not (
+            origin.startswith("http://localhost")
+            or origin.startswith("http://127.0.0.1")
+        ):
+            return JSONResponse({"error": "Forbidden: non-localhost origin"}, status_code=403)
+        return await call_next(request)
+
+
 app = FastAPI(docs_url=None, redoc_url=None)
+app.add_middleware(_LocalhostGuard)
 
 
 def _read_json(path: Path, default: Any) -> Any:
@@ -216,6 +266,7 @@ async def post_action(body: ActionBody) -> JSONResponse:
                 status_code=400,
             )
         args["yes"] = True
+        _audit("queue-clear", "confirmed")
 
     try:
         result = await asyncio.to_thread(invoke_action, tool_name, action_name, args)
@@ -258,6 +309,7 @@ class ConfigBody(BaseModel):
 
 @app.post("/api/config")
 async def post_config(body: ConfigBody) -> JSONResponse:
+    _audit("config-write", f"section={body.section} key={body.key}")
     if body.section == "reading":
         try:
             await asyncio.to_thread(
@@ -759,25 +811,40 @@ async def _stream_studio_run(studio_action: str, args: dict[str, Any]):
 @app.get("/api/fs/read")
 async def fs_read(path: str = Query(...)) -> JSONResponse:
     """Read a text file from the local filesystem (for Markdown preview)."""
+    p = Path(path)
+    denied = await _check_approved_path(p)
+    if denied:
+        _audit("fs_read.denied", path)
+        return JSONResponse({"error": denied}, status_code=403)
     try:
-        p = Path(path).expanduser()
-        if not p.is_file():
+        resolved = p.expanduser()
+        if not resolved.is_file():
             return JSONResponse({"error": f"File not found: {path}"}, status_code=404)
-        size = p.stat().st_size
+        size = resolved.stat().st_size
         if size > 500_000:
             return JSONResponse({"error": "File too large to preview (>500 KB)"}, status_code=400)
-        content = p.read_text(encoding="utf-8", errors="replace")
+        content = resolved.read_text(encoding="utf-8", errors="replace")
         return JSONResponse({"content": content})
     except Exception as exc:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
-@app.get("/api/fs/open")
-async def fs_open(path: str = Query(...)) -> JSONResponse:
+class FsOpenBody(BaseModel):
+    path: str
+
+
+@app.post("/api/fs/open")
+async def fs_open(body: FsOpenBody) -> JSONResponse:
     """Open a file or its parent folder in the OS file manager."""
+    p = Path(body.path)
+    denied = await _check_approved_path(p)
+    if denied:
+        _audit("fs_open.denied", body.path)
+        return JSONResponse({"error": denied}, status_code=403)
     try:
-        p = Path(path).expanduser()
-        target = p if p.is_dir() else p.parent
+        resolved = p.expanduser()
+        target = resolved if resolved.is_dir() else resolved.parent
+        _audit("fs_open", str(target))
         if sys.platform == "win32":
             os.startfile(str(target))  # type: ignore[attr-defined]
         elif sys.platform == "darwin":
@@ -864,6 +931,7 @@ _opencode_proc: Optional[subprocess.Popen] = None  # type: ignore[type-arg]
 @app.post("/api/opencode/start")
 async def opencode_start() -> JSONResponse:
     global _opencode_proc
+    _audit("opencode-start", "requested")
     import shutil
     # Check if already reachable
     try:
@@ -937,6 +1005,7 @@ async def opencode_start() -> JSONResponse:
 @app.post("/api/opencode/stop")
 async def opencode_stop() -> JSONResponse:
     global _opencode_proc
+    _audit("opencode-stop", "requested")
     if _opencode_proc is not None:
         try:
             _opencode_proc.terminate()
@@ -1170,6 +1239,18 @@ def run_server(host: str = "127.0.0.1", port: int = 7432) -> None:
     from docent.tools import discover_tools
     discover_tools()
     load_plugins()
+
+    # Set up audit log
+    audit_log_path = _docent_dir() / "audit.log"
+    try:
+        audit_log_path.parent.mkdir(parents=True, exist_ok=True)
+        handler = logging.FileHandler(audit_log_path, encoding="utf-8")
+        handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
+        _audit_logger.addHandler(handler)
+        _audit_logger.setLevel(logging.INFO)
+    except Exception:
+        pass
+
     uvicorn.run(
         app,
         host=host,

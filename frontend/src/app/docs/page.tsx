@@ -363,7 +363,7 @@ class MyPlugin(Tool):
         yield ProgressEvent(phase="done", message="Finished")`}</CodeBlock>
               <SubHeading>Registering a plugin</SubHeading>
               <Prose>
-                Add your plugin to <Code>pyproject.toml</Code> under <Code>[project.entry-points."docent.plugins"]</Code>:
+                Add your plugin to <Code>pyproject.toml</Code> under <Code>[project.entry-points.&quot;docent.plugins&quot;]</Code>:
               </Prose>
               <CodeBlock>{`[project.entry-points."docent.plugins"]
 my_plugin = "my_plugin:MyPlugin"`}</CodeBlock>

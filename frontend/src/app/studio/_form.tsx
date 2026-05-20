@@ -789,6 +789,8 @@ export function CmdKPalette({ onClose, onSelect, recents = [] }: {
     ? ALL_ACTIONS.filter(a => a.label.toLowerCase().includes(ql) || a.group.toLowerCase().includes(ql) || (a.desc ?? '').toLowerCase().includes(ql))
     : allWithRecent;
 
+  // Intentional: reset list cursor when query changes
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setIdx(0); }, [q]);
 
   useEffect(() => {

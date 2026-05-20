@@ -385,10 +385,12 @@ class TestRunLit:
         import docent.bundled_plugins.studio.helpers as _h
         monkeypatch.setattr(_h, "_check_connectivity", lambda *a, **kw: True)
 
+    @patch("docent.bundled_plugins.studio.pipeline.academic_search_parallel")
     @patch("docent.bundled_plugins.studio.pipeline.web_search")
     @patch("docent.bundled_plugins.studio.pipeline.paper_search")
     @patch("docent.bundled_plugins.studio.pipeline.fetch_page")
-    def test_run_lit_happy_path(self, mock_fetch, mock_paper, mock_web):
+    def test_run_lit_happy_path(self, mock_fetch, mock_paper, mock_web, mock_academic):
+        mock_academic.return_value = []
         mock_web.return_value = [
             {"title": "Web Result", "url": "https://example.com", "snippet": "A snippet"},
         ]
@@ -434,10 +436,12 @@ class TestRunLit:
         assert result["ok"] is False
         assert "Search planner failed" in result["error"]
 
+    @patch("docent.bundled_plugins.studio.pipeline.academic_search_parallel")
     @patch("docent.bundled_plugins.studio.pipeline.web_search")
     @patch("docent.bundled_plugins.studio.pipeline.paper_search")
     @patch("docent.bundled_plugins.studio.pipeline.fetch_page")
-    def test_run_lit_uses_lit_prompts(self, mock_fetch, mock_paper, mock_web):
+    def test_run_lit_uses_lit_prompts(self, mock_fetch, mock_paper, mock_web, mock_academic):
+        mock_academic.return_value = []
         mock_web.return_value = [
             {"title": "Web Result", "url": "https://example.com", "snippet": "A snippet"},
         ]
@@ -463,10 +467,12 @@ class TestRunLit:
         assert "climate change" in first_prompt
         assert "literature review" in first_prompt.lower()
 
+    @patch("docent.bundled_plugins.studio.pipeline.academic_search_parallel")
     @patch("docent.bundled_plugins.studio.pipeline.web_search")
     @patch("docent.bundled_plugins.studio.pipeline.paper_search")
     @patch("docent.bundled_plugins.studio.pipeline.fetch_page")
-    def test_run_lit_writer_failure(self, mock_fetch, mock_paper, mock_web):
+    def test_run_lit_writer_failure(self, mock_fetch, mock_paper, mock_web, mock_academic):
+        mock_academic.return_value = []
         mock_web.return_value = [
             {"title": "Web Result", "url": "https://example.com", "snippet": "A snippet"},
         ]
