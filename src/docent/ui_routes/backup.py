@@ -73,6 +73,29 @@ async def list_drive_backups() -> JSONResponse:
 
 # ── Run backup ────────────────────────────────────────────────────────────────
 
+@router.post("/api/backup/install-deps")
+async def install_backup_deps() -> JSONResponse:
+    """Install the optional google-api-python-client deps into the running Python env."""
+    import sys
+    import subprocess as _sp
+
+    try:
+        result = await asyncio.to_thread(
+            lambda: _sp.run(
+                [sys.executable, "-m", "pip", "install", "docent-cli[backup]"],
+                capture_output=True, text=True, timeout=120,
+            )
+        )
+        if result.returncode == 0:
+            return JSONResponse({"ok": True})
+        return JSONResponse(
+            {"ok": False, "error": (result.stderr or result.stdout or "pip failed").strip()[-300:]},
+            status_code=500,
+        )
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
+
 class SetupBody(BaseModel):
     credentials_json: str   # raw JSON string from the downloaded credentials file
 

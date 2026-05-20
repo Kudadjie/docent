@@ -545,6 +545,7 @@ export default function SettingsPage() {
   const [showSetup, setShowSetup] = useState(false);
   const [credentialsText, setCredentialsText] = useState('');
   const [savingCreds, setSavingCreds] = useState(false);
+  const [installingDeps, setInstallingDeps] = useState(false);
   const dotResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function signalDot(state: DotState) {
@@ -648,6 +649,23 @@ export default function SettingsPage() {
       }
     } catch { setToast({ type: 'error', message: 'Restore request failed' }); signalDot('error'); }
     finally { setRestoringId(null); }
+  }
+
+  async function handleInstallDeps() {
+    setInstallingDeps(true); signalDot('working');
+    try {
+      const res = await fetch('/api/backup/install-deps', { method: 'POST' });
+      const data = await res.json() as { ok: boolean; error?: string };
+      if (data.ok) {
+        setToast({ type: 'success', message: 'Dependencies installed.' });
+        signalDot('done');
+        fetch('/api/backup/status').then(r => r.json()).then(setBackupStatus).catch(() => {});
+      } else {
+        setToast({ type: 'error', message: data.error ?? 'Installation failed' });
+        signalDot('error');
+      }
+    } catch { setToast({ type: 'error', message: 'Install request failed' }); signalDot('error'); }
+    finally { setInstallingDeps(false); }
   }
 
   async function handleSaveCredentials() {
@@ -951,12 +969,24 @@ export default function SettingsPage() {
                       ) : backupStatus.credentials_configured && !backupStatus.deps_installed ? (
                         <>
                           <AlertTriangle size={13} strokeWidth={2} color="#C37D0D" />
-                          <span style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg2)' }}>
-                            Credentials found but dependencies missing —
-                            <code style={{ fontFamily: 'var(--mono)', fontSize: 11, background: 'var(--gray100)', padding: '1px 5px', borderRadius: 4, marginLeft: 4 }}>
-                              {backupStatus.install_cmd}
-                            </code>
+                          <span style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg2)', flex: 1 }}>
+                            Credentials found but dependencies missing.
                           </span>
+                          <button
+                            onClick={handleInstallDeps}
+                            disabled={installingDeps}
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 6,
+                              fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500,
+                              color: '#fff', background: '#C37D0D',
+                              border: 'none', borderRadius: 6,
+                              padding: '4px 12px', cursor: installingDeps ? 'wait' : 'pointer',
+                              whiteSpace: 'nowrap', flexShrink: 0,
+                            }}
+                          >
+                            <RefreshCw size={11} strokeWidth={2} style={{ animation: installingDeps ? 'spin 1s linear infinite' : 'none' }} />
+                            {installingDeps ? 'Installing…' : 'Install now'}
+                          </button>
                         </>
                       ) : (
                         <>
