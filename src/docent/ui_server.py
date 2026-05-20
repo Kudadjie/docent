@@ -18,8 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from docent.core.invoke import run_action
-from docent.mcp_server import invoke_action, _serialize
+from docent.core.invoke import invoke_action_for_ui as invoke_action, run_action, serialize_result as _serialize
 from docent.utils.paths import root_dir
 
 UI_DIST = Path(__file__).parent / "ui_dist"
@@ -690,31 +689,36 @@ class StudioRunBody(BaseModel):
     cfg_val: str = ""
 
 
-def _form_to_studio_args(action_id: str, body: StudioRunBody) -> dict[str, Any]:
-    studio_action = _STUDIO_ACTION_MAP[action_id]
+def _parse_studio_body(body: StudioRunBody) -> tuple[str, dict[str, Any]] | None:
+    """Return (studio_action, args_dict) for a StudioRunBody, or None if action unknown.
+
+    Single source of truth for form→action mapping — both _form_to_studio_args and
+    _build_studio_cmd derive from here so adding a new action only requires one edit.
+    """
+    studio_action = _STUDIO_ACTION_MAP.get(body.action_id)
+    if not studio_action:
+        return None
     backend = _BACKEND_NORM.get(body.backend.lower().replace(' ', '_'), 'free')
     dest = body.dest.lower().replace(' →', '').strip()
 
     if studio_action in ('deep-research', 'lit', 'draft'):
-        return {
+        args: dict[str, Any] = {
             'topic': body.topic, 'backend': backend,
             'output': dest, 'guide_files': body.guides, 'confirmed': True,
         }
-    if studio_action in ('review', 'replicate', 'audit'):
-        return {'artifact': body.artifact, 'backend': backend, 'output': dest, 'guide_files': body.guides}
-    if studio_action == 'compare':
-        return {
+    elif studio_action in ('review', 'replicate', 'audit'):
+        args = {'artifact': body.artifact, 'backend': backend, 'output': dest, 'guide_files': body.guides}
+    elif studio_action == 'compare':
+        args = {
             'artifact_a': body.artifact_a, 'artifact_b': body.artifact_b,
             'backend': backend, 'output': dest, 'guide_files': body.guides,
         }
-    if studio_action == 'search-papers':
-        return {'query': body.query, 'max_results': body.max_results}
-    if studio_action == 'scholarly-search':
-        return {'query': body.query, 'max_results': body.max_results}
-    if studio_action == 'get-paper':
-        return {'arxiv_id': body.arxiv_id}
-    if studio_action == 'to-notebook':
-        return {
+    elif studio_action in ('search-papers', 'scholarly-search'):
+        args = {'query': body.query, 'max_results': body.max_results}
+    elif studio_action == 'get-paper':
+        args = {'arxiv_id': body.arxiv_id}
+    elif studio_action == 'to-notebook':
+        args = {
             'output_file': body.out_path or None,
             'sources_file': body.src_path or None,
             'max_sources': body.max_sources,
@@ -722,11 +726,20 @@ def _form_to_studio_args(action_id: str, body: StudioRunBody) -> dict[str, Any]:
             'run_quality_gate': body.gate,
             'run_perspectives': body.persp,
         }
-    if studio_action == 'config-show':
+    elif studio_action == 'config-show':
+        args = {}
+    elif studio_action == 'config-set':
+        args = {'key': body.cfg_key, 'value': body.cfg_val}
+    else:
+        args = {}
+    return studio_action, args
+
+
+def _form_to_studio_args(action_id: str, body: StudioRunBody) -> dict[str, Any]:
+    parsed = _parse_studio_body(body)
+    if parsed is None:
         return {}
-    if studio_action == 'config-set':
-        return {'key': body.cfg_key, 'value': body.cfg_val}
-    return {}
+    return parsed[1]
 
 
 async def _stream_studio_run(studio_action: str, args: dict[str, Any]):
@@ -1028,62 +1041,52 @@ async def opencode_status() -> JSONResponse:
     return JSONResponse({"running": False})
 
 
+def _args_to_cli(action: str, args: dict[str, Any]) -> list[str]:
+    """Convert run_action args dict to CLI argv for `docent studio <action>`."""
+    flags: list[str] = []
+    # Fields that appear in multiple actions — order matters for readability only.
+    for key, flag in [
+        ("topic", "--topic"), ("backend", "--backend"), ("output", "--output"),
+        ("artifact", "--artifact"), ("artifact_a", "--artifact-a"), ("artifact_b", "--artifact-b"),
+        ("query", "--query"), ("arxiv_id", "--arxiv-id"), ("key", "--key"), ("value", "--value"),
+    ]:
+        if key in args and args[key] is not None:
+            flags += [flag, str(args[key])]
+    if "guide_files" in args:
+        for g in (args["guide_files"] or []):
+            flags += ["--guide-files", g]
+    if args.get("confirmed"):
+        flags.append("--confirmed")
+    if "max_results" in args:
+        flags += ["--max-results", str(args["max_results"])]
+    if "max_sources" in args:
+        flags += ["--max-sources", str(args["max_sources"])]
+    if "sources_file" in args and args["sources_file"]:
+        flags += ["--sources-file", args["sources_file"]]
+    if "output_file" in args and args["output_file"]:
+        flags += ["--output-file", args["output_file"]]
+    # Bool flags — absent (True) = positive flag; False = --no-flag.
+    for key, flag in [
+        ("run_nlm_research", "--no-run-nlm-research"),
+        ("run_quality_gate", "--no-run-quality-gate"),
+        ("run_perspectives", "--no-run-perspectives"),
+    ]:
+        if key in args and not args[key]:
+            flags.append(flag)
+    return flags
+
+
 def _build_studio_cmd(body: StudioRunBody) -> list[str] | None:
     """Build a `docent studio <action> ...` subprocess command from the UI form body."""
     import shutil as _sh
-    action = _STUDIO_ACTION_MAP.get(body.action_id)
-    if not action:
+    parsed = _parse_studio_body(body)
+    if parsed is None:
         return None
     docent_exe = _sh.which("docent")
     if not docent_exe:
         return None
-
-    backend = _BACKEND_NORM.get(body.backend.lower().replace(" ", "_"), "free")
-    dest = body.dest.lower().replace(" →", "").strip()
-
-    cmd: list[str] = [docent_exe, "studio", action]
-
-    # Per-action arguments (mirrors _form_to_studio_args exactly)
-    if action in ("deep-research", "lit", "draft"):
-        cmd += ["--topic", body.topic, "--backend", backend, "--output", dest, "--confirmed"]
-        for g in (body.guides or []):
-            cmd += ["--guide-files", g]
-
-    elif action in ("review", "replicate", "audit"):
-        cmd += ["--artifact", body.artifact, "--backend", backend, "--output", dest]
-        for g in (body.guides or []):
-            cmd += ["--guide-files", g]
-
-    elif action == "compare":
-        cmd += ["--artifact-a", body.artifact_a, "--artifact-b", body.artifact_b,
-                "--backend", backend, "--output", dest]
-        for g in (body.guides or []):
-            cmd += ["--guide-files", g]
-
-    elif action in ("search-papers", "scholarly-search"):
-        cmd += ["--query", body.query, "--max-results", str(body.max_results)]
-
-    elif action == "get-paper":
-        cmd += ["--arxiv-id", body.arxiv_id]
-
-    elif action == "to-notebook":
-        if body.src_path:
-            cmd += ["--sources-file", body.src_path]
-        if body.out_path:
-            cmd += ["--output-file", body.out_path]
-        cmd += ["--max-sources", str(body.max_sources)]
-        if not body.nlm:
-            cmd += ["--no-run-nlm-research"]
-        if not body.gate:
-            cmd += ["--no-run-quality-gate"]
-        if not body.persp:
-            cmd += ["--no-run-perspectives"]
-
-    elif action == "config-set":
-        cmd += ["--key", body.cfg_key, "--value", body.cfg_val]
-
-    # config-show has no extra args
-    return cmd
+    action, args = parsed
+    return [docent_exe, "studio", action] + _args_to_cli(action, args)
 
 
 @app.websocket("/ws/studio/run")

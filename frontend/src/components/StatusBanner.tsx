@@ -229,8 +229,8 @@ function NotificationDropdown({
 }
 
 export default function StatusBanner({
-  dark,
-  onToggleDark,
+  dark: _dark,
+  onToggleDark: _onToggleDark,
   dotState = 'idle',
   banner,
   lastUpdated,

@@ -6,10 +6,10 @@ import {
   CheckCircle, XCircle, AlertTriangle, ExternalLink, ChevronDown, ChevronRight, Plus, X, History, Trash,
 } from 'lucide-react';
 import {
-  PHASE_LABELS, PHASE_TONE, findAction,
-  type ActionId, type ActionMeta, type FormState, type LogEntry, type Source, type RunRecord,
+  PHASE_LABELS, PHASE_TONE,
+  type ActionMeta, type FormState, type LogEntry, type Source, type RunRecord,
 } from './_shared';
-import { GhostBtn, PrimaryBtn, CodeBlock, Chip, FieldLabel, Kbd } from './_form';
+import { GhostBtn, CodeBlock, Chip, FieldLabel, Kbd } from './_form';
 
 const BRAND      = '#18E299';
 const BRAND_DEEP = '#0fa76e';

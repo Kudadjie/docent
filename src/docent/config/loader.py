@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -74,6 +75,9 @@ def write_setting(key_path: str, value: Any) -> Path:
         cursor.pop(segments[-1], None)
     else:
         cursor[segments[-1]] = value
-    with path.open("wb") as f:
+    # Atomic write: write to a sibling temp file then rename to avoid corruption on crash.
+    tmp = path.with_suffix(".toml.tmp")
+    with tmp.open("wb") as f:
         tomli_w.dump(data, f)
+    os.replace(tmp, path)
     return path

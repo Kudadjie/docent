@@ -20,6 +20,7 @@ creates its Context object.
 from __future__ import annotations
 
 import importlib
+import logging
 import sys
 from pathlib import Path
 from typing import Callable
@@ -28,6 +29,9 @@ from docent.core.context import Context
 from docent.utils.paths import plugins_dir
 
 _STARTUP_HOOKS: list[Callable[[Context], None]] = []
+_LOADED_PLUGINS: list[dict] = []  # [{name, source, has_hook}]
+
+_logger = logging.getLogger("docent.plugins")
 
 
 def _bundled_plugins_dir() -> Path:
@@ -42,7 +46,7 @@ def _ensure_in_sys_path(directory: Path) -> None:
         sys.path.insert(0, str_path)
 
 
-def _load_plugin_module(module_name: str) -> bool:
+def _load_plugin_module(module_name: str, source: str = "external") -> bool:
     """Import a plugin module and collect its startup hook if present.
 
     Returns True if loaded successfully, False if there was a recoverable error.
@@ -50,15 +54,18 @@ def _load_plugin_module(module_name: str) -> bool:
     try:
         importlib.import_module(module_name)
     except Exception as exc:
-        print(f"Warning: failed to load plugin '{module_name}': {exc}", file=sys.stderr)
+        _logger.warning("Failed to load plugin '%s': %s", module_name, exc)
         return False
 
     module = sys.modules.get(module_name)
+    has_hook = False
     if module is not None and hasattr(module, "on_startup"):
         hook = getattr(module, "on_startup")
         if callable(hook):
             _STARTUP_HOOKS.append(hook)
+            has_hook = True
 
+    _LOADED_PLUGINS.append({"name": module_name, "source": source, "has_hook": has_hook})
     return True
 
 
@@ -93,14 +100,21 @@ def _scan_plugin_dir(directory: Path, *, qualified_prefix: str | None = None) ->
             continue
 
         module_name = f"{qualified_prefix}.{base}" if qualified_prefix else base
-        _load_plugin_module(module_name)
+        source = "bundled" if qualified_prefix else "external"
+        _load_plugin_module(module_name, source=source)
 
 
 def load_plugins() -> None:
     """Discover and load all external plugins."""
     _STARTUP_HOOKS.clear()
+    _LOADED_PLUGINS.clear()
     _scan_plugin_dir(_bundled_plugins_dir(), qualified_prefix="docent.bundled_plugins")
     _scan_plugin_dir(plugins_dir())
+
+
+def list_plugins() -> list[dict]:
+    """Return metadata for all currently loaded plugins."""
+    return list(_LOADED_PLUGINS)
 
 
 def run_startup_hooks(context: Context) -> None:
@@ -109,4 +123,8 @@ def run_startup_hooks(context: Context) -> None:
         try:
             hook(context)
         except Exception as exc:
-            print(f"Warning: startup hook failed: {exc}", file=sys.stderr)
+            _logger.warning(
+                "Startup hook '%s' failed: %s",
+                getattr(hook, "__module__", "unknown"),
+                exc,
+            )

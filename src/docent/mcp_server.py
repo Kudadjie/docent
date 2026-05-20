@@ -123,13 +123,8 @@ def build_mcp_tools() -> list[types.Tool]:
 # Action invocation
 # ---------------------------------------------------------------------------
 
-def _serialize(result: Any) -> str:
-    if isinstance(result, BaseModel):
-        return result.model_dump_json(indent=2)
-    try:
-        return json.dumps(result, indent=2, default=str)
-    except Exception:
-        return str(result)
+# Re-exported from core.invoke so callers that imported _serialize from here keep working.
+from docent.core.invoke import serialize_result as _serialize  # noqa: F401
 
 
 def invoke_action(

@@ -16,9 +16,16 @@ CLI (context already in ctx.obj — pass it through)::
     # CLI builds Typer callbacks that call action methods directly;
     # run_action is available if a CLI command ever needs it.
     result = run_action("reading", "stats", {}, context=ctx.obj)
+
+UI backend (needs JSON string output)::
+
+    from docent.core.invoke import invoke_action_for_ui
+    json_str = invoke_action_for_ui("reading", "stats", {})
 """
 from __future__ import annotations
 
+import inspect
+import json
 from typing import Any
 
 from docent.core.context import Context
@@ -111,3 +118,47 @@ def run_action(
     schema = tool_cls.input_schema
     inputs = schema(**arguments) if schema is not None else BaseModel()
     return tool_cls().run(inputs, ctx)
+
+
+def serialize_result(result: Any) -> str:
+    """Convert any action result to a JSON string. Shared by MCP and UI surfaces."""
+    from pydantic import BaseModel
+    if isinstance(result, BaseModel):
+        return result.model_dump_json(indent=2)
+    try:
+        return json.dumps(result, indent=2, default=str)
+    except Exception:
+        return str(result)
+
+
+def invoke_action_for_ui(
+    tool_name: str,
+    action_cli_name: str,
+    arguments: dict[str, Any],
+) -> str:
+    """Run a Docent action and return its JSON-serialized result.
+
+    Used by the FastAPI UI backend.  Generator results are drained and the
+    final value is returned.  ConfirmationRequired is surfaced as a JSON error.
+    """
+    from docent.core.events import ProgressEvent
+    from docent.core.exceptions import ConfirmationRequired
+
+    ctx = make_context(via_mcp=True)
+    try:
+        raw = run_action(tool_name, action_cli_name, arguments, context=ctx)
+    except ConfirmationRequired as exc:
+        return json.dumps({"ok": False, "confirmation_required": True, "notes": exc.notes}, indent=2)
+
+    if inspect.isgenerator(raw):
+        result_value = None
+        try:
+            while True:
+                evt = next(raw)
+                if not isinstance(evt, ProgressEvent):
+                    result_value = evt
+        except StopIteration as stop:
+            result_value = stop.value
+        return serialize_result(result_value)
+
+    return serialize_result(raw)

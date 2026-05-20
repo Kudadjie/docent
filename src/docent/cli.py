@@ -86,6 +86,7 @@ from docent.core import (
     Tool,
     all_tools,
     collect_actions,
+    list_plugins,
     load_plugins,
     run_startup_hooks,
 )
@@ -567,6 +568,23 @@ def list_command(ctx: typer.Context) -> None:
             name_display = tc.name if not actions else f"{tc.name}  ({len(actions)} actions)"
             table.add_row(name_display, tc.description)
         console.print(table)
+
+
+@app.command("plugins", help="List loaded plugins and their startup hooks.")
+def plugins_command(ctx: typer.Context) -> None:  # noqa: ARG001
+    console = get_console()
+    plugins = list_plugins()
+    if not plugins:
+        console.print("[dim]No plugins loaded.[/]")
+        return
+    table = Table(title="Loaded Plugins", box=box.ROUNDED, show_header=True, header_style="bold")
+    table.add_column("Name", style="cyan", no_wrap=True)
+    table.add_column("Source")
+    table.add_column("Hook", justify="center")
+    for p in plugins:
+        hook_mark = "[green]✓[/]" if p["has_hook"] else "[dim]–[/]"
+        table.add_row(p["name"], p["source"], hook_mark)
+    console.print(table)
 
 
 @app.command("info", help="Show details about a registered tool.")

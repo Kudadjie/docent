@@ -242,7 +242,7 @@ export function Chip({ color, children, icon }: { color?: string; children: Reac
 
 // ── Action list ────────────────────────────────────────────────────────────────
 
-function ActionRow({ id, label, desc, isActive, isPreset, onClick, onDelete }: {
+function ActionRow({ id: _id, label, desc, isActive, isPreset, onClick, onDelete }: {
   id: string; label: string; desc?: string; isActive: boolean; isPreset?: boolean;
   onClick: () => void; onDelete?: (e: React.MouseEvent) => void;
 }) {

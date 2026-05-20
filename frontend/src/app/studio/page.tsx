@@ -7,8 +7,8 @@ import { useDarkMode } from '@/hooks/useDarkMode';
 import { LeftColumn, CmdKPalette, PresetSaveModal } from './_form';
 import { OutputPanel, HistoryDrawer, OutputsPanel } from './_output';
 import {
-  ACTIONS, findAction, actionSummary,
-  type ActionId, type ActionMeta, type FormState,
+  findAction, actionSummary,
+  type ActionId, type FormState,
   type LogEntry, type Source, type Preset, type RunRecord, type Status,
 } from './_shared';
 
