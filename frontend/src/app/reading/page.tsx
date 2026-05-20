@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useDarkMode } from '@/hooks/useDarkMode';
 import { RefreshCw, Download, Printer, Search, Filter, HelpCircle, BookOpen, ArrowRight, BarChart2, ArrowUpDown, AlertTriangle, Info, X, Trash2, BookmarkCheck } from 'lucide-react';
 
@@ -13,6 +13,16 @@ import StatsModal from '@/components/StatsModal';
 import DetailModal from '@/components/DetailModal';
 import Toast, { type ToastData } from '@/components/Toast';
 import type { QueueData, QueueEntry, FilterValue, BannerCounts } from '@/lib/types';
+
+// ── Hooks ─────────────────────────────────────────────────────────
+function useDebounce<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState<T>(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+  return debounced;
+}
 
 // ── Types ─────────────────────────────────────────────────────────
 type SortBy = 'order' | 'date-newest' | 'date-oldest' | 'deadline' | 'status';
@@ -186,23 +196,28 @@ export default function ReadingPage() {
     }
   }, []);
 
+  // Parallel fetch on mount — queue + config in one round-trip window.
   useEffect(() => {
-    queueMicrotask(() => {
-      void refresh();
-    });
-  }, [refresh]);
-
-  useEffect(() => {
-    fetch('/api/config')
-      .then(r => r.json())
-      .then((d: { reading: { queue_collection: string; reference_manager?: string } }) => {
+    Promise.all([
+      fetch('/api/queue').then(r => r.json()).catch(() => null),
+      fetch('/api/config').then(r => r.json()).catch(() => null),
+    ]).then(([queueJson, configJson]) => {
+      if (queueJson) {
+        setData(queueJson as QueueData);
+        setServerError(false);
+      } else {
+        setServerError(true);
+      }
+      if (configJson) {
+        const d = configJson as { reading: { queue_collection?: string; reference_manager?: string } };
         if (d.reading?.queue_collection) setQueueCollection(d.reading.queue_collection);
         if (d.reading?.reference_manager) {
           const name = d.reading.reference_manager;
           setRefManagerName(name.charAt(0).toUpperCase() + name.slice(1));
         }
-      })
-      .catch(() => {});
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Read filter + search from URL on mount; fall back to sessionStorage
@@ -581,13 +596,18 @@ ${sectionsHtml}
   const banner: BannerCounts = data?.banner ?? { queued: 0, reading: 0, done: 0 };
   const flaggedEntries = entries.filter(e => e.not_in_mendeley && e.status !== 'removed');
   const parentFlaggedEntries = entries.filter(e => e.not_in_parent_collection && e.status !== 'removed');
-  const filtered = applySort(
+
+  // Debounce search so filter runs at most every 150 ms while the user types.
+  const debouncedSearch = useDebounce(search, 150);
+
+  // Memoize the expensive filter+sort pipeline so it only reruns when inputs change.
+  const filtered = useMemo(() => applySort(
     applyQuickFilter(
-      applySearch(applyFilter(entries, filter), search),
+      applySearch(applyFilter(entries, filter), debouncedSearch),
       quickFilters,
     ),
     sortBy,
-  );
+  ), [entries, filter, debouncedSearch, quickFilters, sortBy]);
 
   return (
     <div

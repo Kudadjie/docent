@@ -70,7 +70,10 @@ function PaperRow({
           ? 'rgba(24,226,153,0.08)'
           : hov ? 'var(--row-hover)' : 'transparent',
         transition: 'background 0.3s',
-      }}
+        // Skip layout+paint for off-screen rows — browser-native virtualisation.
+        contentVisibility: 'auto',
+        containIntrinsicSize: '0 68px',
+      } as React.CSSProperties}
     >
       {/* Paper */}
       <td style={{ padding: '14px 20px', verticalAlign: 'top' }}>

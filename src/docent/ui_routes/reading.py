@@ -55,6 +55,16 @@ def _read_config_reading():
     return _rcr()
 
 
+def _get_database_count(path):
+    from docent.ui_server import _get_database_count as _gdc
+    return _gdc(path)
+
+
+def _get_database_files(path):
+    from docent.ui_server import _get_database_files as _gdf
+    return _gdf(path)
+
+
 def _audit(action: str, detail: str) -> None:
     from docent.ui_server import _audit as _a
     _a(action, detail)
@@ -80,9 +90,7 @@ def get_queue() -> JSONResponse:
     database_count: Optional[int] = None
     if db_dir:
         from pathlib import Path
-        p = Path(db_dir).expanduser()
-        if p.is_dir():
-            database_count = sum(1 for _ in p.rglob("*.pdf"))
+        database_count = _get_database_count(Path(db_dir).expanduser())
     return JSONResponse({"entries": entries, "banner": banner, "last_updated": last_updated, "database_count": database_count})
 
 
@@ -98,7 +106,7 @@ def get_database() -> JSONResponse:
     p = Path(db_dir).expanduser()
     if not p.is_dir():
         return JSONResponse({"database_dir": str(p), "pdfs": [], "last_checked": datetime.now(timezone.utc).isoformat()})
-    pdfs = sorted(f.name for f in p.rglob("*.pdf"))
+    pdfs = _get_database_files(p)
     return JSONResponse({
         "database_dir": str(p),
         "pdfs": pdfs,

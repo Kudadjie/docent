@@ -6,6 +6,7 @@ import logging
 import os
 import subprocess
 import sys
+import time as _time
 import tomllib
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -13,6 +14,7 @@ from typing import Any, Callable, Optional
 import httpx
 import uvicorn
 from fastapi import FastAPI, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -116,33 +118,86 @@ class _RSCPathRewrite(BaseHTTPMiddleware):
 
 
 app = FastAPI(docs_url=None, redoc_url=None)
+app.add_middleware(GZipMiddleware, minimum_size=1000)  # compress JSON responses ≥ 1 KB
 app.add_middleware(_RSCPathRewrite)   # must be before LocalhostGuard so the rewrite fires first
 app.add_middleware(_LocalhostGuard)
 
+# ── In-process caches ─────────────────────────────────────────────────────────
+# All three caches are invalidated by mtime or TTL rather than explicit
+# expiry, so a write to disk is immediately visible on the next read.
+
+# 1. JSON file cache — covers queue.json, state.json, user.json, etc.
+#    Key: str(path)  →  {"mtime": float, "data": Any}
+_json_cache: dict[str, dict[str, Any]] = {}
 
 def _read_json(path: Path, default: Any) -> Any:
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        mtime = path.stat().st_mtime
+        cached = _json_cache.get(str(path))
+        if cached is not None and cached["mtime"] == mtime:
+            return cached["data"]
+        data = json.loads(path.read_text(encoding="utf-8"))
+        _json_cache[str(path)] = {"mtime": mtime, "data": data}
+        return data
     except Exception:
         return default
 
+# 2. Config (config.toml) cache — mtime-gated; re-parsed only when file changes.
+_cfg_cache: dict[str, Any] = {"_mtime": -1.0}
+
+def _cached_toml() -> dict[str, Any]:
+    path = _config_file()
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        return {}
+    if _cfg_cache.get("_mtime") == mtime:
+        return _cfg_cache
+    try:
+        with path.open("rb") as f:
+            data = tomllib.load(f)
+    except Exception:
+        return _cfg_cache
+    _cfg_cache.clear()
+    _cfg_cache.update({"_mtime": mtime, **data})
+    return _cfg_cache
 
 def _read_config_reading() -> dict:
-    try:
-        with open(_config_file(), "rb") as f:
-            data = tomllib.load(f)
-        return data.get("reading", {})
-    except Exception:
-        return {}
-
+    return _cached_toml().get("reading", {})
 
 def _read_config_research() -> dict:
-    try:
-        with open(_config_file(), "rb") as f:
-            data = tomllib.load(f)
-        return data.get("research", {})
-    except Exception:
-        return {}
+    return _cached_toml().get("research", {})
+
+# 3. Database folder PDF count — 60-second TTL (recursive mtime is expensive;
+#    TTL is accurate enough for a status-bar number).
+_DB_COUNT_TTL = 60.0
+_db_count_cache: dict[str, dict[str, Any]] = {}
+
+def _scan_database(db_dir: Path) -> Optional[dict[str, Any]]:
+    """Scan *db_dir* for PDFs, returning {count, files} cached for 60 seconds.
+
+    A single rglob walk serves both the count (status-bar) and the filenames
+    list (watch-folder inspector modal) — avoids scanning the directory twice.
+    Returns None if the directory does not exist.
+    """
+    if not db_dir.is_dir():
+        return None
+    key = str(db_dir)
+    cached = _db_count_cache.get(key)
+    if cached is not None and _time.monotonic() - cached["ts"] < _DB_COUNT_TTL:
+        return cached
+    files = sorted(f.name for f in db_dir.rglob("*.pdf"))
+    entry: dict[str, Any] = {"ts": _time.monotonic(), "count": len(files), "files": files}
+    _db_count_cache[key] = entry
+    return entry
+
+def _get_database_count(db_dir: Path) -> Optional[int]:
+    entry = _scan_database(db_dir)
+    return entry["count"] if entry is not None else None
+
+def _get_database_files(db_dir: Path) -> list[str]:
+    entry = _scan_database(db_dir)
+    return entry["files"] if entry is not None else []
 
 
 def _mask_key(key: str | None) -> Optional[str]:
