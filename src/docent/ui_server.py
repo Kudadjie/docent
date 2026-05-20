@@ -190,24 +190,7 @@ async def _get_npm_installed(package: str) -> Optional[str]:
         return None
 
 
-@app.get("/api/queue")
-async def get_queue() -> JSONResponse:
-    entries = _read_json(_queue_file(), [])
-    state = _read_json(_state_file(), {})
-    banner = {
-        "queued": state.get("queued", 0),
-        "reading": state.get("reading", 0),
-        "done": state.get("done", 0),
-    }
-    last_updated = state.get("last_updated", None)
-    reading_cfg = _read_config_reading()
-    db_dir = reading_cfg.get("database_dir")
-    database_count: Optional[int] = None
-    if db_dir:
-        p = Path(db_dir).expanduser()
-        if p.is_dir():
-            database_count = sum(1 for _ in p.rglob("*.pdf"))
-    return JSONResponse({"entries": entries, "banner": banner, "last_updated": last_updated, "database_count": database_count})
+# /api/queue → ui_routes/reading.py
 
 
 class ActionBody(BaseModel):
@@ -233,45 +216,7 @@ _ACTION_MAP: dict[str, tuple[str, str]] = {
 }
 
 
-@app.post("/api/actions")
-async def post_action(body: ActionBody) -> JSONResponse:
-    action = body.action
-    no_id_actions = {"sync", "queue-clear"}
-    if action not in no_id_actions and not body.id:
-        return JSONResponse({"ok": False, "error": "id required"}, status_code=400)
-
-    if action not in _ACTION_MAP:
-        return JSONResponse({"error": "Unknown action"}, status_code=400)
-
-    tool_name, action_name = _ACTION_MAP[action]
-    args: dict[str, Any] = {}
-    if body.id is not None:
-        args["id"] = body.id
-    if action == "edit":
-        if body.status is not None:
-            args["status"] = body.status
-        if body.order is not None:
-            args["order"] = body.order
-        if body.deadline is not None:
-            args["deadline"] = body.deadline
-        if body.notes is not None:
-            args["notes"] = body.notes
-        if body.tags is not None:
-            args["tags"] = body.tags
-    elif action == "queue-clear":
-        if not body.confirmed:
-            return JSONResponse(
-                {"ok": False, "error": "queue-clear requires confirmed=true"},
-                status_code=400,
-            )
-        args["yes"] = True
-        _audit("queue-clear", "confirmed")
-
-    try:
-        result = await asyncio.to_thread(invoke_action, tool_name, action_name, args)
-        return JSONResponse({"ok": True, "stdout": result})
-    except Exception as exc:
-        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+# /api/actions → ui_routes/reading.py
 
 
 _RESEARCH_KEY_FIELDS = [
@@ -286,18 +231,7 @@ _RESEARCH_KEY_FIELDS = [
 ]
 
 
-@app.get("/api/config")
-async def get_config() -> JSONResponse:
-    cfg = _read_config_reading()
-    rcfg = _read_config_research()
-    research = {k: _mask_key(rcfg.get(k)) for k in _RESEARCH_KEY_FIELDS}
-    return JSONResponse({
-        "reading": {
-            "database_dir": cfg.get("database_dir", None),
-            "queue_collection": cfg.get("queue_collection", "Docent-Queue"),
-        },
-        "research": research,
-    })
+# /api/config GET → ui_routes/config.py
 
 
 class ConfigBody(BaseModel):
@@ -306,49 +240,10 @@ class ConfigBody(BaseModel):
     value: str
 
 
-@app.post("/api/config")
-async def post_config(body: ConfigBody) -> JSONResponse:
-    _audit("config-write", f"section={body.section} key={body.key}")
-    if body.section == "reading":
-        try:
-            await asyncio.to_thread(
-                run_action, "reading", "config-set", {"key": body.key, "value": body.value}
-            )
-        except Exception as exc:
-            return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
-        cfg = _read_config_reading()
-        return JSONResponse({
-            "ok": True,
-            "reading": {
-                "database_dir": cfg.get("database_dir", None),
-                "queue_collection": cfg.get("queue_collection", "Docent-Queue"),
-            }
-        })
-    elif body.section == "research":
-        try:
-            await asyncio.to_thread(
-                run_action, "studio", "config-set", {"key": body.key, "value": body.value}
-            )
-        except Exception as exc:
-            return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
-        rcfg = _read_config_research()
-        return JSONResponse({
-            "ok": True,
-            "research": {k: _mask_key(rcfg.get(k)) for k in _RESEARCH_KEY_FIELDS},
-        })
-    else:
-        return JSONResponse({"error": f"Unknown section: {body.section!r}"}, status_code=400)
+# /api/config POST → ui_routes/config.py
 
 
-@app.get("/api/user")
-async def get_user() -> JSONResponse:
-    data = _read_json(_user_file(), {})
-    name = data.get("name", "")
-    program = data.get("program", "")
-    level = data.get("level", "")
-    if name == "You" and not program and not level:
-        name = ""
-    return JSONResponse({"name": name, "program": program, "level": level})
+# /api/user GET → ui_routes/config.py
 
 
 class UserBody(BaseModel):
@@ -357,11 +252,7 @@ class UserBody(BaseModel):
     level: str
 
 
-@app.post("/api/user")
-async def post_user(body: UserBody) -> JSONResponse:
-    _docent_dir().mkdir(parents=True, exist_ok=True)
-    _user_file().write_text(json.dumps({"name": body.name, "program": body.program, "level": body.level}), encoding="utf-8")
-    return JSONResponse({"ok": True})
+# /api/user POST → ui_routes/config.py
 
 
 @app.get("/api/version")
@@ -398,247 +289,7 @@ TOOLING = [
 ]
 
 
-@app.get("/api/tooling")
-async def get_tooling() -> JSONResponse:
-    async def _tool_status(tool: dict[str, str]) -> dict[str, str | bool | None]:
-        installed, latest = await asyncio.gather(
-            _get_npm_installed(tool["name"]),
-            _fetch_npm_latest(tool["name"]),
-        )
-        up_to_date = (
-            _version_at_least(installed, latest)
-            if installed is not None and latest is not None
-            else None
-        )
-        return {**tool, "installed": installed, "latest": latest, "up_to_date": up_to_date}
-
-    results = await asyncio.gather(*(_tool_status(tool) for tool in TOOLING))
-    return JSONResponse(list(results))
-
-
-@app.get("/api/doctor")
-async def get_doctor() -> JSONResponse:
-    import sys
-    import shutil
-    import subprocess as _sp
-
-    cfg_reading = _read_config_reading()
-    cfg_research = _read_config_research()
-    user_data = _read_json(_user_file(), {})
-
-    def _row(label: str, status: str, version: str = "-", detail: str = "-") -> dict:
-        return {"label": label, "status": status, "version": version, "detail": detail}
-
-    # ── Profile ──────────────────────────────────────────────────────────────
-    name = (user_data.get("name") or "").strip()
-    profile_row = (
-        _row("Profile", "OK", detail=f"{name} · {user_data.get('level', '?')} · {user_data.get('program', '?')}")
-        if name and name != "You"
-        else _row("Profile", "WARN", detail="Not set — use 'Set up your profile' in the sidebar")
-    )
-
-    # ── Python ───────────────────────────────────────────────────────────────
-    pv = sys.version_info
-    python_row = _row("Python", "OK", f"{pv.major}.{pv.minor}.{pv.micro}")
-
-    # ── Docent version ────────────────────────────────────────────────────────
-    async def _docent_version_row() -> dict:
-        try:
-            stdout, _, rc = await _run(["--version"], timeout=8.0)
-            version = stdout.strip().split()[-1] if rc == 0 else "?"
-            try:
-                async with httpx.AsyncClient(timeout=8.0) as client:
-                    r = await client.get("https://pypi.org/pypi/docent-cli/json")
-                    latest = r.json()["info"]["version"]
-                if version == latest:
-                    return _row("Docent", "OK", version, "up to date")
-                return _row("Docent", "WARN", version, f"update available: {latest} — run: docent update")
-            except Exception:
-                return _row("Docent", "OK", version)
-        except Exception as exc:
-            return _row("Docent", "WARN", "?", str(exc)[:80])
-
-    # ── CLI tool helper ───────────────────────────────────────────────────────
-    async def _cli_row(label: str, cmd: list[str], install_hint: str) -> dict:
-        exe = await asyncio.to_thread(shutil.which, cmd[0])
-        if exe is None:
-            return _row(label, "FAIL", detail=install_hint)
-        try:
-            stdout, _, rc = await _run_command(exe, cmd[1:], timeout=8.0)
-            version = (stdout.strip() or "?").splitlines()[0].strip()
-            return _row(label, "OK", version)
-        except asyncio.TimeoutError:
-            return _row(label, "WARN", "?", "version check timed out")
-        except Exception as exc:
-            return _row(label, "WARN", "?", str(exc)[:80])
-
-    # ── Mendeley MCP ──────────────────────────────────────────────────────────
-    async def _mendeley_row() -> dict:
-        uvx = await asyncio.to_thread(shutil.which, "uvx")
-        if uvx:
-            return _row("Mendeley MCP", "OK", detail="uvx found")
-        return _row("Mendeley MCP", "FAIL", detail="uvx not found — install uv: https://docs.astral.sh/uv/")
-
-    # ── OpenCode ──────────────────────────────────────────────────────────────
-    async def _opencode_row() -> dict:
-        import shutil
-        try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                r = await client.get("http://127.0.0.1:4096/global/health")
-                if r.status_code == 200:
-                    return _row("OpenCode", "OK", detail="server reachable at :4096")
-        except Exception:
-            pass
-        # Server unreachable — distinguish between "not installed" and "not running".
-        oc_exe = shutil.which("opencode")
-        if oc_exe is None:
-            return _row(
-                "OpenCode",
-                "FAIL",
-                detail="Not installed — npm install -g opencode-ai (requires Node.js)",
-            )
-        return _row(
-            "OpenCode",
-            "WARN",
-            detail=f"Installed but not running — click 'Start server' in Settings, or run: opencode serve --port 4096",
-        )
-
-    # ── Feynman ───────────────────────────────────────────────────────────────
-    async def _feynman_row() -> dict:
-        # Primary: check binary on PATH / Windows AppData (mirrors _find_feynman logic).
-        # npm list -g is unreliable on Windows when the npm prefix differs from PATH.
-        from pathlib import Path as _P
-        feynman_cmd: list[str] | None = None
-        resolved = shutil.which("feynman")
-        if resolved:
-            feynman_cmd = [resolved]
-        else:
-            appdata = os.environ.get("APPDATA", "")
-            if appdata:
-                win_path = _P(appdata) / "npm" / "feynman.cmd"
-                if win_path.is_file():
-                    feynman_cmd = [str(win_path)]
-
-        if feynman_cmd is None:
-            # Binary not on PATH — fall back to npm registry check
-            installed = await _get_npm_installed("@companion-ai/feynman")
-            if installed is None:
-                return _row("Feynman CLI", "WARN", detail="Not installed — npm install -g @companion-ai/feynman")
-            feynman_cmd = ["feynman"]
-
-        # Read version from package.json (no subprocess)
-        from docent.bundled_plugins.studio.feynman import _feynman_version_from_package_json
-        version = _feynman_version_from_package_json(feynman_cmd)
-
-        latest = await _fetch_npm_latest("@companion-ai/feynman")
-        if latest and version != "?" and not _version_at_least(version, latest):
-            return _row("Feynman CLI", "WARN", version,
-                        f"update available: {latest} — npm install -g @companion-ai/feynman@latest")
-        return _row("Feynman CLI", "OK", version or "?")
-
-    # ── NotebookLM ────────────────────────────────────────────────────────────
-    def _notebooklm_sync() -> dict:
-        try:
-            import contextlib, io as _io, sys as _sys
-            # Playwright emits "There was an error managing firefox; using browser
-            # found in the cache" to stderr on first import. Suppress it — it's
-            # harmless noise (Playwright found a cached browser and will use it).
-            if "notebooklm" not in _sys.modules:
-                import os as _os
-                _os.environ.setdefault("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "1")
-                with contextlib.redirect_stderr(_io.StringIO()):
-                    import notebooklm as _nlm
-            else:
-                import notebooklm as _nlm
-            version = getattr(_nlm, "__version__", "-")
-        except ImportError:
-            return _row("NotebookLM", "FAIL", detail='not installed — pip install "notebooklm-py[browser]"')
-        exe = shutil.which("notebooklm")
-        if not exe:
-            return _row("NotebookLM", "WARN", version, "CLI not on PATH")
-        try:
-            result = _sp.run([exe, "list", "--json"], capture_output=True, text=True, timeout=10)
-            import json as _j
-            data = _j.loads(result.stdout or "{}")
-            if result.returncode == 0 and not data.get("error"):
-                return _row("NotebookLM", "OK", version, "authenticated")
-        except Exception:
-            pass
-        return _row("NotebookLM", "WARN", version, "Not authenticated — run: notebooklm login")
-
-    # ── alphaXiv ──────────────────────────────────────────────────────────────
-    def _alphaxiv_sync() -> dict:
-        try:
-            from alphaxiv import __version__ as ax_v
-        except ImportError:
-            return _row("alphaXiv", "FAIL", detail="alphaxiv-py not installed (uv add alphaxiv-py)")
-        key = cfg_research.get("alphaxiv_api_key")
-        if key:
-            return _row("alphaXiv", "OK", ax_v, f"key configured ({_mask_key(key)})")
-        return _row("alphaXiv", "SKIP", ax_v, "No key — get free key at alphaxiv.org/settings")
-
-    # ── Reading DB ────────────────────────────────────────────────────────────
-    def _reading_db_row() -> dict:
-        db = cfg_reading.get("database_dir")
-        if db is None:
-            return _row("Reading DB", "WARN", detail="Not configured — set database_dir in Settings")
-        expanded = Path(str(db)).expanduser()
-        if expanded.exists():
-            return _row("Reading DB", "OK", detail=str(expanded))
-        return _row("Reading DB", "WARN", detail=f"{expanded} does not exist")
-
-    # ── API key checks ────────────────────────────────────────────────────────
-    def _key_row(label: str, cfg_key: str, hint: str, warn_if_missing: bool = False) -> dict:
-        key = cfg_research.get(cfg_key)
-        if key:
-            return _row(label, "OK", detail=f"key configured ({_mask_key(key)})")
-        status = "WARN" if warn_if_missing else "SKIP"
-        return _row(label, status, detail=hint)
-
-    # Run all checks concurrently
-    (
-        docent_row,
-        uv_row, node_row, npm_row,
-        feynman_row, mendeley_row, opencode_row,
-        nlm_row, ax_row,
-    ) = await asyncio.gather(
-        _docent_version_row(),
-        _cli_row("uv", ["uv", "--version"], "Install uv: https://docs.astral.sh/uv/"),
-        _cli_row("Node.js", ["node", "--version"], "Install Node.js: https://nodejs.org"),
-        _cli_row("npm", ["npm", "--version"], "Install npm: https://nodejs.org"),
-        _feynman_row(),
-        _mendeley_row(),
-        _opencode_row(),
-        asyncio.to_thread(_notebooklm_sync),
-        asyncio.to_thread(_alphaxiv_sync),
-    )
-    db_row = await asyncio.to_thread(_reading_db_row)
-
-    checks = [
-        profile_row,
-        python_row,
-        docent_row,
-        uv_row,
-        node_row,
-        npm_row,
-        feynman_row,
-        mendeley_row,
-        opencode_row,
-        nlm_row,
-        ax_row,
-        db_row,
-        _key_row("Tavily", "tavily_api_key",
-                 "Not set — get free key at app.tavily.com. Falls back to DuckDuckGo.", warn_if_missing=True),
-        _key_row("Semantic Scholar", "semantic_scholar_api_key",
-                 "Optional — raises rate limits (api.semanticscholar.org)"),
-        _key_row("Groq", "groq_api_key", "Free tier at console.groq.com"),
-        _key_row("Gemini", "gemini_api_key", "Free tier at aistudio.google.com"),
-        _key_row("OpenRouter", "openrouter_api_key", "Pay-as-you-go at openrouter.ai"),
-        _key_row("Mistral", "mistral_api_key", "console.mistral.ai"),
-        _key_row("Cerebras", "cerebras_api_key", "cloud.cerebras.ai"),
-    ]
-    return JSONResponse(checks)
-
+# /api/tooling + /api/doctor → ui_routes/doctor.py
 
 # ── Studio run endpoint ──────────────────────────────────────────────────────
 
@@ -819,418 +470,33 @@ async def _stream_studio_run(studio_action: str, args: dict[str, Any]):
         await thread
 
 
-# ── File-system helpers ───────────────────────────────────────────────────────
+# /api/fs/* → ui_routes/filesystem.py
 
-@app.get("/api/fs/read")
-async def fs_read(path: str = Query(...)) -> JSONResponse:
-    """Read a text file from the local filesystem (for Markdown preview)."""
-    p = Path(path)
-    denied = await _check_approved_path(p)
-    if denied:
-        _audit("fs_read.denied", path)
-        return JSONResponse({"error": denied}, status_code=403)
-    try:
-        resolved = p.expanduser()
-        if not resolved.is_file():
-            return JSONResponse({"error": f"File not found: {path}"}, status_code=404)
-        size = resolved.stat().st_size
-        if size > 500_000:
-            return JSONResponse({"error": "File too large to preview (>500 KB)"}, status_code=400)
-        content = resolved.read_text(encoding="utf-8", errors="replace")
-        return JSONResponse({"content": content})
-    except Exception as exc:
-        return JSONResponse({"error": str(exc)}, status_code=500)
-
-
-class FsOpenBody(BaseModel):
-    path: str
-
-
-@app.post("/api/fs/open")
-async def fs_open(body: FsOpenBody) -> JSONResponse:
-    """Open a file or its parent folder in the OS file manager."""
-    p = Path(body.path)
-    denied = await _check_approved_path(p)
-    if denied:
-        _audit("fs_open.denied", body.path)
-        return JSONResponse({"error": denied}, status_code=403)
-    try:
-        resolved = p.expanduser()
-        target = resolved if resolved.is_dir() else resolved.parent
-        _audit("fs_open", str(target))
-        if sys.platform == "win32":
-            os.startfile(str(target))  # type: ignore[attr-defined]
-        elif sys.platform == "darwin":
-            subprocess.Popen(["open", str(target)])
-        else:
-            subprocess.Popen(["xdg-open", str(target)])
-        return JSONResponse({"ok": True})
-    except Exception as exc:
-        return JSONResponse({"error": str(exc)}, status_code=500)
-
-
-class FsPickBody(BaseModel):
-    extensions: list[str] = []
-    title: str = "Select files"
-
-
-@app.post("/api/fs/pick")
-async def fs_pick(body: FsPickBody) -> JSONResponse:
-    """Open a native OS file-picker dialog and return selected paths."""
-    def _pick() -> list[str]:
-        import tkinter as tk
-        from tkinter import filedialog
-        root = tk.Tk()
-        root.withdraw()
-        root.wm_attributes("-topmost", True)  # type: ignore[arg-type]
-        ftypes: list[tuple[str, str]] = []
-        if body.extensions:
-            ftypes.append(("Supported files", " ".join("*" + e for e in body.extensions)))
-        ftypes.append(("All files", "*.*"))
-        paths = filedialog.askopenfilenames(
-            title=body.title,
-            filetypes=ftypes,
-        )
-        root.destroy()
-        return list(paths)
-
-    try:
-        selected = await asyncio.to_thread(_pick)
-        return JSONResponse({"paths": selected})
-    except Exception as exc:
-        return JSONResponse({"error": str(exc)}, status_code=500)
-
-
-# ── Studio outputs ─────────────────────────────────────────────────────────────
-
-@app.get("/api/studio/outputs")
-async def studio_outputs() -> JSONResponse:
-    """List recent research output files from the configured output directory."""
-    try:
-        from docent.config import load_settings
-        settings = await asyncio.to_thread(load_settings)
-        output_dir = settings.research.output_dir.expanduser()
-    except Exception:
-        return JSONResponse({"files": [], "output_dir": None})
-
-    if not output_dir.is_dir():
-        return JSONResponse({"files": [], "output_dir": str(output_dir)})
-
-    files = []
-    try:
-        for f in sorted(output_dir.rglob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)[:30]:
-            try:
-                stat = f.stat()
-                files.append({
-                    "path": str(f),
-                    "name": f.name,
-                    "folder": f.parent.name,
-                    "size": stat.st_size,
-                    "mtime": stat.st_mtime,
-                })
-            except Exception:
-                pass
-    except Exception:
-        pass
-
-    return JSONResponse({"files": files, "output_dir": str(output_dir)})
-
+# /api/studio/outputs → ui_routes/filesystem.py
 
 # ── OpenCode server management ─────────────────────────────────────────────────
 
 _opencode_proc: Optional[subprocess.Popen] = None  # type: ignore[type-arg]
 
 
-@app.post("/api/opencode/start")
-async def opencode_start() -> JSONResponse:
-    global _opencode_proc
-    _audit("opencode-start", "requested")
-    import shutil
-    # Check if already reachable
-    try:
-        async with httpx.AsyncClient(timeout=2.0) as client:
-            r = await client.get("http://127.0.0.1:4096/global/health")
-            if r.status_code == 200:
-                return JSONResponse({"ok": True, "status": "already_running"})
-    except Exception:
-        pass
+# /api/opencode/* + /ws/studio/run → ui_routes/opencode.py
 
-    # Resolve the executable. On Windows, npm installs `opencode.cmd` and Python's
-    # subprocess.Popen with a list arg does NOT find .cmd files unless we resolve
-    # the full path with shutil.which (which DOES check PATHEXT).
-    oc_exe = shutil.which("opencode")
-    if not oc_exe:
-        hint = (
-            "opencode not found on PATH. "
-            "Install with: npm install -g opencode-ai  "
-            "(needs Node.js — run `docent doctor` for setup help)."
-        )
-        return JSONResponse({"ok": False, "error": hint}, status_code=500)
+# ── Route modules ────────────────────────────────────────────────────────────
+# Routes live in ui_routes/*; imported here so their @router decorators fire.
+# Each module's router is included before the static-file catch-all.
+from docent.ui_routes.reading import router as _reading_router
+from docent.ui_routes.config import router as _config_router
+from docent.ui_routes.doctor import router as _doctor_router
+from docent.ui_routes.filesystem import router as _fs_router
+from docent.ui_routes.opencode import router as _opencode_router
+from docent.ui_routes.studio import router as _studio_sse_router
 
-    try:
-        flags = 0
-        if sys.platform == "win32":
-            flags = subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
-        # Capture stderr so we can surface launch failures instead of silently DEVNULL'ing them.
-        _opencode_proc = subprocess.Popen(
-            [oc_exe, "serve", "--port", "4096"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-            creationflags=flags,
-        )
-        # Give it a moment to start
-        await asyncio.sleep(2.0)
-
-        # Verify it actually came up by hitting the health endpoint.
-        if _opencode_proc.poll() is not None:
-            # Process exited already — read stderr for the reason.
-            rc = _opencode_proc.returncode
-            err = ""
-            try:
-                err = (_opencode_proc.stderr.read() or b"").decode("utf-8", errors="replace")[:400] if _opencode_proc.stderr else ""
-            except Exception:
-                pass
-            _opencode_proc = None
-            return JSONResponse(
-                {"ok": False, "error": f"opencode exited immediately (rc={rc}). {err}".strip()},
-                status_code=500,
-            )
-
-        try:
-            async with httpx.AsyncClient(timeout=2.0) as client:
-                r = await client.get("http://127.0.0.1:4096/global/health")
-                if r.status_code == 200:
-                    return JSONResponse({"ok": True, "status": "started", "pid": _opencode_proc.pid})
-        except Exception:
-            pass
-
-        # Process is alive but server not yet reachable — report that, don't kill.
-        return JSONResponse({
-            "ok": True,
-            "status": "started",
-            "pid": _opencode_proc.pid,
-            "warning": "Process started but :4096 not yet reachable. Retry status check in a few seconds.",
-        })
-    except Exception as exc:
-        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
-
-
-@app.post("/api/opencode/stop")
-async def opencode_stop() -> JSONResponse:
-    global _opencode_proc
-    _audit("opencode-stop", "requested")
-    if _opencode_proc is not None:
-        try:
-            _opencode_proc.terminate()
-            _opencode_proc = None
-            return JSONResponse({"ok": True, "status": "stopped"})
-        except Exception as exc:
-            return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
-    return JSONResponse({"ok": True, "status": "not_running"})
-
-
-@app.get("/api/opencode/status")
-async def opencode_status() -> JSONResponse:
-    try:
-        async with httpx.AsyncClient(timeout=2.0) as client:
-            r = await client.get("http://127.0.0.1:4096/global/health")
-            if r.status_code == 200:
-                return JSONResponse({"running": True})
-    except Exception:
-        pass
-    return JSONResponse({"running": False})
-
-
-def _args_to_cli(action: str, args: dict[str, Any]) -> list[str]:
-    """Convert run_action args dict to CLI argv for `docent studio <action>`."""
-    flags: list[str] = []
-    # Fields that appear in multiple actions — order matters for readability only.
-    for key, flag in [
-        ("topic", "--topic"), ("backend", "--backend"), ("output", "--output"),
-        ("artifact", "--artifact"), ("artifact_a", "--artifact-a"), ("artifact_b", "--artifact-b"),
-        ("query", "--query"), ("arxiv_id", "--arxiv-id"), ("key", "--key"), ("value", "--value"),
-    ]:
-        if key in args and args[key] is not None:
-            flags += [flag, str(args[key])]
-    if "guide_files" in args:
-        for g in (args["guide_files"] or []):
-            flags += ["--guide-files", g]
-    if args.get("confirmed"):
-        flags.append("--confirmed")
-    if "max_results" in args:
-        flags += ["--max-results", str(args["max_results"])]
-    if "max_sources" in args:
-        flags += ["--max-sources", str(args["max_sources"])]
-    if "sources_file" in args and args["sources_file"]:
-        flags += ["--sources-file", args["sources_file"]]
-    if "output_file" in args and args["output_file"]:
-        flags += ["--output-file", args["output_file"]]
-    # Bool flags — absent (True) = positive flag; False = --no-flag.
-    for key, flag in [
-        ("run_nlm_research", "--no-run-nlm-research"),
-        ("run_quality_gate", "--no-run-quality-gate"),
-        ("run_perspectives", "--no-run-perspectives"),
-    ]:
-        if key in args and not args[key]:
-            flags.append(flag)
-    return flags
-
-
-def _build_studio_cmd(body: StudioRunBody) -> list[str] | None:
-    """Build a `docent studio <action> ...` subprocess command from the UI form body."""
-    import shutil as _sh
-    parsed = _parse_studio_body(body)
-    if parsed is None:
-        return None
-    docent_exe = _sh.which("docent")
-    if not docent_exe:
-        return None
-    action, args = parsed
-    return [docent_exe, "studio", action] + _args_to_cli(action, args)
-
-
-@app.websocket("/ws/studio/run")
-async def studio_run_ws(websocket: WebSocket):
-    """WebSocket endpoint — pipes `docent studio <action>` subprocess stdout live.
-
-    Each stdout line from the CLI is `phase message`. We parse it and forward
-    it as a WebSocket JSON frame. asyncio subprocess pipes are true OS-level
-    async I/O — no SSE/HTTP buffering layer — so events arrive immediately.
-    """
-    await websocket.accept()
-
-    try:
-        body_raw = await websocket.receive_json()
-        body = StudioRunBody(**body_raw)
-    except WebSocketDisconnect:
-        return
-    except Exception as exc:
-        try:
-            await websocket.send_json({"type": "error", "message": f"Bad request: {exc}"})
-        except Exception:
-            pass
-        return
-
-    cmd = _build_studio_cmd(body)
-    if cmd is None:
-        try:
-            await websocket.send_json({
-                "type": "error",
-                "message": (
-                    f"Action '{body.action_id}' not found or 'docent' not on PATH. "
-                    "Make sure docent is installed and on PATH."
-                ),
-            })
-        except Exception:
-            pass
-        return
-
-    env = {
-        **os.environ,
-        "PYTHONIOENCODING": "utf-8",
-        "NO_COLOR": "1",              # strip Rich ANSI markup
-        "FORCE_COLOR": "0",
-        "TERM": "dumb",               # tell Rich it's not a real terminal
-        "COLUMNS": "1000",            # prevent Rich from wrapping long paths across lines
-        "DOCENT_UI_SUBPROCESS": "1",  # suppress post-action result rendering in CLI
-    }
-
-    proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,   # merge stderr → stdout so warnings appear
-        env=env,
-    )
-
-    import re as _re
-    output_file: str | None = None
-    notebook_id: str | None = None
-    _RESULT_MARKER = "\x00DOCENT_RESULT\x00"
-
-    try:
-        assert proc.stdout is not None
-        async for raw_bytes in proc.stdout:
-            line = raw_bytes.decode("utf-8", errors="replace").rstrip()
-            if not line:
-                continue
-
-            # Structured result line emitted by cli.py when DOCENT_UI_SUBPROCESS=1.
-            # Parse it for output_file / notebook_id and skip forwarding to the UI.
-            if _RESULT_MARKER in line:
-                try:
-                    payload = json.loads(line[line.index(_RESULT_MARKER) + len(_RESULT_MARKER):])
-                    output_file = payload.get("output_file") or output_file
-                    notebook_id = payload.get("notebook_id") or notebook_id
-                except Exception:
-                    pass
-                continue
-
-            # Strip any residual Rich markup (e.g. "[dim]phase[/]") left by non-TTY output
-            line_clean = _re.sub(r"\[/?[^\]]*\]", "", line).strip()
-            if not line_clean:
-                continue
-
-            # Parse "phase message" format produced by _drive_progress.
-            # Real pipeline phases are always lowercase snake_case (web_search,
-            # paper_search, compile, done, …). Filter out startup banners, update
-            # notices ("UPDATE AVAILABLE: feynman …"), Rich progress-bar artifacts,
-            # and any other line whose first word isn't a valid phase identifier.
-            parts = line_clean.split(None, 1)
-            raw_phase = parts[0]
-            if not _re.match(r'^[a-z][a-z0-9_]*$', raw_phase):
-                continue  # skip: banner chars, UPDATE, @companion-ai/…, etc.
-            phase = raw_phase
-            text  = parts[1] if len(parts) > 1 else line_clean
-
-            try:
-                await websocket.send_json({"type": "log", "phase": phase, "text": text})
-            except Exception:
-                proc.terminate()
-                return
-
-    except WebSocketDisconnect:
-        proc.terminate()
-        return
-    except Exception as exc:
-        try:
-            await websocket.send_json({"type": "error", "message": str(exc)})
-        except Exception:
-            pass
-        proc.terminate()
-        return
-
-    await proc.wait()
-
-    result: dict[str, Any] = {}
-    if output_file:
-        result["output_file"] = output_file
-    if notebook_id:
-        result["notebook_id"] = notebook_id
-
-    try:
-        if proc.returncode == 0:
-            await websocket.send_json({
-                "type": "done", "status": "success", "raw": json.dumps(result),
-            })
-        else:
-            await websocket.send_json({
-                "type": "done", "status": "failure", "raw": json.dumps({}),
-            })
-    except Exception:
-        pass
-
-
-@app.post("/api/studio/run")
-async def studio_run(body: StudioRunBody):
-    if body.action_id not in _STUDIO_ACTION_MAP:
-        return JSONResponse({'error': f'Unknown action: {body.action_id!r}'}, status_code=400)
-    studio_action = _STUDIO_ACTION_MAP[body.action_id]
-    args = _form_to_studio_args(body.action_id, body)
-    return StreamingResponse(
-        _stream_studio_run(studio_action, args),
-        media_type='text/event-stream',
-        headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'},
-    )
+app.include_router(_reading_router)
+app.include_router(_config_router)
+app.include_router(_doctor_router)
+app.include_router(_fs_router)
+app.include_router(_opencode_router)
+app.include_router(_studio_sse_router)
 
 
 if UI_DIST.is_dir():

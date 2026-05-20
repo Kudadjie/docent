@@ -435,15 +435,16 @@ ${sectionsHtml}
 </body>
 </html>`;
 
-      const w = window.open('', '_blank');
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+      const blobUrl = URL.createObjectURL(blob);
+      const w = window.open(blobUrl, '_blank');
       if (!w) {
+        URL.revokeObjectURL(blobUrl);
         setToast({ type: 'error', message: 'Pop-up blocked — allow pop-ups to export as PDF.' });
         return;
       }
-      w.document.write(html);
-      w.document.close();
-      w.focus();
-      setTimeout(() => w.print(), 300);
+      // Revoke after the window has had time to load and print
+      setTimeout(() => { w.focus(); w.print(); URL.revokeObjectURL(blobUrl); }, 500);
       setToast({ type: 'success', message: `Opened print dialog for ${qdata.entries.length} entries.` });
     } catch {
       setToast({ type: 'error', message: 'Export failed.' });

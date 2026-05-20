@@ -4,6 +4,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from docent import ui_server
+import docent.ui_routes.doctor as _doctor_mod
 
 
 def test_tooling_endpoint_reports_npm_tool_versions(monkeypatch):
@@ -15,8 +16,8 @@ def test_tooling_endpoint_reports_npm_tool_versions(monkeypatch):
         assert package == "@companion-ai/feynman"
         return "1.2.4"
 
-    monkeypatch.setattr(ui_server, "_get_npm_installed", fake_installed)
-    monkeypatch.setattr(ui_server, "_fetch_npm_latest", fake_latest)
+    monkeypatch.setattr(_doctor_mod, "_get_npm_installed", fake_installed)
+    monkeypatch.setattr(_doctor_mod, "_fetch_npm_latest", fake_latest)
 
     response = TestClient(ui_server.app).get("/api/tooling")
 
@@ -40,8 +41,8 @@ def test_tooling_endpoint_marks_matching_version_current(monkeypatch):
     async def fake_latest(package: str) -> str | None:
         return "1.2.0"
 
-    monkeypatch.setattr(ui_server, "_get_npm_installed", fake_installed)
-    monkeypatch.setattr(ui_server, "_fetch_npm_latest", fake_latest)
+    monkeypatch.setattr(_doctor_mod, "_get_npm_installed", fake_installed)
+    monkeypatch.setattr(_doctor_mod, "_fetch_npm_latest", fake_latest)
 
     response = TestClient(ui_server.app).get("/api/tooling")
 

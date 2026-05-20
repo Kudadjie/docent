@@ -12,6 +12,7 @@ JSON file in place.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from contextlib import contextmanager
 from datetime import datetime
@@ -20,6 +21,8 @@ from typing import Any, Iterator
 
 from filelock import FileLock
 from pydantic import BaseModel
+
+_logger = logging.getLogger(__name__)
 
 
 class BannerCounts(BaseModel):
@@ -63,12 +66,20 @@ class ReadingQueueStore:
     def load_queue(self) -> list[dict[str, Any]]:
         if not self.queue_path.exists():
             return []
-        return json.loads(self.queue_path.read_text(encoding="utf-8"))
+        try:
+            return json.loads(self.queue_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            _logger.warning("queue.json is corrupt (%s) — treating as empty queue", exc)
+            return []
 
     def load_index(self) -> dict[str, dict[str, Any]]:
         if not self.index_path.exists():
             return {}
-        return json.loads(self.index_path.read_text(encoding="utf-8"))
+        try:
+            return json.loads(self.index_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            _logger.warning("queue-index.json is corrupt (%s) — treating as empty index", exc)
+            return {}
 
     def save_queue(self, queue: list[dict[str, Any]]) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
@@ -79,7 +90,11 @@ class ReadingQueueStore:
     def banner_counts(self) -> BannerCounts:
         if not self.state_path.exists():
             return BannerCounts()
-        data = json.loads(self.state_path.read_text(encoding="utf-8"))
+        try:
+            data = json.loads(self.state_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            _logger.warning("state.json is corrupt (%s) — using zero counts", exc)
+            return BannerCounts()
         return BannerCounts(
             queued=data.get("queued", 0),
             reading=data.get("reading", 0),
