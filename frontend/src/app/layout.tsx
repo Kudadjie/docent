@@ -32,9 +32,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           `var s=document.createElement('style');` +
           `s.id='_dls';` +
           `s.textContent=` +
-            `'@keyframes _dspin{to{transform:rotate(360deg)}}'` +
+            `'@keyframes _dspin{from{transform:translate(-50%,-50%) rotate(0deg)}to{transform:translate(-50%,-50%) rotate(360deg)}}'` +
             `+'body::before{content:"";position:fixed;inset:0;z-index:9999;background:'+bg+';transition:opacity .35s}'` +
-            `+'body::after{content:"";position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10000;'` +
+            `+'body::after{content:"";position:fixed;top:50%;left:50%;z-index:10000;'` +
             `+'width:22px;height:22px;border-radius:50%;border:2px solid '+ring+';border-top-color:#18E299;animation:_dspin .75s linear infinite;transition:opacity .35s}';` +
           `document.head.appendChild(s);` +
           // Dismiss: fade then remove the <style>
