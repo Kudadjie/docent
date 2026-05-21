@@ -587,28 +587,30 @@ if UI_DIST.is_dir():
     #   /<page>/__next.<page>.<SEGMENT>=<hash>
     # The actual file on disk is:
     #   /<page>/__next.<page>/<SEGMENT>.txt
-    # Strip the hash and map to the correct .txt file.
+    # A middleware (not a route) handles this so it can call call_next and
+    # fall through to StaticFiles for everything else — routes don't fall through.
     import re as _re
+    from starlette.middleware.base import BaseHTTPMiddleware
     from fastapi.responses import FileResponse as _FR
 
-    _PREFETCH_RE = _re.compile(r"^(.*)/(__next\.[^/=]+)=([^/]*)$")
+    _PREFETCH_RE = _re.compile(r"^/(.*)/(__next\.[^/=]+)=")
 
-    @app.get("/{full_path:path}")
-    async def _rsc_prefetch(full_path: str):
-        m = _PREFETCH_RE.match(full_path)
-        if not m:
-            return None
-        prefix, name, _ = m.group(1), m.group(2), m.group(3)
-        parts = name.split(".")          # ['__next', 'page', 'SEGMENT', ...]
-        if len(parts) < 3:
-            return None
-        sub_dir = ".".join(parts[:2])    # '__next.dashboard'
-        file_name = ".".join(parts[2:]) + ".txt"   # '__PAGE__.txt'
-        path = UI_DIST / prefix / sub_dir / file_name
-        if path.is_file():
-            return _FR(str(path), media_type="text/plain")
-        return None
+    class _RSCPrefetchMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request, call_next):
+            m = _PREFETCH_RE.match(request.url.path)
+            if m:
+                prefix = m.group(1)
+                name = request.url.path.split("/")[-1].split("=")[0]
+                parts = name.split(".")
+                if len(parts) >= 3:
+                    sub_dir = ".".join(parts[:2])
+                    file_name = ".".join(parts[2:]) + ".txt"
+                    candidate = UI_DIST / prefix / sub_dir / file_name
+                    if candidate.is_file():
+                        return _FR(str(candidate), media_type="text/plain")
+            return await call_next(request)
 
+    app.add_middleware(_RSCPrefetchMiddleware)
     app.mount("/", StaticFiles(directory=str(UI_DIST), html=True), name="ui")
 
 
