@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className="h-full" data-theme="dark" suppressHydrationWarning>
-      <head>
+      <head suppressHydrationWarning>
         {/* Theme + loading screen — runs synchronously before first paint.
             Uses a CSS class on <html> so React hydration can't remove it. */}
         {/* Runs synchronously before first paint.
