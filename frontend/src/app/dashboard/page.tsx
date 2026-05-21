@@ -172,11 +172,9 @@ export default function DashboardPage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
               <span suppressHydrationWarning style={{
                 fontSize: 16, fontWeight: 600,
-                color: 'var(--fg1)', letterSpacing: '-0.2px',
+                color: displayName ? '#41bcb7' : 'var(--fg1)', letterSpacing: '-0.2px',
               }}>
-                {displayName
-                  ? <><span style={{ color: '#41bcb7' }}>{greeting()}</span>{`, ${displayName}`}</>
-                  : 'Welcome to Docent'}
+                {displayName ? `${greeting()}, ${displayName}` : 'Welcome to Docent'}
               </span>
               {displayProgram && (
                 <>
