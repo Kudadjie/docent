@@ -94,27 +94,30 @@ class _LocalhostGuard(BaseHTTPMiddleware):
 
 import re as _re
 
-class _RSCPathRewrite(BaseHTTPMiddleware):
+class _RSCPathRewrite:
     """Rewrite Next.js RSC payload URLs so StaticFiles can resolve them.
 
     Next.js client router requests:  /{route}/__next.{seg}.__PAGE__.txt
     Static export creates files at:  /{route}/__next.{seg}/__PAGE__.txt
 
-    The router encodes the sub-directory with a dot; the export uses a real
-    directory separator.  This middleware translates before StaticFiles sees it.
+    Pure ASGI middleware (not BaseHTTPMiddleware) so the scope mutation
+    actually reaches the downstream StaticFiles app.
     """
     _pat = _re.compile(r"(/__next\.[^/]+)\.__PAGE__\.txt$")
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        path = request.url.path
-        m = self._pat.search(path)
-        if m:
-            new_path = path[: m.start()] + m.group(1) + "/__PAGE__.txt"
-            scope = dict(request.scope)
-            scope["path"] = new_path
-            scope["raw_path"] = new_path.encode("latin-1")
-            request = Request(scope, request.receive, request._send)
-        return await call_next(request)
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] == "http":
+            path: str = scope.get("path", "")
+            m = self._pat.search(path)
+            if m:
+                new_path = path[: m.start()] + m.group(1) + "/__PAGE__.txt"
+                scope = dict(scope)
+                scope["path"] = new_path
+                scope["raw_path"] = new_path.encode("latin-1")
+        await self.app(scope, receive, send)
 
 
 app = FastAPI(docs_url=None, redoc_url=None)
