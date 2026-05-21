@@ -36,11 +36,8 @@ function buildHeatmap(mtimes: number[]): number[][] {
   return grid;
 }
 
-function cellColor(level: number, dark: boolean): string {
-  if (dark) {
-    return ['rgba(255,255,255,0.04)', 'rgba(24,226,153,0.22)', 'rgba(24,226,153,0.48)', '#18E299'][level];
-  }
-  return ['rgba(0,0,0,0.05)', 'rgba(24,226,153,0.30)', 'rgba(24,226,153,0.60)', '#0fa76e'][level];
+function cellColor(level: number): string {
+  return ['var(--heat-0)', 'var(--heat-1)', 'var(--heat-2)', 'var(--heat-3)'][level];
 }
 
 export default function ActivityHeatmap({ dark, mtimes }: {
@@ -86,8 +83,8 @@ export default function ActivityHeatmap({ dark, mtimes }: {
                   style={{
                     width: 18, height: 18,
                     borderRadius: 3,
-                    background: cellColor(level, dark),
-                    border: level === 0 ? `1px solid ${dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.07)'}` : 'none',
+                    background: cellColor(level),
+                    border: level === 0 ? '1px solid var(--border)' : 'none',
                     cursor: 'default',
                     transition: 'opacity 0.1s',
                   }}
@@ -107,8 +104,8 @@ export default function ActivityHeatmap({ dark, mtimes }: {
           {[0, 1, 2, 3].map(l => (
             <div key={l} style={{
               width: 10, height: 10, borderRadius: 2,
-              background: cellColor(l, dark),
-              border: l === 0 ? `1px solid ${dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.1)'}` : 'none',
+              background: cellColor(l),
+              border: l === 0 ? '1px solid var(--border-md)' : 'none',
             }} />
           ))}
           <span>More</span>

@@ -114,8 +114,13 @@ export default function DashboardPage() {
   // Flatten stats in plugin order (preserves consistent left→right column order)
   const allStats = PLUGIN_CARDS.flatMap(p => statMap[p.id] ?? []);
 
-  // User profile for greeting
-  const [user, setUser] = useState<UserProfile | null>(null);
+  // User profile for greeting — seed from localStorage cache, then refresh from API
+  const [user, setUser] = useState<UserProfile | null>(() => {
+    try {
+      const cached = localStorage.getItem('docent:user-profile');
+      return cached ? (JSON.parse(cached) as UserProfile) : null;
+    } catch { return null; }
+  });
   useEffect(() => {
     fetch('/api/user').then(r => r.json()).then(setUser).catch(() => {});
   }, []);
@@ -145,14 +150,17 @@ export default function DashboardPage() {
   const queueCount = (statMap['reading']?.find(s => s.label === 'Queued')?.value as number) ?? 0;
 
   return (
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: D.pageBg }}>
+    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
       <Sidebar active="dashboard" queueCount={queueCount} dark={dark} />
 
-      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
+      <main
+        className="dash-main-bg"
+        style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}
+      >
         <StatusBanner dark={dark} onToggleDark={toggleDark} />
 
         {/* Scrollable content */}
-        <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', background: 'transparent' }}>
 
           {/* Greeting strip */}
           <div style={{
@@ -164,14 +172,14 @@ export default function DashboardPage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
               <span style={{
                 fontSize: 16, fontWeight: 600,
-                color: dark ? '#ededed' : '#0d0d0d', letterSpacing: '-0.2px',
+                color: 'var(--fg1)', letterSpacing: '-0.2px',
               }}>
                 {displayName ? `${greeting()}, ${displayName}` : 'Welcome to Docent'}
               </span>
               {displayProgram && (
                 <>
                   <span style={{ color: D.sectionLabel, fontSize: 14, lineHeight: 1 }}>·</span>
-                  <span style={{ fontSize: 14, color: dark ? '#a0a0a0' : '#57606a' }}>
+                  <span style={{ fontSize: 14, color: 'var(--fg3)' }}>
                     {displayProgram}
                   </span>
                 </>

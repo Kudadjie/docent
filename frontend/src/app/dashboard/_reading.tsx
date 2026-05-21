@@ -97,16 +97,16 @@ export default function ReadingCard({ dark, onStats }: {
           <>
             <div style={{
               fontSize: 13, fontWeight: 500,
-              color: dark ? '#ededed' : '#0d0d0d', lineHeight: 1.4,
+              color: 'var(--fg1)', lineHeight: 1.4,
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             }} title={nextUp.title}>
               {nextUp.title || nextUp.id}
             </div>
             <div style={{ marginTop: 5, fontFamily: MONO, fontSize: 11, color: D.dataMuted, letterSpacing: '0.4px' }}>
-              <span style={{ color: dark ? '#a0a0a0' : '#57606a' }}>#{nextUp.order}</span>
+              <span style={{ color: 'var(--fg3)' }}>#{nextUp.order}</span>
               {nextUp.category && <>
                 <span style={{ margin: '0 7px' }}>·</span>
-                <span style={{ color: dark ? '#a0a0a0' : '#57606a' }}>{nextUp.category}</span>
+                <span style={{ color: 'var(--fg3)' }}>{nextUp.category}</span>
               </>}
               {nextUp.tags[0] && <>
                 <span style={{ margin: '0 7px' }}>·</span>
@@ -165,7 +165,7 @@ export default function ReadingCard({ dark, onStats }: {
       >
         {inProg ? (
           <div style={{
-            fontSize: 13, color: dark ? '#ededed' : '#0d0d0d',
+            fontSize: 13, color: 'var(--fg1)',
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           }} title={inProg.title}>
             {inProg.title || inProg.id}

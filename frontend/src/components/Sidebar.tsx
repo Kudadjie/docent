@@ -6,7 +6,8 @@ import Link from 'next/link';
 import { LayoutDashboard, BookOpen, FlaskConical, BookText, Settings, Globe2, GripVertical } from 'lucide-react';
 import WelcomeModal, { type UserProfile } from './WelcomeModal';
 
-const NAV_ORDER_KEY = 'docent:nav-order';
+const NAV_ORDER_KEY  = 'docent:nav-order';
+const USER_CACHE_KEY = 'docent:user-profile';
 
 interface NavItem {
   id: string;
@@ -75,7 +76,12 @@ function loadNavOrder(): string[] {
 }
 
 export default function Sidebar({ active, queueCount, dark: darkProp, currentRun }: Props) {
-  const [user, setUser] = useState<UserProfile | null>(null);
+  const [user, setUser] = useState<UserProfile | null>(() => {
+    try {
+      const cached = localStorage.getItem(USER_CACHE_KEY);
+      return cached ? (JSON.parse(cached) as UserProfile) : null;
+    } catch { return null; }
+  });
   const [showWelcome, setShowWelcome] = useState(false);
   const [localDark, setLocalDark] = useState(false);
   const [savedDatabaseDir, setSavedDatabaseDir] = useState<string>('');
@@ -126,6 +132,7 @@ export default function Sidebar({ active, queueCount, dark: darkProp, currentRun
       .then(r => r.json())
       .then((data: UserProfile) => {
         setUser(data);
+        try { localStorage.setItem(USER_CACHE_KEY, JSON.stringify(data)); } catch {}
         if (!data.name) setShowWelcome(true);
       })
       .catch(() => {});
@@ -141,6 +148,7 @@ export default function Sidebar({ active, queueCount, dark: darkProp, currentRun
   async function handleWelcomeComplete(profile: UserProfile, databaseDir?: string) {
     setShowWelcome(false);
     setUser(profile);
+    try { localStorage.setItem(USER_CACHE_KEY, JSON.stringify(profile)); } catch {}
     try {
       await fetch('/api/user', {
         method: 'POST',

@@ -44,7 +44,63 @@
   --mono: 'Geist Mono', 'SFMono-Regular', Consolas, ui-monospace, monospace;
 }
 
-/* ── Light mode overrides ──────────────────────────────────────── */
+/* ── System preference: light (fires before any JS, no flash for matching users) */
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg:           #f8f9fa;
+    --bg-subtle:    #f0f2f5;
+    --bg-card:      #ffffff;
+    --fg1:          #0d1117;
+    --fg2:          #24292f;
+    --fg3:          #57606a;
+    --fg4:          #8c959f;
+    --gray100:      #eaeef2;
+    --gray200:      #d0d7de;
+    --border:       rgba(0,0,0,0.08);
+    --border-md:    rgba(0,0,0,0.13);
+    --logo-border:  rgba(0,0,0,0.18);
+    --row-hover:    #f3f6fa;
+    --overlay:      rgba(0,0,0,0.4);
+    --code-bg:      #f3f6fa;
+    --code-border:  rgba(0,0,0,0.10);
+    --amber-bg:        rgba(245,158,11,0.10);
+    --amber-bg-strong: rgba(245,158,11,0.18);
+    --amber-text:      #B45309;
+    --amber-border:    rgba(245,158,11,0.4);
+    --red-bg:          rgba(212,86,86,0.10);
+    --red-text:        #DC2626;
+    --hero-grad:
+      radial-gradient(ellipse 700px 280px at 12% 0%, #18E29940, transparent 60%),
+      radial-gradient(ellipse 540px 240px at 88% 20%, #3B82F62e, transparent 60%),
+      radial-gradient(ellipse 460px 200px at 50% 80%, #8B5CF624, transparent 60%);
+  }
+}
+
+/* ── Explicit stored preference — overrides system default (comes later = wins) */
+[data-theme="dark"] {
+  --bg:           #0d0d0d;
+  --bg-subtle:    #111111;
+  --bg-card:      #141414;
+  --fg1:          #ededed;
+  --fg2:          #c0c0c0;
+  --fg3:          #a0a0a0;
+  --fg4:          #606060;
+  --gray100:      #1e1e1e;
+  --gray200:      #2a2a2a;
+  --border:       rgba(255,255,255,0.06);
+  --border-md:    rgba(255,255,255,0.10);
+  --logo-border:  rgba(255,255,255,0.22);
+  --row-hover:    #1a1a1a;
+  --overlay:      rgba(0,0,0,0.55);
+  --code-bg:      #0a0a0a;
+  --code-border:  rgba(255,255,255,0.08);
+  --amber-text:   #F5A623;
+  --red-text:     #F87171;
+  --hero-grad:
+    radial-gradient(ellipse 700px 280px at 12% 0%, #18E2991c, transparent 60%),
+    radial-gradient(ellipse 540px 240px at 88% 20%, #3B82F618, transparent 60%),
+    radial-gradient(ellipse 460px 200px at 50% 80%, #8B5CF612, transparent 60%);
+}
 [data-theme="light"] {
   --bg:           #f8f9fa;
   --bg-subtle:    #f0f2f5;
@@ -161,6 +217,69 @@ body {
 .md-preview a { color: #0fa76e; text-decoration: none; }
 .md-preview strong { color: var(--fg1); font-weight: 600; }
 .md-preview hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+
+/* ── Dashboard color tokens ─────────────────────────────────────── */
+:root {
+  --dash-card-bg:     #111111;
+  --dash-card-border: rgba(255,255,255,0.08);
+  --dash-divider:     rgba(255,255,255,0.06);
+  --dash-section:     #606060;
+  --dash-muted:       #707070;
+  --dash-row-hover:   rgba(255,255,255,0.025);
+  --heat-0: rgba(255,255,255,0.04);
+  --heat-1: rgba(24,226,153,0.22);
+  --heat-2: rgba(24,226,153,0.48);
+  --heat-3: #18E299;
+  --dash-grad: linear-gradient(135deg, rgba(24,226,153,0.07) 0%, rgba(139,92,246,0.04) 45%, transparent 75%);
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --dash-card-bg:     #ffffff;
+    --dash-card-border: rgba(0,0,0,0.06);
+    --dash-divider:     rgba(0,0,0,0.05);
+    --dash-section:     #888888;
+    --dash-muted:       #888888;
+    --dash-row-hover:   rgba(0,0,0,0.025);
+    --heat-0: rgba(0,0,0,0.05);
+    --heat-1: rgba(24,226,153,0.30);
+    --heat-2: rgba(24,226,153,0.60);
+    --heat-3: #0fa76e;
+    --dash-grad: linear-gradient(135deg, rgba(24,226,153,0.22) 0%, rgba(139,92,246,0.13) 45%, transparent 75%);
+  }
+}
+[data-theme="dark"] {
+  --dash-card-bg:     #111111;
+  --dash-card-border: rgba(255,255,255,0.08);
+  --dash-divider:     rgba(255,255,255,0.06);
+  --dash-section:     #606060;
+  --dash-muted:       #707070;
+  --dash-row-hover:   rgba(255,255,255,0.025);
+  --heat-0: rgba(255,255,255,0.04);
+  --heat-1: rgba(24,226,153,0.22);
+  --heat-2: rgba(24,226,153,0.48);
+  --heat-3: #18E299;
+  --dash-grad: linear-gradient(135deg, rgba(24,226,153,0.07) 0%, rgba(139,92,246,0.04) 45%, transparent 75%);
+}
+[data-theme="light"] {
+  --dash-card-bg:     #ffffff;
+  --dash-card-border: rgba(0,0,0,0.06);
+  --dash-divider:     rgba(0,0,0,0.05);
+  --dash-section:     #888888;
+  --dash-muted:       #888888;
+  --dash-row-hover:   rgba(0,0,0,0.025);
+  --heat-0: rgba(0,0,0,0.05);
+  --heat-1: rgba(24,226,153,0.30);
+  --heat-2: rgba(24,226,153,0.60);
+  --heat-3: #0fa76e;
+  --dash-grad: linear-gradient(135deg, rgba(24,226,153,0.22) 0%, rgba(139,92,246,0.13) 45%, transparent 75%);
+}
+
+/* Dashboard gradient + dot background — uses CSS variables, no JS needed */
+.dash-main-bg {
+  background-color: var(--bg);
+  background-image: var(--dash-grad), radial-gradient(circle, var(--gray200) 1px, transparent 1px);
+  background-size: 100% 100%, 24px 24px;
+}
 
 /* ── Dashboard ─────────────────────────────────────────────────── */
 .cta-link { transition: opacity 0.12s ease; }

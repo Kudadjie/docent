@@ -1,16 +1,18 @@
-// Dashboard-scoped design tokens — intentionally NOT promoted to globals.
-// See HANDOFF.md: card bg is #111111 (vs #141414 elsewhere), radius 8px (vs 16px).
-export function dashTokens(dark: boolean) {
+// Dashboard-scoped design tokens.
+// Colors are CSS variables so they respond to data-theme synchronously (no flash).
+// The `dark` param is kept for callers that need it for non-color logic.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function dashTokens(_dark?: boolean) {
   return {
-    pageBg:       dark ? '#0d0d0d'                  : '#f8f9fa',
-    cardBg:       dark ? '#111111'                  : '#ffffff',
-    cardBorder:   dark ? 'rgba(255,255,255,0.08)'   : 'rgba(0,0,0,0.06)',
-    divider:      dark ? 'rgba(255,255,255,0.06)'   : 'rgba(0,0,0,0.05)',
+    pageBg:       'var(--bg)',
+    cardBg:       'var(--dash-card-bg)',
+    cardBorder:   'var(--dash-card-border)',
+    divider:      'var(--dash-divider)',
     radius:       8,
-    sectionLabel: dark ? '#606060'                  : '#888888',
-    dataMuted:    dark ? '#707070'                  : '#888888',
-    dataBright:   dark ? '#ededed'                  : '#0d0d0d',
-    rowHover:     dark ? 'rgba(255,255,255,0.025)'  : 'rgba(0,0,0,0.025)',
+    sectionLabel: 'var(--dash-section)',
+    dataMuted:    'var(--dash-muted)',
+    dataBright:   'var(--fg1)',
+    rowHover:     'var(--dash-row-hover)',
   } as const;
 }
 

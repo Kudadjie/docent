@@ -112,7 +112,7 @@ export default function StudioCard({ dark, onStats }: {
                 padding: '5px 0',
               }}>
                 <span style={{
-                  fontSize: 13, color: dark ? '#ededed' : '#0d0d0d',
+                  fontSize: 13, color: 'var(--fg1)',
                   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                   flex: 1, minWidth: 0, paddingRight: 12,
                 }} title={cleanTopic(f.name)}>

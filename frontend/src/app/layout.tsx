@@ -17,7 +17,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* Runs synchronously before first paint — eliminates theme flash */}
         <script dangerouslySetInnerHTML={{ __html:
           `(function(){try{var t=localStorage.getItem('docent:dark');` +
-          `document.documentElement.setAttribute('data-theme',(t===null||t==='true')?'dark':'light');}catch(e){}})();`
+          `if(t!==null){` +
+          `var r=document.documentElement;` +
+          `r.setAttribute('data-theme',t==='true'?'dark':'light');` +
+          `}` +
+          `}catch(e){}})();`
         }} />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />

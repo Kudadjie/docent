@@ -73,16 +73,16 @@ export default function QuickActions({ dark }: { dark: boolean }) {
             </span>
 
             {/* Label */}
-            <span style={{ flex: 1, fontSize: 13, color: dark ? '#ededed' : '#0d0d0d' }}>
+            <span style={{ flex: 1, fontSize: 13, color: 'var(--fg1)' }}>
               {label}
             </span>
 
             {/* Key chip */}
             <span style={{
               fontFamily: MONO, fontSize: 10, fontWeight: 500,
-              color: dark ? '#a0a0a0' : '#57606a',
-              background: dark ? '#1e1e1e' : '#eaeef2',
-              border: `1px solid ${dark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.13)'}`,
+              color: 'var(--fg3)',
+              background: 'var(--gray100)',
+              border: '1px solid var(--border-md)',
               borderRadius: 4,
               minWidth: 22, height: 20,
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
