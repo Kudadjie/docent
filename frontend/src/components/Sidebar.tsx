@@ -372,7 +372,7 @@ export default function Sidebar({ active, queueCount, dark: darkProp, currentRun
               cursor: 'pointer', textAlign: 'left',
             }}
           >
-            <div style={{
+            <div suppressHydrationWarning style={{
               width: 28, height: 28, borderRadius: '50%',
               background: 'rgba(24,226,153,0.15)', color: '#0fa76e',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -381,13 +381,13 @@ export default function Sidebar({ active, queueCount, dark: darkProp, currentRun
               {initial}
             </div>
             <div style={{ minWidth: 0 }}>
-              <div style={{
+              <div suppressHydrationWarning style={{
                 fontFamily: 'var(--sans)', fontWeight: 500, fontSize: 12,
                 color: 'var(--fg1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               }}>
                 {displayName}
               </div>
-              <div style={{
+              <div suppressHydrationWarning style={{
                 fontFamily: 'var(--sans)', fontWeight: 400, fontSize: 11,
                 color: 'var(--fg4)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               }}>

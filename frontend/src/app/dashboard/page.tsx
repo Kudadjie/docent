@@ -170,7 +170,7 @@ export default function DashboardPage() {
             flexShrink: 0,
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-              <span style={{
+              <span suppressHydrationWarning style={{
                 fontSize: 16, fontWeight: 600,
                 color: 'var(--fg1)', letterSpacing: '-0.2px',
               }}>
@@ -179,13 +179,13 @@ export default function DashboardPage() {
               {displayProgram && (
                 <>
                   <span style={{ color: D.sectionLabel, fontSize: 14, lineHeight: 1 }}>·</span>
-                  <span style={{ fontSize: 14, color: 'var(--fg3)' }}>
+                  <span suppressHydrationWarning style={{ fontSize: 14, color: 'var(--fg3)' }}>
                     {displayProgram}
                   </span>
                 </>
               )}
             </div>
-            <span style={{
+            <span suppressHydrationWarning style={{
               fontFamily: MONO, fontSize: 11, color: D.dataMuted,
               letterSpacing: '0.5px', whiteSpace: 'nowrap',
             }}>
