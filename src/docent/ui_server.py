@@ -583,6 +583,32 @@ app.include_router(_backup_router)
 
 
 if UI_DIST.is_dir():
+    # Next.js App Router prefetch requests arrive as:
+    #   /<page>/__next.<page>.<SEGMENT>=<hash>
+    # The actual file on disk is:
+    #   /<page>/__next.<page>/<SEGMENT>.txt
+    # Strip the hash and map to the correct .txt file.
+    import re as _re
+    from fastapi.responses import FileResponse as _FR
+
+    _PREFETCH_RE = _re.compile(r"^(.*)/(__next\.[^/=]+)=([^/]*)$")
+
+    @app.get("/{full_path:path}")
+    async def _rsc_prefetch(full_path: str):
+        m = _PREFETCH_RE.match(full_path)
+        if not m:
+            return None
+        prefix, name, _ = m.group(1), m.group(2), m.group(3)
+        parts = name.split(".")          # ['__next', 'page', 'SEGMENT', ...]
+        if len(parts) < 3:
+            return None
+        sub_dir = ".".join(parts[:2])    # '__next.dashboard'
+        file_name = ".".join(parts[2:]) + ".txt"   # '__PAGE__.txt'
+        path = UI_DIST / prefix / sub_dir / file_name
+        if path.is_file():
+            return _FR(str(path), media_type="text/plain")
+        return None
+
     app.mount("/", StaticFiles(directory=str(UI_DIST), html=True), name="ui")
 
 
