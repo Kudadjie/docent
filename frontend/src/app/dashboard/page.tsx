@@ -26,9 +26,9 @@ const PLUGIN_CARDS: DashboardPlugin[] = [
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function greeting(): string {
   const h = new Date().getHours();
-  if (h < 12) return 'Good morning';
-  if (h < 17) return 'Good afternoon';
-  return 'Good evening';
+  if (h < 12) return 'Good Morning';
+  if (h < 17) return 'Good Afternoon';
+  return 'Good Evening';
 }
 
 function formatDatetime(): string {
@@ -174,7 +174,9 @@ export default function DashboardPage() {
                 fontSize: 16, fontWeight: 600,
                 color: 'var(--fg1)', letterSpacing: '-0.2px',
               }}>
-                {displayName ? `${greeting()}, ${displayName}` : 'Welcome to Docent'}
+                {displayName
+                  ? <><span style={{ color: '#41bcb7' }}>{greeting()}</span>{`, ${displayName}`}</>
+                  : 'Welcome to Docent'}
               </span>
               {displayProgram && (
                 <>
