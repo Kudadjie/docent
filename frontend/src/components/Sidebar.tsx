@@ -357,7 +357,10 @@ export default function Sidebar({ active, queueCount, dark: darkProp, currentRun
           })}
         </div>
 
-        {/* User footer */}
+        {/* User footer — suppressHydrationWarning because server renders null user
+            (setup button) while client immediately has the localStorage-cached
+            profile (profile button), causing a structural DOM mismatch. */}
+        <div suppressHydrationWarning>
         {profileSet ? (
           <button
             onClick={() => setShowWelcome(true)}
@@ -431,6 +434,7 @@ export default function Sidebar({ active, queueCount, dark: darkProp, currentRun
             </div>
           </button>
         )}
+        </div>
       </nav>
     </>
   );

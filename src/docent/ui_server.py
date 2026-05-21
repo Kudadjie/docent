@@ -583,27 +583,6 @@ app.include_router(_backup_router)
 
 
 if UI_DIST.is_dir():
-    # Next.js prefetch requests use dots where the filesystem uses directories:
-    #   URL:  /<prefix>/__next.<page>.<SEGMENT>.txt?_rsc=<hash>
-    #   File: ui_dist/<prefix>/__next.<page>/<SEGMENT>.txt
-    # Middleware (not a route) so non-matching requests fall through to StaticFiles.
-    import re as _re
-    from starlette.middleware.base import BaseHTTPMiddleware
-    from fastapi.responses import FileResponse as _FR
-
-    _PREFETCH_RE = _re.compile(r"^/(.*)/(__next\.[a-z0-9_-]+)\.(.+\.txt)$")
-
-    class _RSCPrefetchMiddleware(BaseHTTPMiddleware):
-        async def dispatch(self, request, call_next):
-            m = _PREFETCH_RE.match(request.url.path)
-            if m:
-                prefix, sub_dir, filename = m.group(1), m.group(2), m.group(3)
-                candidate = UI_DIST / prefix / sub_dir / filename
-                if candidate.is_file():
-                    return _FR(str(candidate), media_type="text/plain")
-            return await call_next(request)
-
-    app.add_middleware(_RSCPrefetchMiddleware)
     app.mount("/", StaticFiles(directory=str(UI_DIST), html=True), name="ui")
 
 
