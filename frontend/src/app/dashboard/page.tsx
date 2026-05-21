@@ -3,9 +3,32 @@
 import Sidebar from '@/components/Sidebar';
 import StatusBanner from '@/components/StatusBanner';
 import { useDarkMode } from '@/hooks/useDarkMode';
+import { useTour } from '@/hooks/useTour';
 
 export default function DashboardPage() {
   const { dark, toggleDark } = useDarkMode();
+
+  useTour('dashboard', [
+    {
+      popover: {
+        title: 'Welcome to Docent',
+        description: "Docent is your grad school AI — a single place to manage your reading, run research, and stay on top of your academic work. Let's take a quick look around.",
+      },
+    },
+    {
+      element: 'nav[aria-label="Main navigation"]',
+      popover: {
+        title: 'Navigate Docent',
+        description: 'Reading manages your paper queue and syncs with Mendeley. Studio runs AI-powered research sessions. Ecosystem and Docs cover your tools and guides.',
+      },
+    },
+    {
+      popover: {
+        title: 'Your overview',
+        description: 'As you use Reading and Studio, your activity will appear here as summary cards. Think of Dashboard as your at-a-glance home base.',
+      },
+    },
+  ]);
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>

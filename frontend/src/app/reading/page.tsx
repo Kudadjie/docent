@@ -13,6 +13,7 @@ import StatsModal from '@/components/StatsModal';
 import DetailModal from '@/components/DetailModal';
 import Toast, { type ToastData } from '@/components/Toast';
 import type { QueueData, QueueEntry, FilterValue, BannerCounts } from '@/lib/types';
+import { useTour } from '@/hooks/useTour';
 
 // ── Hooks ─────────────────────────────────────────────────────────
 function useDebounce<T>(value: T, delay: number): T {
@@ -153,6 +154,37 @@ function GhostBtn({
 // ── Page ──────────────────────────────────────────────────────────
 export default function ReadingPage() {
   const { dark, toggleDark } = useDarkMode();
+
+  useTour('reading', [
+    {
+      element: 'table[aria-label="Reading queue"]',
+      popover: {
+        title: 'Your reading queue',
+        description: 'Papers synced from your reference manager live here, ranked by reading priority. Each entry shows its status, deadline, and tags.',
+      },
+    },
+    {
+      element: 'div[role="tablist"][aria-label="Filter by status"]',
+      popover: {
+        title: 'Filter by status',
+        description: 'Switch between Queued (to read), Reading (in progress), and Done. Use "All" to see your full history.',
+      },
+    },
+    {
+      element: 'input[aria-label="Search entries"]',
+      popover: {
+        title: 'Search your queue',
+        description: 'Search across titles, authors, categories, and tags in real time. Combine with status filters to zero in on any paper.',
+      },
+    },
+    {
+      element: '#docent-sync-btn',
+      popover: {
+        title: 'Sync your library',
+        description: 'Pull new papers from your reference manager. Papers removed from your library are flagged — not deleted — so you decide what stays.',
+      },
+    },
+  ]);
   const [data, setData] = useState<QueueData | null>(null);
   const [filter, setFilter] = useState<FilterValue>('all');
   const [search, setSearch] = useState('');
@@ -419,6 +451,10 @@ export default function ReadingPage() {
 
   async function handleMoveDown(id: string) {
     await runAction('move-down', id);
+  }
+
+  async function handleReorder(id: string, newRank: number) {
+    await runAction('edit', id, { order: newRank });
   }
 
   async function fetchDbData() {
@@ -822,6 +858,7 @@ ${sectionsHtml}
                 {busy === 'refresh' ? 'Refreshing…' : 'Refresh'}
               </GhostBtn>
               <button
+                id="docent-sync-btn"
                 onClick={handleSync}
                 disabled={busy === 'sync'}
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '4px 14px', borderRadius: 9999, border: '1px solid #18E299', background: '#18E299', color: '#0a1f15', fontFamily: 'var(--sans)', cursor: busy === 'sync' ? 'wait' : 'pointer', whiteSpace: 'nowrap' }}
@@ -1114,6 +1151,7 @@ ${sectionsHtml}
             onMoveUp={handleMoveUp}
             onMoveDown={handleMoveDown}
             onShowDetail={(entry) => setDetailEntry(entry)}
+            onReorder={handleReorder}
           />
         </div>
       </main>

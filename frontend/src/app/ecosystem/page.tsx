@@ -5,6 +5,7 @@ import { Sparkles, Cpu, BookOpen, ExternalLink, Check, Copy, ArrowRight, Globe }
 import Sidebar from '@/components/Sidebar';
 import StatusBanner from '@/components/StatusBanner';
 import { useDarkMode } from '@/hooks/useDarkMode';
+import { useTour } from '@/hooks/useTour';
 
 // ── Colours ──────────────────────────────────────────────────────
 const BRAND      = '#18E299';
@@ -269,6 +270,21 @@ function FooterCTA() {
 
 export default function EcosystemPage() {
   const { dark, toggleDark } = useDarkMode();
+
+  useTour('ecosystem', [
+    {
+      popover: {
+        title: 'The Docent Ecosystem',
+        description: 'This page shows every external tool Docent integrates with — AI backends, academic databases, reference managers, and cloud services — along with their connection status.',
+      },
+    },
+    {
+      popover: {
+        title: 'Configure from Settings',
+        description: 'Each tool shows whether it\'s active or needs a key. Click "Go to Settings" on any card to add the API key or credentials needed to unlock that integration.',
+      },
+    },
+  ]);
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>

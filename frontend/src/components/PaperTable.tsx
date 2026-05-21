@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { CheckCircle, Pencil, BookOpen, Play, ChevronUp, ChevronDown, AlertTriangle, BookmarkCheck, FolderOpen } from 'lucide-react';
+import { CheckCircle, Pencil, BookOpen, Play, ChevronUp, ChevronDown, AlertTriangle, BookmarkCheck, FolderOpen, GripVertical } from 'lucide-react';
 import StatusBadge from './StatusBadge';
 import OrderIndicator from './OrderIndicator';
 import type { QueueEntry, FilterValue } from '@/lib/types';
@@ -36,23 +36,37 @@ function PaperRow({
   isNew,
   highlighted,
   dark,
+  isDragging,
+  dropIndicator,
+  isDraggable,
   onMarkDone,
   onEdit,
   onStart,
   onMoveUp,
   onMoveDown,
   onShowDetail,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDrop,
 }: {
   entry: QueueEntry;
   isNew: boolean;
   highlighted: boolean;
   dark: boolean;
+  isDragging: boolean;
+  dropIndicator: 'before' | 'after' | null;
+  isDraggable: boolean;
   onMarkDone: (id: string) => void;
   onEdit: (entry: QueueEntry) => void;
   onStart: (id: string) => void;
   onMoveUp: (id: string) => void;
   onMoveDown: (id: string) => void;
   onShowDetail: (entry: QueueEntry) => void;
+  onDragStart: () => void;
+  onDragEnd: () => void;
+  onDragOver: (e: React.DragEvent) => void;
+  onDrop: () => void;
 }) {
   const [hov, setHov] = useState(false);
   const deadlineUrgency = isDeadlineUrgent(entry.deadline);
@@ -62,21 +76,45 @@ function PaperRow({
     <tr
       data-entry-id={entry.id}
       className={`paper-row${isNew ? ' row-fade' : ''}`}
+      draggable={isDraggable}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      onDragOver={isDraggable ? onDragOver : undefined}
+      onDrop={isDraggable ? onDrop : undefined}
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
       style={{
-        borderBottom: '1px solid var(--border)',
+        borderTop: dropIndicator === 'before' ? '2px solid #0fa76e' : undefined,
+        borderBottom: dropIndicator === 'after' ? '2px solid #0fa76e' : '1px solid var(--border)',
         background: highlighted
           ? 'rgba(24,226,153,0.08)'
           : hov ? 'var(--row-hover)' : 'transparent',
-        transition: 'background 0.3s',
+        opacity: isDragging ? 0.35 : 1,
+        transition: 'background 0.3s, opacity 0.15s',
         // Skip layout+paint for off-screen rows — browser-native virtualisation.
         contentVisibility: 'auto',
         containIntrinsicSize: '0 68px',
       } as React.CSSProperties}
     >
+      {/* Drag handle */}
+      <td style={{ padding: '0 4px 0 10px', verticalAlign: 'middle', width: 20 }}>
+        {isDraggable && (
+          <GripVertical
+            size={14}
+            strokeWidth={1.5}
+            style={{
+              color: hov ? 'var(--fg3)' : 'var(--fg5, var(--fg4))',
+              display: 'block',
+              cursor: 'grab',
+              transition: 'color 0.15s',
+              flexShrink: 0,
+            }}
+          />
+        )}
+      </td>
+
       {/* Paper */}
-      <td style={{ padding: '14px 20px', verticalAlign: 'top' }}>
+      <td style={{ padding: '14px 20px 14px 8px', verticalAlign: 'top' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           {/* Title row */}
           <div
@@ -372,9 +410,47 @@ interface Props {
   onMoveUp: (id: string) => void;
   onMoveDown: (id: string) => void;
   onShowDetail: (entry: QueueEntry) => void;
+  onReorder: (draggedId: string, newRank: number) => void;
 }
 
-export default function PaperTable({ entries, newIds, highlightId, activeFilter, hasSearch, dark, onMarkDone, onEdit, onStart, onMoveUp, onMoveDown, onShowDetail }: Props) {
+export default function PaperTable({ entries, newIds, highlightId, activeFilter, hasSearch, dark, onMarkDone, onEdit, onStart, onMoveUp, onMoveDown, onShowDetail, onReorder }: Props) {
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ id: string; before: boolean } | null>(null);
+
+  function handleDragOver(e: React.DragEvent, targetId: string) {
+    e.preventDefault();
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const before = e.clientY < rect.top + rect.height / 2;
+    setDropTarget(prev =>
+      prev?.id === targetId && prev.before === before ? prev : { id: targetId, before }
+    );
+  }
+
+  function handleDrop(targetId: string) {
+    if (!dragId || dragId === targetId) {
+      setDragId(null);
+      setDropTarget(null);
+      return;
+    }
+
+    const active = entries.filter(e => e.status !== 'done' && e.status !== 'removed');
+    const withoutDragged = active.filter(e => e.id !== dragId);
+    const targetIdxInNew = withoutDragged.findIndex(e => e.id === targetId);
+
+    if (targetIdxInNew === -1) {
+      setDragId(null);
+      setDropTarget(null);
+      return;
+    }
+
+    const insertAt = dropTarget?.before ? targetIdxInNew : targetIdxInNew + 1;
+    const newRank = insertAt + 1;
+
+    onReorder(dragId, newRank);
+    setDragId(null);
+    setDropTarget(null);
+  }
+
   if (entries.length === 0) {
     const msg = hasSearch ? 'No entries match your search.' : (EMPTY_MSG[activeFilter] ?? 'No entries found.');
     return (
@@ -397,7 +473,14 @@ export default function PaperTable({ entries, newIds, highlightId, activeFilter,
   }
 
   return (
-    <div style={{ flex: 1, overflowY: 'auto' }}>
+    <div
+      style={{ flex: 1, overflowY: 'auto' }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+          setDropTarget(null);
+        }
+      }}
+    >
       <table
         style={{ width: '100%', borderCollapse: 'collapse' }}
         aria-label="Reading queue"
@@ -411,13 +494,15 @@ export default function PaperTable({ entries, newIds, highlightId, activeFilter,
               background: 'var(--bg)',
             }}
           >
+            {/* Drag handle header — empty, narrow */}
+            <th style={{ width: 20, padding: '9px 4px 9px 10px', borderBottom: '1px solid var(--border)' }} />
             {['Entry', 'Status', 'Order', 'Added', ''].map((col, i) => (
               <th
                 key={i}
                 scope="col"
                 style={{
-                  padding: i === 0 ? '9px 16px 9px 20px' : '9px 16px',
-                  textAlign: i === 4 ? 'right' : 'left',
+                  padding: i === 0 ? '9px 16px 9px 8px' : '9px 16px',
+                  textAlign: i === 5 ? 'right' : 'left',
                   fontFamily: 'var(--mono)',
                   fontSize: 10,
                   fontWeight: 500,
@@ -433,21 +518,35 @@ export default function PaperTable({ entries, newIds, highlightId, activeFilter,
           </tr>
         </thead>
         <tbody>
-          {entries.map((entry) => (
-            <PaperRow
-              key={entry.id}
-              entry={entry}
-              isNew={newIds.has(entry.id)}
-              highlighted={highlightId === entry.id}
-              dark={dark}
-              onMarkDone={onMarkDone}
-              onEdit={onEdit}
-              onStart={onStart}
-              onMoveUp={onMoveUp}
-              onMoveDown={onMoveDown}
-              onShowDetail={onShowDetail}
-            />
-          ))}
+          {entries.map((entry) => {
+            const isDraggable = entry.status !== 'done' && entry.status !== 'removed';
+            const indicator = dropTarget?.id === entry.id
+              ? (dropTarget.before ? 'before' : 'after')
+              : null;
+
+            return (
+              <PaperRow
+                key={entry.id}
+                entry={entry}
+                isNew={newIds.has(entry.id)}
+                highlighted={highlightId === entry.id}
+                dark={dark}
+                isDragging={dragId === entry.id}
+                dropIndicator={indicator}
+                isDraggable={isDraggable}
+                onMarkDone={onMarkDone}
+                onEdit={onEdit}
+                onStart={onStart}
+                onMoveUp={onMoveUp}
+                onMoveDown={onMoveDown}
+                onShowDetail={onShowDetail}
+                onDragStart={() => setDragId(entry.id)}
+                onDragEnd={() => { setDragId(null); setDropTarget(null); }}
+                onDragOver={(e) => isDraggable && handleDragOver(e, entry.id)}
+                onDrop={() => isDraggable && handleDrop(entry.id)}
+              />
+            );
+          })}
         </tbody>
       </table>
     </div>

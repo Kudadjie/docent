@@ -7,6 +7,8 @@ import StatusBanner, { type DotState } from '@/components/StatusBanner';
 import Toast, { type ToastData } from '@/components/Toast';
 import { useDarkMode } from '@/hooks/useDarkMode';
 import { useNotifications } from '@/lib/notifications';
+import { useTour } from '@/hooks/useTour';
+import { TOUR_KEYS, TOUR_LABELS, tourHasSeen, tourReset, tourResetAll } from '@/lib/tour';
 
 interface ReadingConfig {
   database_dir: string | null;
@@ -524,6 +526,55 @@ function OpenCodeSection() {
 export default function SettingsPage() {
   const { dark, toggleDark } = useDarkMode();
   const { addNotification } = useNotifications();
+
+  useTour('settings', [
+    {
+      popover: {
+        title: 'Settings',
+        description: "Configure everything about how Docent works — your reference manager connection, AI API keys, cloud backup, and system health.",
+      },
+    },
+    {
+      popover: {
+        title: 'Reading configuration',
+        description: 'Set your Mendeley collection name and local PDF folder. These tell Docent where your papers live and which collection to sync from.',
+      },
+    },
+    {
+      popover: {
+        title: 'API keys',
+        description: 'Add keys for research backends: Tavily for web search, alphaXiv for academic papers, Gemini or Groq for AI synthesis. Each key unlocks a different Studio capability.',
+      },
+    },
+    {
+      popover: {
+        title: 'Health check & Backup',
+        description: "The Health check at the bottom verifies every tool is wired up correctly. Backup lets you save your queue and research history to Google Drive.",
+      },
+    },
+  ]);
+
+  const [tourSeenMap, setTourSeenMap] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    const map: Record<string, boolean> = {};
+    TOUR_KEYS.forEach(k => { map[k] = tourHasSeen(k); });
+    setTourSeenMap(map);
+  }, []);
+
+  function handleTourReset(key: string) {
+    tourReset(key as Parameters<typeof tourReset>[0]);
+    setTourSeenMap(prev => ({ ...prev, [key]: false }));
+    setToast({ type: 'success', message: `Tour reset — visit ${TOUR_LABELS[key as keyof typeof TOUR_LABELS]} to start the walkthrough.` });
+  }
+
+  function handleTourResetAll() {
+    tourResetAll();
+    const map: Record<string, boolean> = {};
+    TOUR_KEYS.forEach(k => { map[k] = false; });
+    setTourSeenMap(map);
+    setToast({ type: 'success', message: 'All tours reset — visit each page to see the walkthrough.' });
+  }
+
   const [config, setConfig] = useState<ConfigData | null>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
@@ -1239,6 +1290,72 @@ export default function SettingsPage() {
                   )}
                 </div>
               </div>
+            </section>
+
+            {/* Walkthrough — full width */}
+            <section style={{ gridColumn: '1 / -1' }}>
+              <SectionCard
+                icon={<Zap size={14} strokeWidth={1.5} color="#8B5CF6" />}
+                title="Walkthrough tours"
+                description="Each page has a guided walkthrough that runs the first time you visit it. Reset individual tours below or restart all of them at once."
+              >
+                <div style={{ padding: '16px 0' }}>
+                  {TOUR_KEYS.map(key => (
+                    <div
+                      key={key}
+                      style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        padding: '10px 0', borderBottom: '1px solid var(--border)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span style={{ fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--fg1)' }}>
+                          {TOUR_LABELS[key]}
+                        </span>
+                        <span style={{
+                          fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 600,
+                          padding: '2px 7px', borderRadius: 9999,
+                          background: tourSeenMap[key] ? 'rgba(24,226,153,0.12)' : 'var(--gray100)',
+                          color: tourSeenMap[key] ? '#0fa76e' : 'var(--fg4)',
+                          textTransform: 'uppercase', letterSpacing: '0.4px',
+                        }}>
+                          {tourSeenMap[key] ? 'seen' : 'not yet'}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => handleTourReset(key)}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 5,
+                          padding: '4px 12px', borderRadius: 6,
+                          border: '1px solid var(--border-md)',
+                          background: 'transparent', color: 'var(--fg3)',
+                          fontFamily: 'var(--sans)', fontSize: 12,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <RotateCcw size={11} strokeWidth={1.5} />
+                        Replay
+                      </button>
+                    </div>
+                  ))}
+                  <div style={{ paddingTop: 14 }}>
+                    <button
+                      onClick={handleTourResetAll}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                        padding: '6px 14px', borderRadius: 7,
+                        border: '1px solid rgba(139,92,246,0.35)',
+                        background: 'rgba(139,92,246,0.07)', color: '#8B5CF6',
+                        fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <RotateCcw size={13} strokeWidth={1.5} />
+                      Reset all tours
+                    </button>
+                  </div>
+                </div>
+              </SectionCard>
             </section>
 
             {/* Danger zone — full width */}

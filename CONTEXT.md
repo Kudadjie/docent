@@ -1,13 +1,13 @@
 # CONTEXT - resume hint for next session
 
-**Current Task:** Reading page real-life test tweaks shipped; Studio + remaining pages still pending.
+**Current Task:** v1.2.0 UI checklist still pending (Studio → remaining pages); dashboard page planned for v1.2.0.
 
 **Key Decisions:**
-- Mendeley backend decoupled via `ReferenceManagerBackend` protocol + `MendeleyBackend` class; sync now flags (not_in_mendeley=True) instead of auto-removing entries
-- Light mode fully restored (useDarkMode hook, light CSS vars); sessionStorage added for URL state persistence fix
-- Sync = solid green, How to Add = solid purple; column header Paper→Entry; sort + extended filter; not-in-library review modal
+- Dashboard page added to v1.2.0 scope: Reading + Studio display cards only; design via Claude design before coding
+- Gate order: Studio real-life tests green → design session → implement dashboard → tag v1.2.0
+- Memory for dashboard saved to memory/project_dashboard_page.md (project repo, not Claude-managed memory)
 
 **Next Steps:**
-1. Restart `docent ui` (backend changed), then run Studio page test checklist against `http://localhost:7432`
-2. Continue Ecosystem/Docs/Settings/Sidebar/Notification tests
-3. Tag v1.2.0 once all sections pass; then execute p1_decouple_ui_mcp + p1_consolidate_studio_builders
+1. Run remaining UI test checklist (Studio → Ecosystem → Docs → Settings → Sidebar → Notifications → Cross-cutting) against http://localhost:7432
+2. Fix any failures, then run Claude design session for dashboard page
+3. Implement dashboard, then tag v1.2.0

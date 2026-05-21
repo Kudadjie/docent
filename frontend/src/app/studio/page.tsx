@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import Sidebar from '@/components/Sidebar';
 import StatusBanner, { type DotState } from '@/components/StatusBanner';
 import { useDarkMode } from '@/hooks/useDarkMode';
+import { useTour } from '@/hooks/useTour';
 import { LeftColumn, CmdKPalette, PresetSaveModal } from './_form';
 import { OutputPanel, HistoryDrawer, OutputsPanel } from './_output';
 import {
@@ -23,6 +24,33 @@ const DEFAULT_FORM: FormState = {
 
 export default function StudioPage() {
   const { dark, toggleDark } = useDarkMode();
+
+  useTour('studio', [
+    {
+      popover: {
+        title: 'Studio — your AI research workspace',
+        description: 'Studio runs AI-powered research sessions. Pick a topic, choose a depth, and Docent aggregates papers, web sources, and AI synthesis into a structured brief.',
+      },
+    },
+    {
+      popover: {
+        title: 'Choose your research mode',
+        description: 'Free Research uses Tavily + Semantic Scholar for quick sweeps. Notebook builds a NotebookLM source collection. Deep Research hands off to Feynman for long-form, cited output.',
+      },
+    },
+    {
+      popover: {
+        title: 'Sources and output',
+        description: 'As the run progresses, sources appear as chips on the right. The final brief streams into the output panel — scroll, copy, or export it when done.',
+      },
+    },
+    {
+      popover: {
+        title: 'Session history',
+        description: 'Every Studio run is saved in the history drawer. Open it to revisit any past brief, re-run it with different settings, or compare outputs.',
+      },
+    },
+  ]);
 
   // ── Form state (sessionStorage-persisted so tab navigation doesn't reset it) ─
   const [actionId, setActionId] = useState<ActionId>(() => {

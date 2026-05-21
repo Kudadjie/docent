@@ -3,6 +3,7 @@
 import Sidebar from '@/components/Sidebar';
 import StatusBanner from '@/components/StatusBanner';
 import { useDarkMode } from '@/hooks/useDarkMode';
+import { useTour } from '@/hooks/useTour';
 
 type Section = {
   id: string;
@@ -162,6 +163,21 @@ function Card({ children }: { children: React.ReactNode }) {
 
 export default function DocsPage() {
   const { dark, toggleDark } = useDarkMode();
+
+  useTour('docs', [
+    {
+      popover: {
+        title: "Docent's documentation",
+        description: 'Everything you need to configure, extend, and get the most out of Docent is here — setup guides, API key instructions, sync troubleshooting, and backup docs.',
+      },
+    },
+    {
+      popover: {
+        title: 'Jump to any section',
+        description: 'Use the left sidebar to jump between topics. The Reading guide covers Mendeley sync and queue management; the Studio guide covers all research backends.',
+      },
+    },
+  ]);
 
   function scrollTo(id: string) {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });

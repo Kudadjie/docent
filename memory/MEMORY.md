@@ -30,3 +30,4 @@
 - [Academic workstation vision analysis](vision_academic_workstation_analysis.md) — Hermes analysis of `txt/docent in the near future.txt`; maps the 4-phase "All-Around Academic Workstation" vision against current roadmap, flags 6 gaps/risks, recommends sequencing
 - [OpenCode usage limits](project_opencode_limits.md) — Hermes/OpenCode delegation blocked (quota hit 2026-05-13); use Claude sub-agents (Agent tool) as fallback; Haiku=lookups, Sonnet=impl, worktree isolation for code changes
 - [Hermes WSL venv](hermes.md) — Hermes must not touch Windows .venv at /mnt/c/...; Linux wheels corrupt Windows venv; fix via PowerShell `Remove-Item -Recurse -Force .venv` + `uv sync`
+- [Dashboard page plan](project_dashboard_page.md) — Reading + Studio display cards on dashboard; design first (Claude design), then implement; gate on Studio real-life tests passing; ships with v1.2.0
