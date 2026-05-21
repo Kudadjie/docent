@@ -94,6 +94,10 @@
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.35; }
+}
 @keyframes slideInRight {
   from { opacity: 0; transform: translateX(20px); }
   to   { opacity: 1; transform: none; }
@@ -157,6 +161,11 @@ body {
 .md-preview a { color: #0fa76e; text-decoration: none; }
 .md-preview strong { color: var(--fg1); font-weight: 600; }
 .md-preview hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+
+/* ── Dashboard ─────────────────────────────────────────────────── */
+.cta-link { transition: opacity 0.12s ease; }
+.cta-link:hover { opacity: 0.72; }
+.qa-row { transition: background 0.12s ease; }
 
 /* ── Hero gradient wash utility ────────────────────────────────── */
 /* Usage: wrap a page header in position:relative, add a sibling div.hero-wash */

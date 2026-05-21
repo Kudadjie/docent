@@ -47,9 +47,56 @@ def _audit(action: str, detail: str) -> None:
     _a(action, detail)
 
 
-def _build_studio_cmd(body: StudioRunBody):
-    from docent.ui_server import _build_studio_cmd as _bsc
-    return _bsc(body)
+def _build_studio_cmd(body: StudioRunBody) -> list[str] | None:
+    """Build a `docent studio <action> ...` subprocess command from the UI form body."""
+    import shutil as _sh
+    from docent.ui_server import _STUDIO_ACTION_MAP, _BACKEND_NORM
+
+    action = _STUDIO_ACTION_MAP.get(body.action_id)
+    if not action:
+        return None
+    docent_exe = _sh.which("docent")
+    if not docent_exe:
+        return None
+
+    backend = _BACKEND_NORM.get(body.backend.lower().replace(" ", "_"), "free")
+    dest = body.dest.lower().replace(" →", "").strip()
+    cmd: list[str] = [docent_exe, "studio", action]
+
+    if action in ("deep-research", "lit", "draft"):
+        cmd += ["--topic", body.topic, "--backend", backend, "--output", dest, "--confirmed"]
+        for g in (body.guides or []):
+            cmd += ["--guide-files", g]
+    elif action in ("review", "replicate", "audit"):
+        cmd += ["--artifact", body.artifact, "--backend", backend, "--output", dest]
+        for g in (body.guides or []):
+            cmd += ["--guide-files", g]
+    elif action == "compare":
+        cmd += ["--artifact-a", body.artifact_a, "--artifact-b", body.artifact_b,
+                "--backend", backend, "--output", dest]
+        for g in (body.guides or []):
+            cmd += ["--guide-files", g]
+    elif action in ("search-papers", "scholarly-search"):
+        cmd += ["--query", body.query, "--max-results", str(body.max_results)]
+    elif action == "get-paper":
+        cmd += ["--arxiv-id", body.arxiv_id]
+    elif action == "to-notebook":
+        if body.src_path:
+            cmd += ["--sources-file", body.src_path]
+        if body.out_path:
+            cmd += ["--output-file", body.out_path]
+        cmd += ["--max-sources", str(body.max_sources)]
+        if not body.nlm:
+            cmd += ["--no-run-nlm-research"]
+        if not body.gate:
+            cmd += ["--no-run-quality-gate"]
+        if not body.persp:
+            cmd += ["--no-run-perspectives"]
+    elif action == "config-set":
+        cmd += ["--key", body.cfg_key, "--value", body.cfg_val]
+    # config-show has no extra args
+
+    return cmd
 
 
 @router.post("/api/opencode/start")
