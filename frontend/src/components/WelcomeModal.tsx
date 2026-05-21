@@ -12,18 +12,20 @@ export interface UserProfile {
 const LEVELS = ['Undergraduate', 'Masters', 'PhD', 'Postdoc', 'Faculty', 'Other'];
 
 interface Props {
-  onComplete: (profile: UserProfile, databaseDir?: string) => void;
+  onComplete: (profile: UserProfile, databaseDir?: string, outputDir?: string) => void;
   onCancel?: () => void;
   initialProfile?: UserProfile;
   initialDatabaseDir?: string;
+  initialOutputDir?: string;
 }
 
-export default function WelcomeModal({ onComplete, onCancel, initialProfile, initialDatabaseDir }: Props) {
+export default function WelcomeModal({ onComplete, onCancel, initialProfile, initialDatabaseDir, initialOutputDir }: Props) {
   const isEdit = !!initialProfile?.name;
   const [name, setName]           = useState(initialProfile?.name ?? '');
   const [program, setProgram]     = useState(initialProfile?.program ?? '');
   const [level, setLevel]         = useState(initialProfile?.level ?? '');
   const [databaseDir, setDatabaseDir] = useState(initialDatabaseDir ?? '');
+  const [outputDir, setOutputDir] = useState(initialOutputDir ?? '');
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -35,6 +37,7 @@ export default function WelcomeModal({ onComplete, onCancel, initialProfile, ini
     onComplete(
       { name: name.trim() || 'You', program: program.trim(), level },
       databaseDir.trim() || undefined,
+      outputDir.trim() || undefined,
     );
   }
 
@@ -136,6 +139,22 @@ export default function WelcomeModal({ onComplete, onCancel, initialProfile, ini
               lineHeight: 1.4, marginTop: 3,
             }}>
               Local folder where your PDFs are stored. Can be changed later in Settings.
+            </span>
+          </FormField>
+
+          <FormField label="Research output folder (optional)">
+            <input
+              type="text"
+              value={outputDir}
+              onChange={e => setOutputDir(e.target.value)}
+              placeholder="e.g. ~/docent/research"
+              style={inputStyle}
+            />
+            <span style={{
+              fontFamily: 'var(--sans)', fontSize: 11, color: 'var(--fg4)',
+              lineHeight: 1.4, marginTop: 3,
+            }}>
+              Where Studio saves research outputs. Defaults to ~/docent/research/. Can be changed later in Settings.
             </span>
           </FormField>
 

@@ -13,6 +13,7 @@ import { TOUR_KEYS, TOUR_LABELS, tourHasSeen, tourReset, tourResetAll } from '@/
 interface ReadingConfig {
   database_dir: string | null;
   queue_collection: string;
+  output_dir: string | null;
 }
 
 interface ResearchConfig {
@@ -57,6 +58,12 @@ const READING_FIELDS: {
     label: 'Mendeley collection',
     description: 'Name of the Mendeley collection to sync from. Must exactly match the collection name in the Mendeley desktop app.',
     placeholder: 'Docent-Queue',
+  },
+  {
+    key: 'output_dir',
+    label: 'Research output directory',
+    description: 'Folder where Studio research outputs are saved. Defaults to ~/docent/research/ if not set.',
+    placeholder: '~/docent/research',
   },
 ];
 

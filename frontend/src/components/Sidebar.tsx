@@ -85,6 +85,7 @@ export default function Sidebar({ active, queueCount, dark: darkProp, currentRun
   const [showWelcome, setShowWelcome] = useState(false);
   const [localDark, setLocalDark] = useState(false);
   const [savedDatabaseDir, setSavedDatabaseDir] = useState<string>('');
+  const [savedOutputDir, setSavedOutputDir] = useState<string>('');
   const [navOrder, setNavOrder] = useState<string[]>(REORDERABLE_IDS);
   const dragId = useRef<string | null>(null);
   const dragOverId = useRef<string | null>(null);
@@ -139,13 +140,14 @@ export default function Sidebar({ active, queueCount, dark: darkProp, currentRun
 
     fetch('/api/config')
       .then(r => r.json())
-      .then((d: { reading: { database_dir: string | null } }) => {
+      .then((d: { reading: { database_dir: string | null; output_dir: string | null } }) => {
         setSavedDatabaseDir(d.reading?.database_dir ?? '');
+        setSavedOutputDir(d.reading?.output_dir ?? '');
       })
       .catch(() => {});
   }, []);
 
-  async function handleWelcomeComplete(profile: UserProfile, databaseDir?: string) {
+  async function handleWelcomeComplete(profile: UserProfile, databaseDir?: string, outputDir?: string) {
     setShowWelcome(false);
     setUser(profile);
     try { localStorage.setItem(USER_CACHE_KEY, JSON.stringify(profile)); } catch {}
@@ -167,6 +169,17 @@ export default function Sidebar({ active, queueCount, dark: darkProp, currentRun
         setSavedDatabaseDir(databaseDir);
       } catch { /* ignore */ }
     }
+
+    if (outputDir) {
+      try {
+        await fetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ section: 'reading', key: 'output_dir', value: outputDir }),
+        });
+        setSavedOutputDir(outputDir);
+      } catch { /* ignore */ }
+    }
   }
 
   const profileSet = !!user?.name;
@@ -184,6 +197,7 @@ export default function Sidebar({ active, queueCount, dark: darkProp, currentRun
           onCancel={profileSet ? () => setShowWelcome(false) : undefined}
           initialProfile={profileSet ? user ?? undefined : undefined}
           initialDatabaseDir={savedDatabaseDir}
+          initialOutputDir={savedOutputDir}
         />
       )}
 

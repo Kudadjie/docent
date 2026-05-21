@@ -432,9 +432,92 @@ def _startup_doctor_check(settings: Any) -> None:
 app = typer.Typer(
     name="docent",
     help="Docent — a personal control center for grad school workflows.",
-    no_args_is_help=True,
+    no_args_is_help=False,
+    invoke_without_command=True,
     add_completion=False,
 )
+
+
+# Commands that must NOT drop into the workspace after running (they manage
+# their own long-running loops or interactive prompts).
+_NO_WORKSPACE_CMDS = frozenset({"serve", "setup", "doctor", "ui"})
+
+
+def _workspace_eligible() -> bool:
+    """True only in an interactive, non-subprocess terminal."""
+    import sys as _sys, os as _os
+    return (
+        _sys.stdin.isatty()
+        and _sys.stdout.isatty()
+        and not _os.environ.get("DOCENT_UI_SUBPROCESS")
+        and not _os.environ.get("DOCENT_WORKSPACE")
+    )
+
+
+def _run_workspace() -> None:
+    """Blocking REPL — runs after the initial banner/command."""
+    import shlex, os as _os, sys as _sys
+
+    if not _workspace_eligible():
+        return
+
+    _os.environ["DOCENT_WORKSPACE"] = "1"
+    console = get_console()
+
+    # Optional readline history (Unix; silently skipped on Windows)
+    try:
+        import readline as _rl
+        from docent.utils.paths import root_dir as _rd
+        _hist = _rd() / ".repl_history"
+        _hist.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            _rl.read_history_file(str(_hist))
+        except FileNotFoundError:
+            pass
+        _rl.set_history_length(500)
+        import atexit as _ae
+        _ae.register(_rl.write_history_file, str(_hist))
+    except (ImportError, Exception):
+        pass
+
+    console.print(
+        "\n[dim]Docent workspace — type subcommands without the [bold cyan]docent[/bold cyan] prefix. "
+        "[bold]exit[/bold] or Ctrl+C to leave.[/]\n"
+    )
+
+    while True:
+        try:
+            line = input("  docent › ").strip()
+        except (KeyboardInterrupt, EOFError):
+            console.print("\n[dim]Leaving workspace.[/]")
+            break
+
+        if not line:
+            continue
+        if line in ("exit", "quit", "q"):
+            console.print("[dim]Leaving workspace.[/]")
+            break
+
+        try:
+            args = shlex.split(line)
+        except ValueError as exc:
+            console.print(f"[red]Parse error:[/] {exc}")
+            continue
+
+        try:
+            app(args=args, standalone_mode=False)
+        except (SystemExit, typer.Exit):
+            pass
+        except Exception as exc:
+            # Click raises UsageError with an empty message when a group is
+            # invoked with no subcommand (help already printed). Suppress those.
+            msg = str(exc).strip()
+            if msg:
+                console.print(f"[red]Error:[/] {msg}")
+
+        console.print()
+
+    _os.environ.pop("DOCENT_WORKSPACE", None)
 
 
 def _version_callback(value: bool) -> None:
@@ -476,12 +559,21 @@ def main(
     from docent.utils.paths import logs_dir
     configure_logging(verbose=settings.verbose, log_dir=logs_dir())
 
+    import sys as _sys, os as _os
+
+    # Inside the workspace REPL, banner and startup prompts are already done.
+    _in_workspace = bool(_os.environ.get("DOCENT_WORKSPACE"))
+
     # Show the startup banner when running interactively.
     # For `serve`, print to stderr so the MCP JSON-RPC stdout stream is unaffected.
-    # Skip only for setup/doctor which manage their own output, and non-TTY contexts.
-    import sys as _sys
+    # Skip for setup/doctor (manage their own output), non-TTY, and workspace REPL.
     _is_tty = _sys.stdout.isatty() or _sys.stderr.isatty()
-    _banner_skip = settings.no_color or not _is_tty or ctx.invoked_subcommand in ("setup", "doctor")
+    _banner_skip = (
+        settings.no_color
+        or not _is_tty
+        or _in_workspace
+        or ctx.invoked_subcommand in ("setup", "doctor")
+    )
     if not _banner_skip:
         from docent._banner import print_banner
         if ctx.invoked_subcommand == "serve":
@@ -491,8 +583,8 @@ def main(
             print_banner(get_console())
 
     # Skip startup prompts for commands that manage their own output or that run
-    # as a stdio server (serve) where stdout must be pure JSON-RPC.
-    _skip_startup = ctx.invoked_subcommand in ("setup", "doctor", "serve")
+    # as a stdio server (serve) where stdout must be pure JSON-RPC, and workspace.
+    _skip_startup = _in_workspace or ctx.invoked_subcommand in ("setup", "doctor", "serve")
     if not _skip_startup:
         _run_setup_if_needed()
         _startup_doctor_check(settings)
@@ -500,6 +592,18 @@ def main(
     ctx.obj = Context(settings=settings, llm=LLMClient(settings), executor=Executor())
     if not _skip_startup:
         run_startup_hooks(ctx.obj)
+
+    # ── Workspace entry ────────────────────────────────────────────────────────
+    if ctx.invoked_subcommand is None:
+        # No subcommand: enter workspace immediately (or show help in non-TTY).
+        if _workspace_eligible():
+            _run_workspace()
+        else:
+            _sys.stdout.write(ctx.get_help() + "\n")
+        raise typer.Exit()
+    elif ctx.invoked_subcommand not in _NO_WORKSPACE_CMDS and _workspace_eligible():
+        # Subcommand given: run it first, then enter workspace via close callback.
+        ctx.call_on_close(_run_workspace)
 
 
 @app.command("list", help="List all registered tools.")

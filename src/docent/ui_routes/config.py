@@ -94,6 +94,7 @@ async def get_config() -> JSONResponse:
             "database_dir": _norm_path(cfg.get("database_dir", None)),
             "queue_collection": cfg.get("queue_collection", "Docent-Queue"),
             "reference_manager": cfg.get("reference_manager", "mendeley"),
+            "output_dir": _norm_path(rcfg.get("output_dir", None)),
         },
         "research": research,
     })
@@ -104,17 +105,24 @@ async def post_config(body: ConfigBody) -> JSONResponse:
     _audit("config-write", f"section={body.section} key={body.key}")
     if body.section == "reading":
         try:
-            await asyncio.to_thread(
-                run_action, "reading", "config-set", {"key": body.key, "value": body.value}
-            )
+            if body.key == "output_dir":
+                await asyncio.to_thread(
+                    run_action, "studio", "config-set", {"key": body.key, "value": body.value}
+                )
+            else:
+                await asyncio.to_thread(
+                    run_action, "reading", "config-set", {"key": body.key, "value": body.value}
+                )
         except Exception as exc:
             return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
         cfg = _read_config_reading()
+        rcfg = _read_config_research()
         return JSONResponse({
             "ok": True,
             "reading": {
                 "database_dir": _norm_path(cfg.get("database_dir", None)),
                 "queue_collection": cfg.get("queue_collection", "Docent-Queue"),
+                "output_dir": _norm_path(rcfg.get("output_dir", None)),
             }
         })
     elif body.section == "research":
