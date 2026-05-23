@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import type { DashboardStat } from './_registry';
 import { dashTokens, VIOLET, MONO } from './_tokens';
@@ -64,8 +64,8 @@ export default function StudioCard({ dark, onStats }: {
       .catch(() => setFiles([]));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const now = useMemo(() => Date.now(), []);  // stable snapshot for this render batch
+  // eslint-disable-next-line react-hooks/purity
+  const now = Date.now();
   const todayFiles  = (files ?? []).filter(f => now - f.mtime * 1000 < 86400000);
   const weekFiles   = (files ?? []).filter(f => now - f.mtime * 1000 < 7 * 86400000);
   const sorted      = [...(files ?? [])].sort((a, b) => b.mtime - a.mtime);
