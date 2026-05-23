@@ -1329,7 +1329,26 @@ def _nlm_push(
             phase="nlm-perspectives",
             message="Generating practitioner / skeptic / beginner summaries...",
         )
-        persp_answer = _nlm_ask(_PERSPECTIVES_PROMPT, notebook_id, timeout=180)
+        # Retry up to 3 times with a short wait — the notebook may still be
+        # indexing new sources from gap fills when this phase starts.
+        _PERSP_RETRIES = 3
+        _PERSP_RETRY_DELAY = 30.0  # seconds between attempts
+        persp_answer = None
+        for _attempt in range(1, _PERSP_RETRIES + 1):
+            persp_answer = _nlm_ask(_PERSPECTIVES_PROMPT, notebook_id, timeout=180)
+            if persp_answer:
+                break
+            if _attempt < _PERSP_RETRIES:
+                yield ProgressEvent(
+                    phase="nlm-perspectives",
+                    message=(
+                        f"No response yet — notebook may still be indexing. "
+                        f"Retrying in {int(_PERSP_RETRY_DELAY)}s "
+                        f"(attempt {_attempt}/{_PERSP_RETRIES})..."
+                    ),
+                )
+                time.sleep(_PERSP_RETRY_DELAY)
+
         if persp_answer:
             perspectives = _parse_perspectives(persp_answer)
             yield ProgressEvent(
@@ -1338,7 +1357,10 @@ def _nlm_push(
         else:
             yield ProgressEvent(
                 phase="nlm-perspectives",
-                message="Perspectives failed (no response from notebook).",
+                message=(
+                    f"Perspectives unavailable after {_PERSP_RETRIES} attempts "
+                    "(notebook still busy). The notebook is otherwise complete."
+                ),
             )
 
     # ── Build summary message ─────────────────────────────────────────────
