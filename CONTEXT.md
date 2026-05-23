@@ -1,13 +1,13 @@
 # CONTEXT - resume hint for next session
 
-**Current Task:** NotebookLM auth UX fixes shipped; UI test checklist sprint toward v1.2.0 tag continues.
+**Current Task:** Studio bug-fix sprint — phase strip responsiveness, Feynman silent-success, and progress newline clipping all shipped (commit ff95e61 on dev).
 
 **Key Decisions:**
-- to-notebook pre-flight: blocks silently-failing runs at the WS layer before subprocess spawns; sends `nlm_auth_required` error directing user to Settings
-- Settings NotebookLM section: detects missing Playwright Chromium binary and shows `playwright install chromium` fix inline (recurs after notebooklm updates — documented in UI)
-- ResultFailure component fixed: was hardcoded "Anthropic 401" on every failure; now shows actual error-phase log text
+- WS handler (`opencode.py`) runs `docent studio` as subprocess; status comes from `proc.returncode`, not `ResearchResult.ok`. Fix: cli.py exits non-zero on `ok=False` and emits error progress line.
+- Feynman exits 0 on credit/quota failures → `output_file is None` now always returns `ok=False` in all 7 Feynman workflows.
+- Progress marker newlines escaped as `\x02` in CLI, unescaped in WS handler — prevents multiline messages (_PRICING_NOTE) from being split across stdout reads.
 
 **Next Steps:**
-1. Run `uv run playwright install chromium` to unblock local NLM auth, then verify to-notebook end-to-end
-2. Continue UI test checklist (Studio page items 10–27, then Ecosystem, Docs, Settings, Inbox, Sidebar, User Footer, Cross-cutting)
-3. Fix any failures found, then tag v1.2.0
+1. Continue UI test checklist (Studio page items 10–27, then Ecosystem, Docs, Settings, Inbox, Sidebar, User Footer, Cross-cutting) — `memory/tasks/v120_ui_tests.md`
+2. Add Feynman model field to Settings UI (CLI-only now: `docent studio config-set --key feynman_model --value <provider/model>`)
+3. Studio background runs: lift WS+run state to app layout level so navigation doesn't kill a running task (roadmap: `memory/project_roadmap_post_v120.md`)
