@@ -530,7 +530,8 @@ function NotebookLMSection() {
     }
   }
 
-  useEffect(() => { checkNlmStatus(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
+  useEffect(() => { checkNlmStatus(); }, []);
 
   const nlmDot = nlmStatus === null ? '#999'
     : !nlmStatus.installed ? '#C97B00'
@@ -635,12 +636,11 @@ export default function SettingsPage() {
     },
   ]);
 
-  const [tourSeenMap, setTourSeenMap] = useState<Record<string, boolean>>({});
-  useEffect(() => {
+  const [tourSeenMap, setTourSeenMap] = useState<Record<string, boolean>>(() => {
     const map: Record<string, boolean> = {};
     TOUR_KEYS.forEach(k => { map[k] = tourHasSeen(k); });
-    setTourSeenMap(map);
-  }, []);
+    return map;
+  });
 
   function handleTourReset(key: string) {
     tourReset(key as Parameters<typeof tourReset>[0]);
@@ -1212,7 +1212,7 @@ export default function SettingsPage() {
                         {[
                           { n: '1', text: <>Go to <a href="https://console.cloud.google.com" target="_blank" rel="noreferrer" style={{ color: '#3B82F6', textDecoration: 'none', fontWeight: 500 }}>console.cloud.google.com</a> → create or select a project → enable the <strong style={{ color: 'var(--fg1)' }}>Google Drive API</strong>.</> },
                           { n: '2', text: <>Credentials → Create Credentials → <strong style={{ color: 'var(--fg1)' }}>OAuth client ID</strong> → Application type: <strong style={{ color: 'var(--fg1)' }}>Desktop app</strong> → Download JSON.</> },
-                          { n: '3', text: <><strong style={{ color: 'var(--fg1)' }}>OAuth consent screen</strong> → fill in <strong style={{ color: 'var(--fg1)' }}>App name</strong>, <strong style={{ color: 'var(--fg1)' }}>User support email</strong>, and <strong style={{ color: 'var(--fg1)' }}>Developer contact email</strong> (required — missing any of these causes a Google 500 error). Then under <strong style={{ color: 'var(--fg1)' }}>Audience</strong> click <strong style={{ color: 'var(--fg1)' }}>Publish app</strong>. On first sign-in Google shows an "unverified app" warning — click <em>Advanced → Go to app</em> to proceed.</> },
+                          { n: '3', text: <><strong style={{ color: 'var(--fg1)' }}>OAuth consent screen</strong> → fill in <strong style={{ color: 'var(--fg1)' }}>App name</strong>, <strong style={{ color: 'var(--fg1)' }}>User support email</strong>, and <strong style={{ color: 'var(--fg1)' }}>Developer contact email</strong> (required — missing any of these causes a Google 500 error). Then under <strong style={{ color: 'var(--fg1)' }}>Audience</strong> click <strong style={{ color: 'var(--fg1)' }}>Publish app</strong>. On first sign-in Google shows an &ldquo;unverified app&rdquo; warning — click <em>Advanced → Go to app</em> to proceed.</> },
                           { n: '4', text: <>Paste the downloaded credentials JSON below and click <strong style={{ color: 'var(--fg1)' }}>Save</strong>. A browser window will open for sign-in on the first backup run.</> },
                         ].map(({ n, text }) => (
                           <div key={n} style={{ display: 'flex', gap: 12, marginBottom: 8, alignItems: 'flex-start' }}>

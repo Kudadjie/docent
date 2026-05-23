@@ -1,3 +1,4 @@
+# ruff: noqa: E402 — warnings.filterwarnings must run before any scholarly import
 """Step 13 — Full MCP adapter.
 
 Exposes every registered Docent action as an MCP tool callable from Claude Code
@@ -192,7 +193,6 @@ def _maybe_inline_research_output(lines: list[str], result: Any) -> None:
     """
     import re
     from pathlib import Path
-    from pydantic import BaseModel
 
     if not isinstance(result, BaseModel):
         return

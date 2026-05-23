@@ -34,7 +34,7 @@ from rich.progress import (
 from rich.table import Table
 
 from docent import __version__
-from docent.config import Settings, load_settings, write_setting
+from docent.config import load_settings, write_setting
 from docent.core import (
     Context,
     ProgressEvent,
@@ -312,7 +312,9 @@ def _run_setup_flow(*, first_run: bool = False) -> None:
     # ── NotebookLM ───────────────────────────────────────────────────────────
     nlm_exe = shutil.which("notebooklm")
     try:
-        import contextlib as _cl, io as _io, sys as _sys
+        import contextlib as _cl
+        import io as _io
+        import sys as _sys
         if "notebooklm" not in _sys.modules:
             import os as _os
             _os.environ.setdefault("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "1")
@@ -445,7 +447,8 @@ _NO_WORKSPACE_CMDS = frozenset({"serve", "setup", "doctor", "ui"})
 
 def _workspace_eligible() -> bool:
     """True only in an interactive, non-subprocess terminal."""
-    import sys as _sys, os as _os
+    import sys as _sys
+    import os as _os
     return (
         _sys.stdin.isatty()
         and _sys.stdout.isatty()
@@ -456,7 +459,8 @@ def _workspace_eligible() -> bool:
 
 def _run_workspace() -> None:
     """Blocking REPL — runs after the initial banner/command."""
-    import shlex, os as _os, sys as _sys
+    import shlex
+    import os as _os
 
     if not _workspace_eligible():
         return
@@ -559,7 +563,8 @@ def main(
     from docent.utils.paths import logs_dir
     configure_logging(verbose=settings.verbose, log_dir=logs_dir())
 
-    import sys as _sys, os as _os
+    import sys as _sys
+    import os as _os
 
     # Inside the workspace REPL, banner and startup prompts are already done.
     _in_workspace = bool(_os.environ.get("DOCENT_WORKSPACE"))
@@ -698,7 +703,7 @@ from docent.cli_doctor import (  # noqa: E402
     _STATUS_STYLE,
     _check_profile,
     _check_cli_tool,
-    _dir_size_gb,
+    _dir_size_gb,  # noqa: F401 — re-exported for tests and external callers
     _check_feynman,
     _check_mendeley_mcp,
     _check_tavily,

@@ -11,8 +11,10 @@ export default function TabGuard() {
   const [isDuplicate, setIsDuplicate] = useState(false);
   const [dismissed, setDismissed] = useState(false);
 
-  // Stable ID for this tab instance across re-renders
-  const myId   = useRef(Math.random().toString(36).slice(2));
+  // Stable ID for this tab instance — generated once via lazy useState so the
+  // impure Math.random() call is not in the render path (React Compiler rule).
+  const [myIdValue] = useState(() => Math.random().toString(36).slice(2));
+  const myId = useRef(myIdValue);
   // otherId → last-seen timestamp
   const seenAt = useRef<Record<string, number>>({});
 

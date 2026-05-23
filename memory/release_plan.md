@@ -1,6 +1,6 @@
 ---
 name: Docent release plan
-description: Single bundled release track; v1.1.0 shipped 2026-05-08; v1.2.0 omnibus (hardening + bugs + doctor/setup) pending real-life tests #10-19
+description: Single bundled release track; v2.0.0 shipped 2026-05-23 (omnibus — Studio, doctor, setup, full MCP, bundled UI hardening)
 type: project
 ---
 
@@ -16,6 +16,7 @@ The two-track plan (separate CLI and UI tags) was superseded before it was execu
 |-----|------|-------|
 | `v1.1.0` | 2026-05-08 | First public release — CLI + bundled UI (FastAPI + Next.js static export) |
 | `v1.1.1` | 2026-05-08 | Wheel-only fix — sdist with `ui_dist/` exceeded PyPI 100 MB limit |
+| `v2.0.0` | 2026-05-23 | **MAJOR** — Studio tool, doctor/setup, full MCP, reading queue rewrite, plugin system, dashboard, error codes, CI |
 
 ### Distribution model
 
@@ -27,5 +28,5 @@ The two-track plan (separate CLI and UI tags) was superseded before it was execu
 ## How to apply
 
 - CLI and UI ship together; bump the version once for both.
-- Next version: `v1.2.0` — omnibus: research bugs (DDG→Tavily, registry guard, Tavily onboarding), hardening sprint (reading split, DRY-up, UI server invoke, file locking), MCP single-action tools, edit-status lifecycle fix, `docent doctor` + `docent setup`. **Pending:** real-life tests #10–19 before tag.
+- Next version: `v2.1.0` — schema-driven forms, Zotero bridge (gate on coexistence decision), plugin developer docs.
 - `actions/setup-node` SHA-pinned 2026-05-07 (Phase A CSO fix): `@49933ea5288caeca8642d1e84afbd3f7d6820020`

@@ -1,12 +1,13 @@
 # CONTEXT - resume hint for next session
 
-**Current Task:** Shipped AppRunContext — generic cross-page activity registry replacing Studio-specific coupling in status indicators (commit 1fc8e27 on dev).
+**Current Task:** Tagged v2.0.0 (MAJOR — research→studio rename, [paper]→[reading] config, QueueEntry schema). Blind-review fixes also shipped this session (cli_doctor split, _PRICING_NOTE crash, CI workflow).
 
 **Key Decisions:**
-- `AppRunProvider` (new `lib/app-run-context.tsx`) is the outermost layout wrapper; holds `Record<string, AppActivity|null>` keyed by feature ID. Any page calls `setActivity(id, info)` to register background work.
-- `StudioRunProvider` stays nested inside `AppRunProvider`; syncs `status`+`currentPhase` into AppRunContext via `useEffect` (auto-clears after 3 s on done/fail/stopped).
-- `Sidebar` + `StatusBanner` now import only `useAppRun()` — zero Studio coupling. Reading sync or any future page can light up the global indicators with one `setActivity()` call.
+- v2.0.0 not v1.2.0 — breaking changes policy required MAJOR bump (CLI command + config key renames from v1.1.1)
+- memory/, CONTEXT.md, .mcp.json correctly excluded from main via .gitignore; resolved as deletions on merge
+- cli_doctor.py created as pure side-effect-free module; cli.py imports from it (~260 lines removed)
 
 **Next Steps:**
-1. Continue UI test checklist (Studio items 10–27, then Ecosystem, Docs, Settings, Inbox, Sidebar, User Footer, Cross-cutting) — `memory/tasks/v120_ui_tests.md`
-2. Tag v1.2.0 release once UI test checklist passes
+1. Schema-driven forms — backend exposes `input_schema` as JSON Schema; React generates forms dynamically (v2.1.0)
+2. Decide Mendeley/Zotero coexistence policy before starting Zotero bridge (v2.1.0 gate)
+3. Plugin developer docs — API is stable, no docs exist yet

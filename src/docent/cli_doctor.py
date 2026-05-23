@@ -204,7 +204,9 @@ def _check_notebooklm_py() -> tuple[str, str, str, str]:
 
     # 1. Python package
     try:
-        import contextlib as _cl2, io as _io2, sys as _sys2
+        import contextlib as _cl2
+        import io as _io2
+        import sys as _sys2
         if "notebooklm" not in _sys2.modules:
             import os as _os2
             _os2.environ.setdefault("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "1")

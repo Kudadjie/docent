@@ -38,7 +38,8 @@ Docent is a Python CLI "control center" for grad-school workflows. Design lives 
 - [x] Phase 1.5: `studio search-papers` + `studio get-paper` (alphaxiv-py SDK, async→sync wrapper); `alphaxiv-py>=0.5.0` dep; Python bumped 3.11→3.13 — 2026-05-14 (398 tests green)
 - [x] `docent doctor` extended: checks `alphaxiv-py` + `notebooklm-py` with PyPI update hints (`check_pypi()`) — 2026-05-14
 - [x] Real-life tests #10–#19 — all passed (see memory/tasks/done/studio_real_life_tests.md)
-- [ ] Next: Tag v1.2.0 release (UI real-life tests must pass first — see memory/tasks/v120_ui_tests.md)
+- [x] Tag v2.0.0 — shipped 2026-05-23. Breaking changes: research→studio rename, [paper]→[reading] config, QueueEntry schema.
+- [ ] Next: v2.1.0 — schema-driven forms (Phase 2 UI); Zotero bridge (gate on Mendeley/Zotero coexistence decision); plugin developer docs
 
 ## Status as of 2026-05-06 (Step 12 shipped — plugin discovery + reading as bundled plugin; Step 13 next — Full MCP adapter)
 

@@ -1,11 +1,10 @@
+# ruff: noqa: E402 — router and class definitions precede some imports by design
 """FastAPI backend for the Docent web UI."""
 
 import asyncio
 import json
 import logging
-import os
 import subprocess
-import sys
 import time as _time
 import tomllib
 from pathlib import Path
@@ -13,14 +12,14 @@ from typing import Any, Callable, Optional
 
 import httpx
 import uvicorn
-from fastapi import FastAPI, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from docent.core.invoke import invoke_action_for_ui as invoke_action, run_action, serialize_result as _serialize
+from docent.core.invoke import serialize_result as _serialize
 from docent.utils.paths import root_dir
 
 UI_DIST = Path(__file__).parent / "ui_dist"
@@ -72,7 +71,7 @@ async def _check_approved_path(path: Path) -> str | None:
         pass
     if any(_path_under(resolved, root) for root in approved):
         return None
-    return f"Access denied: path is outside approved Docent directories"
+    return "Access denied: path is outside approved Docent directories"
 
 
 def _audit(action: str, detail: str) -> None:

@@ -1,3 +1,4 @@
+# ruff: noqa: E402 — warnings.filterwarnings must run before scholarly import
 """Google Scholar → Semantic Scholar → CrossRef search fallback chain.
 
 Backends are tried in order; the first one that returns results wins.
