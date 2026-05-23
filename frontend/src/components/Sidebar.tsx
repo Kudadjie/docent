@@ -5,7 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { LayoutDashboard, BookOpen, FlaskConical, BookText, Settings, Globe2, GripVertical } from 'lucide-react';
 import WelcomeModal, { type UserProfile } from './WelcomeModal';
-import { useStudioRun } from '@/lib/studio-run-context';
+import { useAppRun } from '@/lib/app-run-context';
 
 const NAV_ORDER_KEY  = 'docent:nav-order';
 const USER_CACHE_KEY = 'docent:user-profile';
@@ -76,10 +76,12 @@ function loadNavOrder(): string[] {
 }
 
 export default function Sidebar({ active, queueCount, dark: darkProp }: Props) {
-  // Read Studio run state from layout-level context — works on every page
-  const studioRun = useStudioRun();
-  const currentRun = studioRun.status === 'running'
-    ? { status: 'running' as const, currentPhase: (studioRun.currentPhase ?? 'run').slice(0, 7) }
+  // Read generic app activity from AppRunContext — works for Studio and any
+  // future background operation (Reading sync, Export, etc.).
+  const { activities } = useAppRun();
+  const studioActivity = activities['studio'];
+  const currentRun = studioActivity?.status === 'running'
+    ? { status: 'running' as const, currentPhase: (studioActivity.phase ?? 'run').slice(0, 7) }
     : null;
   const [user, setUser] = useState<UserProfile | null>(() => {
     try {

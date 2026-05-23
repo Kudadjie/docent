@@ -5,7 +5,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import type { BannerCounts } from '@/lib/types';
 import { useNotifications, type AppNotification } from '@/lib/notifications';
-import { useStudioRun } from '@/lib/studio-run-context';
+import { useAppRun } from '@/lib/app-run-context';
 
 export type DotState = 'idle' | 'working' | 'error' | 'done';
 
@@ -250,16 +250,19 @@ export default function StatusBanner({
   const [bellOpen, setBellOpen] = useState(false);
   const { notifications, unreadCount, markAllRead, dismiss, clearAll } = useNotifications();
 
-  // Studio background-run awareness: if this page has nothing going on (idle) but
-  // a Studio run is active in the background, promote the dot to 'working'.
-  const studioRun = useStudioRun();
-  const studioRunning = studioRun.status === 'running';
-  const effectiveDotState: DotState = (dotState === 'idle' && studioRunning) ? 'working' : dotState;
+  // Generic background-activity awareness: if this page has nothing going on
+  // (idle) but any registered activity is running, promote the dot to 'working'.
+  // This works for Studio, Reading sync, and any future background operation.
+  const { activities } = useAppRun();
+  const anyRunning = Object.values(activities).some(a => a?.status === 'running');
+  const effectiveDotState: DotState = (dotState === 'idle' && anyRunning) ? 'working' : dotState;
 
   // Activity label — reading page shows sync age when idle; everywhere shows Working/Error when busy
   let activityLabel = '';
-  if (effectiveDotState === 'working' && studioRunning && dotState === 'idle') {
-    activityLabel = 'Studio running…';  // shown on non-Studio pages during a background run
+  if (effectiveDotState === 'working' && anyRunning && dotState === 'idle') {
+    // Find the first running activity to get its label (e.g. "Studio running…")
+    const running = Object.values(activities).find(a => a?.status === 'running');
+    activityLabel = running?.label ? `${running.label} running…` : 'Running…';
   } else if (effectiveDotState === 'working') activityLabel = 'Working…';
   else if (effectiveDotState === 'error') activityLabel = 'Error';
   else if (effectiveDotState === 'done' && !lastUpdated) activityLabel = 'Saved';

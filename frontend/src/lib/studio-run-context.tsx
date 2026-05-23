@@ -20,6 +20,8 @@ import {
   type SetStateAction,
 } from 'react';
 
+import { useAppRun } from '@/lib/app-run-context';
+
 import {
   findAction,
   actionSummary,
@@ -290,6 +292,29 @@ export function StudioRunProvider({ children }: { children: ReactNode }) {
       meta: null,
     };
   }, [closeWs]);
+
+  // ── Sync to AppRunContext ─────────────────────────────────────────────────────
+  // This is how the generic status indicators (Sidebar pill, StatusBanner dot)
+  // learn about Studio activity without coupling to Studio internals.
+
+  const { setActivity } = useAppRun();
+
+  useEffect(() => {
+    if (status === 'running') {
+      setActivity('studio', {
+        label: 'Studio',
+        phase: currentPhase ?? undefined,
+        status: 'running',
+      });
+    } else if (status === 'idle') {
+      setActivity('studio', null);
+    } else {
+      // success / failure / stopped — show briefly then auto-clear
+      setActivity('studio', { label: 'Studio', status });
+      const t = setTimeout(() => setActivity('studio', null), 3000);
+      return () => clearTimeout(t);
+    }
+  }, [status, currentPhase, setActivity]);
 
   // ── Context value ─────────────────────────────────────────────────────────────
 
