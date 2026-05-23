@@ -152,12 +152,12 @@ class SearchMixin:
         )
 
     @action(
-        description="Get AI-generated overview and abstract for an arXiv paper.",
+        description="Get abstract and metadata for an arXiv paper. Returns an AI overview too if an alphaXiv key is configured.",
         input_schema=GetPaperInputs,
         name="get-paper",
     )
     def get_paper(self, inputs: GetPaperInputs, context: Context) -> GetPaperResult:
-        from .alphaxiv_client import AlphaXivAuthError, get_paper_overview
+        from .alphaxiv_client import get_paper_overview
         arxiv_id = inputs.arxiv_id.strip().rstrip("/")
         if "/" in arxiv_id:
             arxiv_id = arxiv_id.rsplit("/", 1)[-1]
@@ -166,17 +166,17 @@ class SearchMixin:
                 arxiv_id,
                 api_key=context.settings.research.alphaxiv_api_key,
             )
-        except AlphaXivAuthError as e:
-            return GetPaperResult(ok=False, arxiv_id=arxiv_id, title=None, abstract="", overview="", message=str(e))
         except Exception as e:
-            return GetPaperResult(ok=False, arxiv_id=arxiv_id, title=None, abstract="", overview="", message=f"Failed to fetch paper: {e}")
+            return GetPaperResult(ok=False, arxiv_id=arxiv_id, title=None, abstract="", overview=None, message=f"Failed to fetch paper: {e}")
+        has_overview = bool(data.get("overview"))
+        msg = f"Retrieved {'overview + abstract' if has_overview else 'abstract'} for {arxiv_id}."
         return GetPaperResult(
             ok=True,
             arxiv_id=arxiv_id,
             title=data["title"],
             abstract=data["abstract"],
-            overview=data["overview"],
-            message=f"Retrieved overview for {arxiv_id}.",
+            overview=data.get("overview"),
+            message=msg,
         )
 
     @action(

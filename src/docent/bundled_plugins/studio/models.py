@@ -374,7 +374,7 @@ class GetPaperResult(BaseModel):
     arxiv_id: str
     title: str | None
     abstract: str
-    overview: str
+    overview: str | None = None  # None when no alphaXiv key — arXiv fallback omits the AI overview
     message: str
 
     def to_shapes(self) -> list[Shape]:
@@ -387,8 +387,10 @@ class GetPaperResult(BaseModel):
             url=f"https://arxiv.org/abs/{self.arxiv_id}",
             label=self.arxiv_id,
         ))
-        preview = self.overview[:600] + ("…" if len(self.overview) > 600 else "")
-        shapes.append(MessageShape(text=preview, level="info"))
+        body = self.overview or self.abstract
+        if body:
+            preview = body[:600] + ("…" if len(body) > 600 else "")
+            shapes.append(MessageShape(text=preview, level="info"))
         return shapes
 
 

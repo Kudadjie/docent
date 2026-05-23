@@ -151,11 +151,53 @@ def search_papers(
     return results[:max_results]
 
 
+def _get_paper_arxiv(arxiv_id: str) -> dict[str, Any]:
+    """Fetch basic paper metadata from the free arXiv API (no key required)."""
+    params = urllib.parse.urlencode({"id_list": arxiv_id, "max_results": 1})
+    url = f"{_ARXIV_API}?{params}"
+    try:
+        with urllib.request.urlopen(url, timeout=20) as resp:
+            raw = resp.read()
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"arXiv API unreachable: {e}") from e
+
+    root = ET.fromstring(raw)
+    entry = root.find(f"{{{_ATOM_NS}}}entry")
+    if entry is None:
+        raise RuntimeError(f"No paper found for arXiv ID: {arxiv_id}")
+
+    def _text(tag: str) -> str:
+        el = entry.find(f"{{{_ATOM_NS}}}{tag}")
+        return el.text.strip() if el is not None and el.text else ""
+
+    authors = [
+        a.find(f"{{{_ATOM_NS}}}name").text.strip()
+        for a in entry.findall(f"{{{_ATOM_NS}}}author")
+        if a.find(f"{{{_ATOM_NS}}}name") is not None
+    ]
+
+    return {
+        "arxiv_id": arxiv_id,
+        "title": _text("title").replace("\n", " "),
+        "abstract": _text("summary").replace("\n", " "),
+        "overview": None,   # AI overview requires alphaXiv key
+        "authors": authors,
+        "published": _text("published")[:10],
+    }
+
+
 def get_paper_overview(
     arxiv_id: str,
     *,
     api_key: str | None = None,
 ) -> dict[str, Any]:
-    """Fetch the AI-generated overview for *arxiv_id*. Returns a dict with title/abstract/overview."""
-    client = _build_client(api_key)
+    """Fetch paper details for *arxiv_id*.
+
+    Uses alphaXiv for an AI-generated overview when a key is configured.
+    Falls back to the free arXiv API (title + abstract only, no overview) otherwise.
+    """
+    try:
+        client = _build_client(api_key)
+    except AlphaXivAuthError:
+        return _get_paper_arxiv(arxiv_id)
     return asyncio.run(_overview_async(client, arxiv_id))
