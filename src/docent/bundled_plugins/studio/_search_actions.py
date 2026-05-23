@@ -158,9 +158,27 @@ class SearchMixin:
     )
     def get_paper(self, inputs: GetPaperInputs, context: Context) -> GetPaperResult:
         from .alphaxiv_client import get_paper_overview
-        arxiv_id = inputs.arxiv_id.strip().rstrip("/")
+        raw = inputs.arxiv_id.strip().rstrip("/")
+
+        # Detect non-arXiv URLs early and give a clear error rather than
+        # submitting a filename like "paper.pdf" to the arXiv API.
+        if raw.startswith("http") and "arxiv.org" not in raw:
+            return GetPaperResult(
+                ok=False, arxiv_id=raw, title=None, abstract="", overview=None,
+                message=(
+                    "Get paper only works with arXiv IDs or arxiv.org links "
+                    "(e.g. 2301.12345 or https://arxiv.org/abs/2301.12345). "
+                    "To analyse a PDF from another source, use the Peer review action instead."
+                ),
+            )
+
+        # Extract bare ID from arxiv.org URLs: https://arxiv.org/abs/2301.12345 → 2301.12345
+        arxiv_id = raw
         if "/" in arxiv_id:
             arxiv_id = arxiv_id.rsplit("/", 1)[-1]
+        # Strip version suffix: 2301.12345v2 → 2301.12345
+        arxiv_id = arxiv_id.split("v")[0] if arxiv_id and arxiv_id[-1].isdigit() and "v" in arxiv_id else arxiv_id
+
         try:
             data = get_paper_overview(
                 arxiv_id,

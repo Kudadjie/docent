@@ -496,8 +496,8 @@ function FormSearch({ state, set }: { state: FormState; set: SetFn }) {
 }
 
 function FormGetPaper({ state, set }: { state: FormState; set: SetFn }) {
-  return <Field label="arXiv ID or URL">
-    <StudioInput value={state.arxivId} onChange={v => set('arxivId', v)} placeholder="e.g. 2401.12345 or arxiv.org/abs/…" mono />
+  return <Field label="arXiv ID or URL" hint="arXiv papers only — for other PDFs use Peer review">
+    <StudioInput value={state.arxivId} onChange={v => set('arxivId', v)} placeholder="e.g. 2401.12345 or https://arxiv.org/abs/2401.12345" mono />
   </Field>;
 }
 
