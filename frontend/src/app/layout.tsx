@@ -3,6 +3,7 @@ import './globals.css';
 import ScreenSizeGate from '@/components/ScreenSizeGate';
 import TabGuard from '@/components/TabGuard';
 import { NotificationProvider } from '@/lib/notifications';
+import { StudioRunProvider } from '@/lib/studio-run-context';
 
 export const metadata: Metadata = {
   title: 'Docent',
@@ -57,7 +58,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="h-full antialiased">
         <TabGuard />
         <ScreenSizeGate />
-        <NotificationProvider>{children}</NotificationProvider>
+        <NotificationProvider>
+          <StudioRunProvider>{children}</StudioRunProvider>
+        </NotificationProvider>
       </body>
     </html>
   );

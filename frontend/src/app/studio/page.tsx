@@ -9,9 +9,12 @@ import { LeftColumn, CmdKPalette, PresetSaveModal } from './_form';
 import { OutputPanel, HistoryDrawer, OutputsPanel } from './_output';
 import {
   findAction, actionSummary,
-  type ActionId, type ActionMeta, type FormState,
-  type LogEntry, type Source, type Preset, type RunRecord, type Status,
+  type ActionId, type FormState,
+  type Preset, type Status,
 } from './_shared';
+import { useStudioRun } from '@/lib/studio-run-context';
+
+// ── Default form ──────────────────────────────────────────────────────────────
 
 const DEFAULT_FORM: FormState = {
   topic: '', backend: 'Free', dest: 'Local', guides: [],
@@ -22,8 +25,13 @@ const DEFAULT_FORM: FormState = {
   cfgKey: '', cfgVal: '',
 };
 
+// ── Page ──────────────────────────────────────────────────────────────────────
+
 export default function StudioPage() {
   const { dark, toggleDark } = useDarkMode();
+
+  // Run state lives in the layout-level context so navigation doesn't kill it
+  const run = useStudioRun();
 
   useTour('studio', [
     {
@@ -70,21 +78,11 @@ export default function StudioPage() {
   useEffect(() => { try { sessionStorage.setItem('studio-actionId', actionId); } catch {} }, [actionId]);
   useEffect(() => { try { sessionStorage.setItem('studio-form', JSON.stringify(form)); } catch {} }, [form]);
 
-  // ── Run state ───────────────────────────────────────────────────────────────
-  const [status, setStatus]           = useState<Status>('idle');
-  const [logs, setLogs]               = useState<LogEntry[]>([]);
-  const [sources, setSources]         = useState<Source[]>([]);
-  const [currentPhase, setCurrentPhase] = useState<string | null>(null);
-  const [doneData, setDoneData]         = useState<Record<string, unknown> | null>(null);
-  const [gating, setGating]           = useState(false);
-  const abortRef  = useRef<{ abort: () => void } | null>(null);
-  const stoppedRef = useRef(false);
-
-  // ── Column resize ────────────────────────────────────────────────────────────
+  // ── Column resize ─────────────────────────────────────────────────────────────
   const [leftWidth, setLeftWidth] = useState<number>(() => {
     try { return parseInt(localStorage.getItem('studio-left-width') ?? '380', 10) || 380; } catch { return 380; }
   });
-  const dragging = useRef(false);
+  const dragging   = useRef(false);
   const dragStartX = useRef(0);
   const dragStartW = useRef(0);
 
@@ -115,169 +113,43 @@ export default function StudioPage() {
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
   }, [leftWidth]);
 
-  // ── Overlay / panel state ───────────────────────────────────────────────────
+  // ── Overlay / panel state ──────────────────────────────────────────────────────
   const [cmdKOpen, setCmdKOpen]           = useState(false);
   const [historyOpen, setHistoryOpen]     = useState(false);
   const [outputsOpen, setOutputsOpen]     = useState(false);
   const [savePresetOpen, setSavePresetOpen] = useState(false);
 
-  // ── Presets ─────────────────────────────────────────────────────────────────
+  // ── Presets ───────────────────────────────────────────────────────────────────
   const [presets, setPresets] = useState<Preset[]>([]);
   const [activePresetId, setActivePresetId] = useState<string | null>(null);
   const [recents, setRecents] = useState<ActionId[]>(['deep']);
 
-  // ── Run history (localStorage-persisted) ────────────────────────────────────
-  const [runs, setRuns] = useState<RunRecord[]>(() => {
-    try {
-      const stored = localStorage.getItem('docent-studio-runs');
-      return stored ? (JSON.parse(stored) as RunRecord[]) : [];
-    } catch { return []; }
-  });
-  const [currentRunId, setCurrentRunId] = useState<string | null>(null);
-
-  useEffect(() => {
-    try { localStorage.setItem('docent-studio-runs', JSON.stringify(runs)); } catch { /* quota */ }
-  }, [runs]);
-
   const action = findAction(actionId);
 
-  // ── Run helpers ─────────────────────────────────────────────────────────────
-  function stopRun() {
-    if (abortRef.current) { abortRef.current.abort(); abortRef.current = null; }
+  // ── Run handlers (thin wrappers over context) ─────────────────────────────────
+
+  function handleRun() {
+    setRecents(prev => [actionId, ...prev.filter(x => x !== actionId)].slice(0, 4) as ActionId[]);
+    run.startRun({ actionId, form });
   }
 
-  type RunMeta = { actionId: ActionId; action: ActionMeta; form: FormState };
-
-  function pushRun(
-    finalStatus: 'success' | 'failure' | 'stopped',
-    finalLogs: LogEntry[], finalSources: Source[], finalPhase: string | null,
-    meta?: RunMeta,
-  ) {
-    const ra = meta?.actionId ?? actionId;
-    const rm = meta?.action   ?? action;
-    const rf = meta?.form     ?? form;
-    const detail = actionSummary(rm, rf);
-    setRuns(prev => [{
-      id: 'r' + Date.now(),
-      actionId: ra, actionLabel: rm.label, detail,
-      status: finalStatus, timeAgo: 'just now', startedAt: Date.now(),
-      state: { ...rf }, logs: finalLogs, sources: finalSources, currentPhase: finalPhase,
-    }, ...prev]);
-  }
-
-  async function startRun(opts?: { overrideActionId?: ActionId; overrideSrcPath?: string }) {
-    const runActionId = opts?.overrideActionId ?? actionId;
-    const runAction   = findAction(runActionId);
-    const runSrcPath  = opts?.overrideSrcPath ?? form.srcPath;
-    const runForm: FormState = opts ? { ...form, srcPath: runSrcPath } : form;
-    const runMeta: RunMeta | undefined = opts ? { actionId: runActionId, action: runAction, form: runForm } : undefined;
-
-    stopRun();
-    stoppedRef.current = false;
-    const collectedLogs: LogEntry[] = [];
-    const collectedSources: Source[] = [];
-    setLogs([]);
-    setSources([]);
-    setDoneData(null);
-    setStatus('running');
-    setCurrentRunId(null);
-    setCurrentPhase(null);
-    setRecents(prev => [runActionId, ...prev.filter(x => x !== runActionId)].slice(0, 4) as ActionId[]);
-
-    await new Promise<void>((resolve) => {
-      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const ws = new WebSocket(`${proto}//${window.location.host}/ws/studio/run`);
-      abortRef.current = { abort: () => ws.close() };
-
-      ws.onopen = () => {
-        ws.send(JSON.stringify({
-          action_id:   runActionId,
-          topic:       runForm.topic,
-          backend:     runForm.backend.toLowerCase(),
-          dest:        runForm.dest.toLowerCase(),
-          guides:      runForm.guides,
-          artifact:    runForm.artifact,
-          artifact_a:  runForm.artifactA,
-          artifact_b:  runForm.artifactB,
-          query:       runForm.query,
-          max_results: runForm.maxResults,
-          arxiv_id:    runForm.arxivId,
-          out_path:    runForm.outPath,
-          src_path:    runSrcPath,
-          max_sources: runForm.maxSources,
-          nlm:         runForm.nlm,
-          gate:        runForm.gate,
-          persp:       runForm.persp,
-          cfg_key:     runForm.cfgKey,
-          cfg_val:     runForm.cfgVal,
-        }));
-      };
-
-      ws.onmessage = (e: MessageEvent) => {
-        if (stoppedRef.current) return;
-        let evt: Record<string, unknown>;
-        try { evt = JSON.parse(e.data as string); } catch { return; }
-
-        if (evt.type === 'log') {
-          const entry: LogEntry = { phase: String(evt.phase), text: String(evt.text) };
-          collectedLogs.push(entry);
-          setLogs(prev => [...prev, entry]);
-          setCurrentPhase(String(evt.phase));
-        } else if (evt.type === 'done') {
-          const finalStatus = (evt.status as 'success' | 'failure') ?? 'success';
-          if (evt.raw) {
-            try { setDoneData(JSON.parse(evt.raw as string) as Record<string, unknown>); } catch {}
-          }
-          setStatus(finalStatus);
-          pushRun(finalStatus, collectedLogs, collectedSources, collectedLogs[collectedLogs.length - 1]?.phase ?? null, runMeta);
-          ws.close();
-        } else if (evt.type === 'error') {
-          const entry: LogEntry = { phase: 'error', text: String(evt.message) };
-          collectedLogs.push(entry);
-          setLogs(prev => [...prev, entry]);
-          setStatus('failure');
-          pushRun('failure', collectedLogs, [], 'error', runMeta);
-          ws.close();
-        }
-      };
-
-      ws.onerror = () => {
-        if (!stoppedRef.current) {
-          const entry: LogEntry = { phase: 'error', text: 'Connection error — is the server running?' };
-          setLogs([entry]);
-          setStatus('failure');
-          pushRun('failure', [entry], [], 'error', runMeta);
-        }
-      };
-
-      ws.onclose = () => {
-        abortRef.current = null;
-        resolve();
-      };
-    });
-  }
-
-  function handleRun()  { void startRun(); }
   function handleStop() {
-    stoppedRef.current = true;
-    stopRun();
-    setStatus('stopped');
-    pushRun('stopped', logs, sources, currentPhase);
+    run.stop();
   }
+
   function handleReset() {
-    stopRun(); setStatus('idle'); setLogs([]); setSources([]); setCurrentPhase(null); setDoneData(null);
+    run.reset();
   }
 
   function handlePipeToNotebook(srcPath: string) {
-    // Update the left panel UI to reflect the notebook action
     setActionId('notebook');
     setForm(s => ({ ...s, srcPath }));
-    setStatus('idle'); setLogs([]); setSources([]); setDoneData(null);
-    // Fire immediately — bypass state lag by passing explicit overrides
-    void startRun({ overrideActionId: 'notebook', overrideSrcPath: srcPath });
+    // Fire immediately with overrides — bypasses form state lag
+    run.reset();
+    run.startRun({ actionId: 'notebook', form: { ...form, srcPath } });
   }
 
-  // ── Preset handlers ─────────────────────────────────────────────────────────
+  // ── Preset handlers ────────────────────────────────────────────────────────────
   function handleSelectPreset(p: Preset) {
     setActionId(p.actionId);
     setForm(s => ({ ...s, ...p.params }));
@@ -292,27 +164,24 @@ export default function StudioPage() {
     setPresets(prev => [np, ...prev]);
   }
 
-  // ── History load ─────────────────────────────────────────────────────────────
+  // ── History load ───────────────────────────────────────────────────────────────
   function handleLoadRun(id: string) {
-    const r = runs.find(x => x.id === id);
+    const r = run.runs.find(x => x.id === id);
     if (!r) return;
-    stopRun();
+    // Abort any active run and display the history record
+    run.abortAndLoad(r);
+    // Restore the form so user can re-run with the same inputs
     setActionId(r.actionId);
     setForm(s => ({ ...s, ...r.state }));
-    setLogs(r.logs);
-    setSources(r.sources ?? []);
-    setCurrentPhase(r.currentPhase);
-    setStatus(r.status === 'running' ? 'success' : r.status as Status);
-    setCurrentRunId(r.id);
   }
 
-  // ── Keyboard shortcuts ───────────────────────────────────────────────────────
+  // ── Keyboard shortcuts ─────────────────────────────────────────────────────────
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault(); setCmdKOpen(o => !o);
       }
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && status !== 'running' && !gating) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && run.status !== 'running' && !run.gating) {
         e.preventDefault();
         const a = action;
         if (a.form === 'topic' && !form.topic.trim()) return;
@@ -325,17 +194,26 @@ export default function StudioPage() {
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [status, gating, actionId, form]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [run.status, run.gating, actionId, form]);
 
-  useEffect(() => () => stopRun(), []);
+  // Note: no cleanup useEffect that calls stopRun — the provider is layout-level
+  // and keeps the WS alive across navigation. Only explicit user stop kills it.
 
-  const currentRunForSidebar = status === 'running'
-    ? { status: 'running' as const, currentPhase: (currentPhase ?? 'run').slice(0, 7) }
+  // ── Derived values ─────────────────────────────────────────────────────────────
+
+  const currentRunForSidebar = run.status === 'running'
+    ? { status: 'running' as const, currentPhase: (run.currentPhase ?? 'run').slice(0, 7) }
     : null;
 
-  const dotState: DotState = status === 'running' ? 'working' : status === 'failure' ? 'error' : (status === 'success' || status === 'stopped') ? 'done' : 'idle';
+  const dotState: DotState =
+    run.status === 'running' ? 'working' :
+    run.status === 'failure' ? 'error' :
+    (run.status === 'success' || run.status === 'stopped') ? 'done' : 'idle';
 
   const suggestedPresetName = action.label + ' · ' + (actionSummary(action, form) || '').slice(0, 30);
+
+  // ── Render ─────────────────────────────────────────────────────────────────────
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
@@ -346,7 +224,7 @@ export default function StudioPage() {
           onOpenCmdK={() => setCmdKOpen(true)}
           onOpenHistory={() => setHistoryOpen(o => !o)}
           historyOpen={historyOpen}
-          runCount={runs.length}
+          runCount={run.runs.length}
           onOpenOutputs={() => setOutputsOpen(o => !o)}
           outputsOpen={outputsOpen}
         />
@@ -360,12 +238,12 @@ export default function StudioPage() {
             actionId={actionId} setActionId={id => { setActionId(id); setActivePresetId(null); }}
             state={form} set={set}
             onRun={handleRun}
-            gating={gating} setGating={setGating}
+            gating={run.gating} setGating={run.setGating}
             presets={presets}
             onDeletePreset={handleDeletePreset}
             onSelectPreset={handleSelectPreset}
             onOpenCmdK={() => setCmdKOpen(true)}
-            isRunning={status === 'running'}
+            isRunning={run.status === 'running'}
             onStop={handleStop}
             activePresetId={activePresetId}
             width={leftWidth}
@@ -379,9 +257,9 @@ export default function StudioPage() {
           />
           <OutputPanel
             action={action} state={form}
-            status={status} logs={logs} sources={sources}
-            currentPhase={currentPhase}
-            doneData={doneData}
+            status={run.status} logs={run.logs} sources={run.sources}
+            currentPhase={run.currentPhase}
+            doneData={run.doneData}
             onReset={handleReset}
             onSaveAsPreset={() => setSavePresetOpen(true)}
             onPipeToNotebook={handlePipeToNotebook}
@@ -389,11 +267,11 @@ export default function StudioPage() {
           {historyOpen && (
             <div style={{ animation: 'slideInRight 0.18s ease forwards' }}>
               <HistoryDrawer
-                runs={runs} currentRunId={currentRunId}
+                runs={run.runs} currentRunId={run.currentRunId}
                 onSelect={handleLoadRun}
                 onClose={() => setHistoryOpen(false)}
-                onClear={() => setRuns([])}
-                onDelete={(id) => setRuns(prev => prev.filter(r => r.id !== id))}
+                onClear={() => run.setRuns([])}
+                onDelete={(id) => run.setRuns(prev => prev.filter(r => r.id !== id))}
               />
             </div>
           )}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Settings, Trash2, Pencil, Check, X, BookOpen, RefreshCw, Activity, Key, EyeOff, Zap, HardDriveDownload, CloudUpload, RotateCcw, AlertTriangle } from 'lucide-react';
+import { Settings, Trash2, Pencil, Check, X, BookOpen, RefreshCw, Activity, Key, EyeOff, Zap, HardDriveDownload, CloudUpload, RotateCcw, AlertTriangle, FlaskConical } from 'lucide-react';
 import Sidebar from '@/components/Sidebar';
 import StatusBanner, { type DotState } from '@/components/StatusBanner';
 import Toast, { type ToastData } from '@/components/Toast';
@@ -26,6 +26,7 @@ interface ResearchConfig {
   openrouter_api_key: string | null;
   mistral_api_key: string | null;
   cerebras_api_key: string | null;
+  feynman_model: string | null;
 }
 
 interface ConfigData {
@@ -1038,6 +1039,21 @@ export default function SettingsPage() {
                     onSave={v => handleSaveReading(f.key, v)}
                   />
                 ))}
+              </SectionCard>
+
+              {/* Studio settings */}
+              <SectionCard
+                icon={<FlaskConical size={14} strokeWidth={1.5} color="#8B5CF6" />}
+                title="Studio"
+                description="Controls which AI model Feynman uses when running deep research and literature review tasks."
+              >
+                <ConfigRow
+                  label="Feynman model"
+                  description="LiteLLM model string passed to Feynman — e.g. groq/llama-3.3-70b-versatile or anthropic/claude-sonnet-4-5. Leave empty to use Feynman's built-in default."
+                  value={res?.feynman_model ?? null}
+                  placeholder="groq/llama-3.3-70b-versatile"
+                  onSave={v => handleSaveResearch('feynman_model', v)}
+                />
               </SectionCard>
 
             {/* System health — directly under Reading in left column */}

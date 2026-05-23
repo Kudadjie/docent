@@ -89,6 +89,7 @@ async def get_config() -> JSONResponse:
     cfg = _read_config_reading()
     rcfg = _read_config_research()
     research = {k: _mask_key(rcfg.get(k)) for k in _RESEARCH_KEY_FIELDS}
+    research["feynman_model"] = rcfg.get("feynman_model")  # plain string, not a secret
     return JSONResponse({
         "reading": {
             "database_dir": _norm_path(cfg.get("database_dir", None)),
@@ -133,10 +134,9 @@ async def post_config(body: ConfigBody) -> JSONResponse:
         except Exception as exc:
             return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
         rcfg = _read_config_research()
-        return JSONResponse({
-            "ok": True,
-            "research": {k: _mask_key(rcfg.get(k)) for k in _RESEARCH_KEY_FIELDS},
-        })
+        research = {k: _mask_key(rcfg.get(k)) for k in _RESEARCH_KEY_FIELDS}
+        research["feynman_model"] = rcfg.get("feynman_model")
+        return JSONResponse({"ok": True, "research": research})
     else:
         return JSONResponse({"error": f"Unknown section: {body.section!r}"}, status_code=400)
 

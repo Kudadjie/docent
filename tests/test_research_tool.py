@@ -215,9 +215,10 @@ class TestDeepFeynman:
         ):
             result = _drain(tool.deep_research(DeepInputs(topic="storm surge Ghana"), ctx))
 
-        assert result.ok is True
+        # ff95e61: output_file is None → ok=False regardless of exit code
+        assert result.ok is False
         assert result.output_file is None
-        assert "no output file was found" in result.message
+        assert "no output file" in result.message
 
     def test_deep_feynman_nonzero_exit(self, tmp_path):
         output_dir = tmp_path / "research"
@@ -764,7 +765,8 @@ class TestCompareAction:
                 tool.compare(CompareInputs(artifact_a="2401.12345", artifact_b="2402.67890"), ctx)
             )
 
-        assert result.ok is True
+        # ff95e61: output_file is None → ok=False regardless of exit code
+        assert result.ok is False
         assert result.output_file is None
         assert "no output file" in result.message
 
@@ -897,7 +899,8 @@ class TestReplicateAction:
         with patch("docent.bundled_plugins.studio._research._run_feynman", return_value=(0, None, "")):
             result = _drain(tool.replicate(ReplicateInputs(artifact="2401.12345"), ctx))
 
-        assert result.ok is True
+        # ff95e61: output_file is None → ok=False regardless of exit code
+        assert result.ok is False
         assert result.output_file is None
 
     @patch("docent.bundled_plugins.studio.pipeline.run_replicate")
