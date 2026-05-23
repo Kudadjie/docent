@@ -262,6 +262,8 @@ The vault path is set via `docent studio config-set --key obsidian_vault --value
 
 ## Configuration
 
+Most settings can also be edited directly in **Settings → Studio** in the UI (`docent ui`).
+
 ### Show all settings
 
 ```bash
