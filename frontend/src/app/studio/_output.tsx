@@ -19,13 +19,82 @@ const BLUE       = '#3772cf';
 
 // ── Phase strip ────────────────────────────────────────────────────────────────
 
+// Minimum pixels per phase before switching to compact (dots-only) mode.
+const PX_PER_PHASE = 88;
+
 function PhaseStrip({ seenPhases, completedPhases, currentPhase, status }: {
   seenPhases: string[]; completedPhases: Set<string>; currentPhase: string | null; status: string;
 }) {
   const phases = seenPhases;
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [compact, setCompact] = useState(false);
+
+  // Switch to compact (dots-only) mode whenever the available width is too
+  // narrow to render full labels without cramping.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const obs = new ResizeObserver(entries => {
+      const width = entries[0].contentRect.width;
+      setCompact(width < phases.length * PX_PER_PHASE);
+    });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [phases.length]);
+
   if (phases.length <= 1) return null;
+
+  // ── Compact mode: dots + short connectors + active-phase label only ──────────
+  if (compact) {
+    const allDone     = status === 'success';
+    const activePhase = status === 'running' ? currentPhase
+      : allDone ? phases[phases.length - 1] : null;
+    const activeLabel = activePhase ? (PHASE_LABELS[activePhase] ?? activePhase) : null;
+
+    return (
+      <div ref={containerRef} style={{ padding: '10px 0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'nowrap', minWidth: 0 }}>
+          {phases.map((p, i) => {
+            const done    = completedPhases.has(p) || allDone;
+            const current = p === currentPhase && status === 'running';
+            const dotColor  = current ? AMBER_BORDER : done ? BRAND : 'var(--gray200)';
+            const lineColor = done ? BRAND : 'var(--border)';
+            return (
+              <div key={p} style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+                <span
+                  title={PHASE_LABELS[p] ?? p}
+                  style={{
+                    width: current ? 9 : 7, height: current ? 9 : 7,
+                    borderRadius: '50%', background: dotColor,
+                    flexShrink: 0, cursor: 'default',
+                    animation: current ? 'logo-dot-blink 1.1s step-end infinite' : 'none',
+                    transition: 'all 0.15s',
+                  }}
+                />
+                {i < phases.length - 1 && (
+                  <div style={{ width: 10, height: 1, background: lineColor, margin: '0 3px', transition: 'background 0.25s' }} />
+                )}
+              </div>
+            );
+          })}
+          {activeLabel && (
+            <span style={{
+              marginLeft: 10, flexShrink: 0,
+              fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 600,
+              color: allDone ? BRAND_DEEP : 'var(--amber-text)',
+              letterSpacing: '0.5px', textTransform: 'uppercase', whiteSpace: 'nowrap',
+            }}>
+              {activeLabel}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Full mode: dots + labels + connector lines in a single row ───────────────
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 0, padding: '10px 0' }}>
+    <div ref={containerRef} style={{ display: 'flex', alignItems: 'center', gap: 0, padding: '10px 0' }}>
       {phases.map((p, i) => {
         const done    = completedPhases.has(p);
         const current = p === currentPhase && status === 'running';
@@ -125,7 +194,7 @@ function LogLine({ phase, text, live }: { phase: string; text: string; live?: bo
       <span style={{ fontFamily: 'var(--mono)', fontSize: 9.5, fontWeight: 600, letterSpacing: '0.6px', textTransform: 'uppercase', color, background: bg, padding: '2px 6px', borderRadius: 4, flexShrink: 0, marginTop: 1, minWidth: 46, textAlign: 'center' }}>
         {phase}
       </span>
-      <span style={{ fontFamily: 'var(--sans)', fontSize: 12.5, color: 'var(--fg2)', lineHeight: 1.5, flex: 1, wordBreak: 'break-word' }}>
+      <span style={{ fontFamily: 'var(--sans)', fontSize: 12.5, color: 'var(--fg2)', lineHeight: 1.5, flex: 1, wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
         {text}
         {live && <span style={{ marginLeft: 4 }}><span className="thinking-dot" /><span className="thinking-dot" /><span className="thinking-dot" /></span>}
       </span>

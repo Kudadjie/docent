@@ -371,6 +371,8 @@ async def studio_run_ws(websocket: WebSocket):
 
     output_file: str | None = None
     notebook_id: str | None = None
+    result_ok: bool = True        # overridden by RESULT_MARKER if action sets ok=False
+    result_message: str | None = None
     _RESULT_MARKER   = "\x00DOCENT_RESULT\x00"
     _PROGRESS_MARKER = "\x00DOCENT_PROGRESS\x00"
 
@@ -387,6 +389,12 @@ async def studio_run_ws(websocket: WebSocket):
                     payload = json.loads(line[line.index(_RESULT_MARKER) + len(_RESULT_MARKER):])
                     output_file = payload.get("output_file") or output_file
                     notebook_id = payload.get("notebook_id") or notebook_id
+                    # Track ok/message so we can set status correctly even when
+                    # the subprocess exits 0 (e.g. Feynman credit failures).
+                    if "ok" in payload:
+                        result_ok = bool(payload["ok"])
+                    if "message" in payload:
+                        result_message = str(payload["message"])
                 except Exception:
                     pass
                 continue
@@ -397,7 +405,8 @@ async def studio_run_ws(websocket: WebSocket):
                 rest = line[line.index(_PROGRESS_MARKER) + len(_PROGRESS_MARKER):]
                 parts = rest.split("\x00", 1)
                 phase = parts[0]
-                text  = parts[1] if len(parts) > 1 else ""
+                # Unescape \x02 → \n (CLI escapes newlines to keep the marker on one line)
+                text  = (parts[1] if len(parts) > 1 else "").replace("\x02", "\n")
                 if phase:
                     try:
                         await websocket.send_json({"type": "log", "phase": phase, "text": text})
@@ -427,15 +436,22 @@ async def studio_run_ws(websocket: WebSocket):
         result["output_file"] = output_file
     if notebook_id:
         result["notebook_id"] = notebook_id
+    if result_message:
+        result["message"] = result_message
+
+    # Success only when the process exits 0 AND the action itself reported ok=True.
+    # Feynman (and similar tools) can exit 0 even on credit/quota failures; in that
+    # case the CLI emits ok=False in the RESULT_MARKER so we still surface a failure.
+    action_ok = proc.returncode == 0 and result_ok
 
     try:
-        if proc.returncode == 0:
+        if action_ok:
             await websocket.send_json({
                 "type": "done", "status": "success", "raw": json.dumps(result),
             })
         else:
             await websocket.send_json({
-                "type": "done", "status": "failure", "raw": json.dumps({}),
+                "type": "done", "status": "failure", "raw": json.dumps(result),
             })
     except Exception:
         pass

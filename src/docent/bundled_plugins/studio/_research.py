@@ -184,27 +184,24 @@ class ResearchMixin:
                 message=str(e),
             )
 
-        if returncode != 0:
+        if returncode != 0 or output_file is None:
+            # Feynman sometimes exits 0 on credit/quota errors (no output written).
+            # Treat "no output file" as a failure regardless of returncode.
             msg = _summarize_feynman_error(stderr_output, configured_model=context.settings.research.feynman_model)
+            if output_file is None and returncode == 0:
+                msg = (
+                    "Feynman ran but produced no output file.\n"
+                    "The actual error was likely printed above (streamed to stdout).\n"
+                    "Common cause: exhausted API credits (Feynman may exit 0 on credit errors).\n\n"
+                ) + msg
             return ResearchResult(
                 ok=False,
                 backend="feynman",
                 workflow="deep",
                 topic_or_artifact=inputs.topic,
-                output_file=output_file,
-                returncode=returncode,
-                message=msg,
-            )
-
-        if output_file is None:
-            return ResearchResult(
-                ok=True,
-                backend="feynman",
-                workflow="deep",
-                topic_or_artifact=inputs.topic,
                 output_file=None,
                 returncode=returncode,
-                message=f"Deep research completed for {inputs.topic!r}, but no output file was found.",
+                message=msg,
             )
 
         out_path_obj = Path(output_file)
@@ -379,27 +376,22 @@ class ResearchMixin:
                 message=str(e),
             )
 
-        if returncode != 0:
+        if returncode != 0 or output_file is None:
             msg = _summarize_feynman_error(stderr_output, configured_model=context.settings.research.feynman_model)
+            if output_file is None and returncode == 0:
+                msg = (
+                    "Feynman ran but produced no output file.\n"
+                    "The actual error was likely printed above (streamed to stdout).\n"
+                    "Common cause: exhausted API credits (Feynman may exit 0 on credit errors).\n\n"
+                ) + msg
             return ResearchResult(
                 ok=False,
                 backend="feynman",
                 workflow="lit",
                 topic_or_artifact=inputs.topic,
-                output_file=output_file,
-                returncode=returncode,
-                message=msg,
-            )
-
-        if output_file is None:
-            return ResearchResult(
-                ok=True,
-                backend="feynman",
-                workflow="lit",
-                topic_or_artifact=inputs.topic,
                 output_file=None,
                 returncode=returncode,
-                message=f"Literature review completed for {inputs.topic!r}, but no output file was found.",
+                message=msg,
             )
 
         out_path_obj = Path(output_file)
@@ -506,27 +498,22 @@ class ResearchMixin:
                 message=str(e),
             )
 
-        if returncode != 0:
+        if returncode != 0 or output_file is None:
             msg = _summarize_feynman_error(stderr_output, configured_model=context.settings.research.feynman_model)
+            if output_file is None and returncode == 0:
+                msg = (
+                    "Feynman ran but produced no output file.\n"
+                    "The actual error was likely printed above (streamed to stdout).\n"
+                    "Common cause: exhausted API credits (Feynman may exit 0 on credit errors).\n\n"
+                ) + msg
             return ResearchResult(
                 ok=False,
                 backend="feynman",
                 workflow="review",
                 topic_or_artifact=inputs.artifact,
-                output_file=output_file,
-                returncode=returncode,
-                message=msg,
-            )
-
-        if output_file is None:
-            return ResearchResult(
-                ok=True,
-                backend="feynman",
-                workflow="review",
-                topic_or_artifact=inputs.artifact,
                 output_file=None,
                 returncode=returncode,
-                message=f"Review completed for {inputs.artifact!r}, but no output file was found.",
+                message=msg,
             )
 
         out_path_obj = Path(output_file)
@@ -625,18 +612,17 @@ class ResearchMixin:
                 topic_or_artifact=topic_label, output_file=None, returncode=None, message=str(e),
             )
 
-        if returncode != 0:
+        if returncode != 0 or output_file is None:
             msg = _summarize_feynman_error(stderr_output, configured_model=context.settings.research.feynman_model)
+            if output_file is None and returncode == 0:
+                msg = (
+                    "Feynman ran but produced no output file.\n"
+                    "The actual error was likely printed above (streamed to stdout).\n"
+                    "Common cause: exhausted API credits (Feynman may exit 0 on credit errors).\n\n"
+                ) + msg
             return ResearchResult(
                 ok=False, backend="feynman", workflow="compare",
-                topic_or_artifact=topic_label, output_file=output_file, returncode=returncode, message=msg,
-            )
-
-        if output_file is None:
-            return ResearchResult(
-                ok=True, backend="feynman", workflow="compare",
-                topic_or_artifact=topic_label, output_file=None, returncode=returncode,
-                message=f"Compare completed for {topic_label!r}, but no output file was found.",
+                topic_or_artifact=topic_label, output_file=None, returncode=returncode, message=msg,
             )
 
         out_path_obj = Path(output_file)
@@ -730,18 +716,17 @@ class ResearchMixin:
                 topic_or_artifact=inputs.topic, output_file=None, returncode=None, message=str(e),
             )
 
-        if returncode != 0:
+        if returncode != 0 or output_file is None:
             msg = _summarize_feynman_error(stderr_output, configured_model=context.settings.research.feynman_model)
+            if output_file is None and returncode == 0:
+                msg = (
+                    "Feynman ran but produced no output file.\n"
+                    "The actual error was likely printed above (streamed to stdout).\n"
+                    "Common cause: exhausted API credits (Feynman may exit 0 on credit errors).\n\n"
+                ) + msg
             return ResearchResult(
                 ok=False, backend="feynman", workflow="draft",
-                topic_or_artifact=inputs.topic, output_file=output_file, returncode=returncode, message=msg,
-            )
-
-        if output_file is None:
-            return ResearchResult(
-                ok=True, backend="feynman", workflow="draft",
-                topic_or_artifact=inputs.topic, output_file=None, returncode=returncode,
-                message=f"Draft completed for {inputs.topic!r}, but no output file was found.",
+                topic_or_artifact=inputs.topic, output_file=None, returncode=returncode, message=msg,
             )
 
         out_path_obj = Path(output_file)
@@ -832,18 +817,17 @@ class ResearchMixin:
                 topic_or_artifact=inputs.artifact, output_file=None, returncode=None, message=str(e),
             )
 
-        if returncode != 0:
+        if returncode != 0 or output_file is None:
             msg = _summarize_feynman_error(stderr_output, configured_model=context.settings.research.feynman_model)
+            if output_file is None and returncode == 0:
+                msg = (
+                    "Feynman ran but produced no output file.\n"
+                    "The actual error was likely printed above (streamed to stdout).\n"
+                    "Common cause: exhausted API credits (Feynman may exit 0 on credit errors).\n\n"
+                ) + msg
             return ResearchResult(
                 ok=False, backend="feynman", workflow="replicate",
-                topic_or_artifact=inputs.artifact, output_file=output_file, returncode=returncode, message=msg,
-            )
-
-        if output_file is None:
-            return ResearchResult(
-                ok=True, backend="feynman", workflow="replicate",
-                topic_or_artifact=inputs.artifact, output_file=None, returncode=returncode,
-                message=f"Replicate completed for {inputs.artifact!r}, but no output file was found.",
+                topic_or_artifact=inputs.artifact, output_file=None, returncode=returncode, message=msg,
             )
 
         out_path_obj = Path(output_file)
@@ -934,18 +918,17 @@ class ResearchMixin:
                 topic_or_artifact=inputs.artifact, output_file=None, returncode=None, message=str(e),
             )
 
-        if returncode != 0:
+        if returncode != 0 or output_file is None:
             msg = _summarize_feynman_error(stderr_output, configured_model=context.settings.research.feynman_model)
+            if output_file is None and returncode == 0:
+                msg = (
+                    "Feynman ran but produced no output file.\n"
+                    "The actual error was likely printed above (streamed to stdout).\n"
+                    "Common cause: exhausted API credits (Feynman may exit 0 on credit errors).\n\n"
+                ) + msg
             return ResearchResult(
                 ok=False, backend="feynman", workflow="audit",
-                topic_or_artifact=inputs.artifact, output_file=output_file, returncode=returncode, message=msg,
-            )
-
-        if output_file is None:
-            return ResearchResult(
-                ok=True, backend="feynman", workflow="audit",
-                topic_or_artifact=inputs.artifact, output_file=None, returncode=returncode,
-                message=f"Audit completed for {inputs.artifact!r}, but no output file was found.",
+                topic_or_artifact=inputs.artifact, output_file=None, returncode=returncode, message=msg,
             )
 
         out_path_obj = Path(output_file)

@@ -977,7 +977,10 @@ def _drive_progress(gen: Any) -> Any:
                 if not isinstance(evt, ProgressEvent):
                     continue
                 msg = evt.message or ""
-                print(f"{_UI_PROGRESS_MARKER}{evt.phase}\x00{msg}", flush=True)
+                # Escape newlines so the single-line PROGRESS marker isn't split
+                # across multiple stdout reads by the WS handler.
+                msg_safe = msg.replace("\n", "\x02")
+                print(f"{_UI_PROGRESS_MARKER}{evt.phase}\x00{msg_safe}", flush=True)
         except StopIteration as stop:
             result = stop.value
         except KeyboardInterrupt:
@@ -1081,6 +1084,14 @@ def _build_callback(
                         _r[_attr] = _v
                 import json as _json
                 print(f"\x00DOCENT_RESULT\x00{_json.dumps(_r)}", flush=True)
+                # When the action itself reports failure (ok=False), emit the
+                # error message as a progress log line and exit non-zero so the
+                # WS handler can surface it as status: 'failure'.
+                if not _r.get("ok", True):
+                    _msg = str(_r.get("message", "Action failed — check the activity log."))
+                    _msg_safe = _msg.replace("\n", "\x02")
+                    print(f"\x00DOCENT_PROGRESS\x00error\x00{_msg_safe}", flush=True)
+                    raise typer.Exit(1)
             else:
                 console = get_console()
                 if hasattr(result, "to_shapes"):
