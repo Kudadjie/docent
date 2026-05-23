@@ -23,7 +23,7 @@ dependencies = [
     "tavily-python>=0.7.0",
     "fastapi>=0.115.0",
     "httpx>=0.27.0",
-    "litellm>=1.83.0",
+    "litellm>=1.83.10",
     "mcp>=1.0,<2",
     "pydantic-settings>=2.14.0",
     "rich>=15.0.0",
@@ -71,6 +71,13 @@ dev = ["pytest>=8.0", "pip-audit>=2.7", "ruff>=0.9"]
 
 [tool.uv]
 default-groups = ["dev"]
+# Floor transitive deps with known CVEs. These are not direct deps but must
+# meet minimum safe versions. Update when pip-audit flags new advisories.
+constraint-dependencies = [
+    "idna>=3.15",        # CVE-2026-45409
+    "starlette>=1.0.1",  # PYSEC-2026-161
+    "urllib3>=2.7.0",    # PYSEC-2026-142, PYSEC-2026-141
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
