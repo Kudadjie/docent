@@ -149,7 +149,7 @@ def _run_tavily_pipeline(
     yield ProgressEvent(phase="review", message="Running adversarial review...")
     reviewer_prompt = _load_prompt("reviewer").replace("{draft}", content)
     try:
-        review = backend.call(reviewer_prompt, role="reviewer", timeout=300)
+        review = backend.call(reviewer_prompt, role="reviewer", timeout=600)
     except Exception as e:
         logger.warning("Reviewer call failed: %s: %s", type(e).__name__, e)
         review = f"(Reviewer unavailable: {e})"
@@ -164,7 +164,7 @@ def _run_tavily_pipeline(
             .replace("{review}", review)
         )
         try:
-            refined_result = backend.call(refiner_prompt, role="reviewer", timeout=300)
+            refined_result = backend.call(refiner_prompt, role="reviewer", timeout=600)
             # Quality guard: if refiner output is suspiciously short, keep original
             if refined_result and content and len(refined_result) < len(content) * 0.5:
                 logger.warning(
@@ -477,7 +477,7 @@ def _run_pipeline(
         .replace("{sources}", sources_text)
     )
     try:
-        verified_draft = backend.call(verifier_prompt, role="verifier", timeout=300)
+        verified_draft = backend.call(verifier_prompt, role="verifier", timeout=600)
     except Exception:
         verified_draft = draft
 
@@ -515,7 +515,7 @@ def _run_pipeline(
     yield ProgressEvent(phase="review", message="Running adversarial review...")
     reviewer_prompt = _load_prompt("reviewer").replace("{draft}", verified_draft)
     try:
-        review = backend.call(reviewer_prompt, role="reviewer", timeout=300)
+        review = backend.call(reviewer_prompt, role="reviewer", timeout=600)
     except Exception:
         review = "(Reviewer unavailable)"
 
@@ -528,7 +528,7 @@ def _run_pipeline(
             .replace("{review}", review)
         )
         try:
-            refined_draft = backend.call(refiner_prompt, role="writer", timeout=300)
+            refined_draft = backend.call(refiner_prompt, role="writer", timeout=600)
             # Quality guard: if refiner output is suspiciously short, keep verified draft
             if refined_draft and verified_draft and len(refined_draft) < len(verified_draft) * 0.5:
                 logger.warning(
@@ -731,14 +731,14 @@ def run_compare(
         .replace("{artifact_b_content}", content_b)
     )
     try:
-        comparison = backend.call(compare_prompt, role="researcher", timeout=300)
+        comparison = backend.call(compare_prompt, role="researcher", timeout=600)
     except Exception as e:
         return {"ok": False, "error": f"Compare failed: {e}", "comparison": "", "review": ""}
 
     yield ProgressEvent(phase="review", message="Running adversarial review...")
     reviewer_prompt = _load_prompt("reviewer").replace("{draft}", comparison)
     try:
-        review = backend.call(reviewer_prompt, role="reviewer", timeout=300)
+        review = backend.call(reviewer_prompt, role="reviewer", timeout=600)
     except Exception:
         review = "(Reviewer unavailable)"
 
@@ -782,14 +782,14 @@ def run_replicate(
         .replace("{artifact_content}", content)
     )
     try:
-        guide = backend.call(replicate_prompt, role="researcher", timeout=300)
+        guide = backend.call(replicate_prompt, role="researcher", timeout=600)
     except Exception as e:
         return {"ok": False, "error": f"Replication analysis failed: {e}", "guide": "", "review": ""}
 
     yield ProgressEvent(phase="review", message="Reviewing replication guide...")
     reviewer_prompt = _load_prompt("reviewer").replace("{draft}", guide)
     try:
-        review = backend.call(reviewer_prompt, role="reviewer", timeout=300)
+        review = backend.call(reviewer_prompt, role="reviewer", timeout=600)
     except Exception:
         review = "(Reviewer unavailable)"
 
@@ -811,14 +811,14 @@ def run_audit(
         .replace("{artifact_content}", content)
     )
     try:
-        report = backend.call(audit_prompt, role="researcher", timeout=300)
+        report = backend.call(audit_prompt, role="researcher", timeout=600)
     except Exception as e:
         return {"ok": False, "error": f"Audit failed: {e}", "report": "", "review": ""}
 
     yield ProgressEvent(phase="review", message="Reviewing audit findings...")
     reviewer_prompt = _load_prompt("reviewer").replace("{draft}", report)
     try:
-        review = backend.call(reviewer_prompt, role="reviewer", timeout=300)
+        review = backend.call(reviewer_prompt, role="reviewer", timeout=600)
     except Exception:
         review = "(Reviewer unavailable)"
 
@@ -842,7 +842,7 @@ def run_review(
         .replace("{artifact_content}", artifact_content)
     )
     try:
-        researcher_notes = backend.call(researcher_prompt, role="researcher", timeout=300)
+        researcher_notes = backend.call(researcher_prompt, role="researcher", timeout=600)
     except Exception as e:
         return {
             "artifact": artifact,
@@ -858,7 +858,7 @@ def run_review(
     combined = f"## Artifact\n\n{artifact_content}\n\n## Researcher Notes\n\n{researcher_notes}"
     reviewer_prompt = _load_prompt("reviewer").replace("{draft}", combined)
     try:
-        review = backend.call(reviewer_prompt, role="reviewer", timeout=300)
+        review = backend.call(reviewer_prompt, role="reviewer", timeout=600)
     except Exception:
         review = "(Reviewer unavailable)"
 
