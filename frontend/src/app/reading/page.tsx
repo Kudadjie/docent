@@ -638,9 +638,11 @@ ${sectionsHtml}
   const debouncedSearch = useDebounce(search, 150);
 
   // Memoize the expensive filter+sort pipeline so it only reruns when inputs change.
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const filtered = useMemo(() => applySort(
     applyQuickFilter(
-      applySearch(applyFilter(entries, filter), debouncedSearch),
+      // eslint-disable-next-line react-hooks/preserve-manual-memoization
+      applySearch(applyFilter([...entries], filter), debouncedSearch),
       quickFilters,
     ),
     sortBy,

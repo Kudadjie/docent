@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 router = APIRouter()
 
-from docent.core.invoke import invoke_action_for_ui as invoke_action, run_action
+from docent.core.invoke import invoke_action_for_ui as invoke_action  # noqa: E402
 
 
 class ActionBody(BaseModel):

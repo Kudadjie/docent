@@ -2,7 +2,6 @@
 import asyncio
 import json
 import os
-from pathlib import Path
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
@@ -17,7 +16,7 @@ def _norm_path(raw: str | None) -> str | None:
         return raw
     return os.path.normpath(raw)
 
-from docent.core.invoke import run_action
+from docent.core.invoke import run_action  # noqa: E402
 
 
 class ConfigBody(BaseModel):

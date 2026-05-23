@@ -263,7 +263,7 @@ def sync_from_mendeley_run(
     cleared: list[str] = []            # not_in_mendeley / manually_kept cleared (returned to any collection)
     not_in_parent: list[str] = []      # newly flagged as not_in_parent_collection (in sub only)
     cleared_parent: list[str] = []     # not_in_parent_collection cleared (back in root)
-    removed: list[str] = []            # dry-run compat only
+    _removed: list[str] = []           # dry-run compat only (unused but kept for shape symmetry)
     failed: list[dict[str, str]] = list(_no_id_failed)
     dry_run_added: list[dict[str, str]] = []
     dry_run_removed: list[str] = []

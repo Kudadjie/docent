@@ -132,7 +132,6 @@ def list_backups(service: Any, folder_id: str) -> list[dict[str, Any]]:
 
 def download_backup(service: Any, file_id: str, dest: Path) -> None:
     """Stream a Drive file to *dest*."""
-    import io
     from googleapiclient.http import MediaIoBaseDownload
     request = service.files().get_media(fileId=file_id)
     dest.parent.mkdir(parents=True, exist_ok=True)

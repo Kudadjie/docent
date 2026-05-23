@@ -12,9 +12,8 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 
 router = APIRouter()
-from pydantic import BaseModel
+from pydantic import BaseModel  # noqa: E402
 
-from docent.core.invoke import serialize_result as _serialize
 
 
 class StudioRunBody(BaseModel):

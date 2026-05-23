@@ -181,7 +181,7 @@ async def get_doctor() -> JSONResponse:
         return _row(
             "OpenCode",
             "WARN",
-            detail=f"Installed but not running — click 'Start server' in Settings, or run: opencode serve --port 4096",
+            detail="Installed but not running — click 'Start server' in Settings, or run: opencode serve --port 4096",
         )
 
     async def _feynman_row() -> dict:
@@ -243,7 +243,9 @@ async def get_doctor() -> JSONResponse:
 
     def _notebooklm_sync() -> dict:
         try:
-            import contextlib, io as _io, sys as _sys
+            import contextlib
+            import io as _io
+            import sys as _sys
             if "notebooklm" not in _sys.modules:
                 import os as _os
                 _os.environ.setdefault("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "1")
@@ -355,5 +357,5 @@ async def get_doctor() -> JSONResponse:
     return JSONResponse(checks)
 
 
-import json
-from pathlib import Path
+import json  # noqa: E402
+from pathlib import Path  # noqa: E402

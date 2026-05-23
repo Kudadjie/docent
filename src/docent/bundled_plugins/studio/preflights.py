@@ -191,7 +191,8 @@ def _preflight_free_backend(inputs: BaseModel, context: Context) -> None:
             import re
             from docent.core.exceptions import ConfirmationRequired
 
-            strip_markup = lambda s: re.sub(r"\[/?[^\]]+\]", "", s).strip()
+            def strip_markup(s: str) -> str:
+                return re.sub(r"\[/?[^\]]+\]", "", s).strip()
 
             notes: list[str] = [strip_markup(FREE_TIER_DISCLAIMER)]
             tavily_key = context.settings.research.tavily_api_key
@@ -677,7 +678,7 @@ def _preflight_to_notebook(inputs: BaseModel, context: Context) -> None:
         import datetime
         mtime = datetime.datetime.fromtimestamp(p.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
         console.print(f"  [cyan]{i}[/]) {p.stem}  [dim]({mtime})[/]")
-    console.print(f"  [cyan]a[/]) All of the above")
+    console.print("  [cyan]a[/]) All of the above")
 
     try:
         raw = typer.prompt(

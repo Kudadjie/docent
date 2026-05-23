@@ -136,7 +136,7 @@ def _check_guide_files(paths: list[str]) -> tuple[list[str], list[str]]:
                         problems.append(str(f))
         elif not p.exists():
             problems.append(f"{raw}  (not found)")
-        elif not p.suffix.lower() in _GUIDE_EXTS:
+        elif p.suffix.lower() not in _GUIDE_EXTS:
             problems.append(f"{raw}  (unsupported type — use .md, .txt, or .pdf)")
         elif _is_readable(p):
             readable.append(str(p))
