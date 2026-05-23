@@ -61,7 +61,7 @@ const ACTION_GROUPS: { key: string; label: string; items: Omit<ActionMeta, 'grou
       { id: 'peer',      label: 'Peer review',        form: 'artifact', desc: 'Critique a single paper' },
       { id: 'compare',   label: 'Compare',            form: 'compare',  desc: 'Side-by-side analysis of two papers' },
       { id: 'draft',     label: 'Draft',              form: 'topic',    desc: 'Draft a writeup from sources' },
-      { id: 'replicate', label: 'Replicate',          form: 'artifact', desc: 'Replication audit' },
+      // 'replicate' archived — Replication audit (still works from CLI: docent studio replicate --artifact ...)
       { id: 'audit',     label: 'Audit',              form: 'artifact', desc: 'Methods + evidence audit' },
     ],
   },
@@ -88,7 +88,9 @@ export const ALL_ACTIONS: ActionMeta[] = ACTION_GROUPS.flatMap(g =>
   g.items.map(it => ({ ...it, group: g.label } as ActionMeta))
 );
 export const findAction = (id: ActionId): ActionMeta => ALL_ACTIONS.find(a => a.id === id) ?? ALL_ACTIONS[0];
-export const BACKENDS = ['Free', 'Feynman', 'Docent', 'Groq', 'Gemini', 'OpenRouter', 'Anthropic', 'OpenAI', 'Ollama', 'LM Studio'];
+export const BACKENDS = ['Free', 'Feynman', 'Docent', 'Groq'];
+// Archived backends (still work via CLI --backend flag):
+// 'Gemini', 'OpenRouter', 'Anthropic', 'OpenAI', 'Ollama', 'LM Studio', 'Mistral', 'Cerebras'
 
 // ── Phases ─────────────────────────────────────────────────────────────────────
 

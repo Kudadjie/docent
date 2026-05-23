@@ -10,6 +10,10 @@ if TYPE_CHECKING:
 from docent.errors import AuthError, ServiceUnavailableError
 
 # Maps provider name → litellm config
+# Archived backends (gemini, openrouter, anthropic, openai, ollama, lm_studio,
+# mistral, cerebras, local) are intentionally removed from the active set.
+# Their config fields still exist in settings.py for schema safety.
+# To restore: add the provider spec back here and to _BACKEND_NORM in ui_server.py.
 _PROVIDER_SPECS: dict[str, dict] = {
     "groq": {
         "prefix": "groq/",
@@ -17,68 +21,6 @@ _PROVIDER_SPECS: dict[str, dict] = {
         "key_attr": "groq_api_key",
         "key_env": "GROQ_API_KEY",
         # llama-3.1-70b-versatile was decommissioned May 2025
-    },
-    "gemini": {
-        "prefix": "gemini/",
-        "model_attr": "gemini_model",
-        "key_attr": "gemini_api_key",
-        "key_env": "GEMINI_API_KEY",
-    },
-    "openrouter": {
-        "prefix": "openrouter/",
-        "model_attr": "openrouter_model",
-        "key_attr": "openrouter_api_key",
-        "key_env": "OPENROUTER_API_KEY",
-    },
-    "mistral": {
-        "prefix": "mistral/",
-        "model_attr": "mistral_model",
-        "key_attr": "mistral_api_key",
-        "key_env": "MISTRAL_API_KEY",
-    },
-    "cerebras": {
-        "prefix": "cerebras/",
-        "model_attr": "cerebras_model",
-        "key_attr": "cerebras_api_key",
-        "key_env": "CEREBRAS_API_KEY",
-    },
-    "anthropic": {
-        "prefix": "anthropic/",
-        "model_attr": None,
-        "key_attr": None,
-        "key_env": "ANTHROPIC_API_KEY",
-        "top_key": "anthropic_api_key",
-        "top_model": "claude-sonnet-4-6",
-    },
-    "openai": {
-        "prefix": "openai/",
-        "model_attr": None,
-        "key_attr": None,
-        "key_env": "OPENAI_API_KEY",
-        "top_key": "openai_api_key",
-        "top_model": "gpt-4o",
-    },
-    "ollama": {
-        "prefix": "ollama/",
-        "model_attr": "ollama_model",
-        "key_attr": None,
-        "key_env": None,
-        "url_attr": "ollama_base_url",
-    },
-    "lm_studio": {
-        "prefix": "openai/",
-        "model_attr": "lm_studio_model",
-        "key_attr": None,
-        "key_env": None,
-        "key_override": "lm-studio",
-        "url_attr": "lm_studio_base_url",
-    },
-    "local": {
-        "prefix": "openai/",
-        "model_attr": "local_model",
-        "key_attr": "local_api_key",
-        "key_env": None,
-        "url_attr": "local_base_url",
     },
 }
 

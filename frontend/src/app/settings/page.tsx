@@ -22,11 +22,8 @@ interface ResearchConfig {
   semantic_scholar_api_key: string | null;
   alphaxiv_api_key: string | null;
   groq_api_key: string | null;
-  gemini_api_key: string | null;
-  openrouter_api_key: string | null;
-  mistral_api_key: string | null;
-  cerebras_api_key: string | null;
   feynman_model: string | null;
+  // Archived: gemini_api_key, openrouter_api_key, mistral_api_key, cerebras_api_key
 }
 
 interface ConfigData {
@@ -96,33 +93,10 @@ const RESEARCH_KEY_FIELDS: {
   {
     key: 'groq_api_key',
     label: 'Groq',
-    description: 'Fast, cheap AI backend. Free tier at console.groq.com.',
+    description: 'Fast AI backend for the Groq backend option. Free tier at console.groq.com.',
     placeholder: 'gsk_...',
   },
-  {
-    key: 'gemini_api_key',
-    label: 'Gemini',
-    description: 'Google AI backend. Free tier at aistudio.google.com.',
-    placeholder: 'AIza...',
-  },
-  {
-    key: 'openrouter_api_key',
-    label: 'OpenRouter',
-    description: 'Access multiple AI models via one key. Pay-as-you-go at openrouter.ai.',
-    placeholder: 'sk-or-...',
-  },
-  {
-    key: 'mistral_api_key',
-    label: 'Mistral',
-    description: 'Mistral AI backend. console.mistral.ai.',
-    placeholder: 'your-key',
-  },
-  {
-    key: 'cerebras_api_key',
-    label: 'Cerebras',
-    description: 'Cerebras AI backend. cloud.cerebras.ai.',
-    placeholder: 'your-key',
-  },
+  // Archived: gemini_api_key, openrouter_api_key, mistral_api_key, cerebras_api_key
 ];
 
 function ConfigRow({

@@ -308,10 +308,9 @@ _RESEARCH_KEY_FIELDS = [
     "semantic_scholar_api_key",
     "alphaxiv_api_key",
     "groq_api_key",
-    "gemini_api_key",
-    "openrouter_api_key",
-    "mistral_api_key",
-    "cerebras_api_key",
+    # Archived: gemini_api_key, openrouter_api_key, mistral_api_key, cerebras_api_key
+    # (fields still in settings.py schema; restore here + in RESEARCH_KEY_FIELDS
+    #  on the settings page to re-expose them)
 ]
 
 
@@ -394,11 +393,9 @@ _STUDIO_ACTION_MAP: dict[str, str] = {
 }
 
 _BACKEND_NORM: dict[str, str] = {
-    'free': 'free', 'feynman': 'feynman', 'docent': 'docent',
-    'groq': 'groq', 'gemini': 'gemini', 'openrouter': 'openrouter',
-    'anthropic': 'anthropic', 'openai': 'openai',
-    'ollama': 'ollama', 'lm studio': 'lm_studio', 'lm_studio': 'lm_studio',
-    'mistral': 'mistral', 'cerebras': 'cerebras',
+    'free': 'free', 'feynman': 'feynman', 'docent': 'docent', 'groq': 'groq',
+    # Archived: gemini, openrouter, anthropic, openai, ollama, lm_studio, mistral, cerebras
+    # (still work from the CLI with --backend <name>; restore here to re-enable in the UI)
 }
 
 

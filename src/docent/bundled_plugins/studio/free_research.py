@@ -42,18 +42,11 @@ FREE_TIER_DISCLAIMER = """\
     (lower quality — broader results, less curated).
 
   • [bold]This is a starting point, not a finished report.[/] For AI-synthesised
-    research briefs, configure any major LLM provider API key and use
-    [cyan]--backend feynman[/] or [cyan]--backend docent[/] (both require AI API credits):
+    research briefs, use one of the AI-powered backends:
 
-      Anthropic (Claude)  →  ANTHROPIC_API_KEY
-      OpenAI (GPT)        →  OPENAI_API_KEY
-      Google (Gemini)     →  GEMINI_API_KEY
-      Mistral             →  MISTRAL_API_KEY
-      Groq                →  GROQ_API_KEY
-      Together AI         →  TOGETHERAI_API_KEY
-      ... and 100+ more providers via litellm
-
-      Local LLMs (Ollama, LM Studio) — coming soon.
+      [cyan]--backend feynman[/]  →  Feynman deep-research pipeline (requires FEYNMAN_API_KEY or subscription)
+      [cyan]--backend docent[/]   →  Docent OpenCode pipeline (requires OpenCode server + Tavily key)
+      [cyan]--backend groq[/]     →  Groq fast inference (requires GROQ_API_KEY — free tier at console.groq.com)
 
   • [bold]Using Docent via MCP?[/] If you called this tool from an AI assistant
     (Claude, ChatGPT, etc.), ask it to synthesise the output into a research
@@ -75,10 +68,8 @@ _MCP_NOTE_HUMAN = (
     "> **Tip:** Share this document with any AI assistant (Claude, ChatGPT, Gemini, etc.) "
     "and ask it to synthesise a research brief — your existing subscription covers "
     "the AI step. Docent handled the search and organisation.\n\n"
-    "> **Want full AI synthesis inside Docent?** Configure any LLM provider API key "
-    "and rerun with `--backend feynman` or `--backend docent` (both require AI API credits). "
-    "Supported: Anthropic, OpenAI, Google Gemini, Mistral, Groq, Together AI, "
-    "and 100+ more via litellm. Local LLMs (Ollama, LM Studio) — coming soon."
+    "> **Want full AI synthesis inside Docent?** "
+    "Rerun with `--backend feynman`, `--backend docent`, or `--backend groq` for AI-powered research briefs."
 )
 
 _MCP_SYNTHESIS_PROMPT = (
