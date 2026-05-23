@@ -530,8 +530,7 @@ function NotebookLMSection() {
     }
   }
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
-  useEffect(() => { checkNlmStatus(); }, []);
+  useEffect(() => { checkNlmStatus(); }, []); // eslint-disable-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
 
   const nlmDot = nlmStatus === null ? '#999'
     : !nlmStatus.installed ? '#C97B00'

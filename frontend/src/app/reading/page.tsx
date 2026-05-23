@@ -250,8 +250,7 @@ export default function ReadingPage() {
         }
       }
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Read filter + search from URL on mount; fall back to sessionStorage
   useEffect(() => {
@@ -638,15 +637,15 @@ ${sectionsHtml}
   const debouncedSearch = useDebounce(search, 150);
 
   // Memoize the expensive filter+sort pipeline so it only reruns when inputs change.
-  // eslint-disable-next-line react-hooks/preserve-manual-memoization
+  /* eslint-disable react-hooks/preserve-manual-memoization */
   const filtered = useMemo(() => applySort(
     applyQuickFilter(
-      // eslint-disable-next-line react-hooks/preserve-manual-memoization
-      applySearch(applyFilter([...entries], filter), debouncedSearch),
+      applySearch(applyFilter(entries, filter), debouncedSearch),
       quickFilters,
     ),
     sortBy,
   ), [entries, filter, debouncedSearch, quickFilters, sortBy]);
+  /* eslint-enable react-hooks/preserve-manual-memoization */
 
   return (
     <div
