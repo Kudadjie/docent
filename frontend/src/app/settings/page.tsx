@@ -81,7 +81,7 @@ const RESEARCH_KEY_FIELDS: {
   {
     key: 'alphaxiv_api_key',
     label: 'alphaXiv',
-    description: 'Academic paper search and AI overviews. Free key at alphaxiv.org/settings.',
+    description: 'Optional — upgrades Search papers and Get paper with AI overviews, topic tags, and GitHub links. Without it, both actions fall back to the free arXiv API automatically. Free key at alphaxiv.org/settings.',
     placeholder: 'ax-...',
   },
   {
