@@ -4,11 +4,11 @@ import { useState, useEffect, useRef } from 'react';
 import {
   FlaskConical, Play, Square, AlertTriangle, CheckCircle,
   Copy, Plus, ChevronDown, File, X, Search,
-  Clock, Bookmark, Trash, Upload, Sparkles, Layers, Pin,
+  Info, Bookmark, Trash, Upload, Sparkles, Layers, Pin,
 } from 'lucide-react';
 import {
   ACTIONS, ALL_ACTIONS, findAction, BACKENDS,
-  commandFor, costEstimate, runLabel,
+  commandFor, usesApiCredits, runLabel,
   type ActionId, type ActionMeta, type FormState, type Preset,
 } from './_shared';
 
@@ -585,7 +585,7 @@ const FORM_MAP: Record<string, React.ComponentType<{ state: FormState; set: SetF
   cfgshow: FormCfgShow, cfgset: FormCfgSet,
 };
 
-// ── Command preview + cost estimate ───────────────────────────────────────────
+// ── Command preview + API credit notice ────────────────────────────────────────
 
 function CommandPreview({ actionId, state }: { actionId: ActionId; state: FormState }) {
   const cmd = commandFor(actionId, state);
@@ -600,17 +600,12 @@ function CommandPreview({ actionId, state }: { actionId: ActionId; state: FormSt
   );
 }
 
-function CostEstimate({ actionId, backend }: { actionId: ActionId; backend: string }) {
-  const est = costEstimate(actionId, backend);
-  if (!est) return null;
+function CostNotice({ actionId, backend }: { actionId: ActionId; backend: string }) {
+  if (!usesApiCredits(actionId, backend)) return null;
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'var(--gray100)', borderRadius: 8, border: '1px solid var(--border)' }}>
-      <span style={{ display: 'flex', color: est.free ? BRAND_DEEP : 'var(--fg3)' }}><Clock size={13} strokeWidth={1.5} /></span>
-      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: 1 }}>
-        <span style={{ fontFamily: 'var(--sans)', fontSize: 11.5, color: 'var(--fg4)', fontWeight: 500, letterSpacing: '0.3px', textTransform: 'uppercase' }}>Estimate</span>
-        <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--fg1)', fontWeight: 600, letterSpacing: '0.3px' }}>{est.cost} · {est.time}</span>
-      </div>
-      <span style={{ fontFamily: 'var(--sans)', fontSize: 10.5, color: 'var(--fg4)' }}>{est.free ? 'no API key' : backend}</span>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 10px', background: 'var(--gray100)', borderRadius: 6, border: '1px solid var(--border)' }}>
+      <span style={{ display: 'flex', color: 'var(--fg4)' }}><Info size={11} strokeWidth={1.5} /></span>
+      <span style={{ fontFamily: 'var(--sans)', fontSize: 11.5, color: 'var(--fg4)' }}>API credits may apply</span>
     </div>
   );
 }
@@ -741,7 +736,7 @@ export function LeftColumn({ actionId, setActionId, state, set, onRun, gating, s
       </div>
 
       <div style={{ padding: '12px 22px 18px', borderTop: '1px solid var(--border)', background: 'transparent', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 -4px 16px rgba(0,0,0,0.04)' }}>
-        {!gating && !isRunning && <CostEstimate actionId={actionId} backend={state.backend} />}
+        {!gating && !isRunning && <CostNotice actionId={actionId} backend={state.backend} />}
         {gating ? (
           <FreeTierGate onCancel={() => setGating(false)} onProceed={() => { setGating(false); onRun(); }} />
         ) : isRunning ? (

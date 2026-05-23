@@ -46,6 +46,8 @@ export interface RunRecord {
   logs: LogEntry[];
   sources: Source[];
   currentPhase: string | null;
+  /** Serialised result payload (e.g. output_file, notebook_id). Preserved across history loads. */
+  doneData?: Record<string, unknown> | null;
 }
 
 // ── Actions ────────────────────────────────────────────────────────────────────
@@ -292,29 +294,14 @@ export function commandFor(actionId: ActionId, s: FormState): string {
   return parts.join(' ');
 }
 
-// ── Cost estimates ─────────────────────────────────────────────────────────────
+// ── API credit indicator ───────────────────────────────────────────────────────
+// Actions that involve no AI synthesis and never touch an API credit budget.
+const _NO_CREDIT_ACTIONS = new Set<ActionId>(['search', 'scholarly', 'getpaper', 'cfgshow', 'cfgset']);
 
-const COST_BASE: Record<string, { cost: string; time: string } | null> = {
-  deep:      { cost: '$0.42', time: '~5 min' },
-  lit:       { cost: '$0.38', time: '~5 min' },
-  peer:      { cost: '$0.85', time: '~8 min' },
-  compare:   { cost: '$1.10', time: '~10 min' },
-  draft:     { cost: '$0.65', time: '~6 min' },
-  replicate: { cost: '$1.20', time: '~12 min' },
-  audit:     { cost: '$0.95', time: '~9 min' },
-  notebook:  { cost: '$0.12', time: '~1 min' },
-  search:    { cost: '$0.00', time: '~10s' },
-  scholarly: { cost: '$0.00', time: '~10s' },
-  getpaper:  { cost: '$0.08', time: '~20s' },
-  cfgshow:   null,
-  cfgset:    null,
-};
-
-export function costEstimate(actionId: ActionId, backend: string): { cost: string; time: string; free: boolean } | null {
-  const base = COST_BASE[actionId];
-  if (!base) return null;
-  if (backend === 'Free') return { cost: 'Free', time: '~2 min', free: true };
-  return { ...base, free: false };
+/** Returns true when the chosen backend may consume API credits for this action. */
+export function usesApiCredits(actionId: ActionId, backend: string): boolean {
+  if (backend === 'Free') return false;
+  return !_NO_CREDIT_ACTIONS.has(actionId);
 }
 
 // ── Labels / helpers ───────────────────────────────────────────────────────────

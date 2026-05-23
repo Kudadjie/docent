@@ -79,6 +79,8 @@ interface RunRef {
   sources: Source[];
   phase: string | null;
   meta: StartRunInput | null;
+  /** Captured result payload; set when the 'done' event arrives before pushRun. */
+  doneData?: Record<string, unknown> | null;
 }
 
 // ── Context + hook ────────────────────────────────────────────────────────────
@@ -150,6 +152,7 @@ export function StudioRunProvider({ children }: { children: ReactNode }) {
       logs: snapshot.logs,
       sources: snapshot.sources,
       currentPhase: snapshot.phase,
+      doneData: snapshot.doneData ?? null,
     }, ...prev]);
   }, []);
 
@@ -213,7 +216,12 @@ export function StudioRunProvider({ children }: { children: ReactNode }) {
       } else if (evt.type === 'done') {
         const finalStatus = (evt.status as 'success' | 'failure') ?? 'success';
         if (evt.raw) {
-          try { setDoneData(JSON.parse(evt.raw as string) as Record<string, unknown>); } catch {}
+          try {
+            const parsed = JSON.parse(evt.raw as string) as Record<string, unknown>;
+            setDoneData(parsed);
+            // Capture in ref BEFORE pushRun so the record carries the output_file path.
+            runRef.current.doneData = parsed;
+          } catch {}
         }
         setStatus(finalStatus);
         pushRun(finalStatus, { ...runRef.current, logs: [...runRef.current.logs] });
@@ -283,7 +291,8 @@ export function StudioRunProvider({ children }: { children: ReactNode }) {
     setLogs(record.logs);
     setSources(record.sources ?? []);
     setCurrentPhase(record.currentPhase);
-    setDoneData(null);
+    // Restore result payload so output_file shows correctly for historical runs.
+    setDoneData(record.doneData ?? null);
     setCurrentRunId(record.id);
     runRef.current = {
       logs: record.logs,

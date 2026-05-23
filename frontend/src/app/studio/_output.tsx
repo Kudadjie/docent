@@ -361,7 +361,9 @@ function ResultResearchSuccess({ topic, action, dest, doneData, onSaveAsPreset, 
       ) : (
         <div>
           <FieldLabel>Output file</FieldLabel>
-          <CodeBlock>{'~/docent/research/' + action.id + '_' + (topic || 'output').slice(0, 24).replace(/\s+/g, '-') + '.md'}</CodeBlock>
+          <span style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg4)' }}>
+            Saved to your configured output folder.
+          </span>
         </div>
       )}
 
