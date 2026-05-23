@@ -202,10 +202,7 @@ export default function StudioPage() {
 
   // ── Derived values ─────────────────────────────────────────────────────────────
 
-  const currentRunForSidebar = run.status === 'running'
-    ? { status: 'running' as const, currentPhase: (run.currentPhase ?? 'run').slice(0, 7) }
-    : null;
-
+  // Sidebar reads currentRun from the context directly — no prop needed.
   const dotState: DotState =
     run.status === 'running' ? 'working' :
     run.status === 'failure' ? 'error' :
@@ -217,7 +214,7 @@ export default function StudioPage() {
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
-      <Sidebar active="studio" queueCount={0} dark={dark} currentRun={currentRunForSidebar} />
+      <Sidebar active="studio" queueCount={0} dark={dark} />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
         <StatusBanner
           dark={dark} onToggleDark={toggleDark} dotState={dotState}

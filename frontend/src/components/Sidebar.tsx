@@ -5,6 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { LayoutDashboard, BookOpen, FlaskConical, BookText, Settings, Globe2, GripVertical } from 'lucide-react';
 import WelcomeModal, { type UserProfile } from './WelcomeModal';
+import { useStudioRun } from '@/lib/studio-run-context';
 
 const NAV_ORDER_KEY  = 'docent:nav-order';
 const USER_CACHE_KEY = 'docent:user-profile';
@@ -62,7 +63,6 @@ interface Props {
   active: string;
   queueCount: number;
   dark?: boolean;
-  currentRun?: { status: 'running'; currentPhase: string } | null;
 }
 
 const REORDERABLE_IDS = PLUGIN_NAV.filter(n => n.id !== 'dashboard').map(n => n.id);
@@ -75,7 +75,12 @@ function loadNavOrder(): string[] {
   return REORDERABLE_IDS;
 }
 
-export default function Sidebar({ active, queueCount, dark: darkProp, currentRun }: Props) {
+export default function Sidebar({ active, queueCount, dark: darkProp }: Props) {
+  // Read Studio run state from layout-level context — works on every page
+  const studioRun = useStudioRun();
+  const currentRun = studioRun.status === 'running'
+    ? { status: 'running' as const, currentPhase: (studioRun.currentPhase ?? 'run').slice(0, 7) }
+    : null;
   const [user, setUser] = useState<UserProfile | null>(() => {
     try {
       const cached = localStorage.getItem(USER_CACHE_KEY);

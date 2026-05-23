@@ -5,6 +5,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import type { BannerCounts } from '@/lib/types';
 import { useNotifications, type AppNotification } from '@/lib/notifications';
+import { useStudioRun } from '@/lib/studio-run-context';
 
 export type DotState = 'idle' | 'working' | 'error' | 'done';
 
@@ -249,11 +250,19 @@ export default function StatusBanner({
   const [bellOpen, setBellOpen] = useState(false);
   const { notifications, unreadCount, markAllRead, dismiss, clearAll } = useNotifications();
 
+  // Studio background-run awareness: if this page has nothing going on (idle) but
+  // a Studio run is active in the background, promote the dot to 'working'.
+  const studioRun = useStudioRun();
+  const studioRunning = studioRun.status === 'running';
+  const effectiveDotState: DotState = (dotState === 'idle' && studioRunning) ? 'working' : dotState;
+
   // Activity label — reading page shows sync age when idle; everywhere shows Working/Error when busy
   let activityLabel = '';
-  if (dotState === 'working') activityLabel = 'Working…';
-  else if (dotState === 'error') activityLabel = 'Error';
-  else if (dotState === 'done' && !lastUpdated) activityLabel = 'Saved';
+  if (effectiveDotState === 'working' && studioRunning && dotState === 'idle') {
+    activityLabel = 'Studio running…';  // shown on non-Studio pages during a background run
+  } else if (effectiveDotState === 'working') activityLabel = 'Working…';
+  else if (effectiveDotState === 'error') activityLabel = 'Error';
+  else if (effectiveDotState === 'done' && !lastUpdated) activityLabel = 'Saved';
   else if (lastUpdated) activityLabel = `Synced ${formatAge(lastUpdated)}`;
 
   function handleBellClick() {
@@ -415,8 +424,8 @@ export default function StatusBanner({
         }}>
           <span style={{
             width: 6, height: 6, borderRadius: '50%',
-            background: DOT_COLOR[dotState], flexShrink: 0,
-            animation: DOT_ANIM[dotState],
+            background: DOT_COLOR[effectiveDotState], flexShrink: 0,
+            animation: DOT_ANIM[effectiveDotState],
           }} />
           <span style={{
             fontFamily: 'var(--sans)', fontSize: 11.5, fontWeight: 600,
