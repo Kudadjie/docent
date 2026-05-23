@@ -84,3 +84,45 @@ def test_load_queue_survives_state_format_drift(tmp_path):
     counts = ReadingQueueStore(reading_dir).banner_counts()
     assert counts.queued == 5
     assert counts.reading == 0
+
+
+def test_lock_basic_enter_exit(tmp_path):
+    store = ReadingQueueStore(tmp_path / "reading")
+    with store.lock():
+        assert (tmp_path / "reading").is_dir()
+    # root dir persists after lock is released
+
+
+def test_lock_creates_root_if_missing(tmp_path):
+    root = tmp_path / "deep" / "nested" / "reading"
+    assert not root.exists()
+    store = ReadingQueueStore(root)
+    with store.lock():
+        assert root.is_dir()
+
+
+def test_lock_second_acquisition_blocked(tmp_path):
+    import threading
+    import time
+
+    store = ReadingQueueStore(tmp_path / "reading")
+    blocked = threading.Event()
+
+    def hold_lock():
+        with store.lock():
+            time.sleep(0.3)
+
+    holder = threading.Thread(target=hold_lock)
+    holder.start()
+    time.sleep(0.05)  # let holder acquire first
+
+    try:
+        with store.lock():  # timeout=0 by default — fails immediately
+            pass
+    except RuntimeError as exc:
+        if "busy" in str(exc).lower():
+            blocked.set()
+    finally:
+        holder.join()
+
+    assert blocked.is_set(), "Expected RuntimeError('busy') when lock is already held"

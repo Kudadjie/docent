@@ -12,13 +12,20 @@ export interface UserProfile {
 const LEVELS = ['Undergraduate', 'Masters', 'PhD', 'Postdoc', 'Faculty', 'Other'];
 
 interface Props {
-  onComplete: (profile: UserProfile) => void;
+  onComplete: (profile: UserProfile, databaseDir?: string, outputDir?: string) => void;
+  onCancel?: () => void;
+  initialProfile?: UserProfile;
+  initialDatabaseDir?: string;
+  initialOutputDir?: string;
 }
 
-export default function WelcomeModal({ onComplete }: Props) {
-  const [name, setName]       = useState('');
-  const [program, setProgram] = useState('');
-  const [level, setLevel]     = useState('');
+export default function WelcomeModal({ onComplete, onCancel, initialProfile, initialDatabaseDir, initialOutputDir }: Props) {
+  const isEdit = !!initialProfile?.name;
+  const [name, setName]           = useState(initialProfile?.name ?? '');
+  const [program, setProgram]     = useState(initialProfile?.program ?? '');
+  const [level, setLevel]         = useState(initialProfile?.level ?? '');
+  const [databaseDir, setDatabaseDir] = useState(initialDatabaseDir ?? '');
+  const [outputDir, setOutputDir] = useState(initialOutputDir ?? '');
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -27,7 +34,11 @@ export default function WelcomeModal({ onComplete }: Props) {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    onComplete({ name: name.trim() || 'You', program: program.trim(), level });
+    onComplete(
+      { name: name.trim() || 'You', program: program.trim(), level },
+      databaseDir.trim() || undefined,
+      outputDir.trim() || undefined,
+    );
   }
 
   function handleSkip() {
@@ -47,10 +58,10 @@ export default function WelcomeModal({ onComplete }: Props) {
       }}
     >
       <div style={{
-        background: 'var(--bg)',
+        background: 'var(--bg-card)',
         border: '1px solid var(--border-md)',
         borderRadius: 16,
-        width: '100%', maxWidth: 420,
+        width: '100%', maxWidth: 440,
         boxShadow: '0 12px 48px rgba(0,0,0,0.24)',
         overflow: 'hidden',
       }}>
@@ -71,13 +82,13 @@ export default function WelcomeModal({ onComplete }: Props) {
             fontFamily: 'var(--sans)', fontSize: 18, fontWeight: 700,
             color: 'var(--fg1)', margin: '0 0 6px', letterSpacing: '-0.3px',
           }}>
-            Welcome to Docent
+            {isEdit ? 'Edit profile' : 'Welcome to Docent'}
           </h2>
           <p style={{
             fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--fg3)',
             margin: 0, lineHeight: 1.5,
           }}>
-            Tell us a bit about yourself to personalise your experience.
+            {isEdit ? 'Update your name, program, or level.' : 'Tell us a bit about yourself to get started.'}
           </p>
         </div>
 
@@ -115,6 +126,38 @@ export default function WelcomeModal({ onComplete }: Props) {
             </select>
           </FormField>
 
+          <FormField label="Papers folder (optional)">
+            <input
+              type="text"
+              value={databaseDir}
+              onChange={e => setDatabaseDir(e.target.value)}
+              placeholder="e.g. ~/Documents/Papers"
+              style={inputStyle}
+            />
+            <span style={{
+              fontFamily: 'var(--sans)', fontSize: 11, color: 'var(--fg4)',
+              lineHeight: 1.4, marginTop: 3,
+            }}>
+              Local folder where your PDFs are stored. Can be changed later in Settings.
+            </span>
+          </FormField>
+
+          <FormField label="Research output folder (optional)">
+            <input
+              type="text"
+              value={outputDir}
+              onChange={e => setOutputDir(e.target.value)}
+              placeholder="e.g. ~/docent/research"
+              style={inputStyle}
+            />
+            <span style={{
+              fontFamily: 'var(--sans)', fontSize: 11, color: 'var(--fg4)',
+              lineHeight: 1.4, marginTop: 3,
+            }}>
+              Where Studio saves research outputs. Defaults to ~/docent/research/. Can be changed later in Settings.
+            </span>
+          </FormField>
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
             <button
               type="submit"
@@ -125,19 +168,33 @@ export default function WelcomeModal({ onComplete }: Props) {
                 padding: '10px 20px', cursor: 'pointer', width: '100%',
               }}
             >
-              Get started
+              {isEdit ? 'Save changes' : 'Get started'}
             </button>
-            <button
-              type="button"
-              onClick={handleSkip}
-              style={{
-                fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 400,
-                color: 'var(--fg4)', background: 'transparent',
-                border: 'none', cursor: 'pointer', padding: '4px 0',
-              }}
-            >
-              Skip for now
-            </button>
+            {isEdit ? (
+              <button
+                type="button"
+                onClick={onCancel}
+                style={{
+                  fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 400,
+                  color: 'var(--fg4)', background: 'transparent',
+                  border: 'none', cursor: 'pointer', padding: '4px 0',
+                }}
+              >
+                Cancel
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleSkip}
+                style={{
+                  fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 400,
+                  color: 'var(--fg4)', background: 'transparent',
+                  border: 'none', cursor: 'pointer', padding: '4px 0',
+                }}
+              >
+                Skip for now
+              </button>
+            )}
           </div>
         </form>
       </div>

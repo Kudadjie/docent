@@ -1,9 +1,21 @@
 'use client';
 
-import { Sun, Moon } from 'lucide-react';
+import { Bell, RefreshCw, Info, AlertTriangle, XCircle, X, Search, Sun, Moon, FolderOpen } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import type { BannerCounts } from '@/lib/types';
+import { useNotifications, type AppNotification } from '@/lib/notifications';
+import { useAppRun } from '@/lib/app-run-context';
 
-type DotState = 'idle' | 'working' | 'error' | 'done';
+export type DotState = 'idle' | 'working' | 'error' | 'done';
+
+const KBD_STYLE: React.CSSProperties = {
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+  minWidth: 18, height: 18, padding: '0 5px',
+  background: 'var(--gray100)', border: '1px solid var(--border-md)',
+  borderRadius: 4, fontFamily: 'var(--mono)', fontSize: 10,
+  color: 'var(--fg3)', fontWeight: 500,
+};
 
 const DOT_COLOR: Record<DotState, string> = {
   idle:    '#18E299',
@@ -19,24 +31,25 @@ const DOT_ANIM: Record<DotState, string> = {
   done:    'logo-dot-done 0.5s ease-in-out 3',
 };
 
-const SYNC_LABEL: Record<DotState, string> = {
-  idle:    '',      // filled in dynamically with age
-  working: 'Syncing…',
-  error:   'Sync Error',
-  done:    '',      // filled in dynamically with age
-};
-
 interface Props {
-  banner: BannerCounts;
-  lastUpdated: string | null;
-  databaseCount: number | null;
-  dark: boolean;
-  onToggleDark: () => void;
+  dark?: boolean;
+  onToggleDark?: () => void;
   dotState?: DotState;
+  // Reading-page extras — all optional; omit on non-reading pages
+  banner?: BannerCounts;
+  lastUpdated?: string | null;
+  databaseCount?: number | null;
+  onOpenDatabase?: () => void;
+  // Studio-page extras — all optional
+  onOpenCmdK?: () => void;
+  onOpenHistory?: () => void;
+  historyOpen?: boolean;
+  runCount?: number;
+  onOpenOutputs?: () => void;
+  outputsOpen?: boolean;
 }
 
-function formatAge(iso: string | null): string {
-  if (!iso) return 'never';
+function formatAge(iso: string): string {
   try {
     const diff = Date.now() - new Date(iso).getTime();
     const mins = Math.floor(diff / 60_000);
@@ -53,143 +66,374 @@ function formatAge(iso: string | null): string {
 function Stat({ label, value }: { label: string; value: string | number }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-      <span
-        style={{
-          fontFamily: 'var(--mono)',
-          fontSize: 10,
-          fontWeight: 500,
-          color: 'var(--fg4)',
-          letterSpacing: '0.7px',
-          textTransform: 'uppercase',
-        }}
-      >
+      <span style={{
+        fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 500,
+        color: 'var(--fg4)', letterSpacing: '0.7px', textTransform: 'uppercase',
+      }}>
         {label}
       </span>
-      <span
-        style={{
-          fontFamily: 'var(--mono)',
-          fontSize: 11,
-          fontWeight: 600,
-          color: 'var(--fg1)',
-          letterSpacing: '0.4px',
-        }}
-      >
+      <span style={{
+        fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600,
+        color: 'var(--fg1)', letterSpacing: '0.4px',
+      }}>
         {value}
       </span>
     </div>
   );
 }
 
-export default function StatusBanner({
-  banner,
-  lastUpdated,
-  databaseCount,
-  dark,
-  onToggleDark,
-  dotState = 'idle',
-}: Props) {
-  const queueTotal = banner.queued + banner.reading;
-  const age = formatAge(lastUpdated);
-  const syncLabel =
-    dotState === 'working' || dotState === 'error'
-      ? SYNC_LABEL[dotState]
-      : `Synced ${age}`;
+const NOTIF_ICON: Record<AppNotification['type'], React.ReactNode> = {
+  update:  <RefreshCw size={12} strokeWidth={2} color="#0fa76e" />,
+  info:    <Info size={12} strokeWidth={2} color="#3B82F6" />,
+  warning: <AlertTriangle size={12} strokeWidth={2} color="#F5A623" />,
+  error:   <XCircle size={12} strokeWidth={2} color="#E53535" />,
+};
+
+function notifHref(n: AppNotification): string | null {
+  if (n.href) return n.href;
+  if (n.title.toLowerCase().includes('health') || n.title.toLowerCase().includes('issue')) return '/settings';
+  if (n.title.toLowerCase().includes('update') || n.title.toLowerCase().includes('version')) return '/settings';
+  if (n.title.toLowerCase().includes('studio') || n.title.toLowerCase().includes('research')) return '/studio';
+  if (n.title.toLowerCase().includes('reading') || n.title.toLowerCase().includes('sync')) return '/reading';
+  return null;
+}
+
+function NotificationDropdown({
+  notifications,
+  onDismiss,
+  onMarkAllRead,
+  onClearAll,
+  onClose,
+}: {
+  notifications: AppNotification[];
+  onDismiss: (id: string) => void;
+  onMarkAllRead: () => void;
+  onClearAll: () => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const router = useRouter();
+
+  useEffect(() => {
+    function handle(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    }
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, [onClose]);
 
   return (
     <div
+      ref={ref}
       style={{
-        height: 56,
-        background: 'var(--bg-subtle)',
-        borderBottom: '1px solid var(--border)',
-        padding: '0 24px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 24,
-        flexShrink: 0,
+        position: 'absolute', top: 48, right: 0,
+        width: 340, maxHeight: 400,
+        background: 'var(--bg-card)', border: '1px solid var(--border)',
+        borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+        display: 'flex', flexDirection: 'column',
+        zIndex: 9999, overflow: 'hidden',
       }}
     >
-      <Stat label="Queue" value={queueTotal} />
-      <Stat label="Database" value={databaseCount ?? '—'} />
-      <Stat label="Done" value={banner.done} />
+      {/* Header */}
+      <div style={{
+        padding: '10px 14px', borderBottom: '1px solid var(--border)',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        flexShrink: 0,
+      }}>
+        <span style={{ fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 600, color: 'var(--fg1)' }}>
+          Notifications
+        </span>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {notifications.length > 0 && (
+            <>
+              <button onClick={onMarkAllRead} style={{
+                fontFamily: 'var(--sans)', fontSize: 11, color: 'var(--fg4)',
+                background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+              }}>
+                Mark all read
+              </button>
+              <span style={{ color: 'var(--border-md)' }}>·</span>
+              <button onClick={onClearAll} style={{
+                fontFamily: 'var(--sans)', fontSize: 11, color: 'var(--fg4)',
+                background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+              }}>
+                Clear all
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* List */}
+      <div style={{ overflowY: 'auto', flex: 1 }}>
+        {notifications.length === 0 ? (
+          <div style={{
+            padding: '28px 16px', textAlign: 'center',
+            fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg4)',
+          }}>
+            No notifications
+          </div>
+        ) : (
+          notifications.map(n => {
+            const href = notifHref(n);
+            return (
+            <div
+              key={n.id}
+              onClick={() => { if (href) { onClose(); router.push(href); } }}
+              style={{
+                padding: '10px 14px',
+                borderBottom: '1px solid var(--border)',
+                background: n.read ? 'transparent' : 'var(--bg-subtle)',
+                display: 'flex', gap: 10, alignItems: 'flex-start',
+                cursor: href ? 'pointer' : 'default',
+              }}
+            >
+              <div style={{ marginTop: 1, flexShrink: 0 }}>{NOTIF_ICON[n.type]}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 600,
+                  color: 'var(--fg1)', marginBottom: 2,
+                }}>
+                  {n.title}
+                </div>
+                <div style={{
+                  fontFamily: 'var(--sans)', fontSize: 11.5, color: 'var(--fg3)',
+                  lineHeight: 1.45, wordBreak: 'break-word',
+                }}>
+                  {n.body}
+                </div>
+                <div style={{
+                  fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--fg4)',
+                  marginTop: 4, letterSpacing: '0.3px',
+                }}>
+                  {formatAge(n.timestamp)}
+                  {href && <span style={{ marginLeft: 6, color: '#0fa76e' }}>→ go there</span>}
+                </div>
+              </div>
+              <button
+                onClick={(e) => { e.stopPropagation(); onDismiss(n.id); }}
+                aria-label="Dismiss"
+                style={{
+                  flexShrink: 0, background: 'none', border: 'none',
+                  cursor: 'pointer', color: 'var(--fg4)', padding: 2,
+                  display: 'flex', alignItems: 'center',
+                }}
+              >
+                <X size={12} strokeWidth={2} />
+              </button>
+            </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function StatusBanner({
+  dark: _dark,
+  onToggleDark: _onToggleDark,
+  dotState = 'idle',
+  banner,
+  lastUpdated,
+  databaseCount,
+  onOpenDatabase,
+  onOpenCmdK,
+  onOpenHistory,
+  historyOpen,
+  runCount,
+  onOpenOutputs,
+  outputsOpen,
+}: Props) {
+  const showStats = !!banner;
+  const queueTotal = banner ? banner.queued + banner.reading : 0;
+  const [bellOpen, setBellOpen] = useState(false);
+  const { notifications, unreadCount, markAllRead, dismiss, clearAll } = useNotifications();
+
+  // Generic background-activity awareness: if this page has nothing going on
+  // (idle) but any registered activity is running, promote the dot to 'working'.
+  // This works for Studio, Reading sync, and any future background operation.
+  const { activities } = useAppRun();
+  const anyRunning = Object.values(activities).some(a => a?.status === 'running');
+  const effectiveDotState: DotState = (dotState === 'idle' && anyRunning) ? 'working' : dotState;
+
+  // Activity label — reading page shows sync age when idle; everywhere shows Working/Error when busy
+  let activityLabel = '';
+  if (effectiveDotState === 'working' && anyRunning && dotState === 'idle') {
+    // Find the first running activity to get its label (e.g. "Studio running…")
+    const running = Object.values(activities).find(a => a?.status === 'running');
+    activityLabel = running?.label ? `${running.label} running…` : 'Running…';
+  } else if (effectiveDotState === 'working') activityLabel = 'Working…';
+  else if (effectiveDotState === 'error') activityLabel = 'Error';
+  else if (effectiveDotState === 'done' && !lastUpdated) activityLabel = 'Saved';
+  else if (lastUpdated) activityLabel = `Synced ${formatAge(lastUpdated)}`;
+
+  function handleBellClick() {
+    if (!bellOpen) markAllRead();
+    setBellOpen(o => !o);
+  }
+
+  return (
+    <div style={{
+      height: 48,
+      background: 'var(--bg-subtle)',
+      borderBottom: '1px solid var(--border)',
+      padding: '0 24px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 24,
+      flexShrink: 0,
+      position: 'relative',
+    }}>
+      {/* Reading-page stats */}
+      {showStats && (
+        <>
+          <Stat label="Queue" value={queueTotal} />
+          {/* Folder PDFs — clickable to open the database inspector */}
+          {onOpenDatabase ? (
+            <button
+              onClick={onOpenDatabase}
+              title="PDFs in your Mendeley watch folder — click to inspect"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 7,
+                background: 'transparent', border: 'none', cursor: 'pointer', padding: 0,
+              }}
+            >
+              <span style={{
+                fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 500,
+                color: 'var(--fg4)', letterSpacing: '0.7px', textTransform: 'uppercase',
+                display: 'flex', alignItems: 'center', gap: 4,
+              }}>
+                <FolderOpen size={11} strokeWidth={1.5} />
+                Folder
+              </span>
+              <span style={{
+                fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600,
+                color: 'var(--fg1)', letterSpacing: '0.4px',
+              }}>
+                {databaseCount ?? '—'}
+              </span>
+            </button>
+          ) : (
+            <Stat label="Folder" value={databaseCount ?? '—'} />
+          )}
+          <Stat label="Done" value={banner!.done} />
+        </>
+      )}
 
       <div style={{ flex: 1 }} />
 
-      {/* Dark mode toggle */}
-      <button
-        onClick={onToggleDark}
-        aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 5,
-          padding: '3px 10px',
-          border: '1px solid var(--border-md)',
-          borderRadius: 9999,
-          background: 'transparent',
-          cursor: 'pointer',
-          color: 'var(--fg4)',
-        }}
-      >
-        {dark ? <Sun size={12} strokeWidth={2} /> : <Moon size={12} strokeWidth={2} />}
-        <span
-          style={{
-            fontFamily: 'var(--mono)',
-            fontSize: 10,
-            textTransform: 'uppercase',
-            letterSpacing: '0.5px',
-            color: 'var(--fg4)',
-          }}
-        >
-          {dark ? 'Light' : 'Dark'}
-        </span>
-      </button>
+      {/* Studio: ⌘K quick-action pill */}
+      {onOpenCmdK && (
+        <button onClick={onOpenCmdK}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '3px 8px 3px 10px', borderRadius: 9999, border: '1px solid var(--border-md)', background: 'transparent', cursor: 'pointer', color: 'var(--fg3)', fontFamily: 'var(--sans)', fontSize: 11 }}>
+          <Search size={12} strokeWidth={1.5} />
+          <span>Quick action</span>
+          <span style={{ display: 'inline-flex', gap: 2 }}>
+            <span style={KBD_STYLE}>Ctrl</span><span style={KBD_STYLE}>K</span>
+          </span>
+        </button>
+      )}
 
-      {/* Synced indicator + status pill */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span
+      {/* Studio: history toggle */}
+      {onOpenHistory && (
+        <button onClick={onOpenHistory} title="Run history"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 9999, border: `1px solid ${historyOpen ? '#18E299' : 'var(--border-md)'}`, background: historyOpen ? 'rgba(24,226,153,0.10)' : 'transparent', cursor: 'pointer', color: historyOpen ? '#0fa76e' : 'var(--fg3)', fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+          <RefreshCw size={11} strokeWidth={2} />
+          History
+          {(runCount ?? 0) > 0 && <span style={{ color: historyOpen ? '#0fa76e' : 'var(--fg4)' }}>· {runCount}</span>}
+        </button>
+      )}
+
+      {/* Studio: outputs panel toggle */}
+      {onOpenOutputs && (
+        <button onClick={onOpenOutputs} title="Research outputs"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 9999, border: `1px solid ${outputsOpen ? '#18E299' : 'var(--border-md)'}`, background: outputsOpen ? 'rgba(24,226,153,0.10)' : 'transparent', cursor: 'pointer', color: outputsOpen ? '#0fa76e' : 'var(--fg3)', fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+          <Search size={11} strokeWidth={2} />
+          Outputs
+        </button>
+      )}
+
+      {/* Dark / light toggle */}
+      {_onToggleDark && (
+        <button
+          onClick={_onToggleDark}
+          aria-label={_dark ? 'Switch to light mode' : 'Switch to dark mode'}
+          title={_dark ? 'Light mode' : 'Dark mode'}
           style={{
-            fontFamily: 'var(--mono)',
-            fontSize: 10,
-            textTransform: 'uppercase',
-            letterSpacing: '0.5px',
-            color: 'var(--fg4)',
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            width: 28, height: 28, borderRadius: 9999,
+            background: 'transparent', border: '1px solid var(--border-md)',
+            cursor: 'pointer', color: 'var(--fg4)',
           }}
         >
-          {syncLabel}
-        </span>
-        {/* Status pill */}
-        <div
+          {_dark ? <Sun size={12} strokeWidth={2} /> : <Moon size={12} strokeWidth={2} />}
+        </button>
+      )}
+
+      {/* Notification bell */}
+      <div style={{ position: 'relative' }}>
+        <button
+          onClick={handleBellClick}
+          aria-label="Notifications"
           style={{
-            height: 24,
-            display: 'inline-flex',
-            alignItems: 'center',
-            padding: '0 9px',
-            gap: 6,
-            borderRadius: 9999,
-            border: '1.5px solid var(--logo-border)',
-            flexShrink: 0,
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            width: 28, height: 28, borderRadius: 9999,
+            background: 'transparent', border: '1px solid var(--border-md)',
+            cursor: 'pointer', color: 'var(--fg4)', position: 'relative',
           }}
         >
-          <span
-            style={{
-              width: 6,
-              height: 6,
-              borderRadius: '50%',
-              background: DOT_COLOR[dotState],
-              flexShrink: 0,
-              animation: DOT_ANIM[dotState],
-            }}
+          <Bell size={12} strokeWidth={2} />
+          {unreadCount > 0 && (
+            <span style={{
+              position: 'absolute', top: -4, right: -4,
+              background: '#E53535', color: '#fff',
+              borderRadius: 9999, minWidth: 14, height: 14,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontFamily: 'var(--sans)', fontSize: 9, fontWeight: 700,
+              padding: '0 3px', lineHeight: 1,
+            }}>
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
+          )}
+        </button>
+
+        {bellOpen && (
+          <NotificationDropdown
+            notifications={notifications}
+            onDismiss={dismiss}
+            onMarkAllRead={markAllRead}
+            onClearAll={clearAll}
+            onClose={() => setBellOpen(false)}
           />
-          <span
-            style={{
-              fontFamily: 'var(--sans)',
-              fontSize: 11.5,
-              fontWeight: 600,
-              color: 'var(--fg1)',
-              letterSpacing: '-0.2px',
-              lineHeight: 1,
-            }}
-          >
+        )}
+      </div>
+
+
+      {/* Activity label + status pill */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {activityLabel && (
+          <span style={{
+            fontFamily: 'var(--mono)', fontSize: 10,
+            textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--fg4)',
+          }}>
+            {activityLabel}
+          </span>
+        )}
+        <div style={{
+          height: 24, display: 'inline-flex', alignItems: 'center',
+          padding: '0 9px', gap: 6, borderRadius: 9999,
+          border: '1.5px solid var(--logo-border)', flexShrink: 0,
+        }}>
+          <span style={{
+            width: 6, height: 6, borderRadius: '50%',
+            background: DOT_COLOR[effectiveDotState], flexShrink: 0,
+            animation: DOT_ANIM[effectiveDotState],
+          }} />
+          <span style={{
+            fontFamily: 'var(--sans)', fontSize: 11.5, fontWeight: 600,
+            color: 'var(--fg1)', letterSpacing: '-0.2px', lineHeight: 1,
+          }}>
             docent
           </span>
         </div>

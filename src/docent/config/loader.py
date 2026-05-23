@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -40,6 +41,20 @@ def _ensure_config_file() -> Path:
 
 
 def load_settings() -> Settings:
+    """Load Docent settings with env-var-over-file priority.
+
+    Priority (highest → lowest):
+      1. Environment variables (``DOCENT_*``) — via Pydantic's env_settings source.
+      2. ``~/.docent/config.toml`` — loaded here as explicit kwargs, fed to
+         Pydantic's ``init_settings`` source.
+      3. Model defaults declared on ``Settings`` / ``ResearchSettings`` / etc.
+
+    Why TOML goes through init_settings instead of a custom Pydantic source:
+    Pydantic Settings' ``settings_customise_sources`` lists ``env_settings``
+    first, so env vars always win.  TOML data is passed as constructor kwargs,
+    which Pydantic treats as ``init_settings`` — the second-highest priority.
+    This keeps the implementation simple while preserving correct override order.
+    """
     _ensure_runtime_dirs()
     path = _ensure_config_file()
     with path.open("rb") as f:
@@ -47,10 +62,17 @@ def load_settings() -> Settings:
     return Settings(**toml_data)
 
 
+_KNOWN_TOP_LEVEL_SECTIONS = frozenset({
+    "reading", "research", "tools",
+    # Root-level scalar keys (no section prefix)
+    "default_model", "verbose", "no_color", "anthropic_api_key", "openai_api_key",
+})
+
+
 def write_setting(key_path: str, value: Any) -> Path:
     """Persist a setting into config.toml under a dotted key path.
 
-    `key_path` is a dotted path like "paper.database_dir". Sections are
+    `key_path` is a dotted path like "reading.database_dir". Sections are
     created on demand. Existing TOML structure is preserved (round-trip
     via tomllib + tomli_w). Returns the config-file path written.
 
@@ -58,6 +80,12 @@ def write_setting(key_path: str, value: Any) -> Path:
     """
     if not key_path or any(not seg for seg in key_path.split(".")):
         raise ValueError(f"Invalid setting key {key_path!r}")
+    top = key_path.split(".")[0]
+    if top not in _KNOWN_TOP_LEVEL_SECTIONS:
+        raise ValueError(
+            f"Unknown config section {top!r}. "
+            f"Known sections: {sorted(_KNOWN_TOP_LEVEL_SECTIONS)}"
+        )
     _ensure_runtime_dirs()
     path = _ensure_config_file()
     with path.open("rb") as f:
@@ -70,7 +98,13 @@ def write_setting(key_path: str, value: Any) -> Path:
             next_cursor = {}
             cursor[seg] = next_cursor
         cursor = next_cursor
-    cursor[segments[-1]] = value
-    with path.open("wb") as f:
+    if value is None:
+        cursor.pop(segments[-1], None)
+    else:
+        cursor[segments[-1]] = value
+    # Atomic write: write to a sibling temp file then rename to avoid corruption on crash.
+    tmp = path.with_suffix(".toml.tmp")
+    with tmp.open("wb") as f:
         tomli_w.dump(data, f)
+    os.replace(tmp, path)
     return path

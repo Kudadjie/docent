@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Studio — Docent</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="studio-shared.jsx"></script>
+<script type="text/babel" src="studio-form.jsx"></script>
+<script type="text/babel" src="studio-output.jsx"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body, #root { height: 100%; width: 100%; overflow: hidden; }
+body { font-family: 'Inter', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.2); border-radius: 4px; }
+
+@keyframes fadeInUp { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
+@keyframes slideInRight { from { opacity:0; transform:translateX(20px); } to { opacity:1; transform:none; } }
+@keyframes logo-dot-blink { 0%,100%{opacity:1} 50%{opacity:0.15} }
+@keyframes log-pulse { 0%,100%{opacity:1} 50%{opacity:0.55} }
+@keyframes dot-bounce { 0%,80%,100%{transform:translateY(0);opacity:0.4} 40%{transform:translateY(-2px);opacity:1} }
+
+.log-line { animation: fadeInUp 0.15s ease forwards; }
+.log-line.live { animation: fadeInUp 0.15s ease forwards, log-pulse 1.2s ease-in-out infinite 0.15s; }
+.src-chip { animation: fadeInUp 0.2s ease forwards; }
+.tap { transition: transform 0.05s ease, background 0.12s ease; }
+.tap:active { transform: scale(0.98); }
+.collapsible-toggle:hover .chev { transform: translateX(1px); }
+.thinking-dot { display:inline-block; width:3px; height:3px; border-radius:50%; background:currentColor; margin:0 1px; animation: dot-bounce 1.2s ease-in-out infinite; }
+.thinking-dot:nth-child(2) { animation-delay: 0.15s; }
+.thinking-dot:nth-child(3) { animation-delay: 0.3s; }
+.action-row:hover .row-action { opacity: 1 !important; }
+.history-drawer { animation: slideInRight 0.18s ease forwards; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+
+// ─── APP ──────────────────────────────────────────────────────────────────────
+const {
+  SANS, MONO, BRAND, BRAND_DEEP,
+  makeTheme, ThemeCtx, useTheme,
+  Ico, ACTION_PHASES, scriptFor, findAction, ALL_ACTIONS,
+  Sidebar, StatusBanner,
+  LeftColumn, CmdKPalette, PresetSaveModal,
+  OutputPanel, HistoryDrawer,
+} = window;
+
+function timeAgo(ts) {
+  const diff = (Date.now() - ts) / 1000;
+  if (diff < 60) return `${Math.floor(diff)}s ago`;
+  if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
+  return `${Math.floor(diff/86400)}d ago`;
+}
+
+function actionSummary(action, s) {
+  switch (action.id) {
+    case 'deep': case 'lit': case 'draft':       return s.topic;
+    case 'peer': case 'replicate': case 'audit': return s.artifact;
+    case 'compare':                              return `${s.artifactA} vs ${s.artifactB}`;
+    case 'search': case 'scholarly':             return s.query;
+    case 'getpaper':                             return s.arxivId;
+    case 'cfgset':                               return s.cfgKey;
+    case 'notebook':                             return 'notebook build';
+    case 'cfgshow':                              return 'all keys';
+  }
+  return '';
+}
+
+function App() {
+  const [tweaks, setTweak] = window.useTweaks(/*EDITMODE-BEGIN*/{
+    "darkMode": true,
+    "demoState": "success",
+    "demoAction": "deep",
+    "historyOpen": false
+  }/*EDITMODE-END*/);
+
+  const dark = !!tweaks.darkMode;
+  const T = React.useMemo(() => makeTheme(dark), [dark]);
+
+  // form state — superset of all action forms
+  const [actionId, setActionId] = React.useState(tweaks.demoAction || 'deep');
+  const [state, setState] = React.useState({
+    topic: 'storm surge inundation under climate change',
+    backend: 'Anthropic',
+    dest: 'Local',
+    guides: [],
+    artifact: '2401.12345',
+    artifactA: '2401.12345',
+    artifactB: '2310.06825',
+    query: 'storm surge inundation',
+    maxResults: 10,
+    arxivId: '2401.12345',
+    outPath: '',
+    srcPath: '',
+    maxSources: 20,
+    nlm: true, gate: true, persp: true,
+    cfgKey: 'anthropic_api_key',
+    cfgVal: '',
+  });
+  const set = (k, v) => setState(s => ({ ...s, [k]: v }));
+
+  // Run state — initial derives from current tweak demoState
+  const initialDemo = React.useMemo(() => {
+    const script = scriptFor(actionId);
+    const s = tweaks.demoState;
+    if (s === 'empty') return { status:'idle', logs:[], sources:[], currentPhase:null };
+    if (s === 'success') return { status:'success', logs:script, sources:script.flatMap(l=>l.sources||[]),
+                                  currentPhase:script[script.length-1]?.phase || null };
+    if (s === 'failure') return { status:'failure',
+                                  logs:[...script.slice(0,3), { phase:'error', text:'Anthropic backend returned 401 unauthorized' }],
+                                  sources:[], currentPhase:script[2]?.phase || null };
+    // default to running
+    const cut = Math.max(2, script.length - 3);
+    const partial = script.slice(0, cut);
+    return { status:'running', logs:partial, sources:partial.flatMap(l=>l.sources||[]),
+             currentPhase:partial[partial.length-1]?.phase || null };
+  }, []); // only on mount
+  const [status, setStatus] = React.useState(initialDemo.status);
+  const [logs, setLogs] = React.useState(initialDemo.logs);
+  const [sources, setSources] = React.useState(initialDemo.sources);
+  const [currentPhase, setCurrentPhase] = React.useState(initialDemo.currentPhase);
+  const [gating, setGating] = React.useState(false);
+
+  // Cmd-K & history & presets
+  const [cmdKOpen, setCmdKOpen] = React.useState(false);
+  const [historyOpen, setHistoryOpen] = React.useState(!!tweaks.historyOpen);
+  const [savePresetOpen, setSavePresetOpen] = React.useState(false);
+  const [recents, setRecents] = React.useState(['deep']);
+  const [presets, setPresets] = React.useState([
+    { id: 'p1', name: 'Weekly storm-surge scan', actionId: 'deep',
+      params: { topic:'storm surge inundation under climate change', backend:'Anthropic', dest:'Notebook', guides:[] }},
+    { id: 'p2', name: 'Compare LLM reasoning papers', actionId: 'compare',
+      params: { artifactA:'2401.12345', artifactB:'2310.06825', backend:'Anthropic', guides:[] }},
+  ]);
+
+  // Run history
+  const [runs, setRuns] = React.useState([
+    { id:'r1', actionId:'deep',    actionLabel:'Deep research',
+      detail:'storm surge inundation under climate change', status:'success',
+      timeAgo:'12m ago', startedAt: Date.now() - 12*60*1000,
+      state:{ topic:'storm surge inundation under climate change', backend:'Anthropic', dest:'Notebook', guides:[] },
+      logs: scriptFor('deep'), sources: scriptFor('deep').find(l=>l.sources)?.sources || [],
+      currentPhase:'save' },
+    { id:'r2', actionId:'notebook', actionLabel:'To notebook',
+      detail:'18 sources · clean', status:'success',
+      timeAgo:'1h ago', startedAt: Date.now() - 60*60*1000,
+      state:{ outPath:'', srcPath:'', maxSources:20, nlm:true, gate:true, persp:true },
+      logs: scriptFor('notebook'), sources:[], currentPhase:'save' },
+    { id:'r3', actionId:'peer',    actionLabel:'Peer review',
+      detail:'2401.12345', status:'failure',
+      timeAgo:'2h ago', startedAt: Date.now() - 2*60*60*1000,
+      state:{ artifact:'2401.12345', backend:'Anthropic', guides:[] },
+      logs: [...scriptFor('peer').slice(0,2), { phase:'error', text:'Anthropic backend returned 401 unauthorized' }],
+      sources:[], currentPhase:'parse' },
+    { id:'r4', actionId:'scholarly', actionLabel:'Scholarly search',
+      detail:'transformer interpretability', status:'success',
+      timeAgo:'3h ago', startedAt: Date.now() - 3*60*60*1000,
+      state:{ query:'transformer interpretability', maxResults:10 },
+      logs: scriptFor('scholarly'), sources:[], currentPhase:'save' },
+  ]);
+  const [currentRunId, setCurrentRunId] = React.useState(null);
+
+  const runRef = React.useRef({ timer:null, idx:0 });
+  const firstRenderRef = React.useRef(true);
+  const action = findAction(actionId);
+
+  // One-way sync: tweaks.demoAction → actionId (changes from tweak panel)
+  React.useEffect(() => {
+    if (firstRenderRef.current) return;
+    if (tweaks.demoAction && tweaks.demoAction !== actionId) {
+      setActionId(tweaks.demoAction);
+    }
+  }, [tweaks.demoAction]);
+
+  // One-way sync: actionId → tweaks.demoAction (changes from UI)
+  React.useEffect(() => {
+    if (firstRenderRef.current) return;
+    if (tweaks.demoAction !== actionId) setTweak('demoAction', actionId);
+  }, [actionId]);
+
+  // Demo state override (from tweaks)
+  React.useEffect(() => {
+    if (firstRenderRef.current) return;
+    const s = tweaks.demoState;
+    if (!s || s === 'custom') return;
+    stopRun();
+    const script = scriptFor(actionId);
+    if (s === 'empty') { setStatus('idle'); setLogs([]); setSources([]); setCurrentPhase(null); }
+    else if (s === 'running') {
+      setStatus('running');
+      const cut = Math.max(2, script.length - 3);
+      const partial = script.slice(0, cut);
+      setLogs(partial);
+      setSources(partial.flatMap(l => l.sources || []));
+      setCurrentPhase(partial[partial.length - 1]?.phase || null);
+    }
+    else if (s === 'success') {
+      setStatus('success');
+      setLogs(script);
+      setSources(script.flatMap(l => l.sources || []));
+      setCurrentPhase(script[script.length - 1]?.phase || null);
+    }
+    else if (s === 'failure') {
+      setStatus('failure');
+      setLogs([
+        ...script.slice(0, Math.min(3, script.length)),
+        { phase:'error', text:'Anthropic backend returned 401 unauthorized' },
+      ]);
+      setSources([]);
+      setCurrentPhase(script[Math.min(2, script.length-1)]?.phase || null);
+    }
+  }, [tweaks.demoState, actionId]);
+
+  // Mark first render as complete after mount
+  React.useEffect(() => { firstRenderRef.current = false; }, []);
+
+  function stopRun() {
+    if (runRef.current.timer) { clearTimeout(runRef.current.timer); runRef.current.timer = null; }
+  }
+
+  function pushRunToHistory(finalStatus) {
+    const detail = actionSummary(action, state);
+    const newRun = {
+      id: 'r' + Date.now(),
+      actionId,
+      actionLabel: action.label,
+      detail,
+      status: finalStatus,
+      timeAgo: 'just now',
+      startedAt: Date.now(),
+      state: { ...state },
+      logs: [...logs],
+      sources: [...sources],
+      currentPhase,
+    };
+    setRuns(prev => [newRun, ...prev]);
+  }
+
+  function startRun() {
+    stopRun();
+    const script = scriptFor(actionId);
+    setLogs([]);
+    setSources([]);
+    setStatus('running');
+    setCurrentRunId(null);
+    setCurrentPhase(script[0]?.phase || null);
+    setRecents(prev => [actionId, ...prev.filter(x => x !== actionId)].slice(0, 4));
+    runRef.current.idx = 0;
+    const tick = () => {
+      const i = runRef.current.idx;
+      if (i >= script.length) {
+        setStatus('success');
+        pushRunToHistory('success');
+        runRef.current.timer = null;
+        return;
+      }
+      const line = script[i];
+      setLogs(prev => [...prev, line]);
+      if (line.sources) setSources(prev => [...prev, ...line.sources]);
+      setCurrentPhase(line.phase);
+      runRef.current.idx = i + 1;
+      runRef.current.timer = setTimeout(tick, 650 + Math.random()*220);
+    };
+    tick();
+  }
+
+  function handleRun() { setTweak('demoState', 'custom'); startRun(); }
+  function handleStop() {
+    stopRun();
+    setStatus('success');
+    pushRunToHistory('success');
+  }
+  function handleReset() {
+    stopRun();
+    setStatus('idle');
+    setLogs([]); setSources([]); setCurrentPhase(null);
+    setTweak('demoState', 'empty');
+  }
+
+  function handlePipeToNotebook() {
+    setActionId('notebook');
+    set('srcPath', '~/docent/runs/current/sources.json');
+    setStatus('idle');
+    setLogs([]); setSources([]);
+  }
+
+  function handleSelectPreset(p) {
+    setActionId(p.actionId);
+    setState(s => ({ ...s, ...p.params }));
+  }
+  function handleDeletePreset(id) {
+    setPresets(prev => prev.filter(p => p.id !== id));
+  }
+  function handleSavePreset(name) {
+    const newPreset = {
+      id: 'p' + Date.now(),
+      name,
+      actionId,
+      params: { ...state },
+    };
+    setPresets(prev => [newPreset, ...prev]);
+  }
+
+  function handleLoadRun(id) {
+    const r = runs.find(x => x.id === id);
+    if (!r) return;
+    stopRun();
+    setActionId(r.actionId);
+    setState(s => ({ ...s, ...r.state }));
+    setLogs(r.logs);
+    setSources(r.sources || []);
+    setCurrentPhase(r.currentPhase);
+    setStatus(r.status === 'running' ? 'success' : r.status);
+    setCurrentRunId(r.id);
+    setTweak('demoState', 'custom');
+  }
+
+  // Sidebar current-run signal (for the live phase pill)
+  const currentRunForSidebar = status === 'running'
+    ? { status:'running', currentPhase: (currentPhase || 'run').slice(0,7) }
+    : null;
+
+  // ⌘K shortcut
+  React.useEffect(() => {
+    function onKey(e) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setCmdKOpen(o => !o);
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && status !== 'running' && !gating) {
+        e.preventDefault();
+        handleRun();
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [status, gating, actionId, state]);
+
+  return (
+    <ThemeCtx.Provider value={T}>
+      <div style={{ display:'flex', height:'100vh', width:'100vw', overflow:'hidden',
+          background:T.bg, color:T.fg1, transition:'background 0.2s, color 0.2s' }}>
+        <Sidebar active="studio" currentRun={currentRunForSidebar} />
+        <div style={{ flex:1, display:'flex', flexDirection:'column', minWidth:0, overflow:'hidden' }}>
+          <StatusBanner
+            dark={dark} setDark={v=>setTweak('darkMode', v)}
+            onOpenCmdK={()=>setCmdKOpen(true)}
+            onOpenHistory={()=>{ const next = !historyOpen; setHistoryOpen(next); setTweak('historyOpen', next); }}
+            historyOpen={historyOpen} runCount={runs.length} />
+          <div style={{ flex:1, display:'flex', minHeight:0, overflow:'hidden' }}>
+            <LeftColumn
+              actionId={actionId} setActionId={(id)=>{ setActionId(id); }}
+              state={state} set={set}
+              onRun={handleRun}
+              gating={gating} setGating={setGating}
+              presets={presets}
+              onDeletePreset={handleDeletePreset}
+              onSelectPreset={handleSelectPreset}
+              onOpenCmdK={()=>setCmdKOpen(true)}
+              isRunning={status === 'running'}
+              onStop={handleStop} />
+            <OutputPanel
+              action={action} state={state}
+              status={status} logs={logs} sources={sources}
+              currentPhase={currentPhase}
+              onReset={handleReset}
+              onSaveAsPreset={()=>setSavePresetOpen(true)}
+              onPipeToNotebook={handlePipeToNotebook} />
+            {historyOpen && (
+              <div className="history-drawer">
+                <HistoryDrawer
+                  runs={runs}
+                  currentRunId={currentRunId}
+                  onSelect={handleLoadRun}
+                  onClose={()=>{ setHistoryOpen(false); setTweak('historyOpen', false); }}
+                  onClear={()=>setRuns([])} />
+              </div>
+            )}
+          </div>
+        </div>
+
+        {cmdKOpen && (
+          <CmdKPalette
+            onClose={()=>setCmdKOpen(false)}
+            onSelect={(a)=>setActionId(a.id)}
+            recents={recents} />
+        )}
+        {savePresetOpen && (
+          <PresetSaveModal
+            onClose={()=>setSavePresetOpen(false)}
+            onSave={handleSavePreset}
+            suggested={action.label + ' · ' + (actionSummary(action, state) || '').slice(0,30)} />
+        )}
+
+        <window.TweaksPanel>
+          <window.TweakToggle label="Dark Mode" value={tweaks.darkMode}
+            onChange={v => setTweak('darkMode', v)} />
+          <window.TweakSelect label="Demo State" value={tweaks.demoState}
+            options={['empty','running','success','failure','custom']}
+            onChange={v => setTweak('demoState', v)} />
+          <window.TweakSelect label="Demo Action" value={tweaks.demoAction}
+            options={ALL_ACTIONS.map(a => a.id)}
+            onChange={v => setTweak('demoAction', v)} />
+          <window.TweakToggle label="Show History" value={tweaks.historyOpen}
+            onChange={v => { setTweak('historyOpen', v); setHistoryOpen(v); }} />
+        </window.TweaksPanel>
+      </div>
+    </ThemeCtx.Provider>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

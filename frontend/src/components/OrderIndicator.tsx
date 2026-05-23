@@ -18,17 +18,10 @@ const LEVEL_COLOR = {
   unordered: '#888888',
 };
 
-const LEVEL_LABEL = {
-  high:      'High',
-  medium:    'Medium',
-  low:       'Low',
-  unordered: '—',
-};
-
 export default function OrderIndicator({ order }: Props) {
   const level = orderLevel(order);
   const color = LEVEL_COLOR[level];
-  const label = order === 0 ? '—' : `#${order}`;
+  const label = order === 0 ? '-' : `#${order}`;
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>

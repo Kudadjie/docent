@@ -1,7 +1,7 @@
 <div align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="design_handover/assets/logo-dark.svg">
-    <img src="design_handover/assets/logo.svg" alt="Docent" width="200" />
+    <source media="(prefers-color-scheme: dark)" srcset="frontend/design_handover/assets/logo-dark.svg">
+    <img src="frontend/design_handover/assets/logo.svg" alt="Docent" width="200" />
   </picture>
   <br /><br />
 
@@ -58,7 +58,7 @@ docent update
 
 ## 🏗 Architecture
 
-See [`Docent_Architecture.md`](Docent_Architecture.md) for the full design. The short version:
+See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full design. The short version:
 
 - **Tool registry** — tools self-register via `@register_tool` at import time. Registry stores the class, not an instance, so nothing runs until the tool is actually invoked.
 - **Context object** — frozen dataclass passed to every tool. Provides `settings`, `llm` (lazy litellm), and `executor` (subprocess wrapper).
@@ -78,10 +78,10 @@ Manages your academic reading queue and syncs with Mendeley.
 | Command | Description |
 |---|---|
 | `docent reading next` | Show the next paper to read (lowest order number) |
-| `docent reading next --course-name CES701` | Next paper for a specific course |
+| `docent reading next --category CES701` | Next entry for a category prefix |
 | `docent reading show <id>` | Show full details for one entry |
 | `docent reading search <query>` | Search by title, authors, notes, tags, or id |
-| `docent reading stats` | Counts by status, category, and course |
+| `docent reading stats` | Counts by status and category |
 | `docent reading export` | Export queue as JSON (default) or Markdown table |
 | `docent reading export --format markdown --status queued` | Filtered export, sorted by reading order |
 
@@ -98,8 +98,8 @@ Manages your academic reading queue and syncs with Mendeley.
 | Command | Description |
 |---|---|
 | `docent reading edit <id> --order 1` | Set reading priority (1 = read first) |
-| `docent reading set-deadline <id> --deadline 2026-06-15` | Set a reading deadline |
-| `docent reading set-deadline <id> --deadline ''` | Clear a deadline |
+| `docent reading set-deadline --id <id> --deadline 2026-06-15` | Set a reading deadline |
+| `docent reading set-deadline --id <id> --deadline ''` | Clear a deadline |
 | `docent reading edit <id> --notes "Key paper for lit review"` | Add notes |
 | `docent reading edit <id> --tags tag1 tag2` | Set tags |
 | `docent reading edit <id> --type book_chapter` | Set entry type (paper / book / book_chapter) |
@@ -124,8 +124,8 @@ Manages your academic reading queue and syncs with Mendeley.
 | Command | Description |
 |---|---|
 | `docent reading config-show` | Show current reading settings |
-| `docent reading config-set database_dir ~/path/to/Papers` | Set the PDF database folder |
-| `docent reading config-set queue_collection "Docent-Queue"` | Set the Mendeley collection name |
+| `docent reading config-set --key database_dir --value ~/path/to/Papers` | Set the PDF database folder |
+| `docent reading config-set --key queue_collection --value "Docent-Queue"` | Set the Mendeley collection name |
 
 **Other**
 
@@ -167,13 +167,13 @@ class Echo(Tool):
 
 Then `docent echo --msg hi --count 3` just works. No CLI edits, no registration code — the decorator is enough.
 
-For tools with several related operations on shared state, use the multi-action shape — decorate methods with `@action(...)`. See `src/docent/tools/reading.py` for the reference implementation.
+For tools with several related operations on shared state, use the multi-action shape — decorate methods with `@action(...)`. See `src/docent/bundled_plugins/reading/__init__.py` for the reference implementation.
 
 ## 🧑‍💻 Development
 
 ### Prerequisites
 
-- Python ≥ 3.11
+- Python 3.12 or 3.13 (`alphaxiv-py` sets the floor at 3.12)
 - [uv](https://docs.astral.sh/uv/) — `pip install uv`
 - Node.js ≥ 20 (only needed for the frontend UI)
 
@@ -186,8 +186,10 @@ cd docent
 # Install in editable mode (all dev deps)
 uv sync --all-extras
 
-# Make the `docent` command available globally
-uv tool install --editable .
+# Make the `docent` command available globally.
+# uv tool install is a global operation and does not read .python-version,
+# so pass --python explicitly to match the project pin.
+uv tool install --python 3.13 --editable .
 ```
 
 ### Running tests
@@ -199,13 +201,17 @@ uv run pytest -x -q    # stop on first failure, quiet output
 
 ### Running the frontend
 
+The dev server proxies all `/api/*` requests to `http://127.0.0.1:7432`, so the FastAPI backend must be running first:
+
 ```bash
+docent ui              # start FastAPI backend on :7432 (keep this running)
+
 cd frontend
 npm install
 npm run dev            # starts at http://localhost:3000
 ```
 
-The frontend talks to a running `docent` install for API calls. Make sure the editable install is active before starting the dev server.
+Make sure the editable install is active (`uv tool install --python 3.13 --editable .`) before starting either server.
 
 ### Project layout
 
@@ -234,9 +240,28 @@ git push --tags
 
 GitHub Actions builds the wheel, publishes to PyPI, and creates a GitHub release automatically.
 
-## 🚀 Coming Soon
+## 🔬 Research Tool
 
-- **`docent research`** — AI-powered research tool: paper search (alphaXiv, Google Scholar), literature review, and multi-source synthesis pipelines. Routes through [Feynman](https://www.feynman.is/) as the primary research agent, with a direct Claude fallback if Feynman isn't available.
+The `docent studio` tool runs AI-powered deep research, literature reviews, and peer reviews:
+
+| Action | Description |
+|--------|-------------|
+| `docent studio deep-research "topic"` | Full 6-stage research pipeline |
+| `docent studio lit "topic"` | Literature-focused review (80% paper bias) |
+| `docent studio review "paper"` | Peer review of an artifact |
+| `docent studio search-papers "query"` | Search alphaXiv for academic papers |
+| `docent studio get-paper "arxiv-id"` | AI-generated overview for a paper |
+| `docent studio usage` | Today's Feynman/OpenCode spend + Tavily requests |
+| `docent studio config-show` | Show research settings |
+| `docent studio config-set --key <k> --value <v>` | Set config (e.g. `tavily_api_key`, `alphaxiv_api_key`) |
+
+**Backends:** [Feynman CLI](https://www.feynman.is/) (primary) or Docent-native pipeline via OpenCode Go models (fallback).  
+**Web search:** [Tavily](https://tavily.com/) (free tier: 1,000 calls/month). Set your key:
+```bash
+docent studio config-set --key tavily_api_key --value "tvly-..."
+```
+
+## 🚀 Coming Soon
 
 - **Omnibox (natural language interface)** — type what you want in plain English and Docent routes it to the right action: *"what should I read next for CES701?"* or *"sync my Mendeley queue"* — no flags, no subcommands.
 

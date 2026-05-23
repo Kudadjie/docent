@@ -4,18 +4,21 @@ const LIGHT: Record<Status, { bg: string; text: string; dot: string }> = {
   reading: { bg: '#FFF7ED', text: '#B45309', dot: '#F59E0B' },
   queued:  { bg: '#EFF6FF', text: '#1D4ED8', dot: '#3B82F6' },
   done:    { bg: '#d4fae8', text: '#0fa76e', dot: '#18E299' },
+  removed: { bg: '#f3f4f6', text: '#9ca3af', dot: '#d1d5db' },
 };
 
 const DARK: Record<Status, { bg: string; text: string; dot: string }> = {
   reading: { bg: 'rgba(245,158,11,0.12)', text: '#F5A623', dot: '#F59E0B' },
   queued:  { bg: 'rgba(59,130,246,0.12)', text: '#60A5FA', dot: '#3B82F6' },
   done:    { bg: 'rgba(24,226,153,0.12)', text: '#18E299', dot: '#18E299' },
+  removed: { bg: 'rgba(156,163,175,0.12)', text: '#6b7280', dot: '#9ca3af' },
 };
 
 const LABEL: Record<Status, string> = {
   queued: 'Queued',
   reading: 'Reading',
   done: 'Done',
+  removed: 'Removed',
 };
 
 interface Props {

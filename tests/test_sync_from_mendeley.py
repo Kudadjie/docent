@@ -65,8 +65,8 @@ def _patch_mendeley(
             return {"items": [], "error": None}
         return documents(folder_id) if callable(documents) else documents
 
-    monkeypatch.setattr("reading.mendeley_list_folders", fake_folders)
-    monkeypatch.setattr("reading.mendeley_list_documents", fake_documents)
+    monkeypatch.setattr("reading.mendeley_client.list_folders", fake_folders)
+    monkeypatch.setattr("reading.mendeley_client.list_documents", fake_documents)
     return calls
 
 
@@ -86,7 +86,7 @@ def test_collection_missing_returns_actionable_error(tmp_docent_home, monkeypatc
     assert result.added == []
     assert result.folder_id is None
     assert "Docent-Queue" in result.message
-    assert "Mendeley desktop app" in result.message
+    assert "config-set" in result.message
 
 
 def test_duplicate_collection_name_asks_user_to_rename(tmp_docent_home, monkeypatch):
@@ -262,12 +262,12 @@ def test_removed_branch_flags_status(tmp_docent_home, monkeypatch):
         documents={"items": [], "error": None},
     )
     result = _drain(tool.sync_from_mendeley(SyncFromMendeleyInputs(), ctx))
-    assert len(result.removed) == 1
-    assert tool._store.load_queue()[0]["status"] == "removed"
+    assert len(result.flagged) == 1
+    assert tool._store.load_queue()[0].get("not_in_mendeley") is True
 
-    # Third run: still empty; "removed" entries don't re-bucket.
+    # Third run: still empty; already-flagged entries don't re-bucket.
     result3 = _drain(tool.sync_from_mendeley(SyncFromMendeleyInputs(), ctx))
-    assert result3.removed == []
+    assert result3.flagged == []
 
 
 def test_non_mendeley_entries_untouched_by_removed_branch(tmp_docent_home, monkeypatch):
@@ -382,8 +382,9 @@ def test_dry_run_reports_would_remove(tmp_docent_home, monkeypatch):
 
 def test_normalize_authors_dict_form():
     """Mendeley sometimes returns authors as dicts (other endpoints).
-    `_normalize_mendeley_authors` joins first_name + last_name with '; '."""
-    out = ReadingQueue._normalize_mendeley_authors([
+    `normalize_mendeley_authors` joins first_name + last_name with '; '."""
+    from docent.bundled_plugins.reading.mendeley_sync import normalize_mendeley_authors
+    out = normalize_mendeley_authors([
         {"first_name": "John", "last_name": "Smith"},
         {"first_name": "Kate", "last_name": "Jones"},
     ])
@@ -391,13 +392,15 @@ def test_normalize_authors_dict_form():
 
 
 def test_normalize_authors_string_passthrough():
-    assert ReadingQueue._normalize_mendeley_authors("Smith, J") == "Smith, J"
+    from docent.bundled_plugins.reading.mendeley_sync import normalize_mendeley_authors
+    assert normalize_mendeley_authors("Smith, J") == "Smith, J"
 
 
 def test_normalize_authors_none_or_empty_yields_unknown():
-    assert ReadingQueue._normalize_mendeley_authors(None) == "Unknown"
-    assert ReadingQueue._normalize_mendeley_authors([]) == "Unknown"
-    assert ReadingQueue._normalize_mendeley_authors([{}, ""]) == "Unknown"
+    from docent.bundled_plugins.reading.mendeley_sync import normalize_mendeley_authors
+    assert normalize_mendeley_authors(None) == "Unknown"
+    assert normalize_mendeley_authors([]) == "Unknown"
+    assert normalize_mendeley_authors([{}, ""]) == "Unknown"
 
 
 # ----------------------------------------------------------------------

@@ -20,7 +20,7 @@ jobs:
         uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4  # TODO: pin to SHA before next audit
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
         with:
           node-version: "20"
           cache: "npm"
@@ -30,6 +30,10 @@ jobs:
         run: npm ci
         working-directory: frontend
 
+      - name: Frontend lint
+        run: npm run lint
+        working-directory: frontend
+
       - name: Build UI
         run: python scripts/build_ui.py
 
@@ -37,6 +41,12 @@ jobs:
         # CVE-2026-42203/42208/42271 affect litellm's proxy/server — Docent uses
         # litellm for outbound API calls only. Suppressed until a stable fix lands.
         run: uv run pip-audit --ignore-vuln CVE-2026-42203 --ignore-vuln CVE-2026-42208 --ignore-vuln CVE-2026-42271
+
+      - name: Lint
+        run: uv run ruff check src/
+
+      - name: Test
+        run: uv run pytest
 
       - name: Build package
         run: uv build --wheel

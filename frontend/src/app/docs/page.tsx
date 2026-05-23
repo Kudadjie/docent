@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
+import StatusBanner from '@/components/StatusBanner';
+import { useDarkMode } from '@/hooks/useDarkMode';
+import { useTour } from '@/hooks/useTour';
 
 type Section = {
   id: string;
@@ -10,7 +12,10 @@ type Section = {
 
 const SECTIONS: Section[] = [
   { id: 'overview', label: 'Overview' },
+  { id: 'studio', label: 'Studio' },
   { id: 'reading-queue', label: 'Reading Queue' },
+  { id: 'ecosystem', label: 'Ecosystem' },
+  { id: 'plugins', label: 'Plugin Guide' },
   { id: 'cli', label: 'CLI Reference' },
   { id: 'mcp', label: 'MCP Setup' },
   { id: 'settings', label: 'Settings' },
@@ -145,7 +150,7 @@ function CommandTable({ rows }: { rows: { cmd: string; desc: string }[] }) {
 function Card({ children }: { children: React.ReactNode }) {
   return (
     <div style={{
-      background: 'var(--bg)',
+      background: 'var(--bg-card)',
       border: '1px solid var(--border)',
       borderRadius: 10,
       padding: '24px 28px',
@@ -157,38 +162,33 @@ function Card({ children }: { children: React.ReactNode }) {
 }
 
 export default function DocsPage() {
-  const [dark, setDark] = useState(false);
+  const { dark, toggleDark } = useDarkMode();
 
-  useEffect(() => {
-    setDark(localStorage.getItem('docent:dark') === 'true');
-  }, []);
+  useTour('docs', [
+    {
+      popover: {
+        title: "Docent's documentation",
+        description: 'Everything you need to configure, extend, and get the most out of Docent is here — setup guides, API key instructions, sync troubleshooting, and backup docs.',
+      },
+    },
+    {
+      popover: {
+        title: 'Jump to any section',
+        description: 'Use the left sidebar to jump between topics. The Reading guide covers reference manager sync and queue management; the Studio guide covers all research backends.',
+      },
+    },
+  ]);
 
   function scrollTo(id: string) {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   return (
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
+    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg)', backgroundImage: 'var(--hero-grad)', backgroundRepeat: 'no-repeat' }}>
       <Sidebar active="docs" queueCount={0} dark={dark} />
 
-      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'auto' }}>
-        {/* Header */}
-        <div style={{
-          height: 56,
-          display: 'flex',
-          alignItems: 'center',
-          padding: '0 28px',
-          borderBottom: '1px solid var(--border)',
-          flexShrink: 0,
-          gap: 12,
-        }}>
-          <span style={{ fontFamily: 'var(--sans)', fontWeight: 600, fontSize: 14, color: 'var(--fg1)' }}>
-            Documentation
-          </span>
-          <span style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg4)' }}>
-            Docent reference
-          </span>
-        </div>
+      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
+        <StatusBanner dark={dark} onToggleDark={toggleDark} />
 
         {/* Body — two-column: TOC left, content right */}
         <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
@@ -234,30 +234,168 @@ export default function DocsPage() {
             ))}
           </div>
 
-          {/* Content */}
-          <div style={{ flex: 1, padding: '28px 40px', overflow: 'auto', maxWidth: 820 }}>
+          {/* Content — hero wash bleeding from the top via background-image */}
+          <div style={{ flex: 1, padding: '28px 40px', overflow: 'auto',
+            backgroundImage: 'var(--hero-grad)',
+            backgroundRepeat: 'no-repeat',
+            backgroundSize: '100% 100%',
+            backgroundAttachment: 'local',
+          }}>
 
             {/* Overview */}
             <Card>
               <SectionHeading id="overview">Overview</SectionHeading>
               <Prose>
-                Docent is a CLI-based control center for grad-school workflows. It exposes a plugin
-                architecture — each tool (currently <strong>Reading Queue</strong>) registers actions
-                that are callable from the terminal, from Claude via MCP, or from this UI.
+                Docent is a grad-school AI assistant with three main tools: a <strong>Reading Queue</strong> that
+                syncs your Mendeley library, a <strong>Studio</strong> research engine for AI-powered literature
+                reviews, paper analysis, and notebook building, and an <strong>Ecosystem</strong> page that
+                connects all the external tools Docent integrates with.
               </Prose>
               <Prose>
-                Documents live in <strong>Mendeley</strong>. Docent syncs from a named Mendeley collection
-                and maintains a lightweight local queue. You never add documents directly in Docent — you
-                add them to Mendeley first, then pull.
+                Every feature is callable three ways: from the terminal (<Code>docent …</Code>),
+                from Claude via MCP (<Code>docent serve</Code>), or from this web UI (<Code>docent ui</Code>).
               </Prose>
               <SubHeading>How it fits together</SubHeading>
-              <CodeBlock>{`Mendeley desktop  →  "Docent-Queue" collection
-       ↓
-docent reading sync-from-mendeley   (pulls metadata + order)
-       ↓
-Reading queue  →  next / start / done / export …
-       ↓
-docent serve  →  Claude MCP  (or this UI)`}</CodeBlock>
+              <CodeBlock>{`Mendeley  →  "Docent-Queue"  →  docent reading sync-from-mendeley
+                                     ↓
+                             Reading queue (local)
+                                     ↓
+                         docent serve  →  Claude MCP  →  Studio actions
+                                     ↓
+                          docent ui  →  this UI`}</CodeBlock>
+              <SubHeading>Quick-start</SubHeading>
+              <CommandTable rows={[
+                { cmd: 'pip install docent-cli', desc: 'Install Docent.' },
+                { cmd: 'docent doctor', desc: 'Check your environment — shows which integrations are working.' },
+                { cmd: 'docent ui', desc: 'Start the web UI at localhost:7432.' },
+                { cmd: 'docent serve', desc: 'Start the MCP server for Claude integration.' },
+                { cmd: 'docent reading sync-from-mendeley', desc: 'Pull your Mendeley reading list into Docent.' },
+                { cmd: 'docent studio deep-research --topic "…"', desc: 'Run a deep research action from the terminal.' },
+              ]} />
+            </Card>
+
+            {/* Studio */}
+            <Card>
+              <SectionHeading id="studio">Studio</SectionHeading>
+              <Prose>
+                The Studio is Docent&apos;s research engine. Choose an action, fill in a topic or artifact,
+                select a backend, and run. Results stream live — you can see each phase as it progresses.
+                Use the UI at <Code>localhost:7432</Code> or call commands directly from the terminal.
+              </Prose>
+
+              <SubHeading>Research actions</SubHeading>
+              <CommandTable rows={[
+                { cmd: 'docent studio deep-research --topic "…"', desc: 'Multi-source synthesis: search → fetch → write → verify → review. Best for broad topic briefs.' },
+                { cmd: 'docent studio lit --topic "…"', desc: 'Literature review: search academic databases and compile a structured review.' },
+                { cmd: 'docent studio review --artifact <arXiv/PDF/URL>', desc: 'Peer-review critique of a single paper.' },
+                { cmd: 'docent studio compare --artifact-a <A> --artifact-b <B>', desc: 'Side-by-side analysis of two papers — shared findings, divergent claims, contradictions.' },
+                { cmd: 'docent studio draft --topic "…"', desc: 'Draft a section or writeup from gathered sources.' },
+                { cmd: 'docent studio replicate --artifact <arXiv/PDF>', desc: 'Replication protocol: what experiments, what data, what tools.' },
+                { cmd: 'docent studio audit --artifact <arXiv/PDF>', desc: 'Methods and evidence audit: data availability, statistical validity, reproducibility.' },
+              ]} />
+
+              <SubHeading>Utility actions</SubHeading>
+              <CommandTable rows={[
+                { cmd: 'docent studio search-papers --query "…"', desc: 'Search arXiv for papers matching a query.' },
+                { cmd: 'docent studio scholarly-search --query "…"', desc: 'Search Semantic Scholar.' },
+                { cmd: 'docent studio get-paper --arxiv-id 2401.12345', desc: 'Fetch full metadata and abstract for an arXiv paper.' },
+                { cmd: 'docent studio to-notebook', desc: 'Push research output and sources into a NotebookLM notebook.' },
+              ]} />
+
+              <SubHeading>Backends</SubHeading>
+              <CommandTable rows={[
+                { cmd: '--backend free', desc: 'Default. Tavily web search + Semantic Scholar academic search. No AI synthesis, no API key required.' },
+                { cmd: '--backend feynman', desc: 'Autonomous deep-research via Feynman CLI agent. Requires feynman installed and an LLM API key.' },
+                { cmd: '--backend docent', desc: 'Native 6-stage pipeline (planner → search → fetch → write → verify → review). Requires OpenCode server.' },
+                { cmd: '--backend groq / gemini / openrouter / …', desc: 'LLM-powered synthesis using your configured API key for that provider.' },
+              ]} />
+
+              <SubHeading>Output destinations</SubHeading>
+              <CommandTable rows={[
+                { cmd: '--output local', desc: 'Default. Save to ~/.docent/research/ (or configured output_dir). You can send the result to NotebookLM afterwards from the Studio result panel.' },
+                { cmd: '--output notebook', desc: 'Upload output and sources directly to your configured NotebookLM notebook after the run.' },
+              ]} />
+
+              <SubHeading>Guide files</SubHeading>
+              <Prose>
+                Attach PDFs or text files to steer the research. Pass one or more with{' '}
+                <Code>--guide-files path/to/file.pdf</Code>. In the Studio UI, use the{' '}
+                Browse button to pick files from your machine, or drag and drop onto the form.
+              </Prose>
+
+              <SubHeading>Config keys</SubHeading>
+              <CommandTable rows={[
+                { cmd: 'docent studio config-set --key output_dir --value "~/research"', desc: 'Set the directory where research output files are saved.' },
+                { cmd: 'docent studio config-set --key tavily_api_key --value tvly-…', desc: 'Set Tavily API key for web search.' },
+                { cmd: 'docent studio config-set --key groq_api_key --value gsk_…', desc: 'Set Groq API key for fast AI synthesis.' },
+                { cmd: 'docent studio config-show', desc: 'Show all current studio config values (API keys masked).' },
+              ]} />
+            </Card>
+
+            {/* Ecosystem */}
+            <Card>
+              <SectionHeading id="ecosystem">Ecosystem</SectionHeading>
+              <Prose>
+                The Ecosystem page (accessible from the sidebar) lists every external tool Docent integrates with — search engines, AI backends, reference managers, and notebook services. Each card shows what the tool does, when to use it, and how to install it.
+              </Prose>
+              <SubHeading>Tool categories</SubHeading>
+              <CommandTable rows={[
+                { cmd: 'Feynman', desc: 'Autonomous deep-research agent. Powers the Feynman backend in Studio. Install: pip install feynman-cli' },
+                { cmd: 'Tavily', desc: 'Web search API used by the Free backend. Get a free key at app.tavily.com.' },
+                { cmd: 'Semantic Scholar', desc: 'Academic paper search. Used by scholarly-search and lit review actions. Free with optional API key for higher rate limits.' },
+                { cmd: 'alphaXiv', desc: 'Academic paper search and AI overviews. Used by search-papers action. Free key at alphaxiv.org.' },
+                { cmd: 'Mendeley', desc: 'Reference manager. Docent syncs your reading queue from a named Mendeley collection.' },
+                { cmd: 'NotebookLM', desc: 'Google\'s AI research notebook. Docent pushes sources and research output into your notebooks via the to-notebook action.' },
+                { cmd: 'OpenCode', desc: 'Local AI coding agent. Powers the Docent research backend (6-stage pipeline). Run: opencode serve --port 4096' },
+              ]} />
+              <SubHeading>Checking your ecosystem</SubHeading>
+              <Prose>
+                Run <Code>docent doctor</Code> to see the status of every installed integration. The Settings page also runs this automatically and shows a health dashboard.
+              </Prose>
+            </Card>
+
+            {/* Plugin Guide */}
+            <Card>
+              <SectionHeading id="plugins">Plugin Guide</SectionHeading>
+              <Prose>
+                Docent is built on a plugin architecture. Every tool you see — Reading Queue, Studio — is a plugin registered at startup. You can write your own plugins to add new actions callable from the CLI, Claude via MCP, and this UI.
+              </Prose>
+              <SubHeading>Plugin structure</SubHeading>
+              <CodeBlock>{`# my_plugin/__init__.py
+from docent.core.tool import Tool, action, ProgressEvent
+from pydantic import BaseModel
+
+class MyPlugin(Tool):
+    name = "my_plugin"
+    description = "My custom tool"
+
+    class ConfigModel(BaseModel):
+        some_setting: str = "default"
+
+    @action(description="Do something useful")
+    def my_action(self, ctx, topic: str):
+        yield ProgressEvent(phase="start", message=f"Processing {topic}")
+        # ... your logic here
+        yield ProgressEvent(phase="done", message="Finished")`}</CodeBlock>
+              <SubHeading>Registering a plugin</SubHeading>
+              <Prose>
+                Add your plugin to <Code>pyproject.toml</Code> under <Code>[project.entry-points.&quot;docent.plugins&quot;]</Code>:
+              </Prose>
+              <CodeBlock>{`[project.entry-points."docent.plugins"]
+my_plugin = "my_plugin:MyPlugin"`}</CodeBlock>
+              <Prose>
+                After installing your package, run <Code>docent list</Code> to confirm the plugin appears. All actions are automatically exposed as MCP tools following the <Code>toolname__actionname</Code> convention.
+              </Prose>
+              <SubHeading>ProgressEvent fields</SubHeading>
+              <CommandTable rows={[
+                { cmd: 'phase', desc: 'Short slug identifying the current stage (e.g. "search", "write"). Shown in the UI phase strip.' },
+                { cmd: 'message', desc: 'Human-readable description of what\'s happening. Streamed live in the Studio activity log.' },
+                { cmd: 'level', desc: 'One of: info (default), warn, error. Controls visual styling in the log.' },
+              ]} />
+              <SubHeading>Config keys</SubHeading>
+              <Prose>
+                Each plugin declares its config schema via a <Code>ConfigModel</Code>. Users set values with <Code>docent &lt;toolname&gt; config-set --key &lt;k&gt; --value &lt;v&gt;</Code>. Config is stored in <Code>~/.docent/config.toml</Code> under a <Code>[toolname]</Code> section.
+              </Prose>
             </Card>
 
             {/* Reading Queue */}
@@ -280,7 +418,7 @@ docent serve  →  Claude MCP  (or this UI)`}</CodeBlock>
               <SubHeading>Moving through the queue</SubHeading>
               <CommandTable rows={[
                 { cmd: 'docent reading next', desc: 'Show the next entry to read (lowest order, status = queued).' },
-                { cmd: 'docent reading next --course <name>', desc: 'Filter next entry by course name.' },
+                { cmd: 'docent reading next --category <name>', desc: 'Filter next entry by category prefix.' },
                 { cmd: 'docent reading start <id>', desc: 'Mark an entry as currently reading. Stamps started_at timestamp.' },
                 { cmd: 'docent reading done <id>', desc: 'Mark an entry as done. Stamps finished_at timestamp.' },
                 { cmd: 'docent reading show <id>', desc: 'Show full details for an entry.' },
@@ -289,11 +427,10 @@ docent serve  →  Claude MCP  (or this UI)`}</CodeBlock>
               <SubHeading>Editing &amp; organising</SubHeading>
               <CommandTable rows={[
                 { cmd: 'docent reading edit <id> --notes "…"', desc: 'Update notes for an entry.' },
-                { cmd: 'docent reading edit <id> --category thesis', desc: 'Set category: course, thesis, or personal.' },
-                { cmd: 'docent reading edit <id> --course-name "CVEN 601"', desc: 'Tag with a course name.' },
+                { cmd: 'docent reading edit --id <id> --category "CVEN 601"', desc: 'Override the category path for an entry.' },
                 { cmd: 'docent reading edit <id> --type book_chapter', desc: 'Set type: paper, book, or book_chapter.' },
-                { cmd: 'docent reading set-deadline <id> --date 2026-06-01', desc: 'Set a reading deadline. Docent warns at startup when a deadline is approaching.' },
-                { cmd: 'docent reading set-deadline <id> --clear', desc: 'Clear a deadline.' },
+                { cmd: 'docent reading set-deadline --id <id> --deadline 2026-06-01', desc: 'Set a reading deadline. Docent warns at startup when a deadline is approaching.' },
+                { cmd: 'docent reading set-deadline --id <id> --deadline ""', desc: 'Clear a deadline.' },
                 { cmd: 'docent reading move-up <id>', desc: 'Move an entry one position up in the queue.' },
                 { cmd: 'docent reading move-down <id>', desc: 'Move an entry one position down.' },
                 { cmd: 'docent reading move-to <id> --position <n>', desc: 'Move an entry to an absolute queue position.' },
@@ -301,7 +438,7 @@ docent serve  →  Claude MCP  (or this UI)`}</CodeBlock>
 
               <SubHeading>Search &amp; stats</SubHeading>
               <CommandTable rows={[
-                { cmd: 'docent reading search <query>', desc: 'Full-text search across titles, authors, notes, and course names.' },
+                { cmd: 'docent reading search <query>', desc: 'Full-text search across titles, authors, notes, categories, IDs, and tags.' },
                 { cmd: 'docent reading stats', desc: 'Show queue size, status breakdown, category breakdown, and upcoming deadlines.' },
               ]} />
 
@@ -324,7 +461,9 @@ docent serve  →  Claude MCP  (or this UI)`}</CodeBlock>
                 { cmd: 'docent --version', desc: 'Print the installed Docent version.' },
                 { cmd: 'docent list', desc: 'List all registered tools and their available actions.' },
                 { cmd: 'docent info <tool>', desc: 'Show detailed info and action list for a tool.' },
+                { cmd: 'docent ui', desc: 'Start the web UI at localhost:7432 (default). Use --port to change.' },
                 { cmd: 'docent serve', desc: 'Start the MCP stdio server. Wire this into Claude\'s .mcp.json.' },
+                { cmd: 'docent doctor', desc: 'Run environment checks for all Docent dependencies.' },
                 { cmd: 'docent update', desc: 'Upgrade Docent to the latest version on PyPI. Reminds you to restart Claude if using MCP.' },
               ]} />
 
@@ -338,7 +477,6 @@ docent serve  →  Claude MCP  (or this UI)`}</CodeBlock>
               <CommandTable rows={[
                 { cmd: 'database_dir', desc: 'Absolute path to the folder where your PDFs are stored.' },
                 { cmd: 'queue_collection', desc: 'Name of the Mendeley collection to sync from. Default: Docent-Queue.' },
-                { cmd: 'unpaywall_email', desc: 'Email for Unpaywall OA PDF lookups.' },
               ]} />
             </Card>
 
@@ -413,7 +551,7 @@ reading__config_set`}</CodeBlock>
               <CodeBlock>{`[reading]
 database_dir = "/Users/you/Documents/Papers"
 queue_collection = "Docent-Queue"
-unpaywall_email = "you@university.edu"`}</CodeBlock>
+`}</CodeBlock>
 
               <SubHeading>Environment variable overrides</SubHeading>
               <Prose>

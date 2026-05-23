@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Design archive — not production source
+    "design_handover/**",
   ]),
 ]);
 

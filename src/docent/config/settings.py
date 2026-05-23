@@ -7,6 +7,58 @@ from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
 
+class ResearchSettings(BaseModel):
+    """First-party `research` tool settings. Stored under `[research]` in config.toml.
+
+    Env-overridable as `DOCENT_RESEARCH__<FIELD>` (double underscore for nesting).
+    `output_dir` is where research output files are written.
+    `feynman_command` defaults to `["feynman"]`; override if feynman is not on PATH.
+    """
+
+    output_dir: Path = Field(default_factory=lambda: Path("~/Documents/Docent/research"))
+    feynman_command: list[str] | None = None
+    feynman_model: str | None = None  # e.g. "anthropic/claude-sonnet-4-5" — passes --model to feynman
+    feynman_timeout: float = 1800.0  # seconds before killing stuck feynman runs (/review with code repo access needs ~20-25 min)
+    studio_backend: str = "opencode"  # active Docent-tier backend
+    oc_provider: str = "opencode-go"
+    oc_model_planner: str = "glm-5.1"
+    oc_model_writer: str = "minimax-m2.7"
+    oc_model_verifier: str = "glm-5.1"
+    oc_model_reviewer: str = "deepseek-v4-pro"
+    oc_model_researcher: str = "glm-5.1"
+
+    # LiteLLM provider API keys
+    groq_api_key: str | None = None
+    gemini_api_key: str | None = None
+    openrouter_api_key: str | None = None
+    mistral_api_key: str | None = None
+    cerebras_api_key: str | None = None
+
+    # LiteLLM provider models (defaults shown)
+    groq_model: str = "llama-3.3-70b-versatile"
+    gemini_model: str = "gemini-2.0-flash"
+    openrouter_model: str = "meta-llama/llama-3.3-70b-instruct:free"
+    mistral_model: str = "mistral-small-latest"
+    cerebras_model: str = "llama-3.3-70b"
+    ollama_model: str = "llama3"
+    lm_studio_model: str = "local-model"
+    local_model: str = "local-model"
+
+    # Local provider base URLs
+    ollama_base_url: str = "http://localhost:11434"
+    lm_studio_base_url: str = "http://localhost:1234/v1"
+    local_base_url: str | None = None
+    local_api_key: str | None = None
+
+    tavily_api_key: str | None = None
+    tavily_research_timeout: float = 600.0  # seconds to wait for Tavily Research API results
+    semantic_scholar_api_key: str | None = None
+    notebooklm_notebook_id: str | None = None  # NotebookLM notebook ID from the URL (e.g. abc123...)
+    notebooklm_source_limit: int = 50  # 50 = free tier; set to 100 for NotebookLM Plus
+    obsidian_vault: Path | None = None  # Absolute path to Obsidian vault root (or target subfolder)
+    alphaxiv_api_key: str | None = None  # API key from alphaxiv.org (env: ALPHAXIV_API_KEY)
+
+
 class ReadingSettings(BaseModel):
     """First-party `reading` tool settings. Stored under `[reading]` in config.toml.
 
@@ -18,7 +70,8 @@ class ReadingSettings(BaseModel):
 
     database_dir: Path | None = None
     mendeley_mcp_command: list[str] | None = None  # e.g. ["uvx", "mendeley-mcp"]; None -> default in mendeley_client.
-    queue_collection: str = "Docent-Queue"  # Mendeley collection name that defines reading-queue membership.
+    queue_collection: str = "Docent-Queue"  # Collection name that defines reading-queue membership.
+    reference_manager: str = "mendeley"     # Active backend: "mendeley" | "zotero" (future).
 
 
 class Settings(BaseSettings):
@@ -36,6 +89,7 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
 
     reading: ReadingSettings = Field(default_factory=ReadingSettings)
+    research: ResearchSettings = Field(default_factory=ResearchSettings)
 
     tools: dict[str, dict[str, Any]] = Field(default_factory=dict)
 

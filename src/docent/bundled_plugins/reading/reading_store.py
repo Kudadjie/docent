@@ -12,12 +12,61 @@ JSON file in place.
 from __future__ import annotations
 
 import json
+import logging
 import os
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
+from filelock import FileLock
 from pydantic import BaseModel
+
+_logger = logging.getLogger(__name__)
+
+
+def cleanup_legacy_paper_dirs() -> None:
+    """Remove stale ~/.docent/data/paper and ~/.docent/cache/paper directories.
+
+    These were the storage paths before the reading tool was renamed from
+    'paper' to 'reading'. Safe to delete once data/reading/ exists.
+    Called once at server startup.
+    """
+    import shutil
+    from docent.utils.paths import data_dir, cache_dir
+
+    for legacy in (data_dir() / "paper", cache_dir() / "paper"):
+        if legacy.exists():
+            try:
+                shutil.rmtree(legacy)
+                _logger.info("Removed legacy directory: %s", legacy)
+            except Exception as exc:
+                _logger.warning("Could not remove legacy dir %s: %s", legacy, exc)
+
+
+# Increment this when queue.json needs a structural migration.
+# Rule: additive field additions do NOT require a version bump (Pydantic handles
+# them via defaults).  Only renames, removals, or type changes need a bump + a
+# corresponding _migrate_vN_to_vM() function below.
+_QUEUE_SCHEMA_VERSION = 1
+
+
+def _infer_schema_version(entries: list[dict[str, Any]]) -> int:
+    """Guess the schema version from the first entry's keys.
+
+    Keep this logic cheap and conservative — when in doubt return the lowest
+    plausible version so the migration guard runs.
+    """
+    return 1  # only one version exists today; extend as migrations are added
+
+
+def _run_migrations(entries: list[dict[str, Any]], from_version: int) -> list[dict[str, Any]]:
+    """Apply all pending migrations in order from *from_version* to _QUEUE_SCHEMA_VERSION."""
+    # Example shape for future use:
+    #   if from_version < 2:
+    #       entries = _migrate_v1_to_v2(entries)
+    # Nothing to do yet — v1 is current.
+    return entries
 
 
 class BannerCounts(BaseModel):
@@ -42,15 +91,47 @@ class ReadingQueueStore:
     def state_path(self) -> Path:
         return self.root / "state.json"
 
+    @contextmanager
+    def lock(self, timeout: float = 0) -> Iterator[None]:
+        """File lock for a read-modify-write cycle.
+        timeout=0 (default): fail immediately if another process holds the lock.
+        """
+        from filelock import Timeout as _FileLockTimeout
+        self.root.mkdir(parents=True, exist_ok=True)
+        try:
+            with FileLock(str(self.root / "queue.json.lock"), timeout=timeout):
+                yield
+        except _FileLockTimeout:
+            raise RuntimeError(
+                "Queue is busy — another Docent process is currently writing. "
+                "Retry in a moment."
+            ) from None
+
     def load_queue(self) -> list[dict[str, Any]]:
         if not self.queue_path.exists():
             return []
-        return json.loads(self.queue_path.read_text(encoding="utf-8"))
+        try:
+            entries: list[dict[str, Any]] = json.loads(self.queue_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            _logger.warning("queue.json is corrupt (%s) — treating as empty queue", exc)
+            return []
+        detected = _infer_schema_version(entries)
+        if detected < _QUEUE_SCHEMA_VERSION:
+            _logger.info(
+                "queue.json schema v%d detected; migrating to v%d",
+                detected, _QUEUE_SCHEMA_VERSION,
+            )
+            entries = _run_migrations(entries, detected)
+        return entries
 
     def load_index(self) -> dict[str, dict[str, Any]]:
         if not self.index_path.exists():
             return {}
-        return json.loads(self.index_path.read_text(encoding="utf-8"))
+        try:
+            return json.loads(self.index_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            _logger.warning("queue-index.json is corrupt (%s) — treating as empty index", exc)
+            return {}
 
     def save_queue(self, queue: list[dict[str, Any]]) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
@@ -61,7 +142,11 @@ class ReadingQueueStore:
     def banner_counts(self) -> BannerCounts:
         if not self.state_path.exists():
             return BannerCounts()
-        data = json.loads(self.state_path.read_text(encoding="utf-8"))
+        try:
+            data = json.loads(self.state_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            _logger.warning("state.json is corrupt (%s) — using zero counts", exc)
+            return BannerCounts()
         return BannerCounts(
             queued=data.get("queued", 0),
             reading=data.get("reading", 0),

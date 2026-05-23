@@ -91,7 +91,7 @@ export default function StatsModal({ entries, onClose }: Props) {
       }}
     >
       <div style={{
-        background: 'var(--bg)',
+        background: 'var(--bg-card)',
         border: '1px solid var(--border-md)',
         borderRadius: 12,
         width: '100%', maxWidth: 380,

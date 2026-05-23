@@ -188,7 +188,9 @@ def test_queue_clear_result_not_cleared_to_shapes():
 def test_config_show_result_to_shapes():
     r = ConfigShowResult(config_path="/tmp/config.toml", database_dir="/papers", queue_collection="Docent-Queue")
     shapes = r.to_shapes()
-    assert _shape_types(shapes) == ["metric", "metric", "metric"]
+    assert _shape_types(shapes) == ["metric", "metric", "metric", "metric"]
+    labels = [s.label for s in shapes]
+    assert "mendeley_mcp_command" in labels
 
 
 def test_config_set_result_ok_to_shapes():

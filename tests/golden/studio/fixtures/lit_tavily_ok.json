@@ -1,0 +1,29 @@
+{
+  "id": "lit_tavily_ok",
+  "action": "run_lit",
+  "topic": "coastal erosion monitoring satellite remote sensing",
+  "mock": {
+    "tavily_content": "# Literature Review: Coastal Erosion Monitoring via Satellite Remote Sensing\n\nSatellite remote sensing has transformed the capacity to monitor coastal erosion at regional and global scales, offering temporal and spatial coverage previously unattainable from field surveys alone.\n\n## Key Papers\n\n### Landsat-derived shoreline change\nMulti-decadal shoreline extraction from Landsat MSS/TM/ETM+/OLI imagery using water index thresholding (NDWI, MNDWI) has become the workhorse method. Accuracy of ±10-20m is typical at 30m resolution.\n\n### Sentinel-2 Applications\nThe 10m resolution of Sentinel-2 MSI bands improves shoreline delineation accuracy to ±3-5m. Sub-annual revisit enables storm-event-scale monitoring.\n\n### SAR-based Detection\nSynthetic Aperture Radar (SAR) provides all-weather, day-night capability. Sentinel-1 C-band backscatter has been applied to detect intertidal zone dynamics.\n\n### Machine Learning Methods\nDeep learning segmentation (U-Net, DeepLab) applied to satellite imagery outperforms threshold methods in complex coastal settings with vegetation or turbid water.\n\n## Research Gaps\n\n- Limited validation datasets in tropical Africa\n- Integration of multiple sensor types remains challenging\n- Real-time operational systems are nascent\n\n## References\n1. [Luijendijk et al. 2018](https://doi.org/10.1038/s41598-018-24630-6) Global assessment [web]\n2. [Vos et al. 2019 CoastSat](https://doi.org/10.1016/j.envsoft.2019.104560) [web]\n",
+    "tavily_sources": [
+      {"title": "Luijendijk et al. 2018 — State of the World's Beaches", "url": "https://doi.org/10.1038/s41598-018-24630-6", "source_type": "web"},
+      {"title": "Vos et al. 2019 — CoastSat", "url": "https://doi.org/10.1016/j.envsoft.2019.104560", "source_type": "web"}
+    ],
+    "academic_sources": [
+      {"title": "Shoreline change analysis using Sentinel-2", "url": "https://arxiv.org/abs/2310.05678", "source_type": "arxiv"},
+      {"title": "Deep learning for coastal erosion mapping", "url": "https://doi.org/10.3390/rs14010001", "source_type": "crossref"},
+      {"title": "SAR-based intertidal zone dynamics", "url": "https://www.semanticscholar.org/paper/1a2b3c", "source_type": "semantic_scholar"}
+    ],
+    "oc_review": "### FATAL\nNone identified.\n\n### MAJOR\n- Missing discussion of uncertainty quantification in shoreline extraction\n- Should compare accuracy across sensor types more systematically\n\n### Minor\n- African case studies under-represented relative to global scope claimed",
+    "oc_refiner": "# Literature Review: Coastal Erosion Monitoring via Satellite Remote Sensing\n\nSatellite remote sensing has fundamentally transformed coastal erosion monitoring, offering temporal and spatial coverage that ground surveys cannot match at regional scales.\n\n## Methodology Landscape\n\n### Optical Sensors\n**Landsat series** (30m, 1972-present): Multidecadal shoreline extraction via NDWI/MNDWI thresholding achieves ±10-20m accuracy. Long archive makes it irreplaceable for trend analysis.\n\n**Sentinel-2** (10m, 2015-present): Improved resolution yields ±3-5m accuracy. Sub-annual revisit captures storm-event dynamics.\n\n### SAR Methods\nSentinel-1 C-band all-weather capability enables monitoring during cloud-covered tropical wet seasons — a critical advantage for West African and Southeast Asian coasts.\n\n### Machine Learning Integration\nDeep learning segmentation (U-Net architectures) consistently outperforms threshold methods in complex coastal environments. Transfer learning from global training datasets shows promise for data-sparse regions.\n\n## Accuracy and Uncertainty\n\nShoreline extraction accuracy varies with: (1) image resolution, (2) tidal range at acquisition time, (3) coastal substrate reflectance, and (4) turbidity. Multi-temporal compositing reduces noise but may obscure storm-scale events.\n\n## Research Gaps\n\n1. Validation in tropical West Africa remains limited — most benchmarks use European or Australian coasts.\n2. Operational real-time systems are nascent; latency from acquisition to erosion alert typically exceeds 2 weeks.\n3. Multi-sensor fusion frameworks lack standardised evaluation protocols.\n\n## Conclusion\n\nThe field is maturing rapidly, with CoastSat, SHOREX, and similar open-source toolkits reducing barriers to adoption. Priority research directions include Africa-specific validation datasets and near-real-time operational systems."
+  },
+  "expected": {
+    "ok": true,
+    "min_draft_length": 500,
+    "review_non_empty": true,
+    "min_sources_count": 4,
+    "sources_have_url": true,
+    "contains_keywords": ["coastal erosion", "satellite", "shoreline"],
+    "error_is_none": true,
+    "min_rounds": 1
+  }
+}

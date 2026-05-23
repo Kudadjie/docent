@@ -8,6 +8,7 @@ The Next.js API routes (frontend/src/app/api/) are replaced by FastAPI at runtim
 and cannot be included in a static export. This script temporarily moves them aside
 during the build, then restores them so local dev (npm run dev) keeps working.
 """
+import re
 import shutil
 import subprocess
 import sys
@@ -48,11 +49,41 @@ def main() -> None:
         print(f"Expected {OUT} after build but it doesn't exist.", file=sys.stderr)
         sys.exit(1)
 
+    # Move the inline theme script to the very top of <head> in every HTML file.
+    # Next.js always injects its CSS <link> before user-defined <head> content, so
+    # the theme script runs after the stylesheet and causes a dark→light flash on
+    # reload. Hoisting it before any <link> ensures data-theme is set before CSS
+    # is applied, eliminating the flash entirely.
+    _hoist_theme_script(OUT)
+
     print(f"Copying frontend/out -> src/docent/ui_dist")
     if DIST.exists():
         shutil.rmtree(DIST)
     shutil.copytree(OUT, DIST)
     print("Done. Run `docent ui` to launch.")
+
+
+_THEME_SCRIPT_RE = re.compile(
+    r'<script>\(function\(\)\{try\{[^<]*docent:dark[^<]*\}\}\)\(\);</script>'
+)
+
+
+def _hoist_theme_script(out_dir: Path) -> None:
+    hoisted = 0
+    for html_file in out_dir.rglob("*.html"):
+        text = html_file.read_text(encoding="utf-8")
+        m = _THEME_SCRIPT_RE.search(text)
+        if not m:
+            continue
+        script = m.group(0)
+        # Remove from current location
+        text = text[: m.start()] + text[m.end() :]
+        # Insert immediately after <head>
+        text = text.replace("<head>", "<head>" + script, 1)
+        html_file.write_text(text, encoding="utf-8")
+        hoisted += 1
+    if hoisted:
+        print(f"  Hoisted theme script in {hoisted} HTML file(s).")
 
 
 if __name__ == "__main__":

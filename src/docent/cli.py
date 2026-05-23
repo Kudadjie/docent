@@ -1,10 +1,23 @@
+# ruff: noqa: E402 — Rich compat patch must run before any Rich import
 from __future__ import annotations
+
+import warnings
+# Must be before any import that might pull in scholarly — the SyntaxWarning for
+# the invalid \d escape in scholarly._scholarly fires at bytecode-compile time in
+# Python 3.13, before any lazy-import filter in scholarly_client.py can take effect.
+warnings.filterwarnings("ignore", category=SyntaxWarning, module=r"scholarly")
 
 import inspect
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any, Callable
+
+from docent.utils.rich_compat import patch_rich_unicode_loader
+
+patch_rich_unicode_loader()
+
 
 import typer
 from pydantic import BaseModel
@@ -21,13 +34,14 @@ from rich.progress import (
 from rich.table import Table
 
 from docent import __version__
-from docent.config import load_settings
+from docent.config import Settings, load_settings, write_setting
 from docent.core import (
     Context,
     ProgressEvent,
     Tool,
     all_tools,
     collect_actions,
+    list_plugins,
     load_plugins,
     run_startup_hooks,
 )
@@ -36,70 +50,474 @@ from docent.llm import LLMClient
 from docent.tools import discover_tools
 from docent.ui import configure_console, get_console
 
-_DOCENT_DIR = Path.home() / ".docent"
-_USER_FILE = _DOCENT_DIR / "user.json"
+def _user_file() -> Path:
+    from docent.utils.paths import root_dir
+    return root_dir() / "user.json"
 _LEVEL_CHOICES = ["Undergraduate", "Masters", "PhD", "Postdoc", "Faculty", "Other"]
 
 
-def _run_onboarding() -> None:
-    """Prompt for user profile on first run; skip silently in non-TTY contexts."""
+def _is_setup_complete() -> bool:
+    """Return True when the user profile has a non-empty name."""
+    try:
+        data = json.loads(_user_file().read_text(encoding="utf-8"))
+        name = (data.get("name") or "").strip()
+        return bool(name and name != "You")
+    except Exception:
+        return False
+
+
+def _run_tool_install(console: Any, cmd: list[str]) -> bool:
+    """Run an install command streaming output to the terminal. Returns True on success."""
+    import shutil
+    import subprocess
+
+    # Resolve executable so Windows .cmd wrappers (npm.cmd) work without shell=True
+    resolved = shutil.which(cmd[0]) or cmd[0]
+    run_cmd = [resolved] + cmd[1:]
+
+    console.print(f"  [dim]$ {' '.join(cmd)}[/]")
+    try:
+        result = subprocess.run(run_cmd, check=False)
+        if result.returncode != 0:
+            console.print(f"  [red]Command failed (exit {result.returncode}).[/] Try running it manually.")
+            return False
+        return True
+    except FileNotFoundError:
+        console.print(f"  [red]{cmd[0]!r} not found.[/] Make sure it is installed and on PATH.")
+        return False
+    except Exception as exc:
+        console.print(f"  [red]Error:[/] {exc}")
+        return False
+
+
+def _test_semantic_scholar_key(key: str) -> bool:
+    """Return True if the Semantic Scholar key is accepted (HTTP 200 or 429 on a test query).
+
+    HTTP 403 means invalid key. Network failures are treated as inconclusive (True).
+    """
+    try:
+        import httpx
+        r = httpx.get(
+            "https://api.semanticscholar.org/graph/v1/paper/search",
+            params={"query": "test", "limit": 1, "fields": "title"},
+            headers={"x-api-key": key},
+            timeout=10,
+        )
+        return r.status_code != 403
+    except Exception:
+        return True  # network / timeout — inconclusive, don't block setup
+
+
+def _test_tavily_key(key: str) -> bool:
+    """Return True if the Tavily key is accepted by the search API.
+
+    Makes one minimal search call. Network failures are treated as inconclusive
+    (returns True) so a flaky connection doesn't block setup.
+    """
+    try:
+        from tavily import TavilyClient
+        from tavily.errors import InvalidAPIKeyError
+    except ImportError:
+        return True  # tavily not installed yet — skip
+
+    try:
+        TavilyClient(api_key=key).search("test", max_results=1)
+        return True
+    except InvalidAPIKeyError:
+        return False
+    except Exception:
+        return True  # network / rate-limit — inconclusive, don't block setup
+
+
+def _run_setup_flow(*, first_run: bool = False) -> None:
+    """Full interactive Docent setup. Called on first run and by `docent setup`."""
+    console = get_console()
+    settings = load_settings()
+
+    if first_run:
+        console.print("\n[bold cyan]Welcome to Docent![/]  Let's get you set up.\n")
+    else:
+        console.print("\n[bold cyan]Docent Setup[/]")
+        console.print("[dim]Press Enter to keep the current value. Ctrl+C to cancel.[/]\n")
+
+    # ── Profile ──
+    console.print("[bold]Profile[/]")
+    existing: dict = {}
+    try:
+        existing = json.loads(_user_file().read_text(encoding="utf-8"))
+    except Exception:
+        pass
+
+    name = typer.prompt("  Name", default=existing.get("name", "")).strip()
+    program = typer.prompt("  Program / field of study", default=existing.get("program", "")).strip()
+
+    console.print("  Academic level:")
+    for i, choice in enumerate(_LEVEL_CHOICES, 1):
+        console.print(f"    [dim]{i}.[/] {choice}")
+    existing_level = existing.get("level", "")
+    level: str = existing_level
+    raw_level = typer.prompt(
+        "  Enter number or name", default=existing_level, show_default=bool(existing_level)
+    ).strip()
+    if raw_level:
+        if raw_level.isdigit() and 1 <= int(raw_level) <= len(_LEVEL_CHOICES):
+            level = _LEVEL_CHOICES[int(raw_level) - 1]
+        elif raw_level in _LEVEL_CHOICES:
+            level = raw_level
+        elif raw_level.title() in _LEVEL_CHOICES:
+            level = raw_level.title()
+
+    if name:
+        from docent.utils.paths import root_dir
+        root_dir().mkdir(parents=True, exist_ok=True)
+        _user_file().write_text(
+            json.dumps({"name": name, "program": program, "level": level}, indent=2),
+            encoding="utf-8",
+        )
+        console.print("  [green]Profile saved.[/]\n")
+
+    # ── Reading database ──
+    console.print("[bold]Reading Database[/]")
+    existing_db = str(settings.reading.database_dir or "")
+    console.print("  [dim]Where do you keep your PDFs (Mendeley watch folder)?[/]")
+    db_raw = typer.prompt(
+        "  Papers folder", default=existing_db, show_default=bool(existing_db)
+    ).strip()
+    if db_raw and db_raw != existing_db:
+        try:
+            write_setting("reading.database_dir", db_raw)
+            console.print("  [green]Database folder set.[/]\n")
+        except Exception as e:
+            console.print(f"  [yellow]Could not save: {e}[/]\n")
+    else:
+        console.print()
+
+    # ── Research API keys ──
+    console.print("[bold]Research Keys[/]")
+    existing_tavily = settings.research.tavily_api_key or ""
+    if existing_tavily:
+        masked = (existing_tavily[:4] + "..." + existing_tavily[-4:]) if len(existing_tavily) > 8 else "set"
+        console.print(f"  [dim]Tavily key: currently {masked}[/]")
+    else:
+        console.print(
+            "  [dim]Tavily web search (free key: 1,000 calls/month → better web results than DuckDuckGo).[/]\n"
+            "  [dim]Paid plan unlocks the Tavily Research API: deep AI synthesis with citations.[/]"
+        )
+    tavily_raw = typer.prompt("  Tavily API key (Enter to skip)", default="", show_default=False).strip()
+    if tavily_raw:
+        console.print("  [dim]Testing key...[/]", end="")
+        key_ok = _test_tavily_key(tavily_raw)
+        if key_ok:
+            console.print(" [green]✓[/]")
+            try:
+                write_setting("research.tavily_api_key", tavily_raw)
+                console.print("  [green]Tavily key saved.[/]")
+            except Exception as e:
+                console.print(f"  [yellow]Could not save: {e}[/]")
+        else:
+            console.print(" [red]✗ key rejected[/]")
+            console.print(
+                "  [red]This key was not accepted by Tavily. Check the key at app.tavily.com.[/]\n"
+                "  [dim]Without a valid key, web search falls back to DuckDuckGo.[/]"
+            )
+            if typer.confirm("  Save anyway?", default=False):
+                try:
+                    write_setting("research.tavily_api_key", tavily_raw)
+                    console.print("  [yellow]Key saved (unverified).[/]")
+                except Exception as e:
+                    console.print(f"  [yellow]Could not save: {e}[/]")
+
+    existing_ss = settings.research.semantic_scholar_api_key or ""
+    if existing_ss:
+        console.print("  [dim]Semantic Scholar key: already set (optional — raises rate limits)[/]")
+    else:
+        console.print("  [dim]Semantic Scholar key: optional — raises rate limits. Free at semanticscholar.org/product/api[/]")
+    ss_raw = typer.prompt("  Semantic Scholar key (Enter to skip)", default="", show_default=False).strip()
+    if ss_raw and ss_raw != existing_ss:
+        console.print("  [dim]Testing key...[/]", end="")
+        ss_ok = _test_semantic_scholar_key(ss_raw)
+        if ss_ok:
+            console.print(" [green]✓[/]")
+            try:
+                write_setting("research.semantic_scholar_api_key", ss_raw)
+                console.print("  [green]Semantic Scholar key saved.[/]")
+            except Exception as e:
+                console.print(f"  [yellow]Could not save: {e}[/]")
+        else:
+            console.print(" [red]✗ key rejected (HTTP 403)[/]")
+            console.print(
+                "  [red]This key was not accepted. Check the key at semanticscholar.org.[/]\n"
+                "  [dim]Without a key, Semantic Scholar still works at lower rate limits.[/]"
+            )
+            if typer.confirm("  Save anyway?", default=False):
+                try:
+                    write_setting("research.semantic_scholar_api_key", ss_raw)
+                    console.print("  [yellow]Key saved (unverified).[/]")
+                except Exception as e:
+                    console.print(f"  [yellow]Could not save: {e}[/]")
+    console.print()
+
+    # ── External tools ──
+    import platform as _platform
+    import shutil
+    console.print("[bold]External Tools[/]")
+    from docent.bundled_plugins.studio import _find_feynman, FeynmanNotFoundError
+
+    # ── Node.js / npm (prerequisite for Feynman + OpenCode) ─────────────────
+    npm_exe = shutil.which("npm")
+    if npm_exe:
+        console.print("  [green]Node.js / npm:[/] found")
+    else:
+        console.print("  [yellow]Node.js / npm:[/] not installed  (required for Feynman and OpenCode)")
+        _sys = _platform.system()
+        if _sys == "Windows":
+            console.print("    winget install OpenJS.NodeJS.LTS")
+        elif _sys == "Darwin":
+            console.print("    brew install node")
+        else:
+            console.print("    nvm install --lts    # see https://nodejs.org")
+    console.print()
+
+    # ── Feynman ──────────────────────────────────────────────────────────────
+    try:
+        _find_feynman(settings.research.feynman_command)
+        console.print("  [green]Feynman:[/] installed")
+    except FeynmanNotFoundError:
+        console.print("  [yellow]Feynman:[/] not installed  (~2 GB disk space)")
+        if npm_exe:
+            if typer.confirm("  Install Feynman now?", default=False):
+                _run_tool_install(console, ["npm", "install", "-g", "@companion-ai/feynman"])
+        else:
+            console.print("  [dim]Install Node.js first, then run:[/]")
+            console.print("    npm install -g @companion-ai/feynman")
+    console.print()
+
+    # ── OpenCode ─────────────────────────────────────────────────────────────
+    oc_exe = shutil.which("opencode")
+    if oc_exe:
+        console.print("  [green]OpenCode:[/] installed")
+        console.print("  [dim]Start the server when needed:[/] opencode serve --port 4096")
+    else:
+        console.print("  [yellow]OpenCode:[/] not installed  (required for docent backend research)")
+        if npm_exe:
+            if typer.confirm("  Install OpenCode now?", default=False):
+                _run_tool_install(console, ["npm", "install", "-g", "opencode-ai"])
+                console.print("  [dim]Start the server with:[/] opencode serve --port 4096")
+        else:
+            console.print("  [dim]Install Node.js first, then run:[/]")
+            console.print("    npm install -g opencode-ai")
+            console.print("  [dim]Then start with:[/] opencode serve --port 4096")
+    console.print()
+
+    # ── NotebookLM ───────────────────────────────────────────────────────────
+    nlm_exe = shutil.which("notebooklm")
+    try:
+        import contextlib as _cl, io as _io, sys as _sys
+        if "notebooklm" not in _sys.modules:
+            import os as _os
+            _os.environ.setdefault("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "1")
+            with _cl.redirect_stderr(_io.StringIO()):
+                import notebooklm as _nlm_mod  # noqa: F401
+        else:
+            import notebooklm as _nlm_mod  # noqa: F401
+        _nlm_pkg_ok = True
+    except ImportError:
+        _nlm_pkg_ok = False
+
+    if nlm_exe and _nlm_pkg_ok:
+        console.print("  [green]NotebookLM:[/] installed")
+        import subprocess as _sp
+        import json as _j
+
+        def _nlm_auth_check() -> bool:
+            try:
+                _r = _sp.run([nlm_exe, "list", "--json"], capture_output=True, text=True, timeout=10)
+                return _r.returncode == 0 and not _j.loads(_r.stdout or "{}").get("error")
+            except Exception:
+                return False
+
+        _auth_ok = _nlm_auth_check()
+        if not _auth_ok:
+            console.print("  [yellow]NotebookLM:[/] not authenticated")
+            if typer.confirm("  Log in to NotebookLM now? (opens a browser)", default=True):
+                _sp.run([nlm_exe, "login"])
+                _auth_ok = _nlm_auth_check()
+                if _auth_ok:
+                    console.print("  [green]NotebookLM:[/] authenticated successfully!")
+                else:
+                    console.print(
+                        "  [yellow]NotebookLM:[/] authentication may not have completed.\n"
+                        "  Re-run [cyan]docent setup[/] or run [cyan]notebooklm login[/] manually."
+                    )
+        else:
+            console.print("  [green]NotebookLM:[/] authenticated")
+
+        if _auth_ok:
+            # Tier / source-limit config (notebooklm-py doesn't expose this, so we ask once)
+            _current_limit = settings.research.notebooklm_source_limit
+            _default_tier = "2" if _current_limit >= 100 else "1"
+            console.print(
+                f"  [dim]Source limit: {_current_limit} per notebook[/]  "
+                "[dim](free tier = 50 · NotebookLM Plus = 100)[/]"
+            )
+            _tier_raw = typer.prompt(
+                "  Your NotebookLM plan  [1] Free · [2] Plus",
+                default=_default_tier,
+                show_default=True,
+            ).strip()
+            _new_limit = 100 if _tier_raw == "2" else 50
+            if _new_limit != _current_limit:
+                write_setting("research.notebooklm_source_limit", _new_limit)
+                console.print(f"  [green]Source limit set to {_new_limit}.[/]")
+    else:
+        console.print("  [yellow]NotebookLM:[/] not installed  (required for `docent studio to-notebook`)")
+        if typer.confirm("  Install notebooklm-py now?", default=False):
+            pip_ok = _run_tool_install(console, ["pip", "install", "notebooklm-py[browser]"])
+            if pip_ok:
+                pw_exe = shutil.which("playwright") or "playwright"
+                _run_tool_install(console, [pw_exe, "install", "chromium"])
+                console.print("  [dim]Next: log in with[/] notebooklm login")
+                if typer.confirm("  Log in to NotebookLM now? (opens a browser)", default=True):
+                    import subprocess as _sp2
+                    _sp2.run([shutil.which("notebooklm") or "notebooklm", "login"])
+        else:
+            console.print("  [dim]To install:[/]")
+            console.print('    pip install "notebooklm-py[browser]"')
+            console.print("    playwright install chromium")
+            console.print("    notebooklm login")
+    console.print()
+
+    console.print("[bold green]Setup complete![/]  Run [cyan]docent doctor[/] to verify.")
+
+
+def _run_setup_if_needed() -> bool:
+    """Run the full setup flow on first use. Returns True if setup was run.
+
+    Skipped silently in non-TTY contexts (MCP, pipes, tests).
+    """
+    if not sys.stdin.isatty():
+        return False
+    if _is_setup_complete():
+        return False
+    _run_setup_flow(first_run=True)
+    return True
+
+
+def _startup_doctor_check(settings: Any) -> None:
+    """Fast (<10ms, no subprocess) startup health check.
+
+    Only shows a banner when config that was previously set is now broken
+    (e.g. database_dir path deleted). Silent when all is OK.
+    Skipped in non-TTY contexts.
+    """
     if not sys.stdin.isatty():
         return
 
-    # Check whether onboarding is needed
-    if _USER_FILE.exists():
-        try:
-            data = json.loads(_USER_FILE.read_text(encoding="utf-8"))
-            name = (data.get("name") or "").strip()
-            if name and name != "You":
-                return  # Already set up
-        except (json.JSONDecodeError, OSError):
-            pass  # Corrupt file — re-run onboarding
+    issues: list[str] = []
 
-    console = get_console()
-    console.print(
-        "\n[bold cyan]Welcome to Docent![/] Let's get you set up quickly.\n"
-    )
+    db = settings.reading.database_dir
+    if db is not None:
+        expanded = Path(str(db)).expanduser()
+        if not expanded.exists():
+            issues.append(f"reading DB path missing: {expanded}")
 
-    name = typer.prompt("Your name").strip()
-    program = typer.prompt("Your program / field of study").strip()
-
-    # Show numbered choices for academic level
-    console.print("Academic level:")
-    for i, choice in enumerate(_LEVEL_CHOICES, 1):
-        console.print(f"  [dim]{i}.[/] {choice}")
-
-    level: str = ""
-    while not level:
-        raw = typer.prompt("Enter number or name").strip()
-        if raw.isdigit():
-            idx = int(raw) - 1
-            if 0 <= idx < len(_LEVEL_CHOICES):
-                level = _LEVEL_CHOICES[idx]
-            else:
-                console.print(f"[yellow]Please enter a number between 1 and {len(_LEVEL_CHOICES)}.[/]")
-        elif raw.title() in _LEVEL_CHOICES:
-            level = raw.title()
-        elif raw in _LEVEL_CHOICES:
-            level = raw
-        else:
-            console.print(f"[yellow]Not recognised. Choose a number 1–{len(_LEVEL_CHOICES)} or type the level.[/]")
-
-    _DOCENT_DIR.mkdir(parents=True, exist_ok=True)
-    profile = {"name": name, "program": program, "level": level}
-    _USER_FILE.write_text(json.dumps(profile, indent=2), encoding="utf-8")
-
-    console.print(
-        f"\n[bold green]All set, {name}![/] Your profile has been saved. "
-        "Run [cyan]docent --help[/] to see what's available.\n"
-    )
+    if issues:
+        console = get_console()
+        noun = "issue" if len(issues) == 1 else "issues"
+        console.print(
+            f"[yellow]{len(issues)} config {noun} detected[/]  "
+            "[dim]Run [cyan]docent doctor[/] for details.[/]"
+        )
 
 app = typer.Typer(
     name="docent",
     help="Docent — a personal control center for grad school workflows.",
-    no_args_is_help=True,
+    no_args_is_help=False,
+    invoke_without_command=True,
     add_completion=False,
 )
+
+
+# Commands that must NOT drop into the workspace after running (they manage
+# their own long-running loops or interactive prompts).
+_NO_WORKSPACE_CMDS = frozenset({"serve", "setup", "doctor", "ui"})
+
+
+def _workspace_eligible() -> bool:
+    """True only in an interactive, non-subprocess terminal."""
+    import sys as _sys, os as _os
+    return (
+        _sys.stdin.isatty()
+        and _sys.stdout.isatty()
+        and not _os.environ.get("DOCENT_UI_SUBPROCESS")
+        and not _os.environ.get("DOCENT_WORKSPACE")
+    )
+
+
+def _run_workspace() -> None:
+    """Blocking REPL — runs after the initial banner/command."""
+    import shlex, os as _os, sys as _sys
+
+    if not _workspace_eligible():
+        return
+
+    _os.environ["DOCENT_WORKSPACE"] = "1"
+    console = get_console()
+
+    # Optional readline history (Unix; silently skipped on Windows)
+    try:
+        import readline as _rl
+        from docent.utils.paths import root_dir as _rd
+        _hist = _rd() / ".repl_history"
+        _hist.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            _rl.read_history_file(str(_hist))
+        except FileNotFoundError:
+            pass
+        _rl.set_history_length(500)
+        import atexit as _ae
+        _ae.register(_rl.write_history_file, str(_hist))
+    except (ImportError, Exception):
+        pass
+
+    console.print(
+        "\n[dim]Docent workspace — type subcommands without the [bold cyan]docent[/bold cyan] prefix. "
+        "[bold]exit[/bold] or Ctrl+C to leave.[/]\n"
+    )
+
+    while True:
+        try:
+            line = input("  docent › ").strip()
+        except (KeyboardInterrupt, EOFError):
+            console.print("\n[dim]Leaving workspace.[/]")
+            break
+
+        if not line:
+            continue
+        if line in ("exit", "quit", "q"):
+            console.print("[dim]Leaving workspace.[/]")
+            break
+
+        try:
+            args = shlex.split(line)
+        except ValueError as exc:
+            console.print(f"[red]Parse error:[/] {exc}")
+            continue
+
+        try:
+            app(args=args, standalone_mode=False)
+        except (SystemExit, typer.Exit):
+            pass
+        except Exception as exc:
+            # Click raises UsageError with an empty message when a group is
+            # invoked with no subcommand (help already printed). Suppress those.
+            msg = str(exc).strip()
+            if msg:
+                console.print(f"[red]Error:[/] {msg}")
+
+        console.print()
+
+    _os.environ.pop("DOCENT_WORKSPACE", None)
 
 
 def _version_callback(value: bool) -> None:
@@ -136,10 +554,56 @@ def main(
     settings.no_color = no_color or settings.no_color
 
     configure_console(no_color=settings.no_color)
-    _run_onboarding()
+
+    from docent.utils.logging import configure_logging
+    from docent.utils.paths import logs_dir
+    configure_logging(verbose=settings.verbose, log_dir=logs_dir())
+
+    import sys as _sys, os as _os
+
+    # Inside the workspace REPL, banner and startup prompts are already done.
+    _in_workspace = bool(_os.environ.get("DOCENT_WORKSPACE"))
+
+    # Show the startup banner when running interactively.
+    # For `serve`, print to stderr so the MCP JSON-RPC stdout stream is unaffected.
+    # Skip for setup/doctor (manage their own output), non-TTY, and workspace REPL.
+    _is_tty = _sys.stdout.isatty() or _sys.stderr.isatty()
+    _banner_skip = (
+        settings.no_color
+        or not _is_tty
+        or _in_workspace
+        or ctx.invoked_subcommand in ("setup", "doctor")
+    )
+    if not _banner_skip:
+        from docent._banner import print_banner
+        if ctx.invoked_subcommand == "serve":
+            from rich.console import Console as _RC
+            print_banner(_RC(stderr=True, highlight=False))
+        else:
+            print_banner(get_console())
+
+    # Skip startup prompts for commands that manage their own output or that run
+    # as a stdio server (serve) where stdout must be pure JSON-RPC, and workspace.
+    _skip_startup = _in_workspace or ctx.invoked_subcommand in ("setup", "doctor", "serve")
+    if not _skip_startup:
+        _run_setup_if_needed()
+        _startup_doctor_check(settings)
 
     ctx.obj = Context(settings=settings, llm=LLMClient(settings), executor=Executor())
-    run_startup_hooks(ctx.obj)
+    if not _skip_startup:
+        run_startup_hooks(ctx.obj)
+
+    # ── Workspace entry ────────────────────────────────────────────────────────
+    if ctx.invoked_subcommand is None:
+        # No subcommand: enter workspace immediately (or show help in non-TTY).
+        if _workspace_eligible():
+            _run_workspace()
+        else:
+            _sys.stdout.write(ctx.get_help() + "\n")
+        raise typer.Exit()
+    elif ctx.invoked_subcommand not in _NO_WORKSPACE_CMDS and _workspace_eligible():
+        # Subcommand given: run it first, then enter workspace via close callback.
+        ctx.call_on_close(_run_workspace)
 
 
 @app.command("list", help="List all registered tools.")
@@ -163,6 +627,23 @@ def list_command(ctx: typer.Context) -> None:
             name_display = tc.name if not actions else f"{tc.name}  ({len(actions)} actions)"
             table.add_row(name_display, tc.description)
         console.print(table)
+
+
+@app.command("plugins", help="List loaded plugins and their startup hooks.")
+def plugins_command(ctx: typer.Context) -> None:  # noqa: ARG001
+    console = get_console()
+    plugins = list_plugins()
+    if not plugins:
+        console.print("[dim]No plugins loaded.[/]")
+        return
+    table = Table(title="Loaded Plugins", box=box.ROUNDED, show_header=True, header_style="bold")
+    table.add_column("Name", style="cyan", no_wrap=True)
+    table.add_column("Source")
+    table.add_column("Hook", justify="center")
+    for p in plugins:
+        hook_mark = "[green]✓[/]" if p["has_hook"] else "[dim]–[/]"
+        table.add_row(p["name"], p["source"], hook_mark)
+    console.print(table)
 
 
 @app.command("info", help="Show details about a registered tool.")
@@ -192,7 +673,11 @@ def info_command(
             for fname, finfo in meta.input_schema.model_fields.items():
                 lines.append(f"      {_format_field(fname, finfo)}")
     else:
-        assert tool_cls.input_schema is not None
+        if tool_cls.input_schema is None:
+            raise ValueError(
+                f"Tool '{tool_cls.name}' has no actions and no input_schema — "
+                "this should have been caught at registration time."
+            )
         lines.append("")
         lines.append("[bold]Inputs:[/]")
         for fname, finfo in tool_cls.input_schema.model_fields.items():
@@ -208,13 +693,57 @@ def _format_field(fname: str, finfo: Any) -> str:
     return f"--{fname.replace('_', '-')}: {annot} {status}{desc}"
 
 
+# ─── doctor / setup helpers ───────────────────────────────────────────────────
+from docent.cli_doctor import (  # noqa: E402
+    _STATUS_STYLE,
+    _check_profile,
+    _check_cli_tool,
+    _dir_size_gb,
+    _check_feynman,
+    _check_mendeley_mcp,
+    _check_tavily,
+    _check_semantic_scholar,
+    _check_alphaxiv,
+    _check_notebooklm_py,
+    _check_opencode,
+    _check_litellm_provider,
+    _check_reading_db,
+)
+
+
+_UI_PROGRESS_MARKER = "\x00DOCENT_PROGRESS\x00"
+
+
 def _drive_progress(gen: Any) -> Any:
     """Drive a generator-based action, rendering events with Rich Progress.
 
     Phase changes swap to a fresh task. Events with (current, total) advance
     a bar; events without it (or with level=warn/error) print a console line.
     The action's `return` value is captured from `StopIteration.value`.
+
+    When DOCENT_UI_SUBPROCESS=1 the Rich renderer is bypassed entirely and
+    each event is emitted as a machine-readable ``\\x00DOCENT_PROGRESS\\x00``
+    line so the WS handler can parse it unambiguously.
     """
+    import os as _os
+    if _os.environ.get("DOCENT_UI_SUBPROCESS"):
+        result: Any = None
+        try:
+            while True:
+                evt = next(gen)
+                if not isinstance(evt, ProgressEvent):
+                    continue
+                msg = evt.message or ""
+                # Escape newlines so the single-line PROGRESS marker isn't split
+                # across multiple stdout reads by the WS handler.
+                msg_safe = msg.replace("\n", "\x02")
+                print(f"{_UI_PROGRESS_MARKER}{evt.phase}\x00{msg_safe}", flush=True)
+        except StopIteration as stop:
+            result = stop.value
+        except KeyboardInterrupt:
+            pass
+        return result
+
     console = get_console()
     columns = (
         SpinnerColumn(),
@@ -224,7 +753,7 @@ def _drive_progress(gen: Any) -> Any:
         TextColumn("[dim]{task.fields[item]}"),
         TimeElapsedColumn(),
     )
-    result: Any = None
+    result = None
     with Progress(*columns, console=console, transient=False) as progress:
         task_id: int | None = None
         current_phase: str | None = None
@@ -254,6 +783,11 @@ def _drive_progress(gen: Any) -> Any:
                     progress.console.print(f"[dim]{evt.phase}[/] {evt.message}")
         except StopIteration as stop:
             result = stop.value
+        except KeyboardInterrupt:
+            gen.close()
+            progress.console.print("\n[yellow]Interrupted[/] (Ctrl+C)")
+            import typer as _typer
+            raise _typer.Exit(130)
     return result
 
 
@@ -262,22 +796,66 @@ def _build_callback(
     invoke: Callable[[BaseModel, Context], Any],
     name: str,
     doc: str,
+    preflight: Callable[[BaseModel, Context], None] | None = None,
 ) -> Any:
     """Build a Typer callback with a synthesized signature from a Pydantic schema.
 
     `invoke(inputs, context)` is called with validated inputs and the Context
     from `ctx.obj`. Its return value (if not None) is printed via the CLI's
     console singleton.
+
+    If ``preflight`` is provided it runs *before* ``invoke`` — outside any
+    Rich Progress wrapper.  This is where interactive prompts (e.g. API-key
+    entry) must live, because Rich Progress steals stdin.
     """
 
     def callback(**kwargs: Any) -> None:
+        from docent.errors import DocentError
+        from docent.utils.logging import get_logger
+        _log = get_logger("docent.cli")
+
         ctx: typer.Context = kwargs.pop("ctx")
         inputs = schema(**kwargs)
         context: Context = ctx.obj
-        maybe = invoke(inputs, context)
-        result = _drive_progress(maybe) if inspect.isgenerator(maybe) else maybe
+        try:
+            if preflight is not None:
+                preflight(inputs, context)
+            maybe = invoke(inputs, context)
+            result = _drive_progress(maybe) if inspect.isgenerator(maybe) else maybe
+        except DocentError as exc:
+            _log.error("%s", exc, exc_info=exc)
+            get_console().print(f"[red]Error:[/] {exc.formatted()}")
+            raise typer.Exit(1)
+        except Exception:
+            _log.exception("Unhandled exception in action callback")
+            raise
         if result is not None:
-            get_console().print(result)
+            if os.environ.get("DOCENT_UI_SUBPROCESS"):
+                # Emit a structured result line for the UI server to parse.
+                # This bypasses Rich console rendering entirely so the server gets
+                # reliable data rather than scraping wrapped console output.
+                _r: dict[str, object] = {}
+                for _attr in ("output_file", "notebook_id", "message", "ok"):
+                    _v = getattr(result, _attr, None)
+                    if _v is not None:
+                        _r[_attr] = _v
+                import json as _json
+                print(f"\x00DOCENT_RESULT\x00{_json.dumps(_r)}", flush=True)
+                # When the action itself reports failure (ok=False), emit the
+                # error message as a progress log line and exit non-zero so the
+                # WS handler can surface it as status: 'failure'.
+                if not _r.get("ok", True):
+                    _msg = str(_r.get("message", "Action failed — check the activity log."))
+                    _msg_safe = _msg.replace("\n", "\x02")
+                    print(f"\x00DOCENT_PROGRESS\x00error\x00{_msg_safe}", flush=True)
+                    raise typer.Exit(1)
+            else:
+                console = get_console()
+                if hasattr(result, "to_shapes"):
+                    from docent.ui.renderers import render_shapes
+                    render_shapes(result.to_shapes(), console)
+                else:
+                    console.print(result)
 
     params = [
         inspect.Parameter("ctx", inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation=typer.Context),
@@ -287,8 +865,17 @@ def _build_callback(
     for fname, finfo in schema.model_fields.items():
         cli_flag = "--" + fname.replace("_", "-")
         help_text = finfo.description or ""
-        option_default = ... if finfo.is_required() else finfo.default
-        option = typer.Option(option_default, cli_flag, help=help_text)
+        if finfo.is_required():
+            option_default = ...
+        elif finfo.default_factory is not None:
+            option_default = finfo.default_factory()
+        else:
+            option_default = finfo.default
+        if finfo.annotation is bool:
+            no_cli_flag = "--no-" + fname.replace("_", "-")
+            option = typer.Option(option_default, f"{cli_flag}/{no_cli_flag}", help=help_text)
+        else:
+            option = typer.Option(option_default, cli_flag, help=help_text)
         params.append(
             inspect.Parameter(
                 fname,
@@ -311,7 +898,11 @@ def _register_tool_in_app(tool_cls: type[Tool]) -> None:
     actions = collect_actions(tool_cls)
 
     if not actions:
-        assert tool_cls.input_schema is not None
+        if tool_cls.input_schema is None:
+            raise ValueError(
+                f"Tool '{tool_cls.name}' has no actions and no input_schema — "
+                "this should have been caught at registration time."
+            )
         callback = _build_callback(
             schema=tool_cls.input_schema,
             invoke=lambda inp, ctx: tool_cls().run(inp, ctx),
@@ -336,6 +927,7 @@ def _register_tool_in_app(tool_cls: type[Tool]) -> None:
             invoke=make_invoke(method_name),
             name=cli_name.replace("-", "_"),
             doc=meta.description,
+            preflight=meta.preflight,
         )
         subapp.command(name=cli_name, help=meta.description)(callback)
     app.add_typer(subapp, name=tool_cls.name, help=tool_cls.description)
@@ -390,7 +982,226 @@ def ui_command(
     get_console().print("[dim]Press Ctrl+C to stop.[/]\n")
     if not no_browser:
         webbrowser.open(url)
-    run_server(port=port)
+    try:
+        run_server(port=port)
+    except OSError as exc:
+        if "address already in use" in str(exc).lower() or getattr(exc, "errno", None) in (98, 48, 10048):
+            get_console().print(
+                f"\n[red]Port {port} is already in use.[/]\n"
+                f"[dim]Another instance of [bold]docent ui[/bold] is probably already running.\n"
+                f"Close that terminal or find and kill the process:[/]\n"
+                f"  [cyan]Windows:[/]  netstat -ano | findstr :{port}\n"
+                f"  [cyan]Mac/Linux:[/] lsof -i :{port}"
+            )
+            raise typer.Exit(1)
+        raise
+
+
+@app.command("backup", help="Backup Docent state to Google Drive (or a local zip).")
+def backup_command(
+    local_only: bool = typer.Option(False, "--local-only", help="Create zip but skip Drive upload."),
+    out: Path = typer.Option(None, "--out", "-o", help="Save zip to this path (implies --local-only)."),
+    keep: int = typer.Option(10, "--keep", help="Number of Drive backups to retain (older ones deleted)."),
+    setup: bool = typer.Option(False, "--setup", help="Show Google Drive credential setup instructions."),
+) -> None:
+    """Create a timestamped zip of Docent config, queue data, and research outputs
+    then upload it to a 'Docent Backups' folder in Google Drive.
+
+    Files larger than 100 MB are automatically excluded. Pass --local-only to
+    skip Drive upload and keep the zip on disk instead.
+    """
+    console = get_console()
+
+    if setup:
+        console.print(Panel(
+            "[bold]Google Drive Backup — Setup[/]\n\n"
+            "1. Go to [cyan]https://console.cloud.google.com/[/]\n"
+            "2. Create (or select) a project → Enable the [bold]Google Drive API[/]\n"
+            "3. Credentials → Create Credentials → [bold]OAuth client ID[/]\n"
+            "   • Application type: [bold]Desktop app[/]  • Name: Docent\n"
+            "4. Download the JSON file and save it as:\n"
+            "   [green]~/.docent/drive_credentials.json[/]\n\n"
+            "Then run [cyan]docent backup[/] — a browser window will open for\n"
+            "sign-in on the first run; the token is cached for future runs.",
+            title="Setup", border_style="green",
+        ))
+        return
+
+    from docent.bundled_plugins.backup.manager import create_archive, archive_name
+    import tempfile
+
+    local_only = local_only or (out is not None)
+
+    # ── Build the archive ─────────────────────────────────────────────────────
+    dest = Path(out) if out else Path(tempfile.mkdtemp()) / archive_name()
+    fname = dest.name
+
+    with console.status("[green]Creating backup archive…[/]"):
+        manifest = create_archive(dest)
+
+    n_in = manifest["files_included"]
+    n_ex = manifest["files_excluded"]
+    size_mb = manifest["archive_size_mb"]
+
+    console.print(f"[green]✓[/] Archive: [cyan]{dest}[/]")
+    console.print(f"  {n_in} files included · {size_mb} MB")
+    if n_ex:
+        console.print(
+            f"  [yellow]Warning:[/] {n_ex} file(s) excluded (>100 MB). "
+            "Use an external drive for raw data."
+        )
+
+    if local_only:
+        return
+
+    # ── Upload to Drive ───────────────────────────────────────────────────────
+    from docent.bundled_plugins.backup.drive_client import (
+        credentials_file_exists, get_service,
+        get_or_create_backup_folder, upload_backup, trim_old_backups,
+    )
+
+    if not credentials_file_exists():
+        console.print(
+            "\n[yellow]Google Drive credentials not found.[/]\n"
+            "Run [cyan]docent backup --setup[/] for setup instructions.\n"
+            "Your local archive is saved at:\n  [green]{dest}[/]"
+        )
+        return
+
+    try:
+        with console.status("[green]Connecting to Google Drive…[/]"):
+            service = get_service()
+            folder_id = get_or_create_backup_folder(service)
+
+        with console.status(f"[green]Uploading {fname} ({size_mb} MB)…[/]"):
+            file_id = upload_backup(service, dest, folder_id, fname)
+
+        console.print(f"[green]✓[/] Uploaded to Google Drive — file ID: [dim]{file_id}[/]")
+
+        deleted = trim_old_backups(service, folder_id, keep)
+        if deleted:
+            console.print(f"  [dim]{deleted} old backup(s) removed (keeping {keep} most recent).[/]")
+
+    except Exception as exc:
+        console.print(f"[red]Drive upload failed:[/] {exc}")
+        console.print(f"Local archive kept at: [cyan]{dest}[/]")
+        raise typer.Exit(1)
+    finally:
+        # Delete the temp zip if we didn't use --out
+        if out is None and dest.exists():
+            dest.unlink(missing_ok=True)
+
+
+@app.command("restore", help="Restore Docent state from a Google Drive backup.")
+def restore_command(
+    list_backups: bool = typer.Option(False, "--list", "-l", help="List available Drive backups."),
+    backup_id: str = typer.Option("", "--id", help="Drive file ID to restore."),
+    local: Path = typer.Option(None, "--local", help="Restore from a local zip file."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
+) -> None:
+    """Restore Docent config and queue data from a backup.
+
+    Use --list to see available Drive backups, --id to pick one by ID,
+    or --local to restore from a local zip file.
+    """
+    console = get_console()
+    import tempfile
+
+    # ── Local restore ─────────────────────────────────────────────────────────
+    if local:
+        archive = Path(local)
+        if not archive.exists():
+            console.print(f"[red]File not found:[/] {archive}")
+            raise typer.Exit(1)
+        _do_restore(console, archive, yes)
+        return
+
+    # ── Drive operations ──────────────────────────────────────────────────────
+    from docent.bundled_plugins.backup.drive_client import (
+        credentials_file_exists, get_service,
+        get_or_create_backup_folder, list_backups as _list, download_backup,
+    )
+
+    if not credentials_file_exists():
+        console.print(
+            "[yellow]Google Drive credentials not found.[/]\n"
+            "Run [cyan]docent backup --setup[/] for setup instructions."
+        )
+        raise typer.Exit(1)
+
+    with console.status("[green]Connecting to Google Drive…[/]"):
+        service = get_service()
+        folder_id = get_or_create_backup_folder(service)
+        backups = _list(service, folder_id)
+
+    if not backups:
+        console.print("[yellow]No backups found in Google Drive.[/]")
+        return
+
+    # ── List ──────────────────────────────────────────────────────────────────
+    if list_backups or not backup_id:
+        from rich.table import Table
+        t = Table(title="Docent Backups (Google Drive)", show_lines=True)
+        t.add_column("#", style="dim", width=3)
+        t.add_column("Name")
+        t.add_column("Size", justify="right")
+        t.add_column("Created")
+        t.add_column("ID", style="dim")
+        for i, b in enumerate(backups, 1):
+            size = int(b.get("size", 0))
+            size_str = f"{size / 1_048_576:.1f} MB" if size else "—"
+            t.add_row(str(i), b["name"], size_str, b.get("createdTime", "")[:10], b["id"])
+        console.print(t)
+        if list_backups:
+            console.print("[dim]Use --id <ID> to restore a specific backup.[/]")
+            return
+        # Default: offer to restore the latest
+        backup_id = backups[0]["id"]
+        bname = backups[0]["name"]
+        console.print(f"\nLatest backup: [cyan]{bname}[/]")
+
+    # Find the chosen backup
+    chosen = next((b for b in backups if b["id"] == backup_id), None)
+    if not chosen:
+        console.print(f"[red]Backup ID not found:[/] {backup_id}")
+        raise typer.Exit(1)
+
+    # ── Download + restore ────────────────────────────────────────────────────
+    tmp = Path(tempfile.mkdtemp()) / chosen["name"]
+    try:
+        with console.status(f"[green]Downloading {chosen['name']}…[/]"):
+            download_backup(service, chosen["id"], tmp)
+        _do_restore(console, tmp, yes)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def _do_restore(console, archive: Path, yes: bool) -> None:
+    """Shared restore logic used by both Drive and local restore paths."""
+    from docent.bundled_plugins.backup.manager import read_manifest, restore_archive
+
+    manifest = read_manifest(archive)
+    ts = manifest.get("timestamp", "unknown")[:19].replace("T", " ")
+    version = manifest.get("docent_version", "?")
+    n_files = manifest.get("files_included", "?")
+
+    console.print(
+        f"\n[bold]Backup details[/]\n"
+        f"  Created:   {ts}\n"
+        f"  Version:   {version}\n"
+        f"  Files:     {n_files}\n"
+    )
+
+    if not yes:
+        confirm = typer.confirm("This will overwrite your current Docent state. Continue?")
+        if not confirm:
+            console.print("[yellow]Restore cancelled.[/]")
+            raise typer.Exit(0)
+
+    with console.status("[green]Restoring…[/]"):
+        restore_archive(archive)
+
+    console.print("[green]✓ Restore complete.[/] Restart 'docent ui' to apply changes.")
 
 
 @app.command("serve", help="Start the Docent MCP server (stdio transport).")
@@ -412,6 +1223,109 @@ def serve_command() -> None:
     from docent.mcp_server import run_server
 
     run_server()
+
+
+_AUTO_INSTALL: dict[str, tuple[list[str], str]] = {
+    "Feynman CLI": (["npm", "install", "-g", "@companion-ai/feynman"], "~2 GB, requires Node.js"),
+    "Mendeley MCP": (["uv", "tool", "install", "mendeley-mcp"], "requires uv"),
+}
+
+
+def _collect_install_offers(
+    checks: list[tuple[str, str, str, str]],
+) -> list[tuple[str, list[str], str]]:
+    """Return (name, cmd, note) for installable tools that are missing/failed."""
+    offers = []
+    for label, status, _ver, detail in checks:
+        if label not in _AUTO_INSTALL:
+            continue
+        if status == "FAIL" or (status == "WARN" and "Not installed" in detail):
+            cmd, note = _AUTO_INSTALL[label]
+            offers.append((label, cmd, note))
+    return offers
+
+
+@app.command("doctor", help="Check environment, tooling versions, and auth status.")
+def doctor_command(ctx: typer.Context) -> None:
+    """Run diagnostics on Docent's environment and third-party tooling."""
+    import sys
+    from concurrent.futures import ThreadPoolExecutor
+
+    console = get_console()
+    settings = ctx.obj.settings
+
+    console.print("\n[bold]Checking your Docent environment...[/]\n")
+
+    # Run all checks in parallel so subprocess timeouts don't stack sequentially.
+    check_fns = [
+        lambda: _check_profile(),
+        lambda: ("Python", "OK", f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}", "-"),
+        lambda: _check_cli_tool(
+            "uv", ["uv", "--version"], "Install uv: https://docs.astral.sh/uv/",
+            github_repo="astral-sh/uv",
+            upgrade_cmd="uv self update",
+        ),
+        lambda: _check_cli_tool("Node.js", ["node", "--version"], "Install Node.js: https://nodejs.org"),
+        lambda: _check_cli_tool("npm", ["npm", "--version"], "Install npm: https://nodejs.org"),
+        lambda: _check_feynman(settings),
+        lambda: _check_opencode(settings),
+        lambda: _check_mendeley_mcp(settings),
+        lambda: _check_tavily(settings),
+        lambda: _check_semantic_scholar(settings),
+        lambda: _check_alphaxiv(settings),
+        lambda: _check_notebooklm_py(),
+        lambda: _check_reading_db(settings),
+        lambda: _check_litellm_provider("Groq", settings.research.groq_api_key, "GROQ_API_KEY", "docent studio config-set --key groq_api_key --value YOUR_KEY"),
+        # Archived backends (gemini, openrouter, mistral, cerebras) — not checked
+    ]
+    with ThreadPoolExecutor(max_workers=len(check_fns)) as pool:
+        futures = [pool.submit(fn) for fn in check_fns]
+        checks: list[tuple[str, str, str, str]] = [f.result() for f in futures]
+
+    table = Table(box=box.ROUNDED, show_header=True, header_style="bold")
+    table.add_column("Check", style="cyan", no_wrap=True)
+    table.add_column("Status", no_wrap=True)
+    table.add_column("Version", no_wrap=True)
+    table.add_column("Detail")
+
+    issues = 0
+    for label, status, version, detail in checks:
+        style = _STATUS_STYLE.get(status, "white")
+        table.add_row(label, f"[{style}]{status}[/{style}]", version, detail)
+        if status in ("WARN", "FAIL"):
+            issues += 1
+
+    console.print(table)
+    if issues == 0:
+        console.print("[green]All checks passed.[/]")
+    else:
+        noun = "issue" if issues == 1 else "issues"
+        console.print(f"\n[yellow]{issues} {noun} found.[/]  Run [cyan]docent setup[/] to configure missing items.")
+
+    # Offer to install missing CLI tools (feynman, mendeley-mcp only).
+    installable = _collect_install_offers(checks)
+    if installable:
+        import shutil
+        import subprocess as _sp
+        console.print()
+        for name, cmd, note in installable:
+            runner = shutil.which(cmd[0])
+            if runner is None:
+                console.print(f"[dim]  {name}: {cmd[0]} not on PATH, install manually: {' '.join(cmd)}[/]")
+                continue
+            if typer.confirm(f"  Install {name} ({note})  via: {' '.join(cmd)}?", default=False):
+                console.print(f"  Running: {' '.join(cmd)} ...")
+                result = _sp.run([runner] + cmd[1:], check=False)
+                if result.returncode == 0:
+                    console.print(f"  [green]{name} installed.[/]  Re-run [cyan]docent doctor[/] to verify.")
+                else:
+                    console.print(f"  [red]{name} install failed (exit {result.returncode}).[/]  Run manually: {' '.join(cmd)}")
+
+
+@app.command("setup", help="Interactive setup: profile, database folder, and API keys.")
+def setup_command() -> None:
+    """Configure Docent interactively. Safe to re-run - existing values shown as defaults."""
+    _run_setup_flow(first_run=False)
 
 
 if __name__ == "__main__":

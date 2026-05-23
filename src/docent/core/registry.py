@@ -76,11 +76,14 @@ def register_tool(cls: type[T]) -> type[T]:
 
     if cls.name in _REGISTRY:
         existing = _REGISTRY[cls.name]
-        raise ValueError(
-            f"Tool name '{cls.name}' is already registered by "
-            f"{existing.__module__}.{existing.__name__}; cannot re-register "
-            f"from {cls.__module__}.{cls.__name__}"
+        import sys
+        print(
+            f"Warning: Tool name '{cls.name}' is already registered by "
+            f"{existing.__module__}.{existing.__name__}; skipping duplicate "
+            f"registration from {cls.__module__}.{cls.__name__}",
+            file=sys.stderr,
         )
+        return cls
 
     _REGISTRY[cls.name] = cls
     return cls

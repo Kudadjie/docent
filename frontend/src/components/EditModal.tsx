@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { X } from 'lucide-react';
 import type { QueueEntry, Status } from '@/lib/types';
 
@@ -24,6 +24,7 @@ export default function EditModal({ entry, onSave, onClose }: Props) {
   const [deadline, setDeadline] = useState(entry.deadline ?? '');
   const [notes, setNotes]     = useState(entry.notes ?? '');
   const [tags, setTags]       = useState(entry.tags.join(', '));
+  const dateRef = useRef<HTMLInputElement>(null);
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'Escape') onClose();
@@ -58,7 +59,7 @@ export default function EditModal({ entry, onSave, onClose }: Props) {
     >
       <div
         style={{
-          background: 'var(--bg)',
+          background: 'var(--bg-card)',
           border: '1px solid var(--border-md)',
           borderRadius: 12,
           width: '100%', maxWidth: 480,
@@ -103,7 +104,14 @@ export default function EditModal({ entry, onSave, onClose }: Props) {
           </div>
 
           <Field label="Deadline">
-            <input type="date" value={deadline} onChange={e => setDeadline(e.target.value)} style={inputStyle} />
+            <input
+              ref={dateRef}
+              type="date"
+              value={deadline}
+              onChange={e => setDeadline(e.target.value)}
+              onClick={() => { try { dateRef.current?.showPicker(); } catch { /* unsupported browser */ } }}
+              style={{ ...inputStyle, colorScheme: 'light dark', cursor: 'pointer' }}
+            />
           </Field>
 
           <Field label="Tags — comma-separated">
