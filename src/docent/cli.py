@@ -1515,10 +1515,7 @@ def doctor_command(ctx: typer.Context) -> None:
         lambda: _check_notebooklm_py(),
         lambda: _check_reading_db(settings),
         lambda: _check_litellm_provider("Groq", settings.research.groq_api_key, "GROQ_API_KEY", "docent studio config-set --key groq_api_key --value YOUR_KEY"),
-        lambda: _check_litellm_provider("Gemini", settings.research.gemini_api_key, "GEMINI_API_KEY", "docent studio config-set --key gemini_api_key --value YOUR_KEY"),
-        lambda: _check_litellm_provider("OpenRouter", settings.research.openrouter_api_key, "OPENROUTER_API_KEY", "docent studio config-set --key openrouter_api_key --value YOUR_KEY"),
-        lambda: _check_litellm_provider("Mistral", settings.research.mistral_api_key, "MISTRAL_API_KEY", "docent studio config-set --key mistral_api_key --value YOUR_KEY"),
-        lambda: _check_litellm_provider("Cerebras", settings.research.cerebras_api_key, "CEREBRAS_API_KEY", "docent studio config-set --key cerebras_api_key --value YOUR_KEY"),
+        # Archived backends (gemini, openrouter, mistral, cerebras) — not checked
     ]
     with ThreadPoolExecutor(max_workers=len(check_fns)) as pool:
         futures = [pool.submit(fn) for fn in check_fns]
