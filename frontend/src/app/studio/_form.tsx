@@ -823,7 +823,7 @@ export function CmdKPalette({ onClose, onSelect, recents = [] }: {
             <div style={{ padding: '22px 16px', textAlign: 'center', fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--fg4)' }}>No actions match &ldquo;{q}&rdquo;</div>
           ) : results.map((a, i) => {
             const isHov = i === idx;
-            const Icon = a._recent ? null : a.group === 'Research' ? <Sparkles size={12} strokeWidth={1.4} /> : a.group === 'Utilities' ? <Search size={14} strokeWidth={1.5} /> : <Layers size={13} strokeWidth={1.5} />;
+            const Icon = a._recent ? null : a.group === 'Actions' ? <Sparkles size={12} strokeWidth={1.4} /> : a.group === 'Utilities' ? <Search size={14} strokeWidth={1.5} /> : <Layers size={13} strokeWidth={1.5} />;
             return (
               <button key={a.id + String(i)} onClick={() => { onSelect(a); onClose(); }} onMouseEnter={() => setIdx(i)}
                 style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 8, border: 'none', cursor: 'pointer', background: isHov ? BRAND + '1a' : 'transparent', textAlign: 'left' }}>

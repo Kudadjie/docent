@@ -357,7 +357,7 @@ def run_free_deep(
         json.dumps(all_sources, indent=2, ensure_ascii=False), encoding="utf-8"
     )
 
-    yield ProgressEvent(phase="done", message=f"Output written to {output_path}")
+    yield ProgressEvent(phase="done", message="Completed")
     return {"ok": True, "output_file": str(output_path), "sources_file": str(sources_path)}
 
 
@@ -452,5 +452,5 @@ def run_free_lit(
         json.dumps(all_sources, indent=2, ensure_ascii=False), encoding="utf-8"
     )
 
-    yield ProgressEvent(phase="done", message=f"Output written to {output_path}")
+    yield ProgressEvent(phase="done", message="Completed")
     return {"ok": True, "output_file": str(output_path), "sources_file": str(sources_path)}

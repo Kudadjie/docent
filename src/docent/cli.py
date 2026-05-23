@@ -954,13 +954,36 @@ def _check_reading_db(settings: Settings) -> tuple[str, str, str, str]:
     return "Reading DB", "OK", "-", str(expanded)
 
 
+_UI_PROGRESS_MARKER = "\x00DOCENT_PROGRESS\x00"
+
+
 def _drive_progress(gen: Any) -> Any:
     """Drive a generator-based action, rendering events with Rich Progress.
 
     Phase changes swap to a fresh task. Events with (current, total) advance
     a bar; events without it (or with level=warn/error) print a console line.
     The action's `return` value is captured from `StopIteration.value`.
+
+    When DOCENT_UI_SUBPROCESS=1 the Rich renderer is bypassed entirely and
+    each event is emitted as a machine-readable ``\\x00DOCENT_PROGRESS\\x00``
+    line so the WS handler can parse it unambiguously.
     """
+    import os as _os
+    if _os.environ.get("DOCENT_UI_SUBPROCESS"):
+        result: Any = None
+        try:
+            while True:
+                evt = next(gen)
+                if not isinstance(evt, ProgressEvent):
+                    continue
+                msg = evt.message or ""
+                print(f"{_UI_PROGRESS_MARKER}{evt.phase}\x00{msg}", flush=True)
+        except StopIteration as stop:
+            result = stop.value
+        except KeyboardInterrupt:
+            pass
+        return result
+
     console = get_console()
     columns = (
         SpinnerColumn(),
@@ -970,7 +993,7 @@ def _drive_progress(gen: Any) -> Any:
         TextColumn("[dim]{task.fields[item]}"),
         TimeElapsedColumn(),
     )
-    result: Any = None
+    result = None
     with Progress(*columns, console=console, transient=False) as progress:
         task_id: int | None = None
         current_phase: str | None = None

@@ -264,7 +264,7 @@ function DocPreview({ path }: { path: string }) {
 function ResultResearchSuccess({ topic, action, dest, doneData, onSaveAsPreset, onPipeToNotebook }: {
   topic: string; action: ActionMeta; dest: string;
   doneData?: Record<string, unknown> | null;
-  onSaveAsPreset: () => void; onPipeToNotebook: () => void;
+  onSaveAsPreset: () => void; onPipeToNotebook: (srcPath: string) => void;
 }) {
   const outputFile = (doneData?.output_file as string | null | undefined) ?? null;
   const notebookId = (doneData?.notebook_id as string | null | undefined) ?? null;
@@ -302,8 +302,10 @@ function ResultResearchSuccess({ topic, action, dest, doneData, onSaveAsPreset, 
             style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: 'var(--sans)', fontSize: 12, color: BRAND_DEEP, textDecoration: 'none', padding: '4px 10px', borderRadius: 9999, background: BRAND + '18', border: '1px solid ' + BRAND + '44' }}>
             <ExternalLink size={12} strokeWidth={1.5} /> Open in NotebookLM
           </a>
-        ) : dest === 'Local' && (
-          <button onClick={onPipeToNotebook} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg2)', padding: '4px 10px', borderRadius: 9999, background: 'transparent', border: '1px solid var(--border-md)', cursor: 'pointer' }}>
+        ) : dest === 'Local' && outputFile && (
+          <button
+            onClick={() => onPipeToNotebook(outputFile.replace(/\.md$/, '-sources.json'))}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg2)', padding: '4px 10px', borderRadius: 9999, background: 'transparent', border: '1px solid var(--border-md)', cursor: 'pointer' }}>
             <ExternalLink size={12} strokeWidth={1.5} /> Send to NotebookLM
           </button>
         )}
@@ -333,7 +335,7 @@ function ResultStopped() {
   );
 }
 
-function ResultFailure() {
+function ResultFailure({ errorText }: { errorText?: string }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -341,11 +343,7 @@ function ResultFailure() {
         <span style={{ fontFamily: 'var(--sans)', fontSize: 14, fontWeight: 600, color: 'var(--fg1)' }}>Run failed</span>
       </div>
       <div style={{ fontFamily: 'var(--sans)', fontSize: 12.5, color: 'var(--fg2)', lineHeight: 1.55 }}>
-        Anthropic backend returned <span style={{ fontFamily: 'var(--mono)', fontSize: 11.5 }}>401 unauthorized</span>. The API key is missing or invalid.
-      </div>
-      <div>
-        <FieldLabel>Fix</FieldLabel>
-        <CodeBlock>{'docent config set anthropic_api_key sk-ant-...'}</CodeBlock>
+        {errorText ?? 'The run failed. Check the activity log above for details.'}
       </div>
     </div>
   );
@@ -615,7 +613,7 @@ export function OutputPanel({ action, state, status, logs, sources, currentPhase
   action: ActionMeta; state: FormState; status: string;
   logs: LogEntry[]; sources: Source[]; currentPhase: string | null;
   doneData?: Record<string, unknown> | null;
-  onReset: () => void; onSaveAsPreset: () => void; onPipeToNotebook: () => void;
+  onReset: () => void; onSaveAsPreset: () => void; onPipeToNotebook: (srcPath: string) => void;
 }) {
   const isResult  = status === 'success' || status === 'failure' || status === 'stopped';
   const isRunning = status === 'running';
@@ -655,7 +653,10 @@ export function OutputPanel({ action, state, status, logs, sources, currentPhase
 
   function renderResult() {
     if (status === 'stopped') return <ResultStopped />;
-    if (status === 'failure') return <ResultFailure />;
+    if (status === 'failure') {
+      const errorEntry = [...logs].reverse().find(l => l.phase === 'error');
+      return <ResultFailure errorText={errorEntry?.text} />;
+    }
     switch (action.id) {
       case 'search':
       case 'scholarly':  return <ResultSearch query={state.query} />;

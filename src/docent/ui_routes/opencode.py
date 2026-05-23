@@ -83,8 +83,12 @@ def _build_studio_cmd(body: StudioRunBody) -> list[str] | None:
     elif action == "to-notebook":
         if body.src_path:
             cmd += ["--sources-file", body.src_path]
-        if body.out_path:
-            cmd += ["--output-file", body.out_path]
+        # Derive output-file from sources path when not explicitly set.
+        # This prevents the interactive preflight file-picker from activating
+        # (which hangs in a non-TTY subprocess when multiple outputs exist).
+        out_file = body.out_path or re.sub(r"-sources\.json$", ".md", body.src_path)
+        if out_file and out_file != body.src_path:
+            cmd += ["--output-file", out_file]
         cmd += ["--max-sources", str(body.max_sources)]
         if not body.nlm:
             cmd += ["--no-run-nlm-research"]
@@ -190,6 +194,107 @@ async def opencode_status() -> JSONResponse:
     return JSONResponse({"running": False})
 
 
+# ── NotebookLM auth endpoints ─────────────────────────────────────────────────
+
+def _playwright_chromium_ok() -> bool:
+    """Return True if Playwright's Chromium binary exists on disk."""
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            # executable_path is None when not downloaded; non-None when it exists.
+            path = p.chromium.executable_path
+            if not path:
+                return False
+            import os
+            return os.path.isfile(path)
+    except Exception:
+        return False
+
+
+@router.get("/api/notebooklm/auth-status")
+async def notebooklm_auth_status() -> JSONResponse:
+    """Return whether the notebooklm CLI is installed, Playwright is ready, and auth is current."""
+    import shutil as _sh
+    exe = _sh.which("notebooklm")
+    if not exe:
+        return JSONResponse({"installed": False, "playwright_ok": False, "authenticated": False})
+
+    loop = asyncio.get_event_loop()
+
+    # Check Playwright binary first — auth check will always fail without it.
+    playwright_ok = await loop.run_in_executor(None, _playwright_chromium_ok)
+    if not playwright_ok:
+        return JSONResponse({
+            "installed": True,
+            "playwright_ok": False,
+            "authenticated": False,
+            "fix": "playwright install chromium",
+        })
+
+    try:
+        from docent.bundled_plugins.studio._notebook import _nlm_auth_ok
+        authenticated = await loop.run_in_executor(
+            None, lambda: _nlm_auth_ok(retries=1, retry_delay=1.0)
+        )
+    except Exception:
+        authenticated = False
+    return JSONResponse({"installed": True, "playwright_ok": True, "authenticated": authenticated})
+
+
+@router.post("/api/notebooklm/auth")
+async def notebooklm_auth() -> JSONResponse:
+    """Open a visible terminal window to run `notebooklm login` interactively."""
+    import shutil as _sh
+    exe = _sh.which("notebooklm")
+    if not exe:
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": "notebooklm not found on PATH. Install with: pip install notebooklm",
+            },
+            status_code=404,
+        )
+    try:
+        if sys.platform == "win32":
+            # Start a new visible Command Prompt that stays open after the command.
+            subprocess.Popen(
+                f'start "NotebookLM Auth" cmd /k "{exe} login"',
+                shell=True,
+            )
+        elif sys.platform == "darwin":
+            subprocess.Popen(
+                ["osascript", "-e", f'tell app "Terminal" to do script "{exe} login"']
+            )
+        else:
+            # Linux: try common terminal emulators in order.
+            _launched = False
+            for term, args in [
+                ("gnome-terminal", ["--", exe, "login"]),
+                ("xfce4-terminal", ["-e", f"{exe} login"]),
+                ("konsole", ["-e", exe, "login"]),
+                ("xterm", ["-e", exe, "login"]),
+            ]:
+                if _sh.which(term):
+                    subprocess.Popen([term] + args)
+                    _launched = True
+                    break
+            if not _launched:
+                return JSONResponse(
+                    {
+                        "ok": False,
+                        "error": (
+                            "No terminal emulator found. "
+                            "Run `notebooklm login` in a terminal manually."
+                        ),
+                    },
+                    status_code=500,
+                )
+        _audit("notebooklm-auth", "terminal opened")
+        return JSONResponse({"ok": True, "message": "Terminal opened for authentication."})
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
+
 @router.websocket("/ws/studio/run")
 async def studio_run_ws(websocket: WebSocket):
     """WebSocket endpoint — pipes `docent studio <action>` subprocess stdout live."""
@@ -221,9 +326,35 @@ async def studio_run_ws(websocket: WebSocket):
             pass
         return
 
+    # ── Pre-flight: NotebookLM auth check for to-notebook ────────────────────
+    if body.action_id == "notebook":
+        try:
+            from docent.bundled_plugins.studio._notebook import _nlm_auth_ok
+            _loop = asyncio.get_event_loop()
+            _auth_ok = await _loop.run_in_executor(
+                None, lambda: _nlm_auth_ok(retries=1, retry_delay=1.0)
+            )
+            if not _auth_ok:
+                try:
+                    await websocket.send_json({
+                        "type": "error",
+                        "code": "nlm_auth_required",
+                        "message": (
+                            "NotebookLM is not authenticated. "
+                            "Go to Settings → NotebookLM and click ‘Authenticate’, "
+                            "then retry."
+                        ),
+                    })
+                except Exception:
+                    pass
+                return
+        except Exception:
+            pass  # If the check itself fails, let the pipeline surface the error.
+
     env = {
         **os.environ,
         "PYTHONIOENCODING": "utf-8",
+        "PYTHONUNBUFFERED": "1",
         "NO_COLOR": "1",
         "FORCE_COLOR": "0",
         "TERM": "dumb",
@@ -240,7 +371,8 @@ async def studio_run_ws(websocket: WebSocket):
 
     output_file: str | None = None
     notebook_id: str | None = None
-    _RESULT_MARKER = "\x00DOCENT_RESULT\x00"
+    _RESULT_MARKER   = "\x00DOCENT_RESULT\x00"
+    _PROGRESS_MARKER = "\x00DOCENT_PROGRESS\x00"
 
     try:
         assert proc.stdout is not None
@@ -249,6 +381,7 @@ async def studio_run_ws(websocket: WebSocket):
             if not line:
                 continue
 
+            # Structured result line (emitted at process end)
             if _RESULT_MARKER in line:
                 try:
                     payload = json.loads(line[line.index(_RESULT_MARKER) + len(_RESULT_MARKER):])
@@ -258,22 +391,23 @@ async def studio_run_ws(websocket: WebSocket):
                     pass
                 continue
 
-            line_clean = re.sub(r"\[/?[^\]]*\]", "", line).strip()
-            if not line_clean:
+            # Structured progress line — unambiguous, emitted by _drive_progress
+            # Format: \x00DOCENT_PROGRESS\x00<phase>\x00<message>
+            if _PROGRESS_MARKER in line:
+                rest = line[line.index(_PROGRESS_MARKER) + len(_PROGRESS_MARKER):]
+                parts = rest.split("\x00", 1)
+                phase = parts[0]
+                text  = parts[1] if len(parts) > 1 else ""
+                if phase:
+                    try:
+                        await websocket.send_json({"type": "log", "phase": phase, "text": text})
+                    except Exception:
+                        proc.terminate()
+                        return
                 continue
 
-            parts = line_clean.split(None, 1)
-            raw_phase = parts[0]
-            if not re.match(r'^[a-z][a-z0-9_]*$', raw_phase):
-                continue
-            phase = raw_phase
-            text = parts[1] if len(parts) > 1 else line_clean
-
-            try:
-                await websocket.send_json({"type": "log", "phase": phase, "text": text})
-            except Exception:
-                proc.terminate()
-                return
+            # All other output (Rich console, tracebacks, etc.) is silently ignored.
+            # Errors surface via the non-zero exit code → "done" status: failure.
 
     except WebSocketDisconnect:
         proc.terminate()

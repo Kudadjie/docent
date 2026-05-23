@@ -174,7 +174,7 @@ export default function DocsPage() {
     {
       popover: {
         title: 'Jump to any section',
-        description: 'Use the left sidebar to jump between topics. The Reading guide covers Mendeley sync and queue management; the Studio guide covers all research backends.',
+        description: 'Use the left sidebar to jump between topics. The Reading guide covers reference manager sync and queue management; the Studio guide covers all research backends.',
       },
     },
   ]);

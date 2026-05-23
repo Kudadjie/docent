@@ -29,14 +29,14 @@ Run these before tagging v1.2.0. Start with `docent ui` and open http://localhos
 ## Studio Page
 
 - [/] Action list loads and shows Research + Utility groups with colored dots
-- [ ] Selecting an action changes the form fields on the right
-- [ ] Ctrl+K opens the quick-action palette; selecting navigates to that action
-- [ ] "Run AI-powered academic actions" subtitle visible under Studio heading
-- [ ] Empty state shows "Run a studio action" (not "Run a research action")
-- [ ] Output destination only shows "Local" and "Notebook" (no "Pipe →")
-- [ ] Backend selector dropdown lists available backends
-- [ ] Guide files: Browse button opens file picker; files appear in list
-- [ ] Run disabled when required field is empty (topic/artifact/query)
+- [/] Selecting an action changes the form fields on the right
+- [/] Ctrl+K opens the quick-action palette; selecting navigates to that action
+- [/] "Run AI-powered academic actions" subtitle visible under Studio heading
+- [/] Empty state shows "Run a studio action" (not "Run a research action")
+- [/] Output destination only shows "Local" and "Notebook" (no "Pipe →")
+- [/] Backend selector dropdown lists available backends
+- [/] Guide files: Browse button opens file picker; files appear in list
+- [/] Run disabled when required field is empty (topic/artifact/query)
 - [ ] Ctrl+Enter triggers run when fields are valid
 - [ ] Running: phase strip appears and updates live as logs stream in
 - [ ] Running: activity log shows new entries in real time (not all at once at end)

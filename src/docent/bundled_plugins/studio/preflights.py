@@ -664,6 +664,12 @@ def _preflight_to_notebook(inputs: BaseModel, context: Context) -> None:
         return
 
     # ── Multi-file picker ─────────────────────────────────────────────────
+    # In a non-TTY subprocess (UI mode) prompting would hang — auto-pick the most recent.
+    import os as _os
+    if _os.environ.get("DOCENT_UI_SUBPROCESS"):
+        inputs.output_file = str(candidates[0])
+        return
+
     console.print(
         f"\n[bold]Found {len(candidates)} research output(s) in {output_dir}:[/]"
     )

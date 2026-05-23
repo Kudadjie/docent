@@ -98,7 +98,7 @@ class ResearchMixin:
             )
 
             yield ProgressEvent(
-                phase="done", message=f"Output written to {out_file}"
+                phase="done", message="Completed"
             )
 
             notebook_id, vault_path, extra = yield from _route_output(
@@ -295,7 +295,7 @@ class ResearchMixin:
                 encoding="utf-8",
             )
 
-            yield ProgressEvent(phase="done", message=f"Output written to {out_file}")
+            yield ProgressEvent(phase="done", message="Completed")
 
             notebook_id, vault_path, extra = yield from _route_output(
                 inputs, out_file, sources_file, context, "lit"
@@ -463,7 +463,7 @@ class ResearchMixin:
             out_file = output_dir / f"{slug}.md"
             out_file.write_text(result_data["review"], encoding="utf-8")
 
-            yield ProgressEvent(phase="done", message=f"Review written to {out_file}")
+            yield ProgressEvent(phase="done", message="Completed")
 
             notebook_id, vault_path, extra = yield from _route_output(
                 inputs, out_file, None, context, "review"
@@ -587,7 +587,7 @@ class ResearchMixin:
             out_file.write_text(result_data["comparison"], encoding="utf-8")
             review_file.write_text(result_data["review"], encoding="utf-8")
 
-            yield ProgressEvent(phase="done", message=f"Output written to {out_file}")
+            yield ProgressEvent(phase="done", message="Completed")
 
             notebook_id, vault_path, extra = yield from _route_output(
                 inputs, out_file, None, context, "compare"
@@ -692,7 +692,7 @@ class ResearchMixin:
             out_file = output_dir / f"{slug}.md"
             out_file.write_text(result_data["draft"], encoding="utf-8")
 
-            yield ProgressEvent(phase="done", message=f"Output written to {out_file}")
+            yield ProgressEvent(phase="done", message="Completed")
 
             notebook_id, vault_path, extra = yield from _route_output(
                 inputs, out_file, None, context, "draft"
@@ -794,7 +794,7 @@ class ResearchMixin:
             out_file.write_text(result_data["guide"], encoding="utf-8")
             review_file.write_text(result_data["review"], encoding="utf-8")
 
-            yield ProgressEvent(phase="done", message=f"Output written to {out_file}")
+            yield ProgressEvent(phase="done", message="Completed")
 
             notebook_id, vault_path, extra = yield from _route_output(
                 inputs, out_file, None, context, "replicate"
@@ -896,7 +896,7 @@ class ResearchMixin:
             out_file.write_text(result_data["report"], encoding="utf-8")
             review_file.write_text(result_data["review"], encoding="utf-8")
 
-            yield ProgressEvent(phase="done", message=f"Output written to {out_file}")
+            yield ProgressEvent(phase="done", message="Completed")
 
             notebook_id, vault_path, extra = yield from _route_output(
                 inputs, out_file, None, context, "audit"

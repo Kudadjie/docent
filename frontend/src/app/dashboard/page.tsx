@@ -79,21 +79,21 @@ export default function DashboardPage() {
     {
       popover: {
         title: 'Welcome to Docent',
-        description: "Docent is your grad school AI — a single place to manage your reading, run research, and stay on top of your academic work. Let's take a quick look around.",
+        description: "Your personal control centre for grad-school work — manage your reading queue, run AI research actions, and access writing tools, all from a single `docent <tool>` command.",
       },
     },
     {
       element: 'nav[aria-label="Main navigation"]',
       popover: {
         title: 'Navigate Docent',
-        description: 'Reading manages your paper queue and syncs with Mendeley. Studio runs AI-powered research sessions. Ecosystem and Docs cover your tools and guides.',
+        description: 'Reading manages your document queue and syncs with your reference manager. Studio runs AI research, literature reviews, peer reviews, paper comparisons, and more. Ecosystem and Docs cover integrations and guides.',
       },
     },
     {
       element: '[data-tour="stat-row"]',
       popover: {
         title: 'At a glance',
-        description: 'Your key numbers live here — papers queued, in progress, done, and research outputs. Each plugin you add to Docent contributes its own stat automatically.',
+        description: 'Your key numbers live here — reading items queued, in progress, done, and Studio action outputs. Each plugin you add to Docent contributes its own stats automatically.',
       },
     },
     {

@@ -1,13 +1,15 @@
 # CONTEXT - resume hint for next session
 
-**Current Task:** UI polish sprint — theme flash, loading screen, hydration errors, dashboard gradient.
+**Current Task:** UI test checklist sprint toward v1.2.0 tag + CLI workspace REPL.
 
 **Key Decisions:**
-- Loading screen: body::before/::after via injected <style> in <head>; 2s min + window.load; spins correctly
-- Theme flash fixed via prefers-color-scheme CSS cascade (no JS needed for matching OS preference)
-- Dashboard cards/tokens all converted to CSS variables; no dark?color:color inline patterns remain
+- Workspace REPL: `docent` / `docent <cmd>` enters interactive shell; guards on DOCENT_UI_SUBPROCESS + non-TTY keep UI subprocess safe
+- research.output_dir now settable via Settings page and Onboarding modal (was CLI-only)
+- sync_from_mendeley tests fixed: monkeypatch target moved to mendeley_client; removed→flagged drift corrected
 
 **Next Steps:**
-1. Review and tweak guided tour text across all 6 pages (still pending from before this session)
-2. Run UI test checklist against http://localhost:7432
-3. Fix any failures, then tag v1.2.0
+1. Rebuild frontend (`python scripts/build_ui.py`) — output_dir Settings field needs to land in ui_dist
+2. Continue UI test checklist (Studio page items 10–27, then Ecosystem, Docs, Settings, Inbox, Sidebar, User Footer, Cross-cutting)
+3. Fix any failures found, then tag v1.2.0
+</content>
+</invoke>

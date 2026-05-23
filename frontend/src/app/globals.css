@@ -342,10 +342,12 @@ body {
   color: #fff !important;
   font-family: var(--sans) !important;
   font-size: 12px !important;
-  font-weight: 600 !important;
+  font-weight: 500 !important;
   border-radius: 9999px !important;
   padding: 5px 14px !important;
   cursor: pointer !important;
+  -webkit-font-smoothing: antialiased !important;
+  text-rendering: optimizeLegibility !important;
 }
 .driver-popover-next-btn:hover { background: #0d9460 !important; }
 .driver-popover-prev-btn {

@@ -9,7 +9,7 @@ import { LeftColumn, CmdKPalette, PresetSaveModal } from './_form';
 import { OutputPanel, HistoryDrawer, OutputsPanel } from './_output';
 import {
   findAction, actionSummary,
-  type ActionId, type FormState,
+  type ActionId, type ActionMeta, type FormState,
   type LogEntry, type Source, type Preset, type RunRecord, type Status,
 } from './_shared';
 
@@ -28,20 +28,20 @@ export default function StudioPage() {
   useTour('studio', [
     {
       popover: {
-        title: 'Studio — your AI research workspace',
-        description: 'Studio runs AI-powered research sessions. Pick a topic, choose a depth, and Docent aggregates papers, web sources, and AI synthesis into a structured brief.',
+        title: 'Studio — your AI-powered academic workspace',
+        description: 'Studio runs AI-powered academic actions — research, literature reviews, peer reviews, paper comparisons, and more. Pick an action, fill in a topic or artifact, and run.',
       },
     },
     {
       popover: {
-        title: 'Choose your research mode',
-        description: 'Free Research uses Tavily + Semantic Scholar for quick sweeps. Notebook builds a NotebookLM source collection. Deep Research hands off to Feynman for long-form, cited output.',
+        title: 'Choose your action mode',
+        description: 'Research actions support multiple backends: Free for quick source sweeps, Docent for native multi-stage synthesis, and Feynman for long-form autonomous output.',
       },
     },
     {
       popover: {
         title: 'Sources and output',
-        description: 'As the run progresses, sources appear as chips on the right. The final brief streams into the output panel — scroll, copy, or export it when done.',
+        description: 'As the run progresses, sources appear on the right. The final output is saved to your configured research folder (Settings → Research output directory; defaults to ~/Documents/Docent/research) and streams live in the output panel.',
       },
     },
     {
@@ -146,24 +146,32 @@ export default function StudioPage() {
     if (abortRef.current) { abortRef.current.abort(); abortRef.current = null; }
   }
 
-  function pushRun(finalStatus: 'success' | 'failure' | 'stopped', finalLogs: LogEntry[], finalSources: Source[], finalPhase: string | null) {
-    const detail = actionSummary(action, form);
+  type RunMeta = { actionId: ActionId; action: ActionMeta; form: FormState };
+
+  function pushRun(
+    finalStatus: 'success' | 'failure' | 'stopped',
+    finalLogs: LogEntry[], finalSources: Source[], finalPhase: string | null,
+    meta?: RunMeta,
+  ) {
+    const ra = meta?.actionId ?? actionId;
+    const rm = meta?.action   ?? action;
+    const rf = meta?.form     ?? form;
+    const detail = actionSummary(rm, rf);
     setRuns(prev => [{
       id: 'r' + Date.now(),
-      actionId,
-      actionLabel: action.label,
-      detail,
-      status: finalStatus,
-      timeAgo: 'just now',
-      startedAt: Date.now(),
-      state: { ...form },
-      logs: finalLogs,
-      sources: finalSources,
-      currentPhase: finalPhase,
+      actionId: ra, actionLabel: rm.label, detail,
+      status: finalStatus, timeAgo: 'just now', startedAt: Date.now(),
+      state: { ...rf }, logs: finalLogs, sources: finalSources, currentPhase: finalPhase,
     }, ...prev]);
   }
 
-  async function startRun() {
+  async function startRun(opts?: { overrideActionId?: ActionId; overrideSrcPath?: string }) {
+    const runActionId = opts?.overrideActionId ?? actionId;
+    const runAction   = findAction(runActionId);
+    const runSrcPath  = opts?.overrideSrcPath ?? form.srcPath;
+    const runForm: FormState = opts ? { ...form, srcPath: runSrcPath } : form;
+    const runMeta: RunMeta | undefined = opts ? { actionId: runActionId, action: runAction, form: runForm } : undefined;
+
     stopRun();
     stoppedRef.current = false;
     const collectedLogs: LogEntry[] = [];
@@ -174,7 +182,7 @@ export default function StudioPage() {
     setStatus('running');
     setCurrentRunId(null);
     setCurrentPhase(null);
-    setRecents(prev => [actionId, ...prev.filter(x => x !== actionId)].slice(0, 4) as ActionId[]);
+    setRecents(prev => [runActionId, ...prev.filter(x => x !== runActionId)].slice(0, 4) as ActionId[]);
 
     await new Promise<void>((resolve) => {
       const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -183,25 +191,25 @@ export default function StudioPage() {
 
       ws.onopen = () => {
         ws.send(JSON.stringify({
-          action_id:   actionId,
-          topic:       form.topic,
-          backend:     form.backend.toLowerCase(),
-          dest:        form.dest.toLowerCase(),
-          guides:      form.guides,
-          artifact:    form.artifact,
-          artifact_a:  form.artifactA,
-          artifact_b:  form.artifactB,
-          query:       form.query,
-          max_results: form.maxResults,
-          arxiv_id:    form.arxivId,
-          out_path:    form.outPath,
-          src_path:    form.srcPath,
-          max_sources: form.maxSources,
-          nlm:         form.nlm,
-          gate:        form.gate,
-          persp:       form.persp,
-          cfg_key:     form.cfgKey,
-          cfg_val:     form.cfgVal,
+          action_id:   runActionId,
+          topic:       runForm.topic,
+          backend:     runForm.backend.toLowerCase(),
+          dest:        runForm.dest.toLowerCase(),
+          guides:      runForm.guides,
+          artifact:    runForm.artifact,
+          artifact_a:  runForm.artifactA,
+          artifact_b:  runForm.artifactB,
+          query:       runForm.query,
+          max_results: runForm.maxResults,
+          arxiv_id:    runForm.arxivId,
+          out_path:    runForm.outPath,
+          src_path:    runSrcPath,
+          max_sources: runForm.maxSources,
+          nlm:         runForm.nlm,
+          gate:        runForm.gate,
+          persp:       runForm.persp,
+          cfg_key:     runForm.cfgKey,
+          cfg_val:     runForm.cfgVal,
         }));
       };
 
@@ -221,14 +229,14 @@ export default function StudioPage() {
             try { setDoneData(JSON.parse(evt.raw as string) as Record<string, unknown>); } catch {}
           }
           setStatus(finalStatus);
-          pushRun(finalStatus, collectedLogs, collectedSources, collectedLogs[collectedLogs.length - 1]?.phase ?? null);
+          pushRun(finalStatus, collectedLogs, collectedSources, collectedLogs[collectedLogs.length - 1]?.phase ?? null, runMeta);
           ws.close();
         } else if (evt.type === 'error') {
           const entry: LogEntry = { phase: 'error', text: String(evt.message) };
           collectedLogs.push(entry);
           setLogs(prev => [...prev, entry]);
           setStatus('failure');
-          pushRun('failure', collectedLogs, [], 'error');
+          pushRun('failure', collectedLogs, [], 'error', runMeta);
           ws.close();
         }
       };
@@ -238,7 +246,7 @@ export default function StudioPage() {
           const entry: LogEntry = { phase: 'error', text: 'Connection error — is the server running?' };
           setLogs([entry]);
           setStatus('failure');
-          pushRun('failure', [entry], [], 'error');
+          pushRun('failure', [entry], [], 'error', runMeta);
         }
       };
 
@@ -260,10 +268,13 @@ export default function StudioPage() {
     stopRun(); setStatus('idle'); setLogs([]); setSources([]); setCurrentPhase(null); setDoneData(null);
   }
 
-  function handlePipeToNotebook() {
+  function handlePipeToNotebook(srcPath: string) {
+    // Update the left panel UI to reflect the notebook action
     setActionId('notebook');
-    set('srcPath', '~/docent/runs/current/sources.json');
-    setStatus('idle'); setLogs([]); setSources([]);
+    setForm(s => ({ ...s, srcPath }));
+    setStatus('idle'); setLogs([]); setSources([]); setDoneData(null);
+    // Fire immediately — bypass state lag by passing explicit overrides
+    void startRun({ overrideActionId: 'notebook', overrideSrcPath: srcPath });
   }
 
   // ── Preset handlers ─────────────────────────────────────────────────────────

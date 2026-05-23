@@ -14,6 +14,7 @@ import DetailModal from '@/components/DetailModal';
 import Toast, { type ToastData } from '@/components/Toast';
 import type { QueueData, QueueEntry, FilterValue, BannerCounts } from '@/lib/types';
 import { useTour } from '@/hooks/useTour';
+import { extractMessage } from '@/lib/toast-utils';
 
 // ── Hooks ─────────────────────────────────────────────────────────
 function useDebounce<T>(value: T, delay: number): T {
@@ -160,7 +161,7 @@ export default function ReadingPage() {
       element: 'table[aria-label="Reading queue"]',
       popover: {
         title: 'Your reading queue',
-        description: 'Papers synced from your reference manager live here, ranked by reading priority. Each entry shows its status, deadline, and tags.',
+        description: 'Documents synced from your reference manager live here, ranked by reading priority. Each entry shows its status, deadline, and tags.',
       },
     },
     {
@@ -174,14 +175,14 @@ export default function ReadingPage() {
       element: 'input[aria-label="Search entries"]',
       popover: {
         title: 'Search your queue',
-        description: 'Search across titles, authors, categories, and tags in real time. Combine with status filters to zero in on any paper.',
+        description: 'Search across titles, authors, categories, and tags in real time. Combine with status filters to zero in on any document.',
       },
     },
     {
       element: '#docent-sync-btn',
       popover: {
         title: 'Sync your library',
-        description: 'Pull new papers from your reference manager. Papers removed from your library are flagged — not deleted — so you decide what stays.',
+        description: 'Pull new documents from your reference manager. Documents removed from your library are flagged — not deleted — so you decide what stays.',
       },
     },
   ]);
@@ -337,7 +338,7 @@ export default function ReadingPage() {
       .then(r => r.json())
       .then((body: Record<string, string>) => {
         if (body.ok) {
-          const clean = (body.stdout ?? '').replace(/\x1b\[[0-9;]*m/g, '').trim();
+          const clean = extractMessage((body.stdout ?? '').replace(/\x1b\[[0-9;]*m/g, '').trim());
           setToast({ type: 'success', message: clean.slice(0, 160) || `${refManagerName} sync complete.` });
           refresh();
         }
@@ -373,7 +374,7 @@ export default function ReadingPage() {
         if (/\d+ added.*?\d+ unchanged/.test(stdout)) {
           setToast({ type: 'success', message: toastSuccess(action, stdout) });
         } else {
-          const clean = stdout.replace(/\x1b\[[0-9;]*m/g, '').trim();
+          const clean = extractMessage(stdout.replace(/\x1b\[[0-9;]*m/g, '').trim());
           setToast({ type: 'error', message: clean.slice(0, 200) || 'Sync returned no results — check your collection name in Settings.' });
         }
       } else {
@@ -404,7 +405,7 @@ export default function ReadingPage() {
         return `${refManagerName} sync — ${parts.join(', ')}.`;
       }
       // CLI exited 0 but printed a warning (wrong collection name, auth issue, etc.)
-      const clean = stdout.replace(/\x1b\[[0-9;]*m/g, '').trim();
+      const clean = extractMessage(stdout.replace(/\x1b\[[0-9;]*m/g, '').trim());
       if (clean) return clean.slice(0, 160);
       return `${refManagerName} sync complete.`;
     }
@@ -431,8 +432,8 @@ export default function ReadingPage() {
       'remove':    'Could not remove entry',
       'clear-library-flag': 'Could not clear flag',
     };
-    // Strip ANSI escape codes and Rich markup from CLI output
-    const clean = detail.replace(/\x1b\[[0-9;]*m/g, '').trim();
+    // Strip ANSI codes, then extract human message (guards against raw JSON bodies)
+    const clean = extractMessage(detail.replace(/\x1b\[[0-9;]*m/g, '').trim());
     const first = clean.split('\n').find(l => l.trim()) ?? clean;
     return `${label[action] ?? 'Action failed'}: ${first.slice(0, 120)}`;
   }

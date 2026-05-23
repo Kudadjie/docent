@@ -9,6 +9,7 @@ import { useDarkMode } from '@/hooks/useDarkMode';
 import { useNotifications } from '@/lib/notifications';
 import { useTour } from '@/hooks/useTour';
 import { TOUR_KEYS, TOUR_LABELS, tourHasSeen, tourReset, tourResetAll } from '@/lib/tour';
+import { extractMessage } from '@/lib/toast-utils';
 
 interface ReadingConfig {
   database_dir: string | null;
@@ -528,6 +529,145 @@ function OpenCodeSection() {
   );
 }
 
+// ── NotebookLM auth section ───────────────────────────────────────────────────
+
+interface NlmStatus {
+  installed: boolean;
+  playwright_ok: boolean;
+  authenticated: boolean;
+  fix?: string;
+}
+
+function NotebookLMSection() {
+  const [nlmStatus, setNlmStatus] = useState<NlmStatus | null>(null);
+  const [nlmBusy, setNlmBusy] = useState(false);
+  const [nlmMsg, setNlmMsg] = useState<string | null>(null);
+  const [nlmChecking, setNlmChecking] = useState(false);
+
+  async function checkNlmStatus() {
+    setNlmChecking(true);
+    try {
+      const r = await fetch('/api/notebooklm/auth-status');
+      const j = await r.json() as NlmStatus;
+      setNlmStatus(j);
+    } catch {
+      setNlmStatus({ installed: false, playwright_ok: false, authenticated: false });
+    } finally {
+      setNlmChecking(false);
+    }
+  }
+
+  useEffect(() => { checkNlmStatus(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleNlmAuth() {
+    setNlmBusy(true); setNlmMsg(null);
+    try {
+      const r = await fetch('/api/notebooklm/auth', { method: 'POST' });
+      const j = await r.json() as { ok: boolean; message?: string; error?: string };
+      if (j.ok) {
+        setNlmMsg('A terminal window has opened. Complete authentication there, then click "Refresh status".');
+      } else {
+        setNlmMsg(j.error ?? 'Could not open terminal.');
+      }
+    } catch (e) {
+      setNlmMsg(String(e));
+    } finally {
+      setNlmBusy(false);
+    }
+  }
+
+  const notReady = !nlmStatus?.installed || !nlmStatus?.playwright_ok;
+
+  const nlmDot = nlmStatus === null ? '#999'
+    : !nlmStatus.installed ? '#C97B00'
+    : !nlmStatus.playwright_ok ? '#C97B00'
+    : nlmStatus.authenticated ? '#18E299' : '#D45656';
+
+  const nlmLabel = nlmStatus === null ? 'Checking…'
+    : !nlmStatus.installed ? 'Not installed'
+    : !nlmStatus.playwright_ok ? 'Playwright browser missing'
+    : nlmStatus.authenticated ? 'Authenticated' : 'Not authenticated';
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <BookOpen size={13} strokeWidth={1.5} color="#0ea5e9" />
+        <h2 style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600, color: 'var(--fg1)', margin: 0 }}>NotebookLM</h2>
+      </div>
+      <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 16 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: nlmDot, flexShrink: 0 }} />
+            <span style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500, color: 'var(--fg1)' }}>
+              {nlmLabel}
+            </span>
+          </div>
+          <div style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg3)', lineHeight: 1.55 }}>
+            {!nlmStatus?.installed ? (
+              <>Not installed. Install with: <code style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--fg2)' }}>pip install notebooklm</code></>
+            ) : !nlmStatus.playwright_ok ? (
+              <>
+                Playwright&apos;s Chromium browser is not downloaded — required for the login flow.
+                Run:{' '}
+                <code style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--fg2)' }}>
+                  {nlmStatus.fix ?? 'playwright install chromium'}
+                </code>
+                {' '}then click <strong style={{ color: 'var(--fg2)', fontWeight: 500 }}>Refresh status</strong>.
+                This may need repeating after <code style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>notebooklm</code> updates.
+              </>
+            ) : (
+              <>
+                Required for the <em>to-notebook</em> action. Authentication opens a browser — complete it
+                in the terminal window, then click{' '}
+                <strong style={{ color: 'var(--fg2)', fontWeight: 500 }}>Refresh status</strong> to confirm.
+              </>
+            )}
+          </div>
+          {nlmMsg && (
+            <div style={{ marginTop: 8, fontFamily: 'var(--sans)', fontSize: 11.5, color: 'var(--fg4)', lineHeight: 1.5 }}>
+              {nlmMsg}
+            </div>
+          )}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end', flexShrink: 0 }}>
+          <button
+            onClick={handleNlmAuth}
+            disabled={nlmBusy || notReady}
+            style={{
+              padding: '7px 16px', borderRadius: 8,
+              border: '1px solid rgba(14,165,233,0.4)',
+              background: 'rgba(14,165,233,0.08)', color: '#0ea5e9',
+              fontFamily: 'var(--sans)', fontSize: 12.5, fontWeight: 600,
+              cursor: (nlmBusy || notReady) ? 'not-allowed' : 'pointer',
+              opacity: notReady ? 0.5 : 1,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {nlmBusy ? 'Opening…' : 'Authenticate'}
+          </button>
+          <button
+            onClick={checkNlmStatus}
+            disabled={nlmChecking}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              padding: '5px 12px', borderRadius: 7,
+              border: '1px solid var(--border-md)',
+              background: 'transparent', color: 'var(--fg3)',
+              fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500,
+              cursor: nlmChecking ? 'default' : 'pointer',
+              opacity: nlmChecking ? 0.6 : 1,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <RefreshCw size={12} strokeWidth={1.5} style={{ animation: nlmChecking ? 'spin 1s linear infinite' : 'none' }} />
+            {nlmChecking ? 'Checking…' : 'Refresh status'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
@@ -782,7 +922,7 @@ export default function SettingsPage() {
       });
       const body = await res.json() as { ok: boolean; reading?: ReadingConfig; error?: string };
       if (!res.ok || !body.ok) {
-        const clean = (body.error ?? 'Unknown error').replace(/\x1b\[[0-9;]*m/g, '').trim();
+        const clean = extractMessage((body.error ?? 'Unknown error').replace(/\x1b\[[0-9;]*m/g, '').trim());
         setToast({ type: 'error', message: `Could not save: ${clean.slice(0, 120)}` });
         signalDot('error');
       } else {
@@ -806,7 +946,7 @@ export default function SettingsPage() {
       });
       const body = await res.json() as { ok: boolean; research?: ResearchConfig; error?: string };
       if (!res.ok || !body.ok) {
-        const clean = (body.error ?? 'Unknown error').replace(/\x1b\[[0-9;]*m/g, '').trim();
+        const clean = extractMessage((body.error ?? 'Unknown error').replace(/\x1b\[[0-9;]*m/g, '').trim());
         setToast({ type: 'error', message: `Could not save: ${clean.slice(0, 120)}` });
         signalDot('error');
       } else {
@@ -831,7 +971,7 @@ export default function SettingsPage() {
       });
       const body = await res.json().catch(() => ({})) as Record<string, string>;
       if (!res.ok) {
-        const clean = (body.error ?? body.stderr ?? 'Unknown error').replace(/\x1b\[[0-9;]*m/g, '').trim();
+        const clean = extractMessage((body.error ?? body.stderr ?? 'Unknown error').replace(/\x1b\[[0-9;]*m/g, '').trim());
         setToast({ type: 'error', message: `Clear failed: ${clean.slice(0, 120)}` });
         signalDot('error');
       } else {
@@ -1019,6 +1159,11 @@ export default function SettingsPage() {
             {/* OpenCode server */}
             <section style={{ gridColumn: '1 / -1' }}>
               <OpenCodeSection />
+            </section>
+
+            {/* NotebookLM auth */}
+            <section style={{ gridColumn: '1 / -1' }}>
+              <NotebookLMSection />
             </section>
 
             {/* Backup & Restore — full width */}

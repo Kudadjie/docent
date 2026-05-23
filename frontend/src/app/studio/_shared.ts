@@ -52,7 +52,7 @@ export interface RunRecord {
 
 const ACTION_GROUPS: { key: string; label: string; items: Omit<ActionMeta, 'group'>[] }[] = [
   {
-    key: 'research', label: 'Research',
+    key: 'research', label: 'Actions',
     items: [
       { id: 'deep',      label: 'Deep research',     form: 'topic',    desc: 'Multi-source synthesis on a topic' },
       { id: 'lit',       label: 'Literature review',  form: 'topic',    desc: 'Structured review of the field' },
@@ -101,6 +101,10 @@ export const PHASE_LABELS: Record<string, string> = {
   verify: 'Verify', verify_citations: 'Citations', research: 'Research',
   // action-specific
   compare: 'Compare', analyze: 'Analyze', audit: 'Audit',
+  // to-notebook phases
+  package: 'Package', 'nlm-check': 'Auth', 'nlm-login': 'Login',
+  'nlm-notebook': 'Notebook', 'nlm-push': 'Push', 'nlm-stabilise': 'Stabilise',
+  'nlm-quality': 'Quality', 'nlm-poll': 'Poll',
 };
 
 export const PHASE_TONE: Record<string, 'info' | 'warn' | 'error'> = {
