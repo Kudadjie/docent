@@ -624,13 +624,13 @@ export default function SettingsPage() {
     {
       popover: {
         title: 'API keys',
-        description: 'Add keys for research backends: Tavily for web search, alphaXiv for academic papers, Gemini or Groq for AI synthesis. Each key unlocks a different Studio capability.',
+        description: 'Add keys for research backends: Tavily for web search, alphaXiv to enhance paper search with AI overviews (optional — arXiv works without it), Groq for AI synthesis. Each key unlocks or upgrades a Studio capability.',
       },
     },
     {
       popover: {
         title: 'Health check & Backup',
-        description: "The Health check at the bottom verifies every tool is wired up correctly. Backup lets you save your queue and research history to Google Drive.",
+        description: "System health checks that your core dependencies (Python, Feynman, NotebookLM, etc.) are installed and working. Backup lets you save your queue and research history to Google Drive.",
       },
     },
   ]);
@@ -1008,7 +1008,7 @@ export default function SettingsPage() {
                       </h2>
                     </div>
                     <p style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg4)', margin: 0, lineHeight: 1.5 }}>
-                      Environment checks for all Docent dependencies.
+                      Checks that Docent&apos;s core dependencies are installed and reachable.
                     </p>
                   </div>
                   <button

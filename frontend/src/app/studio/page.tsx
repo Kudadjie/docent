@@ -37,19 +37,19 @@ export default function StudioPage() {
     {
       popover: {
         title: 'Studio — your AI-powered academic workspace',
-        description: 'Studio runs AI-powered academic actions — research, literature reviews, peer reviews, paper comparisons, and more. Pick an action, fill in a topic or artifact, and run.',
+        description: 'Studio runs academic actions — deep research, literature reviews, peer reviews, paper comparisons, drafting, and more. Pick an action, fill in a topic or artifact, and run.',
       },
     },
     {
       popover: {
-        title: 'Choose your action mode',
-        description: 'Research actions support multiple backends: Free for quick source sweeps, Docent for native multi-stage synthesis, and Feynman for long-form autonomous output.',
+        title: 'Choose your backend',
+        description: 'Four backends are available: Free (source aggregation, no AI cost), Docent (native multi-stage pipeline, requires OpenCode), Feynman (autonomous long-form research), and Groq (fast LLM via Groq API).',
       },
     },
     {
       popover: {
         title: 'Sources and output',
-        description: 'As the run progresses, sources appear on the right. The final output is saved to your configured research folder (Settings → Research output directory; defaults to ~/Documents/Docent/research) and streams live in the output panel.',
+        description: 'The final output is saved to your configured research folder (Settings → Research output directory; defaults to ~/docent/research) and streams live in the output panel.',
       },
     },
     {
