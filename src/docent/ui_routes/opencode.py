@@ -326,31 +326,6 @@ async def studio_run_ws(websocket: WebSocket):
             pass
         return
 
-    # ── Pre-flight: NotebookLM auth check for to-notebook ────────────────────
-    if body.action_id == "notebook":
-        try:
-            from docent.bundled_plugins.studio._notebook import _nlm_auth_ok
-            _loop = asyncio.get_event_loop()
-            _auth_ok = await _loop.run_in_executor(
-                None, lambda: _nlm_auth_ok(retries=1, retry_delay=1.0)
-            )
-            if not _auth_ok:
-                try:
-                    await websocket.send_json({
-                        "type": "error",
-                        "code": "nlm_auth_required",
-                        "message": (
-                            "NotebookLM is not authenticated. "
-                            "Go to Settings → NotebookLM and click ‘Authenticate’, "
-                            "then retry."
-                        ),
-                    })
-                except Exception:
-                    pass
-                return
-        except Exception:
-            pass  # If the check itself fails, let the pipeline surface the error.
-
     env = {
         **os.environ,
         "PYTHONIOENCODING": "utf-8",

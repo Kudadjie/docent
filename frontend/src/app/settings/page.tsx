@@ -541,8 +541,6 @@ interface NlmStatus {
 
 function NotebookLMSection() {
   const [nlmStatus, setNlmStatus] = useState<NlmStatus | null>(null);
-  const [nlmBusy, setNlmBusy] = useState(false);
-  const [nlmMsg, setNlmMsg] = useState<string | null>(null);
   const [nlmChecking, setNlmChecking] = useState(false);
 
   async function checkNlmStatus() {
@@ -559,25 +557,6 @@ function NotebookLMSection() {
   }
 
   useEffect(() => { checkNlmStatus(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  async function handleNlmAuth() {
-    setNlmBusy(true); setNlmMsg(null);
-    try {
-      const r = await fetch('/api/notebooklm/auth', { method: 'POST' });
-      const j = await r.json() as { ok: boolean; message?: string; error?: string };
-      if (j.ok) {
-        setNlmMsg('A terminal window has opened. Complete authentication there, then click "Refresh status".');
-      } else {
-        setNlmMsg(j.error ?? 'Could not open terminal.');
-      }
-    } catch (e) {
-      setNlmMsg(String(e));
-    } finally {
-      setNlmBusy(false);
-    }
-  }
-
-  const notReady = !nlmStatus?.installed || !nlmStatus?.playwright_ok;
 
   const nlmDot = nlmStatus === null ? '#999'
     : !nlmStatus.installed ? '#C97B00'
@@ -618,34 +597,14 @@ function NotebookLMSection() {
               </>
             ) : (
               <>
-                Required for the <em>to-notebook</em> action. Authentication opens a browser — complete it
-                in the terminal window, then click{' '}
-                <strong style={{ color: 'var(--fg2)', fontWeight: 500 }}>Refresh status</strong> to confirm.
+                Required for the <em>to-notebook</em> action. When your session expires, a browser
+                window opens automatically during the run so you can re-authenticate without stopping
+                anything.
               </>
             )}
           </div>
-          {nlmMsg && (
-            <div style={{ marginTop: 8, fontFamily: 'var(--sans)', fontSize: 11.5, color: 'var(--fg4)', lineHeight: 1.5 }}>
-              {nlmMsg}
-            </div>
-          )}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end', flexShrink: 0 }}>
-          <button
-            onClick={handleNlmAuth}
-            disabled={nlmBusy || notReady}
-            style={{
-              padding: '7px 16px', borderRadius: 8,
-              border: '1px solid rgba(14,165,233,0.4)',
-              background: 'rgba(14,165,233,0.08)', color: '#0ea5e9',
-              fontFamily: 'var(--sans)', fontSize: 12.5, fontWeight: 600,
-              cursor: (nlmBusy || notReady) ? 'not-allowed' : 'pointer',
-              opacity: notReady ? 0.5 : 1,
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {nlmBusy ? 'Opening…' : 'Authenticate'}
-          </button>
           <button
             onClick={checkNlmStatus}
             disabled={nlmChecking}

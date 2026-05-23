@@ -48,7 +48,6 @@ from .models import (  # noqa: F401
 )
 from .preflights import (  # noqa: F401
     _preflight_docent,
-    _preflight_notebook_auth,
     _preflight_oc_only,
     _preflight_to_notebook,
     _resolve_tavily_key,

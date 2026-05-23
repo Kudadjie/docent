@@ -307,8 +307,6 @@ def _preflight_docent(inputs: BaseModel, context: Context) -> None:
     from .backend import DOCENT_BACKEND_NAMES
     backend_name = getattr(inputs, "backend", None)
     if backend_name not in DOCENT_BACKEND_NAMES:
-        # Non-Docent backend (e.g. Feynman, Free) — still check notebook auth.
-        _preflight_notebook_auth(inputs, context)
         return
 
     # Resolve which provider is actually active
@@ -379,17 +377,12 @@ def _preflight_docent(inputs: BaseModel, context: Context) -> None:
             "Get one at https://tavily.com or switch to --backend free.",
         )
 
-    # Check notebook auth BEFORE the research pipeline starts so a stale session
-    # fails immediately rather than after 5+ minutes of heavy work.
-    _preflight_notebook_auth(inputs, context)
-
 
 def _preflight_oc_only(inputs: BaseModel, context: Context) -> None:
     """Pre-flight check for review/compare/draft/replicate/audit (AI backend, no Tavily needed)."""
     from .backend import DOCENT_BACKEND_NAMES
     backend_name = getattr(inputs, "backend", None)
     if backend_name not in DOCENT_BACKEND_NAMES:
-        _preflight_notebook_auth(inputs, context)
         return
 
     effective = (
@@ -406,7 +399,6 @@ def _preflight_oc_only(inputs: BaseModel, context: Context) -> None:
             get_backend(context.settings, override=backend_name)
         except (AuthError, ValueError) as e:
             _bail(context, f"[red]Error:[/] {e}")
-        _preflight_notebook_auth(inputs, context)
         return
 
     # OpenCode checks
@@ -449,9 +441,6 @@ def _preflight_oc_only(inputs: BaseModel, context: Context) -> None:
             f"[red]FAIL[/] Model check failed for [cyan]{reviewer}[/] ({e})",
             f"Model check failed for {reviewer!r}: {e}",
         )
-
-    # Check notebook auth early for AI actions that pipe to notebook.
-    _preflight_notebook_auth(inputs, context)
 
 
 # ---------------------------------------------------------------------------
@@ -614,48 +603,6 @@ def _warn_missing_guide_files(inputs: BaseModel, console: Any, typer: Any) -> No
         raise typer.Exit(1)
 
 
-def _preflight_notebook_auth(inputs: BaseModel, context: Context) -> None:
-    """Fail early when notebook output is requested but notebooklm is not authenticated.
-
-    Must run BEFORE any heavy work (research pipeline, file parsing) so that an
-    expired session surfaces immediately rather than after 5+ minutes.
-
-    Safe no-op when neither ``output='notebook'`` nor ``to_notebook=True``.
-    """
-    wants_notebook = (
-        getattr(inputs, "output", None) == "notebook"
-        or getattr(inputs, "to_notebook", False)
-    )
-    if not wants_notebook:
-        return
-
-    from ._notebook import _nlm_auth_ok, _nlm_exe
-
-    if not _nlm_exe():
-        _bail(
-            context,
-            "[red]Error:[/] notebooklm-py is not installed or not on PATH. "
-            "Install with: [cyan]pip install notebooklm-py[/]",
-            "notebooklm-py is not installed. Install with: pip install notebooklm-py",
-        )
-
-    if not context.via_mcp:
-        from docent.ui.console import get_console
-        console = get_console()
-        with console.status("Checking NotebookLM authentication..."):
-            ok = _nlm_auth_ok()
-    else:
-        ok = _nlm_auth_ok()
-
-    if not ok:
-        _bail(
-            context,
-            "[red]Error:[/] NotebookLM is not authenticated. "
-            "Run [cyan]notebooklm login[/] then retry.",
-            "NotebookLM is not authenticated. Run: notebooklm login then retry.",
-        )
-
-
 def _preflight_to_notebook(inputs: BaseModel, context: Context) -> None:
     """Interactive file picker when multiple research outputs exist in output_dir.
 
@@ -669,9 +616,6 @@ def _preflight_to_notebook(inputs: BaseModel, context: Context) -> None:
     """
     import typer
     from docent.ui.console import get_console
-
-    # Verify notebook auth before any file I/O so a stale session fails fast.
-    _preflight_notebook_auth(inputs, context)
 
     console = get_console()
     output_dir = context.settings.research.output_dir.expanduser()
