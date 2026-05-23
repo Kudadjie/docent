@@ -20,7 +20,9 @@ jobs:
         run: uv python install
 
       - name: Install dependencies
-        run: uv sync --all-extras
+        # --all-extras installs the optional `backup` extra (heavy google-api packages)
+        # which is not needed for unit tests. Use plain sync for faster CI.
+        run: uv sync
 
       - name: Lint
         run: uv run ruff check src/
