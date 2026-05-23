@@ -41,6 +41,20 @@ def _ensure_config_file() -> Path:
 
 
 def load_settings() -> Settings:
+    """Load Docent settings with env-var-over-file priority.
+
+    Priority (highest → lowest):
+      1. Environment variables (``DOCENT_*``) — via Pydantic's env_settings source.
+      2. ``~/.docent/config.toml`` — loaded here as explicit kwargs, fed to
+         Pydantic's ``init_settings`` source.
+      3. Model defaults declared on ``Settings`` / ``ResearchSettings`` / etc.
+
+    Why TOML goes through init_settings instead of a custom Pydantic source:
+    Pydantic Settings' ``settings_customise_sources`` lists ``env_settings``
+    first, so env vars always win.  TOML data is passed as constructor kwargs,
+    which Pydantic treats as ``init_settings`` — the second-highest priority.
+    This keeps the implementation simple while preserving correct override order.
+    """
     _ensure_runtime_dirs()
     path = _ensure_config_file()
     with path.open("rb") as f:

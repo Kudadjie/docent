@@ -352,7 +352,8 @@ async def studio_run_ws(websocket: WebSocket):
     _PROGRESS_MARKER = "\x00DOCENT_PROGRESS\x00"
 
     try:
-        assert proc.stdout is not None
+        if proc.stdout is None:
+            raise RuntimeError("Subprocess stdout is None — was PIPE not set?")
         async for raw_bytes in proc.stdout:
             line = raw_bytes.decode("utf-8", errors="replace").rstrip()
             if not line:

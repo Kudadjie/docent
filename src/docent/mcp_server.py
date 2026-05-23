@@ -108,7 +108,11 @@ def build_mcp_tools() -> list[types.Tool]:
                 )
         else:
             # Single-action tool — expose via fixed "run" action name.
-            assert tool_cls.input_schema is not None
+            if tool_cls.input_schema is None:
+                raise ValueError(
+                    f"Tool '{tool_name}' has no actions and no input_schema — "
+                    "this should have been caught at registration time."
+                )
             result.append(
                 types.Tool(
                     name=mcp_tool_name(tool_name, "run"),

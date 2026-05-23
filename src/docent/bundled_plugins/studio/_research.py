@@ -154,7 +154,6 @@ class ResearchMixin:
             )
 
         # Feynman branch
-        yield ProgressEvent(phase="cost", level="warn", message=_PRICING_NOTE)
         yield ProgressEvent(
             phase="start",
             message=f"Starting Feynman deep research: {inputs.topic!r}",
@@ -346,7 +345,6 @@ class ResearchMixin:
             )
 
         # Feynman branch
-        yield ProgressEvent(phase="cost", level="warn", message=_PRICING_NOTE)
         yield ProgressEvent(
             phase="start",
             message=f"Starting Feynman literature review: {inputs.topic!r}",
@@ -473,7 +471,6 @@ class ResearchMixin:
             )
 
         # Feynman branch
-        yield ProgressEvent(phase="cost", level="warn", message=_PRICING_NOTE)
         yield ProgressEvent(
             phase="start",
             message=f"Starting Feynman review: {inputs.artifact!r}",
@@ -587,7 +584,6 @@ class ResearchMixin:
             )
 
         # Feynman branch
-        yield ProgressEvent(phase="cost", level="warn", message=_PRICING_NOTE)
         yield ProgressEvent(phase="start", message=f"Starting Feynman compare: {topic_label!r}")
         feynman_cmd = context.settings.research.feynman_command or ["feynman"]
         output_dir = context.settings.research.output_dir.expanduser()
@@ -691,7 +687,6 @@ class ResearchMixin:
             )
 
         # Feynman branch
-        yield ProgressEvent(phase="cost", level="warn", message=_PRICING_NOTE)
         yield ProgressEvent(phase="start", message=f"Starting Feynman draft: {inputs.topic!r}")
         feynman_cmd = context.settings.research.feynman_command or ["feynman"]
         output_dir = context.settings.research.output_dir.expanduser()
@@ -792,7 +787,6 @@ class ResearchMixin:
             )
 
         # Feynman branch
-        yield ProgressEvent(phase="cost", level="warn", message=_PRICING_NOTE)
         yield ProgressEvent(phase="start", message=f"Starting Feynman replicate: {inputs.artifact!r}")
         feynman_cmd = context.settings.research.feynman_command or ["feynman"]
         output_dir = context.settings.research.output_dir.expanduser()
@@ -893,7 +887,6 @@ class ResearchMixin:
             )
 
         # Feynman branch
-        yield ProgressEvent(phase="cost", level="warn", message=_PRICING_NOTE)
         yield ProgressEvent(phase="start", message=f"Starting Feynman audit: {inputs.artifact!r}")
         feynman_cmd = context.settings.research.feynman_command or ["feynman"]
         output_dir = context.settings.research.output_dir.expanduser()

@@ -77,13 +77,17 @@ class TestGetBackendRouting:
         s = _settings(groq_api_key="gsk_test")
         assert isinstance(get_backend(s, override="groq"), LiteLLMBackend)
 
-    def test_override_gemini_returns_litellm(self):
+    def test_override_gemini_raises_value_error(self):
+        # gemini was archived in commit 286607e; expect ValueError until restored
         s = _settings(gemini_api_key="AIzatest")
-        assert isinstance(get_backend(s, override="gemini"), LiteLLMBackend)
+        with pytest.raises(ValueError, match="Unknown studio backend"):
+            get_backend(s, override="gemini")
 
-    def test_override_openrouter_returns_litellm(self):
+    def test_override_openrouter_raises_value_error(self):
+        # openrouter was archived in commit 286607e; expect ValueError until restored
         s = _settings(openrouter_api_key="sk-or-test")
-        assert isinstance(get_backend(s, override="openrouter"), LiteLLMBackend)
+        with pytest.raises(ValueError, match="Unknown studio backend"):
+            get_backend(s, override="openrouter")
 
     def test_unknown_backend_raises_value_error(self):
         s = _settings()
@@ -113,17 +117,17 @@ class TestGetBackendRouting:
         b = get_backend(s, override="groq")
         assert b._api_key == "gsk_from_settings"
 
-    def test_anthropic_uses_top_level_key(self):
+    def test_anthropic_raises_value_error(self):
+        # anthropic was archived in commit 286607e; expect ValueError until restored
         s = Settings(anthropic_api_key="sk-ant-test", research=ResearchSettings())
-        b = get_backend(s, override="anthropic")
-        assert isinstance(b, LiteLLMBackend)
-        assert b._api_key == "sk-ant-test"
+        with pytest.raises(ValueError, match="Unknown studio backend"):
+            get_backend(s, override="anthropic")
 
-    def test_openai_uses_top_level_key(self):
+    def test_openai_raises_value_error(self):
+        # openai was archived in commit 286607e; expect ValueError until restored
         s = Settings(openai_api_key="sk-openai-test", research=ResearchSettings())
-        b = get_backend(s, override="openai")
-        assert isinstance(b, LiteLLMBackend)
-        assert b._api_key == "sk-openai-test"
+        with pytest.raises(ValueError, match="Unknown studio backend"):
+            get_backend(s, override="openai")
 
 
 # ---------------------------------------------------------------------------
@@ -141,10 +145,11 @@ class TestModelResolution:
         b = get_backend(s, override="groq")
         assert b._model == "groq/mixtral-8x7b"
 
-    def test_gemini_model_gets_prefix(self):
+    def test_gemini_raises_value_error(self):
+        # gemini was archived in commit 286607e; expect ValueError until restored
         s = _settings(gemini_api_key="key", gemini_model="gemini-2.0-flash")
-        b = get_backend(s, override="gemini")
-        assert b._model == "gemini/gemini-2.0-flash"
+        with pytest.raises(ValueError, match="Unknown studio backend"):
+            get_backend(s, override="gemini")
 
     def test_custom_groq_model_reflected(self):
         s = _settings(groq_api_key="key", groq_model="llama-3.3-70b-versatile")
@@ -157,31 +162,25 @@ class TestModelResolution:
 # ---------------------------------------------------------------------------
 
 class TestLocalBackends:
-    def test_ollama_no_key_required(self):
+    """Local backends (ollama, lm_studio, local) were archived in commit 286607e.
+    These tests verify that they raise ValueError until they are restored.
+    To restore: add the provider spec back to _PROVIDER_SPECS in backend.py.
+    """
+
+    def test_ollama_raises_value_error(self):
         s = _settings()
-        b = get_backend(s, override="ollama")
-        assert isinstance(b, LiteLLMBackend)
-        assert b._api_key is None
+        with pytest.raises(ValueError, match="Unknown studio backend"):
+            get_backend(s, override="ollama")
 
-    def test_ollama_base_url_applied(self):
-        s = _settings(ollama_base_url="http://192.168.1.100:11434")
-        b = get_backend(s, override="ollama")
-        assert b._base_url == "http://192.168.1.100:11434"
-
-    def test_lm_studio_uses_hardcoded_key(self):
+    def test_lm_studio_raises_value_error(self):
         s = _settings()
-        b = get_backend(s, override="lm_studio")
-        assert b._api_key == "lm-studio"
+        with pytest.raises(ValueError, match="Unknown studio backend"):
+            get_backend(s, override="lm_studio")
 
-    def test_lm_studio_base_url_applied(self):
-        s = _settings(lm_studio_base_url="http://localhost:5678/v1")
-        b = get_backend(s, override="lm_studio")
-        assert b._base_url == "http://localhost:5678/v1"
-
-    def test_local_no_key_no_error_when_no_env(self):
+    def test_local_raises_value_error(self):
         s = _settings(local_api_key=None, local_base_url="http://localhost:8080/v1")
-        b = get_backend(s, override="local")
-        assert isinstance(b, LiteLLMBackend)
+        with pytest.raises(ValueError, match="Unknown studio backend"):
+            get_backend(s, override="local")
 
 
 # ---------------------------------------------------------------------------
