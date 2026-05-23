@@ -2,10 +2,19 @@
 
 Each public function runs a self-contained asyncio event loop so callers
 (Typer CLI, MCP handler, tests) don't need to manage async state.
+
+When no alphaXiv API key is configured, ``search_papers`` falls back to the
+free arXiv API (no key required).  The alphaxiv path adds GitHub links, topic
+tags, and AI overviews — the arXiv fallback returns the same dict shape with
+those fields set to None/[].
 """
 from __future__ import annotations
 
 import asyncio
+import urllib.error
+import urllib.parse
+import urllib.request
+import xml.etree.ElementTree as ET
 from typing import Any
 
 from alphaxiv import AlphaXivClient
@@ -29,6 +38,63 @@ def _build_client(api_key: str | None) -> AlphaXivClient:
             "Or set the ALPHAXIV_API_KEY environment variable."
         )
 
+
+# ── arXiv free-API fallback ───────────────────────────────────────────────────
+
+_ARXIV_API = "https://export.arxiv.org/api/query"
+_ATOM_NS   = "http://www.w3.org/2005/Atom"
+_ARXIV_NS  = "http://arxiv.org/schemas/atom"
+
+
+def _search_arxiv(query: str, max_results: int = 10) -> list[dict[str, Any]]:
+    """Query the free arXiv API and return results in the same dict shape as alphaXiv."""
+    params = urllib.parse.urlencode({
+        "search_query": f"all:{query}",
+        "max_results": max_results,
+        "sortBy": "relevance",
+    })
+    url = f"{_ARXIV_API}?{params}"
+    try:
+        with urllib.request.urlopen(url, timeout=20) as resp:
+            raw = resp.read()
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"arXiv API unreachable: {e}") from e
+
+    root = ET.fromstring(raw)
+    results: list[dict[str, Any]] = []
+    for entry in root.findall(f"{{{_ATOM_NS}}}entry"):
+        def _text(tag: str, ns: str = _ATOM_NS) -> str:
+            el = entry.find(f"{{{ns}}}{tag}")
+            return el.text.strip() if el is not None and el.text else ""
+
+        arxiv_id_url = _text("id")
+        # ID looks like https://arxiv.org/abs/2301.12345v2 — extract just the ID
+        arxiv_id = arxiv_id_url.rsplit("/", 1)[-1].split("v")[0] if arxiv_id_url else ""
+
+        authors = [
+            a.find(f"{{{_ATOM_NS}}}name").text.strip()
+            for a in entry.findall(f"{{{_ATOM_NS}}}author")
+            if a.find(f"{{{_ATOM_NS}}}name") is not None
+        ]
+
+        published = _text("published")[:10]  # YYYY-MM-DD
+        abstract = _text("summary").replace("\n", " ")[:400]
+
+        results.append({
+            "arxiv_id": arxiv_id,
+            "title": _text("title").replace("\n", " "),
+            "abstract": abstract,
+            "authors": authors,
+            "topics": [],
+            "arxiv_url": f"https://arxiv.org/abs/{arxiv_id}" if arxiv_id else None,
+            "github_url": None,
+            "published": published,
+        })
+
+    return results
+
+
+# ── alphaXiv async helpers ────────────────────────────────────────────────────
 
 async def _search_async(client: AlphaXivClient, query: str) -> list[dict[str, Any]]:
     async with client:
@@ -61,14 +127,26 @@ async def _overview_async(client: AlphaXivClient, arxiv_id: str) -> dict[str, An
     }
 
 
+# ── Public API ────────────────────────────────────────────────────────────────
+
 def search_papers(
     query: str,
     *,
     api_key: str | None = None,
     max_results: int = 10,
 ) -> list[dict[str, Any]]:
-    """Search alphaXiv for papers matching *query*. Returns up to *max_results* dicts."""
-    client = _build_client(api_key)
+    """Search for papers matching *query*.
+
+    Uses alphaXiv (richer results: topics, GitHub links, AI overviews) when an
+    API key is configured.  Falls back to the free arXiv API automatically when
+    no key is available — no error, no prompt.
+    """
+    try:
+        client = _build_client(api_key)
+    except AlphaXivAuthError:
+        # No key — silently use arXiv free API instead.
+        return _search_arxiv(query, max_results=max_results)
+
     results = asyncio.run(_search_async(client, query))
     return results[:max_results]
 
