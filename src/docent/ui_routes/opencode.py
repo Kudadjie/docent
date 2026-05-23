@@ -415,8 +415,18 @@ async def studio_run_ws(websocket: WebSocket):
                         return
                 continue
 
-            # All other output (Rich console, tracebacks, etc.) is silently ignored.
-            # Errors surface via the non-zero exit code → "done" status: failure.
+            # All other output (Rich console, tracebacks, preflight errors, etc.)
+            # is relayed as a "console" phase log so the UI shows a live stream
+            # of everything the CLI would print.  ANSI escape codes and carriage
+            # returns are stripped so the text is readable without a real terminal.
+            _ANSI_RE = re.compile(r'\x1b\[[0-9;]*[mGKHFJA-Za-z]|\r')
+            stripped = _ANSI_RE.sub('', line).strip()
+            if stripped:
+                try:
+                    await websocket.send_json({"type": "log", "phase": "console", "text": stripped})
+                except Exception:
+                    proc.terminate()
+                    return
 
     except WebSocketDisconnect:
         proc.terminate()

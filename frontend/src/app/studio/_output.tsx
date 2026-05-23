@@ -175,6 +175,8 @@ const PHASE_PALETTE: Record<string, { color: string; bg: string }> = {
   // start / info → neutral blue-grey
   start:         { color: '#94a3b8', bg: 'rgba(148,163,184,0.12)' },
   info:          { color: '#94a3b8', bg: 'rgba(148,163,184,0.12)' },
+  // console → very dim (raw subprocess passthrough)
+  console:       { color: '#64748b', bg: 'rgba(100,116,139,0.10)' },
 };
 
 function phasePalette(phase: string, tone: string) {
@@ -189,12 +191,13 @@ function phasePalette(phase: string, tone: string) {
 function LogLine({ phase, text, live }: { phase: string; text: string; live?: boolean }) {
   const tone = PHASE_TONE[phase] ?? 'info';
   const { color, bg, rowBg, border } = phasePalette(phase, tone);
+  const isConsole = phase === 'console';
   return (
-    <div className={'log-line' + (live ? ' live' : '')} style={{ display: 'flex', gap: 10, padding: '5px 12px 5px 10px', background: rowBg, borderLeft: `2px solid ${border}`, borderRadius: '2px 4px 4px 2px', alignItems: 'flex-start' }}>
+    <div className={'log-line' + (live ? ' live' : '')} style={{ display: 'flex', gap: 10, padding: isConsole ? '3px 12px 3px 10px' : '5px 12px 5px 10px', background: rowBg, borderLeft: `2px solid ${border}`, borderRadius: '2px 4px 4px 2px', alignItems: 'flex-start', opacity: isConsole ? 0.7 : 1 }}>
       <span style={{ fontFamily: 'var(--mono)', fontSize: 9.5, fontWeight: 600, letterSpacing: '0.6px', textTransform: 'uppercase', color, background: bg, padding: '2px 6px', borderRadius: 4, flexShrink: 0, marginTop: 1, minWidth: 46, textAlign: 'center' }}>
-        {phase}
+        {PHASE_LABELS[phase] ?? phase}
       </span>
-      <span style={{ fontFamily: 'var(--sans)', fontSize: 12.5, color: 'var(--fg2)', lineHeight: 1.5, flex: 1, wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
+      <span style={{ fontFamily: 'var(--mono)', fontSize: isConsole ? 11 : 12.5, color: isConsole ? 'var(--fg4)' : 'var(--fg2)', lineHeight: 1.5, flex: 1, wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
         {text}
         {live && <span style={{ marginLeft: 4 }}><span className="thinking-dot" /><span className="thinking-dot" /><span className="thinking-dot" /></span>}
       </span>
@@ -678,7 +681,8 @@ function ResultCompare({ a, b }: { a: string; b: string }) {
 
 // ── Output panel ───────────────────────────────────────────────────────────────
 
-const PHASE_SKIP = new Set(['error', 'warn', 'cost']);
+// Phases that don't appear in the breadcrumb progress strip but DO show in the activity log.
+const PHASE_SKIP = new Set(['error', 'warn', 'cost', 'console']);
 
 export function OutputPanel({ action, state, status, logs, sources, currentPhase, doneData, onReset, onSaveAsPreset, onPipeToNotebook }: {
   action: ActionMeta; state: FormState; status: string;
@@ -726,7 +730,11 @@ export function OutputPanel({ action, state, status, logs, sources, currentPhase
     if (status === 'stopped') return <ResultStopped />;
     if (status === 'failure') {
       const errorEntry = [...logs].reverse().find(l => l.phase === 'error');
-      return <ResultFailure errorText={errorEntry?.text} />;
+      // Fallback: if no structured error log, surface the last non-empty console line
+      // (raw subprocess output) so the failure is never completely silent.
+      const consoleFallback = errorEntry ? undefined
+        : [...logs].reverse().find(l => l.phase === 'console' && l.text.trim());
+      return <ResultFailure errorText={errorEntry?.text ?? consoleFallback?.text} />;
     }
     switch (action.id) {
       case 'search':

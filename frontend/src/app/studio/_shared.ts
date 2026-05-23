@@ -107,6 +107,8 @@ export const PHASE_LABELS: Record<string, string> = {
   package: 'Package', 'nlm-check': 'Auth', 'nlm-login': 'Login',
   'nlm-notebook': 'Notebook', 'nlm-push': 'Push', 'nlm-stabilise': 'Stabilise',
   'nlm-quality': 'Quality', 'nlm-poll': 'Poll',
+  // raw subprocess output (CLI passthrough stream)
+  console: 'Log',
 };
 
 export const PHASE_TONE: Record<string, 'info' | 'warn' | 'error'> = {
@@ -117,6 +119,7 @@ export const PHASE_TONE: Record<string, 'info' | 'warn' | 'error'> = {
   verify: 'info', verify_citations: 'info', research: 'info',
   compare: 'info', analyze: 'info', audit: 'info',
   cost: 'warn', warn: 'warn', error: 'error',
+  console: 'info',
 };
 
 export const ACTION_PHASES: Record<string, string[]> = {
