@@ -6,7 +6,7 @@ from pathlib import Path
 
 from docent.core import Context, ProgressEvent, action
 
-from docent.bundled_plugins.studio._studio_shared import _PRICING_NOTE
+
 from docent.bundled_plugins.studio.feynman import (
     FeynmanNotFoundError, _run_feynman, _summarize_feynman_error,
 )
@@ -33,7 +33,7 @@ class ResearchMixin:
     def deep_research(self, inputs: DeepInputs, context: Context):
         from .backend import DOCENT_BACKEND_NAMES
         if inputs.backend in DOCENT_BACKEND_NAMES:
-            yield ProgressEvent(phase="cost", level="warn", message=_PRICING_NOTE)
+
             from .backend import get_backend
             from .pipeline import run_deep
 
@@ -228,7 +228,7 @@ class ResearchMixin:
     def lit(self, inputs: LitInputs, context: Context):
         from .backend import DOCENT_BACKEND_NAMES
         if inputs.backend in DOCENT_BACKEND_NAMES:
-            yield ProgressEvent(phase="cost", level="warn", message=_PRICING_NOTE)
+
             from .backend import get_backend
             from .pipeline import run_lit
 
@@ -418,7 +418,7 @@ class ResearchMixin:
     def review(self, inputs: ReviewInputs, context: Context):
         from .backend import DOCENT_BACKEND_NAMES
         if inputs.backend in DOCENT_BACKEND_NAMES:
-            yield ProgressEvent(phase="cost", level="warn", message=_PRICING_NOTE)
+
             from .backend import get_backend
             from .pipeline import run_review
 
@@ -543,7 +543,7 @@ class ResearchMixin:
 
         from .backend import DOCENT_BACKEND_NAMES
         if inputs.backend in DOCENT_BACKEND_NAMES:
-            yield ProgressEvent(phase="cost", level="warn", message=_PRICING_NOTE)
+
             from .backend import get_backend
             from .pipeline import run_compare
 
@@ -646,7 +646,7 @@ class ResearchMixin:
 
         from .backend import DOCENT_BACKEND_NAMES
         if inputs.backend in DOCENT_BACKEND_NAMES:
-            yield ProgressEvent(phase="cost", level="warn", message=_PRICING_NOTE)
+
             from .backend import get_backend
             from .pipeline import run_draft
 
@@ -750,7 +750,7 @@ class ResearchMixin:
 
         from .backend import DOCENT_BACKEND_NAMES
         if inputs.backend in DOCENT_BACKEND_NAMES:
-            yield ProgressEvent(phase="cost", level="warn", message=_PRICING_NOTE)
+
             from .backend import get_backend
             from .pipeline import run_replicate
 
@@ -851,7 +851,7 @@ class ResearchMixin:
 
         from .backend import DOCENT_BACKEND_NAMES
         if inputs.backend in DOCENT_BACKEND_NAMES:
-            yield ProgressEvent(phase="cost", level="warn", message=_PRICING_NOTE)
+
             from .backend import get_backend
             from .pipeline import run_audit
 

@@ -35,39 +35,26 @@ _GUIDE_FILES_FIELD = Field(
 # Input models
 # ---------------------------------------------------------------------------
 
-# All valid backend values — used both for the enum hint and the description.
-_BACKEND_ENUM = [
-    "free", "feynman", "docent",
-    "groq", "gemini", "openrouter", "mistral", "cerebras",
-    "anthropic", "openai",
-    "ollama", "lm_studio", "local",
-]
+# Active backend values exposed in the UI and MCP tool descriptions.
+# Archived backends (gemini, openrouter, mistral, cerebras, anthropic, openai,
+# ollama, lm_studio, local) still work from the CLI with --backend <name>.
+_BACKEND_ENUM = ["free", "feynman", "docent", "groq"]
 
 _BACKEND_DEEP_DESC = (
-    "Research backend. ALWAYS present ALL of the following options to the user "
-    "before calling this tool — do not omit any.\n\n"
-    "MCP TIMEOUT WARNING: all AI backends (docent, feynman, groq, gemini, and all other "
-    "providers) run a multi-minute pipeline that WILL time out through the MCP connection. "
-    "Via MCP, ONLY 'free' is reliable — it completes in seconds and you synthesise here. "
-    "For any AI backend, tell the user to run the command in their terminal instead and "
-    "provide the exact command. Do NOT attempt AI backends via MCP.\n\n"
+    "Research backend.\n\n"
+    "MCP TIMEOUT WARNING: all AI backends run a multi-minute pipeline that WILL time out "
+    "through the MCP connection. Via MCP, ONLY 'free' is reliable — it completes in seconds "
+    "and you synthesise here. For any AI backend, tell the user to run the command in their "
+    "terminal instead and provide the exact command. Do NOT attempt AI backends via MCP.\n\n"
     "  'free' — RECOMMENDED VIA MCP. Docent aggregates sources (Tavily + Semantic Scholar "
     "+ CrossRef) then YOU synthesise both streams here. No extra API cost. "
     "MODEL: Sonnet for everyday research; Opus for thesis-quality output.\n\n"
-    "  'docent' — 6-stage AI pipeline via your configured provider (default: opencode). "
-    "TERMINAL ONLY — times out via MCP. Run: `docent studio lit --backend docent --topic \"...\"`. "
-    "MODEL: any.\n\n"
-    "  Free-tier cloud providers — TERMINAL ONLY (same timeout risk via MCP):\n"
-    "    'groq' (GROQ_API_KEY), 'gemini' (GEMINI_API_KEY), "
-    "'openrouter' (OPENROUTER_API_KEY), 'mistral' (MISTRAL_API_KEY), 'cerebras' (CEREBRAS_API_KEY)\n\n"
-    "  BYOK cloud providers — TERMINAL ONLY:\n"
-    "    'anthropic' (ANTHROPIC_API_KEY), 'openai' (OPENAI_API_KEY)\n\n"
-    "  Local providers — TERMINAL ONLY:\n"
-    "    'ollama', 'lm_studio', 'local'\n\n"
+    "  'docent' — 6-stage AI pipeline via OpenCode. "
+    "TERMINAL ONLY — times out via MCP. Requires OpenCode server + Tavily key.\n\n"
     "  'feynman' — full AI deep research via Feynman CLI (10–30 min). "
-    "TERMINAL ONLY — always times out via MCP. Model does not apply.\n\n"
-    "Valid values: free, feynman, docent, groq, gemini, openrouter, mistral, cerebras, "
-    "anthropic, openai, ollama, lm_studio, local."
+    "TERMINAL ONLY — always times out via MCP.\n\n"
+    "  'groq' — fast Groq inference. TERMINAL ONLY. Requires GROQ_API_KEY.\n\n"
+    "Valid values: free, feynman, docent, groq."
 )
 
 _TO_NOTEBOOK_FIELD = Field(
