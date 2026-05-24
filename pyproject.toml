@@ -67,7 +67,7 @@ packages = ["src/docent"]
 artifacts = ["src/docent/ui_dist/**"]
 
 [dependency-groups]
-dev = ["pytest>=8.0", "pip-audit>=2.7", "ruff>=0.9"]
+dev = ["pytest>=8.0", "pytest-timeout>=2.3", "pip-audit>=2.7", "ruff>=0.9"]
 
 [tool.uv]
 default-groups = ["dev"]
@@ -82,6 +82,7 @@ constraint-dependencies = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+timeout = 60
 markers = [
     "eval: slow golden-set eval tests (deselect with '-m not eval')",
     "integration: tests that require real network access or external services (deselect with '-m not integration')",

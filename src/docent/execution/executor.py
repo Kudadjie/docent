@@ -41,10 +41,16 @@ def _kill_tree(proc: subprocess.Popen) -> None:
     """Kill `proc` and its entire process subtree."""
     if sys.platform == "win32":
         try:
-            # CTRL_BREAK_EVENT targets the whole console process group.
+            # CTRL_BREAK_EVENT targets the whole console process group but
+            # Python subprocesses may catch it as KeyboardInterrupt and clean
+            # up slowly.  Always follow up with a hard kill to be certain.
             os.kill(proc.pid, signal.CTRL_BREAK_EVENT)
         except (OSError, AttributeError):
+            pass
+        try:
             proc.kill()
+        except OSError:
+            pass
     else:
         try:
             os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
@@ -85,7 +91,10 @@ class Executor:
                 stdout, stderr = proc.communicate(timeout=timeout)
             except subprocess.TimeoutExpired:
                 _kill_tree(proc)
-                proc.communicate()  # drain so the Popen context manager can clean up
+                try:
+                    proc.communicate(timeout=5)  # drain; 5s limit in case kill was slow
+                except subprocess.TimeoutExpired:
+                    pass  # process didn't drain cleanly; Popen context manager will handle it
                 raise
 
         duration = time.perf_counter() - start
