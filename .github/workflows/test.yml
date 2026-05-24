@@ -68,10 +68,10 @@ jobs:
           PYTHONUNBUFFERED: "1"
           DOCENT_NO_INTERACTIVE: "1"
         run: |
-          uv run python -u -m pytest \
+          # stdbuf forces line-buffered stdout to ensure CI captures output
+          stdbuf -oL uv run python -u -m pytest \
             -m "not integration and not eval" \
-            --timeout=60 \
-            --timeout-method=thread \
+            --timeout=30 \
             --tb=short \
             -v \
             -o addopts=""
