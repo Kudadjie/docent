@@ -91,14 +91,20 @@ class Executor:
                 stdout, stderr = proc.communicate(timeout=timeout)
             except subprocess.TimeoutExpired:
                 _kill_tree(proc)
-                # Close pipes to avoid blocking on read after kill.
-                # On Linux, communicate() after kill can block if the kernel
-                # hasn't fully torn down the process group's pipe endpoints.
-                if proc.stdout:
-                    proc.stdout.close()
-                if proc.stderr:
-                    proc.stderr.close()
-                proc.wait()
+                # On Linux with start_new_session=True, pipe drain after
+                # kill can block indefinitely. Close pipes first, then
+                # reap with a bounded wait to avoid hanging CI.
+                for pipe in (proc.stdout, proc.stderr):
+                    if pipe:
+                        try:
+                            pipe.close()
+                        except OSError:
+                            pass
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=5)
                 raise
 
         duration = time.perf_counter() - start
