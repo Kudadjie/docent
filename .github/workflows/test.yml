@@ -13,6 +13,7 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
@@ -24,18 +25,53 @@ jobs:
         run: uv python install
 
       - name: Install dependencies
-        # --all-extras installs the optional `backup` extra (heavy google-api packages)
-        # which is not needed for unit tests. Use plain sync for faster CI.
         run: uv sync
 
       - name: Lint
         run: uv run ruff check src/
 
-      - name: Unit tests
-        # Skip integration (need real network) and eval (need real LLM) tests in CI.
-        # LITELLM_LOCAL_MODEL_COST_MAP prevents litellm from fetching the model pricing
-        # JSON from GitHub on every import — that fetch bypasses the socket guard and
-        # hangs indefinitely on CI, killing the runner with "lost communication".
+      - name: Verify imports
         env:
           LITELLM_LOCAL_MODEL_COST_MAP: "True"
-        run: uv run pytest -m "not integration and not eval" --tb=short -q
+          DOCENT_NO_INTERACTIVE: "1"
+          PYTHONUNBUFFERED: "1"
+        run: |
+          uv run python -c "
+          import os, sys, time
+          print(f'Python {sys.version}')
+          print(f'LITELLM_LOCAL_MODEL_COST_MAP={os.environ.get(\"LITELLM_LOCAL_MODEL_COST_MAP\", \"NOT SET\")}')
+          print(f'DOCENT_NO_INTERACTIVE={os.environ.get(\"DOCENT_NO_INTERACTIVE\", \"NOT SET\")}')
+          t0 = time.time()
+          import docent
+          print(f'docent imported in {time.time()-t0:.1f}s')
+          t1 = time.time()
+          from docent.core import all_tools, load_plugins
+          from docent.mcp_server import build_mcp_tools, invoke_action
+          print(f'core+mcp imported in {time.time()-t1:.1f}s')
+          print(f'Total: {time.time()-t0:.1f}s — OK')
+          "
+
+      - name: Collect tests (timeout 60s)
+        env:
+          LITELLM_LOCAL_MODEL_COST_MAP: "True"
+          PYTHONUNBUFFERED: "1"
+          DOCENT_NO_INTERACTIVE: "1"
+        run: |
+          timeout 60 uv run python -u -m pytest \
+            --collect-only -q \
+            -m "not integration and not eval" \
+            -o addopts=""
+
+      - name: Unit tests
+        env:
+          LITELLM_LOCAL_MODEL_COST_MAP: "True"
+          PYTHONUNBUFFERED: "1"
+          DOCENT_NO_INTERACTIVE: "1"
+        run: |
+          uv run python -u -m pytest \
+            -m "not integration and not eval" \
+            --timeout=60 \
+            --timeout-method=thread \
+            --tb=short \
+            -v \
+            -o addopts=""

@@ -12,6 +12,7 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment: pypi
     permissions:
       id-token: write  # required for Trusted Publisher OIDC
@@ -52,7 +53,16 @@ jobs:
       - name: Test
         env:
           LITELLM_LOCAL_MODEL_COST_MAP: "True"
-        run: uv run pytest -m "not integration and not eval" --tb=short -q
+          PYTHONUNBUFFERED: "1"
+          DOCENT_NO_INTERACTIVE: "1"
+        run: |
+          uv run python -u -m pytest \
+            -m "not integration and not eval" \
+            --timeout=60 \
+            --timeout-method=thread \
+            --tb=short \
+            -q \
+            -o addopts=""
 
       - name: Build package
         run: uv build --wheel
