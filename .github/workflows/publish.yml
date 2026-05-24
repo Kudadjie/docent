@@ -58,8 +58,7 @@ jobs:
         run: |
           uv run python -u -m pytest \
             -m "not integration and not eval" \
-            --timeout=60 \
-            --timeout-method=thread \
+            --timeout=30 \
             --tb=short \
             -q \
             -o addopts=""

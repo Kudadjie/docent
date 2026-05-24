@@ -91,10 +91,14 @@ class Executor:
                 stdout, stderr = proc.communicate(timeout=timeout)
             except subprocess.TimeoutExpired:
                 _kill_tree(proc)
-                try:
-                    proc.communicate(timeout=5)  # drain; 5s limit in case kill was slow
-                except subprocess.TimeoutExpired:
-                    pass  # process didn't drain cleanly; Popen context manager will handle it
+                # Close pipes to avoid blocking on read after kill.
+                # On Linux, communicate() after kill can block if the kernel
+                # hasn't fully torn down the process group's pipe endpoints.
+                if proc.stdout:
+                    proc.stdout.close()
+                if proc.stderr:
+                    proc.stderr.close()
+                proc.wait()
                 raise
 
         duration = time.perf_counter() - start

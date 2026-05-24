@@ -48,7 +48,7 @@ def test_run_nonzero_raises_when_check_true():
 def test_run_timeout_raises_timeout_expired():
     ex = Executor()
     with pytest.raises(subprocess.TimeoutExpired):
-        ex.run([sys.executable, "-c", "import time; time.sleep(60)"], timeout=0.1)
+        ex.run([sys.executable, "-c", "import time; time.sleep(5)"], timeout=0.5)
 
 
 def test_run_timeout_calls_kill_tree():
