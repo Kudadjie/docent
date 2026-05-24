@@ -62,14 +62,23 @@ jobs:
             -m "not integration and not eval" \
             -o addopts=""
 
+      - name: Single test smoke check
+        env:
+          LITELLM_LOCAL_MODEL_COST_MAP: "True"
+          PYTHONUNBUFFERED: "1"
+          DOCENT_NO_INTERACTIVE: "1"
+        run: |
+          echo "Running a single test to verify pytest works..."
+          uv run python -u -m pytest tests/test_errors.py -v --timeout=10 -o addopts="" 2>&1
+          echo "Single test done, exit code: $?"
+
       - name: Unit tests
         env:
           LITELLM_LOCAL_MODEL_COST_MAP: "True"
           PYTHONUNBUFFERED: "1"
           DOCENT_NO_INTERACTIVE: "1"
         run: |
-          # stdbuf forces line-buffered stdout to ensure CI captures output
-          stdbuf -oL uv run python -u -m pytest \
+          uv run python -u -m pytest \
             -m "not integration and not eval" \
             --timeout=30 \
             --tb=short \
