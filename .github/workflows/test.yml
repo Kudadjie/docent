@@ -33,4 +33,9 @@ jobs:
 
       - name: Unit tests
         # Skip integration (need real network) and eval (need real LLM) tests in CI.
+        # LITELLM_LOCAL_MODEL_COST_MAP prevents litellm from fetching the model pricing
+        # JSON from GitHub on every import — that fetch bypasses the socket guard and
+        # hangs indefinitely on CI, killing the runner with "lost communication".
+        env:
+          LITELLM_LOCAL_MODEL_COST_MAP: "True"
         run: uv run pytest -m "not integration and not eval" --tb=short -q
