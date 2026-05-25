@@ -67,7 +67,10 @@ jobs:
             -o addopts=""
 
       - name: Build package
-        run: uv build --wheel
+        run: |
+          VERSION="${{ github.ref_name }}"
+          export SETUPTOOLS_SCM_PRETEND_VERSION="${VERSION#v}"
+          uv build --wheel
 
       - name: Publish to PyPI
         run: uv publish
