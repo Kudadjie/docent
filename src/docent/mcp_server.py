@@ -132,6 +132,18 @@ def build_mcp_tools() -> list[types.Tool]:
 from docent.core.invoke import serialize_result as _serialize  # noqa: F401
 
 
+def _confirmation_payload(exc: Exception) -> str:
+    return json.dumps({
+        "ok": False,
+        "confirmation_required": True,
+        "notes": exc.notes,  # type: ignore[attr-defined]
+        "message": (
+            "Present the notes above to the user. "
+            "Once they acknowledge, call this tool again with confirmed=true to proceed."
+        ),
+    }, indent=2)
+
+
 def invoke_action(
     tool_name: str,
     action_cli_name: str,
@@ -149,15 +161,7 @@ def invoke_action(
     try:
         raw = run_action(tool_name, action_cli_name, arguments, context=mcp_context)
     except ConfirmationRequired as exc:
-        return json.dumps({
-            "ok": False,
-            "confirmation_required": True,
-            "notes": exc.notes,
-            "message": (
-                "Present the notes above to the user. "
-                "Once they acknowledge, call this tool again with confirmed=true to proceed."
-            ),
-        }, indent=2)
+        return _confirmation_payload(exc)
 
     lines: list[str] = []
 
@@ -299,15 +303,7 @@ def run_server() -> None:
         try:
             raw = run_action(tool_name, action_cli_name, arguments or {}, context=mcp_context)
         except ConfirmationRequired as exc:
-            return [types.TextContent(type="text", text=json.dumps({
-                "ok": False,
-                "confirmation_required": True,
-                "notes": exc.notes,
-                "message": (
-                    "Present the notes above to the user. "
-                    "Once they acknowledge, call this tool again with confirmed=true to proceed."
-                ),
-            }, indent=2))]
+            return [types.TextContent(type="text", text=_confirmation_payload(exc))]
         except Exception as exc:
             return [types.TextContent(type="text", text=f"Error: {exc}")]
 

@@ -142,13 +142,21 @@ def restore_archive(archive: Path, dest_home: Path | None = None) -> dict[str, A
 
             if name.startswith("home/"):
                 rel = name[len("home/"):]
-                target = home / rel
+                target = (home / rel).resolve()
+                if not _is_relative_to(target, home.resolve()):
+                    raise ValueError(
+                        f"Refusing to extract {name!r}: resolves outside docent home"
+                    )
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(data)
 
             elif name.startswith("research/") and research_dir:
                 rel = name[len("research/"):]
-                target = research_dir / rel
+                target = (research_dir / rel).resolve()
+                if not _is_relative_to(target, research_dir.resolve()):
+                    raise ValueError(
+                        f"Refusing to extract {name!r}: resolves outside research dir"
+                    )
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(data)
 

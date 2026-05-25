@@ -654,6 +654,51 @@ class ReadingQueue(Tool):
         RunLog(self.name).append({"event": event, **fields})
 
 
+def load_queue_for_ui() -> dict[str, Any]:
+    """Return the full overlaid queue state for the FastAPI read endpoint.
+
+    Goes through ReadingQueueStore + Mendeley overlay so the UI sees the
+    same data as CLI and MCP callers.
+    """
+    from docent.core.invoke import make_context
+
+    store = ReadingQueueStore(data_dir() / "reading")
+    ctx = make_context(via_mcp=True)
+
+    rq = ReadingQueue()
+    queue = store.load_queue()
+    overlay = rq._load_mendeley_overlay(ctx)
+    queue = rq._apply_overlay(queue, overlay)
+
+    banner = store.banner_counts()
+    state_path = store.state_path
+    last_updated = None
+    if state_path.exists():
+        import json as _json
+        try:
+            last_updated = _json.loads(state_path.read_text(encoding="utf-8")).get("last_updated")
+        except Exception:
+            pass
+
+    rs = ctx.settings.reading
+    database_count: int | None = None
+    if rs.database_dir is not None:
+        db = rs.database_dir.expanduser()
+        if db.is_dir():
+            database_count = len(ReadingQueueStore.list_database_pdfs(db))
+
+    return {
+        "entries": queue,
+        "banner": {
+            "queued": banner.queued,
+            "reading": banner.reading,
+            "done": banner.done,
+        },
+        "last_updated": last_updated,
+        "database_count": database_count,
+    }
+
+
 def on_startup(context) -> None:  # noqa: ARG001
     from docent.utils.paths import data_dir
     from docent.ui import get_console

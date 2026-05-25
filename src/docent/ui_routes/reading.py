@@ -35,29 +35,9 @@ _ACTION_MAP: dict[str, tuple[str, str]] = {
 }
 
 
-def _queue_file():
-    from docent.ui_server import _queue_file as _qf
-    return _qf()
-
-
-def _state_file():
-    from docent.ui_server import _state_file as _sf
-    return _sf()
-
-
-def _read_json(path, default):
-    from docent.ui_server import _read_json as _rj
-    return _rj(path, default)
-
-
 def _read_config_reading():
     from docent.ui_server import _read_config_reading as _rcr
     return _rcr()
-
-
-def _get_database_count(path):
-    from docent.ui_server import _get_database_count as _gdc
-    return _gdc(path)
 
 
 def _get_database_files(path):
@@ -77,21 +57,8 @@ def _docent_dir():
 
 @router.get("/api/queue")
 def get_queue() -> JSONResponse:
-    entries = _read_json(_queue_file(), [])
-    state = _read_json(_state_file(), {})
-    banner = {
-        "queued": state.get("queued", 0),
-        "reading": state.get("reading", 0),
-        "done": state.get("done", 0),
-    }
-    last_updated = state.get("last_updated", None)
-    reading_cfg = _read_config_reading()
-    db_dir = reading_cfg.get("database_dir")
-    database_count: Optional[int] = None
-    if db_dir:
-        from pathlib import Path
-        database_count = _get_database_count(Path(db_dir).expanduser())
-    return JSONResponse({"entries": entries, "banner": banner, "last_updated": last_updated, "database_count": database_count})
+    from docent.bundled_plugins.reading import load_queue_for_ui
+    return JSONResponse(load_queue_for_ui())
 
 
 @router.get("/api/database")
