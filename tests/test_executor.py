@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import sys
 from unittest.mock import MagicMock, patch
@@ -85,12 +86,17 @@ def test_run_timeout_calls_kill_tree():
 
 # ─── _kill_tree (mock-based — runs everywhere) ───────────────────────────────
 
-def test_kill_tree_on_posix_calls_proc_kill():
+def test_kill_tree_on_posix_calls_killpg():
     mock_proc = MagicMock()
-    with patch("docent.execution.executor.sys") as mock_sys:
+    mock_proc.pid = 12345
+    with patch("docent.execution.executor.sys") as mock_sys, \
+         patch("docent.execution.executor.os.killpg", create=True) as mock_killpg, \
+         patch("docent.execution.executor.os.getpgid", create=True, return_value=12345), \
+         patch("docent.execution.executor.signal") as mock_signal:
+        mock_signal.SIGKILL = 9
         mock_sys.platform = "linux"
         _kill_tree(mock_proc)
-    mock_proc.kill.assert_called_once()
+    mock_killpg.assert_called_once_with(12345, 9)
 
 
 def test_kill_tree_on_windows_sends_ctrl_break():
