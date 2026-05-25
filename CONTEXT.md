@@ -1,13 +1,13 @@
 # CONTEXT - resume hint for next session
 
-**Current Task:** Tagged v2.0.0 (MAJOR — research→studio rename, [paper]→[reading] config, QueueEntry schema). Blind-review fixes also shipped this session (cli_doctor split, _PRICING_NOTE crash, CI workflow).
+**Current Task:** Memory audit + cleanup; confirmed all 4 p1_* briefs were already shipped; cleaned docent install.
 
 **Key Decisions:**
-- v2.0.0 not v1.2.0 — breaking changes policy required MAJOR bump (CLI command + config key renames from v1.1.1)
-- memory/, CONTEXT.md, .mcp.json correctly excluded from main via .gitignore; resolved as deletions on merge
-- cli_doctor.py created as pure side-effect-free module; cli.py imports from it (~260 lines removed)
+- All 4 architectural refactor briefs (studio split, ui_server split, ui/mcp decouple, builder consolidate) were already done — just not marked so
+- Next.js API routes were removed; `next.config.ts` now proxies all /api/* to FastAPI (`ui_routes/`); two-file sync rule is obsolete
+- Removed ghost `docent v0.1.0` install; single editable `docent-cli` install is the correct setup
 
 **Next Steps:**
-1. Schema-driven forms — backend exposes `input_schema` as JSON Schema; React generates forms dynamically (v2.1.0)
-2. Decide Mendeley/Zotero coexistence policy before starting Zotero bridge (v2.1.0 gate)
-3. Plugin developer docs — API is stable, no docs exist yet
+1. Make Mendeley/Zotero coexistence decision — blocks entire v2.1.0 track (Zotero bridge, plugin docs, tag)
+2. Fix one open UI test: bell dropdown "mark all as read" (tasks/v120_ui_tests.md)
+3. Plugin developer docs — API stable, no docs exist; write before Zotero bridge so bridge is built as a plugin

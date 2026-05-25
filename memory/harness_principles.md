@@ -1,6 +1,6 @@
 ---
-name: Harness engineering principles + deferred eval-harness item
-description: Reference for when Docent gets sophisticated enough to need formal harness work. Captures the principle set + the one concrete deferred item (eval harness on first real LLM call).
+name: Harness engineering principles
+description: Reference for harness design as Docent grows. Eval harness shipped 2026-05-15. Remaining deferred items — verification loops, prompt versioning, lifecycle hooks — have live trigger conditions.
 type: project
 ---
 
@@ -20,14 +20,14 @@ Docent is structurally a research-oriented harness for Claude. So the frame fits
 | **Memory as a designed layer** | What auto-loads vs. on-demand vs. durable is a harness choice | ✅ `RunLog` per-namespace JSONL, `memory/*.md` reorg (2026-04-25) |
 | **Surface separation** | Same tool, different lens (CLI / UI / MCP / model-facing) | ✅ Pydantic-fields → flags → form-inputs uniformity |
 | **Sandboxed side effects** | No shell injection, no global state | ✅ `Executor` `list[str]`-only, no `shell=True` |
-| **Eval harness** | Golden sets + scoring; the difference between iterating and guessing once LLM calls land | ⏳ **Deferred — see trigger below** |
-| **Verification loops act on signals** | Confidence/source fields are useful only if the workflow *uses* them (review queue, retries, gating) | ⏳ Trigger when first signal field exists with no consumer |
-| **Prompts as first-class code** | Prompt files in repo, versioned, eval'd. No f-string burial | ⏳ Trigger when first tool fires `LLMClient.complete()` with a non-trivial prompt |
-| **Sub-agent parallelism** | Fan-out search/research; merge in main agent | ⏳ Trigger when research-to-notebook tool lands |
+| **Eval harness** | Golden sets + scoring; the difference between iterating and guessing once LLM calls land | ✅ **Shipped 2026-05-15** — `tests/golden/studio/` (2 JSON fixtures), `scorer.py` (0–1 score, 0.8 threshold), `@pytest.mark.eval` suite |
+| **Verification loops act on signals** | Confidence/source fields are useful only if the workflow *uses* them (review queue, retries, gating) | ⏳ Trigger: studio pipeline exposes source quality fields — check if any consumer gates on them |
+| **Prompts as first-class code** | Prompt files in repo, versioned, eval'd. No f-string burial | ⏳ Trigger: `studio/agents/*.md` prompt files exist and fire real LLM calls — add to golden eval suite before modifying any prompt |
+| **Sub-agent parallelism** | Fan-out search/research; merge in main agent | ⏳ Trigger met (studio ships); formalize fan-out pattern before adding more parallel stages |
 | **Lifecycle hooks** | `pre_run`/`post_run`/`on_error` as places to put logging/eval/learning | ⏳ Don't build until a *second* tool wants the same hook (premature framework otherwise) |
-| **Model-facing surface design** | Tool descriptions/schemas/error messages are prompt engineering for the next LLM that calls them | ⏳ Review when 3+ tools exist; check whether another LLM could pick them up cold |
+| **Model-facing surface design** | Tool descriptions/schemas/error messages are prompt engineering for the next LLM that calls them | ⏳ Trigger met (3+ tools exist: reading + studio + doctor); review cold-call legibility before v2.1.0 |
 
-## Deferred concrete item: eval harness
+## Eval harness — shipped 2026-05-15
 
 **Trigger:** the first tool whose `run()` or action makes a real `LLMClient.complete()` call with a non-trivial prompt — the `research-to-notebook` port (Phase 1.5-C) is the current forcing function. `paper add --pdf` was the original candidate but was removed in Step 11.8 (homegrown extraction ripped out; Mendeley owns metadata).
 

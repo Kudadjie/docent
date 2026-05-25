@@ -1,14 +1,19 @@
 ---
-name: Every new API endpoint needs two implementations
-description: New API routes must be added in both the Next.js dev route and the FastAPI server — remind the user to do both
+name: New API routes go in ui_routes/ only — Next.js proxies automatically
+description: FastAPI (ui_routes/) is the only API backend; Next.js dev proxies all /api/* to FastAPI via next.config.ts rewrites — no duplicate Next.js route needed
 type: feedback
 ---
 
-Every new API endpoint lives in two places:
+New API endpoints have exactly **one** implementation: a FastAPI route in `src/docent/ui_routes/<module>.py`.
 
-1. `frontend/src/app/api/<name>/route.ts` — Next.js route used by the dev server (`npm run dev`)
-2. `src/docent/ui_server.py` — FastAPI endpoint used by the bundled `docent ui` release
+The Next.js dev server (`npm run dev`) proxies all `/api/:path*` requests to `http://127.0.0.1:7432/api/:path*` via a `rewrites()` rule in `frontend/next.config.ts`. No Next.js API route file is needed.
 
-**Why:** The dev server (Next.js) and the bundled release (FastAPI) are separate stacks. Adding to only one causes the two environments to diverge silently. The user discovered this the hard way and explicitly asked to be reminded.
+**Why:** The original two-file sync rule (add route in both `frontend/src/app/api/` AND `ui_server.py`) was correct when Next.js API routes existed. After the ui_routes/ split and the Next.js proxy adoption, the `frontend/src/app/api/` directory was removed entirely. The proxy eliminates the sync cost: one FastAPI implementation serves both the bundled release and the Next.js dev server.
 
-**How to apply:** Whenever a new API route is added during a session, immediately flag that the FastAPI counterpart also needs to be written before the task is considered done. Don't wait until the end — cross-check as each route is created.
+**How to apply:** When adding a new API endpoint:
+1. Add the route to the appropriate `ui_routes/` module (`reading.py`, `studio.py`, `config.py`, `doctor.py`, `filesystem.py`, `opencode.py`) or create a new module.
+2. Import and register the router/routes at the bottom of `ui_server.py` if a new module.
+3. No Next.js route file needed — the proxy handles dev automatically.
+4. Verify with `docent ui` (bundled mode) AND `npm run dev` (proxy mode) that the route is reachable in both environments.
+
+**Supersedes:** The old "two-file API sync" rule (add in Next.js + FastAPI) — that rule applied before `frontend/src/app/api/` was removed and `next.config.ts` rewrites were adopted.

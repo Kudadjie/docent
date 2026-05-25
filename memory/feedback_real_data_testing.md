@@ -19,9 +19,6 @@ Apply this retroactively too: if a recent step shipped without real-data validat
 **Hard rule (added 2026-05-08): no UI implementation until real-life tests pass.**
 Never open a UI task for a tool that hasn't been real-life tested. The sequence is always: ship CLI → real-life test → implement UI. No exceptions.
 
-**Pending real-life tests (research tool, shipped 2026-05-08):**
-- `docent research deep "<topic>" --backend docent` — full 6-stage Docent pipeline end-to-end
-- `docent research to-notebook` — sources package written, NotebookLM opens in browser
-- `docent research usage` — Feynman + OC daily spend display
-- Feynman update notification visible at startup
-- After all pass → implement research tool into UI
+**Studio tool real-life tests — all passed (v2.0.0, 2026-05-23):**
+- 45-item checklist in `memory/tasks/done/studio_real_life_tests.md` — CLI smoke, free tier, guide-files, MCP synthesis prompt, paid backends — all ✅
+- Note: tool renamed `research` → `studio` in v2.0.0; current commands are `docent studio deep-research`, `docent studio lit`, `docent studio to-notebook`. The old `docent research usage` action was removed entirely.
