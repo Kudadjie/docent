@@ -409,17 +409,84 @@ def _poll_research_gen(
     return []
 
 
-def _nlm_ask(question: str, notebook_id: str, timeout: float = 180) -> str | None:
-    """Ask the notebook a question. Returns answer text or None on failure."""
-    rc, stdout, _ = _nlm_run(["ask", question, "-n", notebook_id, "--json"], timeout=timeout)
+def _normalize_question(text: str) -> str:
+    """Collapse whitespace so a sent prompt matches its stored-in-history form."""
+    return " ".join(text.split())
+
+
+def _nlm_history(notebook_id: str) -> list[tuple[str, str]]:
+    """Return [(question, answer), ...] for the notebook's most recent conversation.
+
+    `notebooklm history --json` returns full answers (the truncation only affects
+    console rendering), so this is a reliable way to read back a completed answer.
+    """
+    rc, stdout, _ = _nlm_run(["history", "-n", notebook_id, "--json"], timeout=30)
     if rc != 0:
-        return None
+        return []
     try:
         data = json.loads(stdout)
-        return data.get("answer")
+        return [
+            (p.get("question", ""), p.get("answer", ""))
+            for p in data.get("qa_pairs", [])
+        ]
     except (json.JSONDecodeError, ValueError):
-        # Rich may emit non-JSON; try raw stdout
-        return stdout.strip() or None
+        return []
+
+
+def _recover_answer_from_history(
+    question: str, notebook_id: str, recovery_timeout: float, poll_interval: float = 15.0,
+) -> str | None:
+    """Poll conversation history until the answer to *question* appears, or timeout.
+
+    Used when an `ask` subprocess was killed by our timeout while NotebookLM was
+    still generating: the answer completes server-side and lands in the
+    conversation, so we read it back instead of giving up.
+    """
+    target = _normalize_question(question)[:60]
+    if not target:
+        return None
+    deadline = time.monotonic() + recovery_timeout
+    while time.monotonic() < deadline:
+        time.sleep(poll_interval)
+        for q, a in reversed(_nlm_history(notebook_id)):
+            if a and a.strip() and target in _normalize_question(q):
+                return a.strip()
+    return None
+
+
+def _nlm_ask(
+    question: str,
+    notebook_id: str,
+    timeout: float = 180,
+    recovery_timeout: float = 0.0,
+    poll_interval: float = 15.0,
+) -> str | None:
+    """Ask the notebook a question. Returns answer text or None on failure.
+
+    `ask` blocks until NotebookLM finishes generating. If our subprocess timeout
+    fires first the process is killed, but the answer still completes server-side
+    and lands in the conversation. When recovery_timeout > 0, on such a timeout we
+    poll `notebooklm history` for up to recovery_timeout seconds to recover that
+    answer rather than reporting "no response".
+    """
+    rc, stdout, stderr = _nlm_run(["ask", question, "-n", notebook_id, "--json"], timeout=timeout)
+    if rc == 0:
+        try:
+            data = json.loads(stdout)
+            answer = data.get("answer")
+        except (json.JSONDecodeError, ValueError):
+            # Rich may emit non-JSON; try raw stdout
+            answer = stdout.strip() or None
+        if answer:
+            return answer
+        return None
+    # rc != 0: recover only from a *timeout* (answer may still be generating) —
+    # not from "not found on PATH" or other hard failures.
+    if recovery_timeout > 0 and "Timeout" in (stderr or ""):
+        return _recover_answer_from_history(
+            question, notebook_id, recovery_timeout, poll_interval
+        )
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -1372,11 +1439,14 @@ def _nlm_push(
             phase="nlm-quality",
             message=(
                 f"Asking NotebookLM to analyse the notebook — this can take a few "
-                f"minutes (waiting up to {int(ask_timeout)}s)..."
+                f"minutes (up to {int(ask_timeout)}s; if it overruns I'll keep "
+                "watching the notebook for the answer)..."
             ),
         )
         gate_prompt = _QUALITY_GATE_PROMPT.format(topic=effective_topic)
-        gate_answer = _nlm_ask(gate_prompt, notebook_id, timeout=ask_timeout)
+        gate_answer = _nlm_ask(
+            gate_prompt, notebook_id, timeout=ask_timeout, recovery_timeout=ask_timeout
+        )
 
         if gate_answer:
             quality_gate = _parse_quality_gate(gate_answer)
@@ -1444,10 +1514,10 @@ def _nlm_push(
                 phase="nlm-quality",
                 level="warn",
                 message=(
-                    f"Quality gate skipped — NotebookLM did not answer within "
-                    f"{int(ask_timeout)}s. The notebook may still be generating; "
-                    "increase the wait with: docent studio config-set --key "
-                    "notebooklm_ask_timeout --value 600"
+                    f"Quality gate skipped — no answer after {int(ask_timeout)}s "
+                    "of waiting plus history polling. The notebook may still be "
+                    "generating; increase the wait with: docent studio config-set "
+                    "--key notebooklm_ask_timeout --value 600"
                 ),
             )
 
@@ -1465,7 +1535,10 @@ def _nlm_push(
         _PERSP_RETRY_DELAY = 30.0  # seconds between attempts
         persp_answer = None
         for _attempt in range(1, _PERSP_RETRIES + 1):
-            persp_answer = _nlm_ask(_PERSPECTIVES_PROMPT, notebook_id, timeout=ask_timeout)
+            persp_answer = _nlm_ask(
+                _PERSPECTIVES_PROMPT, notebook_id, timeout=ask_timeout,
+                recovery_timeout=ask_timeout,
+            )
             if persp_answer:
                 break
             if _attempt < _PERSP_RETRIES:
