@@ -12,6 +12,7 @@ concurrency:
 
 jobs:
   test:
+    name: CLI (Python)
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -44,6 +45,7 @@ jobs:
             -o addopts=""
 
   frontend:
+    name: Frontend
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
