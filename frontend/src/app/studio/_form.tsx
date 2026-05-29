@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import {
-  FlaskConical, Play, Square, AlertTriangle, CheckCircle,
+  FlaskConical, Play, AlertTriangle, CheckCircle,
   Copy, Plus, ChevronDown, File, X, Search,
   Info, Bookmark, Trash, Upload, Sparkles, Layers, Pin,
 } from 'lucide-react';
@@ -648,12 +648,12 @@ function FreeTierGate({ onCancel, onProceed }: { onCancel: () => void; onProceed
 // ── Left column ────────────────────────────────────────────────────────────────
 
 export function LeftColumn({ actionId, setActionId, state, set, onRun, gating, setGating,
-  presets, onDeletePreset, onSelectPreset, onOpenCmdK, isRunning, onStop, activePresetId, width }: {
+  presets, onDeletePreset, onSelectPreset, onOpenCmdK, activePresetId, width }: {
   actionId: ActionId; setActionId: (id: ActionId) => void;
   state: FormState; set: SetFn;
   onRun: () => void; gating: boolean; setGating: (v: boolean) => void;
   presets: Preset[]; onDeletePreset: (id: string) => void; onSelectPreset: (p: Preset) => void;
-  onOpenCmdK: () => void; isRunning: boolean; onStop: () => void;
+  onOpenCmdK: () => void;
   activePresetId?: string | null; width?: number;
 }) {
   const action = findAction(actionId);
@@ -745,14 +745,12 @@ export function LeftColumn({ actionId, setActionId, state, set, onRun, gating, s
       </div>
 
       <div style={{ padding: '12px 22px 18px', borderTop: '1px solid var(--border)', background: 'transparent', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 -4px 16px rgba(0,0,0,0.04)' }}>
-        {!gating && !isRunning && <CostNotice actionId={actionId} backend={state.backend} />}
+        {!gating && <CostNotice actionId={actionId} backend={state.backend} />}
         {gating ? (
           <FreeTierGate onCancel={() => setGating(false)} onProceed={() => { setGating(false); onRun(); }} />
-        ) : isRunning ? (
-          <button onClick={onStop} style={{ width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '9px 18px', borderRadius: 9999, background: 'transparent', border: '1px solid var(--border-md)', color: RED, fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-            <Square size={12} strokeWidth={2} /> Stop run
-          </button>
         ) : (
+          // Always "Run" — runs are concurrent now, so the form starts a new run
+          // alongside any in flight. Stopping a run lives in the output panel.
           <span title={runDisabledTitle} style={{ display: 'block' }}>
             <PrimaryBtn full icon={<Play size={13} strokeWidth={2} />} onClick={handleRunClick} disabled={runDisabled}>
               {runLabel(action)}

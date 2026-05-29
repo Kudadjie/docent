@@ -3,12 +3,13 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import {
-  CheckCircle, XCircle, AlertTriangle, ExternalLink, ChevronDown, ChevronRight, Plus, X, History, Trash,
+  CheckCircle, XCircle, AlertTriangle, ExternalLink, ChevronDown, ChevronRight, Plus, X, History, Trash, Square,
 } from 'lucide-react';
 import {
   PHASE_LABELS, PHASE_TONE,
   type ActionMeta, type FormState, type LogEntry, type Source, type RunRecord,
 } from './_shared';
+import { type ActiveRunView } from '@/lib/studio-run-context';
 import { GhostBtn, CodeBlock, Chip, FieldLabel, Kbd } from './_form';
 
 const BRAND      = '#18E299';
@@ -692,10 +693,48 @@ function ResultConfigSet({ cfgKey, data }: { cfgKey: string; data: Record<string
 // Phases that don't appear in the breadcrumb progress strip but DO show in the activity log.
 const PHASE_SKIP = new Set(['error', 'warn', 'cost', 'console', 'nlm-wait']);
 
-export function OutputPanel({ action, state, status, logs, sources, currentPhase, doneData, onReset, onSaveAsPreset, onPipeToNotebook }: {
+function _runDotColor(status: string): string {
+  if (status === 'running') return BRAND;
+  if (status === 'failure') return '#D45656';
+  if (status === 'stopped') return AMBER_BORDER;
+  return BRAND_DEEP; // success
+}
+
+/** Tabs across the top of the output panel — one per concurrent run. */
+function RunSwitcher({ runs, currentRunId, onViewRun }: {
+  runs: ActiveRunView[]; currentRunId: string | null; onViewRun: (id: string) => void;
+}) {
+  if (runs.length < 2) return null;
+  return (
+    <div style={{ flexShrink: 0, display: 'flex', gap: 6, padding: '8px 24px 0', overflowX: 'auto' }}>
+      {runs.map(r => {
+        const active = r.runId === currentRunId;
+        return (
+          <button key={r.runId} onClick={() => onViewRun(r.runId)} title={r.detail}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 11px', borderRadius: 8,
+              border: '1px solid ' + (active ? 'var(--border-md)' : 'var(--border)'),
+              background: active ? 'var(--gray100)' : 'transparent', cursor: 'pointer', whiteSpace: 'nowrap',
+              fontFamily: 'var(--sans)', fontSize: 12, color: active ? 'var(--fg1)' : 'var(--fg3)', fontWeight: active ? 600 : 400,
+            }}>
+            <span style={{
+              width: 7, height: 7, borderRadius: '50%', background: _runDotColor(r.status), flexShrink: 0,
+              animation: r.status === 'running' ? 'logo-dot-blink 1.2s step-end infinite' : undefined,
+            }} />
+            {r.actionLabel}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export function OutputPanel({ action, state, status, logs, sources, currentPhase, doneData, activeRuns, currentRunId, onViewRun, onStop, onReset, onSaveAsPreset, onPipeToNotebook }: {
   action: ActionMeta; state: FormState; status: string;
   logs: LogEntry[]; sources: Source[]; currentPhase: string | null;
   doneData?: Record<string, unknown> | null;
+  activeRuns: ActiveRunView[]; currentRunId: string | null;
+  onViewRun: (id: string) => void; onStop: () => void;
   onReset: () => void; onSaveAsPreset: () => void; onPipeToNotebook: (srcPath: string) => void;
 }) {
   const isResult  = status === 'success' || status === 'failure' || status === 'stopped';
@@ -760,6 +799,7 @@ export function OutputPanel({ action, state, status, logs, sources, currentPhase
 
   return (
     <section style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, background: 'transparent', overflow: 'hidden' }}>
+      <RunSwitcher runs={activeRuns} currentRunId={currentRunId} onViewRun={onViewRun} />
       {!isEmpty && (
         <div style={{ flexShrink: 0, padding: '14px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
@@ -771,7 +811,9 @@ export function OutputPanel({ action, state, status, logs, sources, currentPhase
               <span style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--fg3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{breadcrumbDetail}</span>
             </>}
           </div>
-          {isResult && <GhostBtn onClick={onReset}>Clear</GhostBtn>}
+          {isRunning
+            ? <GhostBtn onClick={onStop}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><Square size={11} strokeWidth={2} /> Stop</span></GhostBtn>
+            : isResult && <GhostBtn onClick={onReset}>Clear</GhostBtn>}
         </div>
       )}
 

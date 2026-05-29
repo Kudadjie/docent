@@ -3,9 +3,13 @@
 /**
  * StudioRunProvider — layout-level context for Studio WS runs.
  *
- * Lifting run state + WS connection to the layout means navigation between
- * pages (Settings → Studio → Dashboard) does NOT kill an active run.
- * The Studio page reads state via `useStudioRun()` and stays a thin renderer.
+ * Holds MULTIPLE concurrent runs, each with its own WebSocket, keyed by runId.
+ * Starting a run does NOT cancel the others — they stream in parallel inside one
+ * tab. The output panel shows one "viewed" run at a time (chosen via the run
+ * switcher); the legacy flat fields (status/logs/sources/currentPhase/doneData)
+ * are derived from that viewed run so existing consumers keep working.
+ *
+ * Lifting this to the layout means navigation between pages does NOT kill runs.
  */
 
 import {
@@ -40,10 +44,28 @@ export interface StartRunInput {
   form: FormState;
 }
 
+// ── A concurrent run as seen by the UI (render-safe snapshot) ───────────────────
+
+export interface ActiveRunView {
+  runId: string;
+  actionId: ActionId;
+  actionLabel: string;
+  detail: string;
+  status: Status;
+  phase: string | null;
+  logs: LogEntry[];
+  sources: Source[];
+  doneData: Record<string, unknown> | null;
+  startedAt: number;
+  /** The form the run was launched with — lets the output panel render the
+   *  viewed run's result correctly even when the live form has moved on. */
+  form: FormState;
+}
+
 // ── Context value ─────────────────────────────────────────────────────────────
 
 export interface StudioRunContextValue {
-  /** Current run output state */
+  /** Viewed-run output state (derived from the currently-viewed run/record). */
   status: Status;
   logs: LogEntry[];
   sources: Source[];
@@ -51,36 +73,44 @@ export interface StudioRunContextValue {
   doneData: Record<string, unknown> | null;
   gating: boolean;
 
+  /** Every concurrent run currently held (running + finished-not-cleared). */
+  activeRuns: ActiveRunView[];
+  /** True while any run is still streaming. */
+  anyRunning: boolean;
+
   /** Run history (persisted to localStorage) */
   runs: RunRecord[];
-  /** ID of the run currently displayed in the output panel (null = live run) */
+  /** ID of the run/record currently displayed in the output panel (null = idle). */
   currentRunId: string | null;
 
-  /** Start a new WS run. Fire-and-forget — state updates via React state. */
-  startRun: (input: StartRunInput) => void;
-  /** User-triggered stop: close WS, set status=stopped, push history record. */
-  stop: () => void;
-  /** Reset output panel to idle without affecting history. */
+  /** Start a new WS run alongside any existing runs. Returns the new runId. */
+  startRun: (input: StartRunInput) => string;
+  /** Switch the output panel to view a given active run. */
+  viewRun: (runId: string) => void;
+  /** Stop a run (default: the currently-viewed run): close WS, mark stopped, push history. */
+  stop: (runId?: string) => void;
+  /** Clear the output view; drops the viewed run from the active list if finished. */
   reset: () => void;
-  /**
-   * Abort any active run (silently) and load a history record into the
-   * output panel for viewing. Used by the history drawer's "load" action.
-   */
+  /** Load a history record into the output panel WITHOUT touching active runs. */
   abortAndLoad: (record: RunRecord) => void;
 
   setGating: (g: boolean) => void;
   setRuns: Dispatch<SetStateAction<RunRecord[]>>;
 }
 
-// ── Internal mutable run state (captured in a ref to avoid stale closures) ───
+// ── Internal mutable run record (lives in a ref to dodge stale closures) ─────────
 
-interface RunRef {
+interface InternalRun {
+  runId: string;
+  meta: StartRunInput;
+  status: Status;
   logs: LogEntry[];
   sources: Source[];
   phase: string | null;
-  meta: StartRunInput | null;
-  /** Captured result payload; set when the 'done' event arrives before pushRun. */
-  doneData?: Record<string, unknown> | null;
+  doneData: Record<string, unknown> | null;
+  startedAt: number;
+  ws: WebSocket | null;
+  stopped: boolean;
 }
 
 // ── Context + hook ────────────────────────────────────────────────────────────
@@ -95,14 +125,17 @@ export function useStudioRun(): StudioRunContextValue {
 
 // ── Provider ──────────────────────────────────────────────────────────────────
 
+let _runSeq = 0;
+function _newRunId(): string {
+  _runSeq += 1;
+  return `r${Date.now()}_${_runSeq}`;
+}
+
 export function StudioRunProvider({ children }: { children: ReactNode }) {
-  const [status, setStatus]           = useState<Status>('idle');
-  const [logs, setLogs]               = useState<LogEntry[]>([]);
-  const [sources, setSources]         = useState<Source[]>([]);
-  const [currentPhase, setCurrentPhase] = useState<string | null>(null);
-  const [doneData, setDoneData]         = useState<Record<string, unknown> | null>(null);
-  const [gating, setGating]           = useState(false);
-  const [currentRunId, setCurrentRunId] = useState<string | null>(null);
+  const [gating, setGating]             = useState(false);
+  const [activeRuns, setActiveRuns]     = useState<ActiveRunView[]>([]);
+  const [viewedRunId, setViewedRunId]   = useState<string | null>(null);
+  const [viewedHistory, setViewedHistory] = useState<RunRecord | null>(null);
 
   // Run history — bootstrapped from localStorage (client-side only)
   const [runs, setRuns] = useState<RunRecord[]>(() => {
@@ -113,70 +146,82 @@ export function StudioRunProvider({ children }: { children: ReactNode }) {
     } catch { return []; }
   });
 
-  // Persist history whenever it changes
   useEffect(() => {
     try { localStorage.setItem('docent-studio-runs', JSON.stringify(runs)); } catch { /* quota */ }
   }, [runs]);
 
-  // Mutable ref tracks the active run's collected state so stop() / error
-  // callbacks can access current logs without stale closure captures.
-  const runRef = useRef<RunRef>({ logs: [], sources: [], phase: null, meta: null });
+  // Source of truth for live runs. The Map holds mutable per-run buffers + WS.
+  const runsRef = useRef<Map<string, InternalRun>>(new Map());
 
-  // WS abort handle and stopped flag (also mutable refs, not state)
-  const abortRef  = useRef<{ abort: () => void } | null>(null);
-  const stoppedRef = useRef(false);
+  // ── Snapshot helper: rebuild the render array from the ref ─────────────────────
 
-  // ── Helpers ─────────────────────────────────────────────────────────────────
-
-  const closeWs = useCallback(() => {
-    if (abortRef.current) { abortRef.current.abort(); abortRef.current = null; }
+  const syncActiveRuns = useCallback(() => {
+    const views: ActiveRunView[] = [];
+    for (const r of runsRef.current.values()) {
+      const actionMeta = findAction(r.meta.actionId);
+      views.push({
+        runId: r.runId,
+        actionId: r.meta.actionId,
+        actionLabel: actionMeta.label,
+        detail: actionSummary(actionMeta, r.meta.form),
+        status: r.status,
+        phase: r.phase,
+        logs: [...r.logs],
+        sources: [...r.sources],
+        doneData: r.doneData,
+        startedAt: r.startedAt,
+        form: r.meta.form,
+      });
+    }
+    views.sort((a, b) => a.startedAt - b.startedAt);
+    setActiveRuns(views);
   }, []);
 
-  const pushRun = useCallback((
-    finalStatus: 'success' | 'failure' | 'stopped',
-    snapshot: RunRef,
-  ) => {
-    if (!snapshot.meta) return;
-    const { actionId, form } = snapshot.meta;
+  const pushRun = useCallback((run: InternalRun, finalStatus: 'success' | 'failure' | 'stopped') => {
+    const { actionId, form } = run.meta;
     const actionMeta = findAction(actionId);
-    const detail = actionSummary(actionMeta, form);
     setRuns(prev => [{
-      id: 'r' + Date.now(),
+      id: run.runId,
       actionId,
       actionLabel: actionMeta.label,
-      detail,
+      detail: actionSummary(actionMeta, form),
       status: finalStatus,
       timeAgo: 'just now',
-      startedAt: Date.now(),
+      startedAt: run.startedAt,
       state: { ...form },
-      logs: snapshot.logs,
-      sources: snapshot.sources,
-      currentPhase: snapshot.phase,
-      doneData: snapshot.doneData ?? null,
+      logs: [...run.logs],
+      sources: [...run.sources],
+      currentPhase: run.phase,
+      doneData: run.doneData ?? null,
     }, ...prev]);
   }, []);
 
   // ── startRun ─────────────────────────────────────────────────────────────────
 
-  const startRun = useCallback((input: StartRunInput) => {
-    closeWs();
-    stoppedRef.current = false;
-
-    // Reset mutable tracking state
-    runRef.current = { logs: [], sources: [], phase: null, meta: input };
-
-    // Reset observable state
-    setLogs([]);
-    setSources([]);
-    setDoneData(null);
-    setStatus('running');
-    setCurrentRunId(null);
-    setCurrentPhase(null);
+  const startRun = useCallback((input: StartRunInput): string => {
+    const runId = _newRunId();
+    const run: InternalRun = {
+      runId,
+      meta: input,
+      status: 'running',
+      logs: [],
+      sources: [],
+      phase: null,
+      doneData: null,
+      startedAt: Date.now(),
+      ws: null,
+      stopped: false,
+    };
+    runsRef.current.set(runId, run);
+    // View the freshly-started run.
+    setViewedHistory(null);
+    setViewedRunId(runId);
+    syncActiveRuns();
 
     const { actionId, form } = input;
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(`${proto}//${window.location.host}/ws/studio/run`);
-    abortRef.current = { abort: () => ws.close() };
+    run.ws = ws;
 
     ws.onopen = () => {
       ws.send(JSON.stringify({
@@ -203,134 +248,163 @@ export function StudioRunProvider({ children }: { children: ReactNode }) {
     };
 
     ws.onmessage = (e: MessageEvent) => {
-      if (stoppedRef.current) return;
+      const r = runsRef.current.get(runId);
+      if (!r || r.stopped) return;
       let evt: Record<string, unknown>;
       try { evt = JSON.parse(e.data as string); } catch { return; }
 
       if (evt.type === 'log') {
-        const entry: LogEntry = { phase: String(evt.phase), text: String(evt.text) };
-        runRef.current.logs.push(entry);
-        runRef.current.phase = String(evt.phase);
-        setLogs(prev => [...prev, entry]);
-        setCurrentPhase(String(evt.phase));
+        r.logs.push({ phase: String(evt.phase), text: String(evt.text) });
+        r.phase = String(evt.phase);
+        syncActiveRuns();
       } else if (evt.type === 'done') {
         const finalStatus = (evt.status as 'success' | 'failure') ?? 'success';
         if (evt.raw) {
-          try {
-            const parsed = JSON.parse(evt.raw as string) as Record<string, unknown>;
-            setDoneData(parsed);
-            // Capture in ref BEFORE pushRun so the record carries the output_file path.
-            runRef.current.doneData = parsed;
-          } catch {}
+          try { r.doneData = JSON.parse(evt.raw as string) as Record<string, unknown>; } catch {}
         }
-        setStatus(finalStatus);
-        pushRun(finalStatus, { ...runRef.current, logs: [...runRef.current.logs] });
+        r.status = finalStatus;
+        pushRun(r, finalStatus);
+        syncActiveRuns();
         ws.close();
       } else if (evt.type === 'error') {
-        const entry: LogEntry = { phase: 'error', text: String(evt.message) };
-        runRef.current.logs.push(entry);
-        runRef.current.phase = 'error';
-        setLogs(prev => [...prev, entry]);
-        setStatus('failure');
-        pushRun('failure', { ...runRef.current, logs: [...runRef.current.logs] });
+        r.logs.push({ phase: 'error', text: String(evt.message) });
+        r.phase = 'error';
+        r.status = 'failure';
+        pushRun(r, 'failure');
+        syncActiveRuns();
         ws.close();
       }
     };
 
     ws.onerror = () => {
-      if (!stoppedRef.current) {
-        const entry: LogEntry = { phase: 'error', text: 'Connection error — is the server running?' };
-        runRef.current = { logs: [entry], sources: [], phase: 'error', meta: input };
-        setLogs([entry]);
-        setStatus('failure');
-        pushRun('failure', { ...runRef.current });
-      }
+      const r = runsRef.current.get(runId);
+      if (!r || r.stopped) return;
+      r.logs.push({ phase: 'error', text: 'Connection error — is the server running?' });
+      r.phase = 'error';
+      r.status = 'failure';
+      pushRun(r, 'failure');
+      syncActiveRuns();
     };
 
     ws.onclose = () => {
-      abortRef.current = null;
+      const r = runsRef.current.get(runId);
+      if (r) r.ws = null;
     };
-  }, [closeWs, pushRun]);
+
+    return runId;
+  }, [pushRun, syncActiveRuns]);
+
+  // ── viewRun ──────────────────────────────────────────────────────────────────
+
+  const viewRun = useCallback((runId: string) => {
+    setViewedHistory(null);
+    setViewedRunId(runId);
+  }, []);
 
   // ── stop ─────────────────────────────────────────────────────────────────────
 
-  const stop = useCallback(() => {
-    stoppedRef.current = true;
-    closeWs();
-    // Snapshot current mutable state before it's cleared
-    const snapshot: RunRef = {
-      logs: [...runRef.current.logs],
-      sources: [...runRef.current.sources],
-      phase: runRef.current.phase,
-      meta: runRef.current.meta,
-    };
-    setStatus('stopped');
-    pushRun('stopped', snapshot);
-  }, [closeWs, pushRun]);
+  const stop = useCallback((runId?: string) => {
+    const id = runId ?? viewedRunId;
+    if (!id) return;
+    const r = runsRef.current.get(id);
+    if (!r) return;
+    r.stopped = true;
+    if (r.ws) { try { r.ws.close(); } catch {} r.ws = null; }
+    r.status = 'stopped';
+    pushRun(r, 'stopped');
+    syncActiveRuns();
+  }, [viewedRunId, pushRun, syncActiveRuns]);
 
   // ── reset ─────────────────────────────────────────────────────────────────────
+  // Clears the output view. If the viewed run has finished, drop it from the
+  // active list (it lives on in history). Running runs are never killed by reset.
 
   const reset = useCallback(() => {
-    closeWs();
-    setStatus('idle');
-    setLogs([]);
-    setSources([]);
-    setCurrentPhase(null);
-    setDoneData(null);
-    runRef.current = { logs: [], sources: [], phase: null, meta: null };
-  }, [closeWs]);
+    if (viewedRunId) {
+      const r = runsRef.current.get(viewedRunId);
+      if (r && r.status !== 'running') {
+        runsRef.current.delete(viewedRunId);
+        syncActiveRuns();
+      }
+    }
+    setViewedHistory(null);
+    setViewedRunId(null);
+  }, [viewedRunId, syncActiveRuns]);
 
   // ── abortAndLoad ──────────────────────────────────────────────────────────────
+  // View a history record. Active runs keep streaming untouched (the whole point
+  // of concurrent runs — opening history no longer kills a live run).
 
   const abortAndLoad = useCallback((record: RunRecord) => {
-    // Silently close WS (no push to history — we're just switching view)
-    stoppedRef.current = true;
-    closeWs();
-    // Display the history record's state in the output panel
-    setStatus(record.status === 'running' ? 'success' : (record.status as Status));
-    setLogs(record.logs);
-    setSources(record.sources ?? []);
-    setCurrentPhase(record.currentPhase);
-    // Restore result payload so output_file shows correctly for historical runs.
-    setDoneData(record.doneData ?? null);
-    setCurrentRunId(record.id);
-    runRef.current = {
-      logs: record.logs,
-      sources: record.sources ?? [],
-      phase: record.currentPhase,
-      meta: null,
-    };
-  }, [closeWs]);
+    setViewedHistory(record);
+    setViewedRunId(null);
+  }, []);
 
-  // ── Sync to AppRunContext ─────────────────────────────────────────────────────
-  // This is how the generic status indicators (Sidebar pill, StatusBanner dot)
-  // learn about Studio activity without coupling to Studio internals.
+  // ── Derive the viewed-run flat fields ──────────────────────────────────────────
+
+  const viewedActive = viewedRunId ? activeRuns.find(r => r.runId === viewedRunId) : undefined;
+
+  let vStatus: Status = 'idle';
+  let vLogs: LogEntry[] = [];
+  let vSources: Source[] = [];
+  let vPhase: string | null = null;
+  let vDone: Record<string, unknown> | null = null;
+  let vCurrentId: string | null = null;
+
+  if (viewedHistory) {
+    vStatus = viewedHistory.status === 'running' ? 'success' : (viewedHistory.status as Status);
+    vLogs = viewedHistory.logs;
+    vSources = viewedHistory.sources ?? [];
+    vPhase = viewedHistory.currentPhase;
+    vDone = viewedHistory.doneData ?? null;
+    vCurrentId = viewedHistory.id;
+  } else if (viewedActive) {
+    vStatus = viewedActive.status;
+    vLogs = viewedActive.logs;
+    vSources = viewedActive.sources;
+    vPhase = viewedActive.phase;
+    vDone = viewedActive.doneData;
+    vCurrentId = viewedActive.runId;
+  }
+
+  const anyRunning = activeRuns.some(r => r.status === 'running');
+
+  // ── Sync to AppRunContext (aggregate: running if any run is running) ────────────
 
   const { setActivity } = useAppRun();
 
   useEffect(() => {
-    if (status === 'running') {
-      setActivity('studio', {
-        label: 'Studio',
-        phase: currentPhase ?? undefined,
-        status: 'running',
-      });
-    } else if (status === 'idle') {
+    const running = activeRuns.filter(r => r.status === 'running');
+    if (running.length > 0) {
+      const phase = running.length > 1 ? `${running.length} runs` : (running[0].phase ?? undefined);
+      setActivity('studio', { label: 'Studio', phase, status: 'running' });
+    } else if (activeRuns.length === 0) {
       setActivity('studio', null);
     } else {
-      // success / failure / stopped — show briefly then auto-clear
-      setActivity('studio', { label: 'Studio', status });
+      // All finished — reflect the most recent terminal status briefly.
+      const last = activeRuns[activeRuns.length - 1];
+      const st = last.status === 'running' ? 'success' : last.status;
+      setActivity('studio', { label: 'Studio', status: st as 'success' | 'failure' | 'stopped' });
       const t = setTimeout(() => setActivity('studio', null), 3000);
       return () => clearTimeout(t);
     }
-  }, [status, currentPhase, setActivity]);
+  }, [activeRuns, setActivity]);
 
   // ── Context value ─────────────────────────────────────────────────────────────
 
   return (
     <StudioRunContext.Provider value={{
-      status, logs, sources, currentPhase, doneData, gating, runs, currentRunId,
-      startRun, stop, reset, abortAndLoad,
+      status: vStatus,
+      logs: vLogs,
+      sources: vSources,
+      currentPhase: vPhase,
+      doneData: vDone,
+      gating,
+      activeRuns,
+      anyRunning,
+      runs,
+      currentRunId: vCurrentId,
+      startRun, viewRun, stop, reset, abortAndLoad,
       setGating, setRuns,
     }}>
       {children}
