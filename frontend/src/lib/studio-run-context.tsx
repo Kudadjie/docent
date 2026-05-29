@@ -134,6 +134,12 @@ function _newRunId(): string {
   return `r${Date.now()}_${_runSeq}`;
 }
 
+// Any run that pushes to NotebookLM contends for the single shared session:
+// the dedicated to-notebook action, or a research action with dest=Notebook.
+function goesToNotebook(r: InternalRun): boolean {
+  return r.meta.actionId === 'notebook' || r.meta.form.dest === 'Notebook';
+}
+
 export function StudioRunProvider({ children }: { children: ReactNode }) {
   const [gating, setGating]             = useState(false);
   const [activeRuns, setActiveRuns]     = useState<ActiveRunView[]>([]);
@@ -222,7 +228,7 @@ export function StudioRunProvider({ children }: { children: ReactNode }) {
   // Decide whether a run may start NOW, given the current set of running runs.
   const admit = useCallback((run: InternalRun): { start: boolean; reason?: string } => {
     const running = [...runsRef.current.values()].filter(r => r.status === 'running');
-    if (run.meta.actionId === 'notebook' && running.some(r => r.meta.actionId === 'notebook')) {
+    if (goesToNotebook(run) && running.some(goesToNotebook)) {
       return { start: false, reason: 'Waiting: NotebookLM busy — another to-notebook run is active.' };
     }
     if (running.length >= capRef.current) {

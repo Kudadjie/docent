@@ -104,6 +104,18 @@ describe('studio run-manager (concurrent runs)', () => {
     expect(FakeWS.instances).toHaveLength(2); // second socket now opened
   });
 
+  it('queues a research→notebook run behind a live to-notebook run', () => {
+    const { result } = renderHook(() => useStudioRun(), { wrapper });
+
+    act(() => { result.current.startRun({ actionId: 'notebook', form }); });
+    // A deep-research run that outputs to NotebookLM also contends for the session.
+    act(() => { result.current.startRun({ actionId: 'deep', form: { ...form, dest: 'Notebook' } }); });
+
+    const deep = result.current.activeRuns.find(r => r.actionId === 'deep');
+    expect(deep?.status).toBe('queued');
+    expect(deep?.queuedReason).toMatch(/NotebookLM/i);
+  });
+
   it('enforces the parallel cap from config', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       json: async () => ({ research: { max_parallel_studio_runs: 1 } }),

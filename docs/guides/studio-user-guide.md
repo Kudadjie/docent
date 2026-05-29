@@ -53,10 +53,12 @@ has its own **Stop**; starting a new run never cancels the others.
 
 Two guardrails keep concurrent runs safe:
 
-- **NotebookLM is single-session.** Only one `to-notebook` run can touch
-  NotebookLM at a time (this holds across the UI *and* the CLI). A second one
-  parks as **Queued — "Waiting: NotebookLM busy"** and starts itself the moment
-  the first finishes. Zero clicks.
+- **NotebookLM is single-session.** Only one run can touch NotebookLM at a time —
+  whether it's a `to-notebook` run or a deep-research/lit run sent to NotebookLM,
+  and across the UI *and* the CLI (the lock even covers the sign-in step, so two
+  runs can't both pop a login browser). A second one parks as **Queued —
+  "Waiting: NotebookLM busy"** and starts itself the moment the first finishes.
+  Zero clicks.
 - **Parallel cap.** At most `max_parallel_studio_runs` (default 3) runs stream at
   once; extras queue and auto-start as slots free up.
 

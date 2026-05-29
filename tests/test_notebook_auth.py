@@ -125,3 +125,39 @@ def test_preflight_force_engages_without_output_field(monkeypatch):
     monkeypatch.setattr(nb.time, "monotonic", lambda: next(ticks))
     with pytest.raises(RuntimeError):
         _preflight_notebook_auth(types.SimpleNamespace(), _ctx(), force=True)
+
+
+# ── Concurrent-run safety: the auth step holds the NotebookLM session mutex ─────
+# Two concurrent notebook-bound runs must never both launch a browser against the
+# single shared profile (Chromium ProcessSingleton crash). The auth preflight now
+# serializes the check+login behind the machine lock.
+
+def _ctx_timeout(t):
+    return types.SimpleNamespace(
+        via_mcp=True,
+        settings=types.SimpleNamespace(research=types.SimpleNamespace(notebooklm_lock_timeout=t)),
+    )
+
+
+def test_preflight_waits_then_bails_when_session_locked(monkeypatch, tmp_path):
+    monkeypatch.setattr(nb, "_NOTEBOOKLM_LOCK_PATH", tmp_path / "nlm.lock")
+    monkeypatch.setattr(nb, "_nlm_exe", lambda: "/usr/bin/notebooklm")
+    # Another run holds the session; auth must not proceed to launch a browser.
+    held = nb.notebooklm_session_lock(timeout=0)
+    held.acquire(timeout=0)
+    try:
+        with pytest.raises(RuntimeError, match="busy"):
+            _preflight_notebook_auth(_inputs(output="notebook"), _ctx_timeout(0.3), force=True)
+    finally:
+        held.release()
+
+
+def test_preflight_releases_lock_when_authed(monkeypatch, tmp_path):
+    monkeypatch.setattr(nb, "_NOTEBOOKLM_LOCK_PATH", tmp_path / "nlm.lock")
+    monkeypatch.setattr(nb, "_nlm_exe", lambda: "/usr/bin/notebooklm")
+    monkeypatch.setattr(nb, "_nlm_auth_ok", lambda *a, **k: True)
+    _preflight_notebook_auth(_inputs(output="notebook"), _ctx_timeout(5))
+    # Lock must be free afterwards — the next run can acquire immediately.
+    lk = nb.notebooklm_session_lock(timeout=0)
+    lk.acquire(timeout=0)
+    lk.release()

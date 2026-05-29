@@ -113,7 +113,9 @@ def _route_output(inputs: Any, out_path: Path, sources_path: Path | None, contex
     Yields ProgressEvents from _nlm_push when output='notebook'.
     Returns (notebook_id, vault_path, extra_message) as a tuple.
     """
-    from ._notebook import _nlm_push
+    from ._notebook import _nlm_push, notebooklm_session_lock
+    from docent.core import ProgressEvent
+    from filelock import Timeout as _FileLockTimeout
 
     # --to-notebook shorthand overrides --output
     if getattr(inputs, "to_notebook", False):
@@ -122,11 +124,33 @@ def _route_output(inputs: Any, out_path: Path, sources_path: Path | None, contex
     if inputs.output == "notebook":
         topic = getattr(inputs, "topic", None)
         gf_list = getattr(inputs, "guide_files", []) or []
-        result = yield from _nlm_push(
-            out_path, sources_path, context,
-            topic=topic,
-            guide_files=[Path(p).expanduser() for p in gf_list],
-        )
+        # Same machine-level NotebookLM mutex the to-notebook action uses: the
+        # shared Playwright session can't be touched by two pushes at once, and a
+        # research→notebook run reaches this push outside that action.
+        lock_timeout = context.settings.research.notebooklm_lock_timeout
+        lock = notebooklm_session_lock(timeout=lock_timeout)
+        try:
+            lock.acquire(timeout=0)
+        except _FileLockTimeout:
+            yield ProgressEvent(
+                phase="nlm-wait",
+                message="Waiting: NotebookLM session is busy — another to-notebook run is active.",
+            )
+            try:
+                lock.acquire(timeout=lock_timeout)
+            except _FileLockTimeout:
+                return None, None, (
+                    f" (NotebookLM session stayed busy for over {int(lock_timeout)}s — "
+                    "push skipped; re-run to-notebook later.)"
+                )
+        try:
+            result = yield from _nlm_push(
+                out_path, sources_path, context,
+                topic=topic,
+                guide_files=[Path(p).expanduser() for p in gf_list],
+            )
+        finally:
+            lock.release()
         if result["ok"]:
             return result["notebook_id"], None, f" {result['message']}"
         return None, None, f" (NotebookLM push failed: {result['message']})"
@@ -193,49 +217,80 @@ def _preflight_notebook_auth(inputs: BaseModel, context: Context, *, force: bool
         _nlm_exe,
         _nlm_login,
         _nlm_login_and_wait_ui,
+        notebooklm_session_lock,
     )
     # notebooklm not installed → let the push stage surface the install hint
     # rather than blocking a research run for a tool the user may add later.
-    if _nlm_exe() is None or _nlm_auth_ok():
+    if _nlm_exe() is None:
         return
 
     from docent.ui.console import get_console
+    from filelock import Timeout as _FileLockTimeout
     console = get_console()
 
-    if _login_terminal_mode(context):
-        # Drain the shared terminal+poll recovery, surfacing its progress to the
-        # activity log (preflights can't yield ProgressEvents — they run before
-        # the action generator exists).
-        gen = _nlm_login_and_wait_ui()
-        authed = False
+    # Serialize the whole auth check+login behind the machine-level NotebookLM
+    # mutex. Every `notebooklm` invocation — including the `list` auth probe in
+    # _nlm_auth_ok and the `login` browser — launches Chromium against the single
+    # shared profile, and two at once crash on its ProcessSingleton lock. A run
+    # that waits here almost always finds the session already authenticated by the
+    # run ahead of it (double-checked below), so it returns without a 2nd browser.
+    _research = getattr(getattr(context, "settings", None), "research", None)
+    lock_timeout = getattr(_research, "notebooklm_lock_timeout", 1800.0)
+    lock = notebooklm_session_lock(timeout=lock_timeout)
+    try:
+        lock.acquire(timeout=0)
+    except _FileLockTimeout:
+        console.print("[dim]Waiting: NotebookLM session busy (another run is using it)…[/]")
         try:
-            while True:
-                evt = next(gen)
-                if getattr(evt, "message", None):
-                    # markup=False: messages interpolate dynamic text (error
-                    # strings) that must not be parsed as Rich markup.
-                    console.print(evt.message, markup=False)
-        except StopIteration as stop:
-            authed = bool(stop.value)
-        if not authed:
+            lock.acquire(timeout=lock_timeout)
+        except _FileLockTimeout:
             _bail(
                 context,
-                "[red]Error:[/] NotebookLM authentication required. Sign in via the "
-                "login terminal (or Settings → NotebookLM → Authenticate), then re-run.",
-                "NotebookLM authentication required. Sign in via the login terminal "
-                "(or Settings → NotebookLM → Authenticate), then re-run.",
+                "[red]Error:[/] NotebookLM session stayed busy — try again once the other run finishes.",
+                "NotebookLM session stayed busy — try again once the other run finishes.",
             )
-        return
+            return
 
-    # Real CLI TTY: inline interactive login.
-    console.print("[dim]NotebookLM auth expired — running notebooklm login…[/]")
-    _nlm_login()
-    if not _nlm_auth_ok(retries=1, retry_delay=1.0):
-        _bail(
-            context,
-            "[red]Error:[/] NotebookLM auth expired. Run [cyan]notebooklm login[/] then retry.",
-            "NotebookLM auth expired. Run `notebooklm login` then retry.",
-        )
+    try:
+        if _nlm_auth_ok():
+            return  # authed (possibly by the run we just waited behind)
+
+        if _login_terminal_mode(context):
+            # Drain the shared terminal+poll recovery, surfacing its progress to the
+            # activity log (preflights can't yield ProgressEvents — they run before
+            # the action generator exists).
+            gen = _nlm_login_and_wait_ui()
+            authed = False
+            try:
+                while True:
+                    evt = next(gen)
+                    if getattr(evt, "message", None):
+                        # markup=False: messages interpolate dynamic text (error
+                        # strings) that must not be parsed as Rich markup.
+                        console.print(evt.message, markup=False)
+            except StopIteration as stop:
+                authed = bool(stop.value)
+            if not authed:
+                _bail(
+                    context,
+                    "[red]Error:[/] NotebookLM authentication required. Sign in via the "
+                    "login terminal (or Settings → NotebookLM → Authenticate), then re-run.",
+                    "NotebookLM authentication required. Sign in via the login terminal "
+                    "(or Settings → NotebookLM → Authenticate), then re-run.",
+                )
+            return
+
+        # Real CLI TTY: inline interactive login.
+        console.print("[dim]NotebookLM auth expired — running notebooklm login…[/]")
+        _nlm_login()
+        if not _nlm_auth_ok(retries=1, retry_delay=1.0):
+            _bail(
+                context,
+                "[red]Error:[/] NotebookLM auth expired. Run [cyan]notebooklm login[/] then retry.",
+                "NotebookLM auth expired. Run `notebooklm login` then retry.",
+            )
+    finally:
+        lock.release()
 
 
 def _preflight_free_backend(inputs: BaseModel, context: Context) -> None:
