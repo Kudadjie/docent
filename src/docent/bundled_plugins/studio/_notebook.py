@@ -14,6 +14,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterator
@@ -129,6 +130,90 @@ def _nlm_login(timeout: float = 120) -> tuple[bool, str]:
         return False, f"Login timed out after {timeout:.0f}s"
     except OSError as e:
         return False, str(e)
+
+
+def _open_login_terminal() -> tuple[bool, str]:
+    """Open `notebooklm login` in a visible OS terminal for interactive auth.
+
+    Returns (launched, error). Shared by the UI auth endpoint
+    (ui_routes/opencode.py) and by in-run auth recovery when to-notebook runs
+    as a UI subprocess (no TTY) — the inline `notebooklm login` can't prompt
+    there, so we hand the user a real console with a browser-capable session.
+    """
+    exe = _nlm_exe()
+    if not exe:
+        return False, "notebooklm not found on PATH"
+    try:
+        if sys.platform == "win32":
+            # Detached, visible Command Prompt that stays open after login.
+            # exe is shutil.which-resolved (not user input), so shell=True here
+            # is not an injection surface. The exe path is double-quoted because
+            # cmd /k strips the outer quote pair — without it a spaced path
+            # (e.g. C:\Users\First Last\...) splits on the space and never runs.
+            subprocess.Popen(f'start "NotebookLM Auth" cmd /k ""{exe}" login"', shell=True)
+        elif sys.platform == "darwin":
+            # Quote exe inside the AppleScript string so a spaced path survives
+            # `do script` (which runs via the shell).
+            subprocess.Popen(
+                ["osascript", "-e", f'tell app "Terminal" to do script "\\"{exe}\\" login"']
+            )
+        else:
+            for term, args in [
+                ("gnome-terminal", ["--", exe, "login"]),
+                ("xfce4-terminal", ["-e", f'"{exe}" login']),
+                ("konsole", ["-e", exe, "login"]),
+                ("xterm", ["-e", exe, "login"]),
+            ]:
+                if shutil.which(term):
+                    subprocess.Popen([term] + args)
+                    break
+            else:
+                return False, (
+                    "No terminal emulator found. Run `notebooklm login` manually."
+                )
+        return True, ""
+    except Exception as exc:  # noqa: BLE001 — surface any spawn failure to the caller
+        return False, str(exc)
+
+
+def _nlm_login_and_wait_ui(
+    poll_timeout: float = 120.0, poll_interval: float = 3.0
+) -> Iterator[ProgressEvent]:
+    """UI-subprocess auth recovery: open a login terminal, then poll until the
+    user authenticates or we time out.
+
+    Yields ProgressEvents; returns True (authenticated) or False (gave up) via
+    StopIteration.value — call with ``ok = yield from _nlm_login_and_wait_ui()``.
+    """
+    launched, err = _open_login_terminal()
+    if not launched:
+        yield ProgressEvent(
+            phase="nlm-login", level="error",
+            message=(
+                f"Could not open a login terminal: {err}. "
+                "Authenticate via Settings → NotebookLM, then retry."
+            ),
+        )
+        return False
+
+    yield ProgressEvent(
+        phase="nlm-login",
+        message=(
+            "A terminal opened for `notebooklm login` — complete the Google "
+            "sign-in there. Waiting up to 2 min…"
+        ),
+    )
+    deadline = time.monotonic() + poll_timeout
+    while time.monotonic() < deadline:
+        time.sleep(poll_interval)
+        if _nlm_auth_ok(retries=1, retry_delay=1.0):
+            return True
+        remaining = max(0, int(deadline - time.monotonic()))
+        yield ProgressEvent(
+            phase="nlm-login",
+            message=f"Waiting for NotebookLM login… ({remaining}s left)",
+        )
+    return False
 
 
 def _nlm_auth_ok(retries: int = 2, retry_delay: float = 2.0) -> bool:
@@ -964,20 +1049,36 @@ def _nlm_push(
     # ── Phase 0: Auth ──────────────────────────────────────────────────────
     yield ProgressEvent(phase="nlm-check", message="Checking NotebookLM auth...")
     if not _nlm_auth_ok():
-        yield ProgressEvent(phase="nlm-login", message="Auth expired -- running notebooklm login...")
-        login_ok, login_err = _nlm_login()
-        # Always re-check auth after login regardless of exit code — a code-1
-        # exit can mean "already authenticated" (Playwright redirect case).
-        if not _nlm_auth_ok(retries=1, retry_delay=1.0):
-            detail = f": {login_err}" if login_err else ""
-            return {
-                **_EMPTY_PIPELINE_RESULT,
-                "message": (
-                    f"NotebookLM auth expired{detail}. "
-                    "Run `notebooklm login` manually then retry."
-                ),
-            }
-        yield ProgressEvent(phase="nlm-login", message="Login successful.")
+        if os.environ.get("DOCENT_UI_SUBPROCESS"):
+            # UI subprocess has no TTY — the inline `notebooklm login` would run
+            # non-interactively and fail. Open a visible terminal for the browser
+            # sign-in and poll until the user completes it (or we time out).
+            authed = yield from _nlm_login_and_wait_ui()
+            if not authed:
+                return {
+                    **_EMPTY_PIPELINE_RESULT,
+                    "message": (
+                        "NotebookLM auth required — sign in via the login terminal "
+                        "(or Settings → NotebookLM → Authenticate), then re-run the "
+                        "to-notebook action. See the log above for details."
+                    ),
+                }
+            yield ProgressEvent(phase="nlm-login", message="Login successful.")
+        else:
+            yield ProgressEvent(phase="nlm-login", message="Auth expired -- running notebooklm login...")
+            login_ok, login_err = _nlm_login()
+            # Always re-check auth after login regardless of exit code — a code-1
+            # exit can mean "already authenticated" (Playwright redirect case).
+            if not _nlm_auth_ok(retries=1, retry_delay=1.0):
+                detail = f": {login_err}" if login_err else ""
+                return {
+                    **_EMPTY_PIPELINE_RESULT,
+                    "message": (
+                        f"NotebookLM auth expired{detail}. "
+                        "Run `notebooklm login` manually then retry."
+                    ),
+                }
+            yield ProgressEvent(phase="nlm-login", message="Login successful.")
 
     # ── Resolve topic early (needed for notebook title + quality-gate) ───────
     effective_topic = topic or _derive_topic(out_path)

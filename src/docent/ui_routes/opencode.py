@@ -249,55 +249,18 @@ async def notebooklm_auth_status() -> JSONResponse:
 @router.post("/api/notebooklm/auth")
 async def notebooklm_auth() -> JSONResponse:
     """Open a visible terminal window to run `notebooklm login` interactively."""
-    import shutil as _sh
-    exe = _sh.which("notebooklm")
-    if not exe:
-        return JSONResponse(
-            {
-                "ok": False,
-                "error": "notebooklm not found on PATH. Install with: pip install notebooklm",
-            },
-            status_code=404,
-        )
-    try:
-        if sys.platform == "win32":
-            # Start a new visible Command Prompt that stays open after the command.
-            subprocess.Popen(
-                f'start "NotebookLM Auth" cmd /k "{exe} login"',
-                shell=True,
+    # Shares the terminal-spawn logic with the in-run auth recovery in _notebook.py.
+    from docent.bundled_plugins.studio._notebook import _open_login_terminal
+    launched, err = _open_login_terminal()
+    if not launched:
+        if "not found on PATH" in err:
+            return JSONResponse(
+                {"ok": False, "error": "notebooklm not found on PATH. Install with: pip install notebooklm"},
+                status_code=404,
             )
-        elif sys.platform == "darwin":
-            subprocess.Popen(
-                ["osascript", "-e", f'tell app "Terminal" to do script "{exe} login"']
-            )
-        else:
-            # Linux: try common terminal emulators in order.
-            _launched = False
-            for term, args in [
-                ("gnome-terminal", ["--", exe, "login"]),
-                ("xfce4-terminal", ["-e", f"{exe} login"]),
-                ("konsole", ["-e", exe, "login"]),
-                ("xterm", ["-e", exe, "login"]),
-            ]:
-                if _sh.which(term):
-                    subprocess.Popen([term] + args)
-                    _launched = True
-                    break
-            if not _launched:
-                return JSONResponse(
-                    {
-                        "ok": False,
-                        "error": (
-                            "No terminal emulator found. "
-                            "Run `notebooklm login` in a terminal manually."
-                        ),
-                    },
-                    status_code=500,
-                )
-        _audit("notebooklm-auth", "terminal opened")
-        return JSONResponse({"ok": True, "message": "Terminal opened for authentication."})
-    except Exception as exc:
-        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+        return JSONResponse({"ok": False, "error": err}, status_code=500)
+    _audit("notebooklm-auth", "terminal opened")
+    return JSONResponse({"ok": True, "message": "Terminal opened for authentication."})
 
 
 @router.websocket("/ws/studio/run")

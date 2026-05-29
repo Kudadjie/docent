@@ -85,7 +85,7 @@ All research actions accept a `backend` field from this set:
 ### Flow 3 — Research → NotebookLM
 1. After Flow 1 or 2 completes, user runs `to-notebook`
 2. If `output_file` omitted, auto-detects most recent `.md` in `output_dir`
-3. Preflight checks NotebookLM auth; if expired, triggers interactive `notebooklm login`
+3. Phase 0 checks NotebookLM auth; if expired, recovery depends on context: from a real terminal (CLI) it runs `notebooklm login` inline; from the UI (no TTY, `DOCENT_UI_SUBPROCESS=1`) it opens a visible login terminal and polls auth for up to 2 min while the user signs in, then continues
 4. Sources ranked and deduplicated (max 20 by default, capped at 1 per domain)
 5. Local package written: `{stem}-notebook/` with `sources_urls.txt` + copy of `.md`
 6. Pipeline phases stream in order:
@@ -335,7 +335,7 @@ The `output` field (default `local`) and shorthand `to_notebook: bool` control w
 - **No output file in output_dir** → `ToNotebookResult(ok=False, message="No research output found in {dir}. Run docent studio deep-research or docent studio lit first.")`
 - **No sources file** → Pipeline continues without Feynman sources; NLM research arm still runs if enabled.
 - **NLM unavailable** → Falls back to opening `https://notebooklm.google.com` in browser. Returns `ok=True` with local package path.
-- **NLM auth expired** → Triggers interactive `notebooklm login` (browser opens); if login fails, falls back to browser-open.
+- **NLM auth expired** → CLI: runs `notebooklm login` inline (browser opens). UI subprocess: opens a visible login terminal and polls auth for up to 2 min; on timeout returns `ok=False` with a message to authenticate (Settings → NotebookLM) and re-run.
 
 ### Config errors
 - **Unknown key** → `ConfigSetResult(ok=False, message="Unknown key 'foo'. Known: [sorted list]")`
