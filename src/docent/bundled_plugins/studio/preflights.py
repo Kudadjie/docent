@@ -234,26 +234,21 @@ def _preflight_notebook_auth(inputs: BaseModel, context: Context, *, force: bool
     # shared profile, and two at once crash on its ProcessSingleton lock. A run
     # that waits here almost always finds the session already authenticated by the
     # run ahead of it (double-checked below), so it returns without a 2nd browser.
-    _research = getattr(getattr(context, "settings", None), "research", None)
-    lock_timeout = getattr(_research, "notebooklm_lock_timeout", 1800.0)
-    lock = notebooklm_session_lock(timeout=lock_timeout)
+    lock = notebooklm_session_lock(timeout=0)
     try:
         lock.acquire(timeout=0)
     except _FileLockTimeout:
-        console.print("[dim]Waiting: NotebookLM session busy (another run is using it)…[/]")
-        try:
-            lock.acquire(timeout=lock_timeout)
-        except _FileLockTimeout:
-            _bail(
-                context,
-                "[red]Error:[/] NotebookLM session stayed busy — try again once the other run finishes.",
-                "NotebookLM session stayed busy — try again once the other run finishes.",
-            )
-            return
+        # Another run holds the NotebookLM session right now. It can only do so
+        # while authenticated (you can't drive NLM with a dead session), so auth is
+        # fine — skip this upfront fail-fast probe rather than blocking. Blocking
+        # here would stall this run's *research* behind the other run's push, which
+        # defeats concurrency. The push stage re-checks/recovers auth when this run
+        # actually reaches NotebookLM.
+        return
 
     try:
         if _nlm_auth_ok():
-            return  # authed (possibly by the run we just waited behind)
+            return  # session is live
 
         if _login_terminal_mode(context):
             # Drain the shared terminal+poll recovery, surfacing its progress to the
