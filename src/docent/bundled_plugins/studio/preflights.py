@@ -166,6 +166,78 @@ def _bail(context: Context, rich_msg: str, plain_msg: str | None = None) -> None
     raise typer.Exit(1)
 
 
+def _preflight_notebook_auth(inputs: BaseModel, context: Context, *, force: bool = False) -> None:
+    """Authenticate NotebookLM up front for any action that will push to it.
+
+    Without this, the only auth check is _nlm_push Phase 0 — which for
+    research→notebook flows runs *after* a full (expensive) research run, so a
+    stale session wastes the whole run. This fires before the work: fail fast on
+    a dead session, or get the user signed in first.
+
+    Triggers when output routes to NotebookLM (output='notebook', --to-notebook)
+    or force=True (the to-notebook action itself). Reuses the same recovery as the
+    push stage — detached login terminal + poll for no-TTY callers (UI subprocess /
+    via_mcp), inline interactive login on a real CLI TTY.
+    """
+    going_to_notebook = (
+        force
+        or getattr(inputs, "to_notebook", False)
+        or getattr(inputs, "output", None) == "notebook"
+    )
+    if not going_to_notebook:
+        return
+
+    from ._notebook import (
+        _login_terminal_mode,
+        _nlm_auth_ok,
+        _nlm_exe,
+        _nlm_login,
+        _nlm_login_and_wait_ui,
+    )
+    # notebooklm not installed → let the push stage surface the install hint
+    # rather than blocking a research run for a tool the user may add later.
+    if _nlm_exe() is None or _nlm_auth_ok():
+        return
+
+    from docent.ui.console import get_console
+    console = get_console()
+
+    if _login_terminal_mode(context):
+        # Drain the shared terminal+poll recovery, surfacing its progress to the
+        # activity log (preflights can't yield ProgressEvents — they run before
+        # the action generator exists).
+        gen = _nlm_login_and_wait_ui()
+        authed = False
+        try:
+            while True:
+                evt = next(gen)
+                if getattr(evt, "message", None):
+                    # markup=False: messages interpolate dynamic text (error
+                    # strings) that must not be parsed as Rich markup.
+                    console.print(evt.message, markup=False)
+        except StopIteration as stop:
+            authed = bool(stop.value)
+        if not authed:
+            _bail(
+                context,
+                "[red]Error:[/] NotebookLM authentication required. Sign in via the "
+                "login terminal (or Settings → NotebookLM → Authenticate), then re-run.",
+                "NotebookLM authentication required. Sign in via the login terminal "
+                "(or Settings → NotebookLM → Authenticate), then re-run.",
+            )
+        return
+
+    # Real CLI TTY: inline interactive login.
+    console.print("[dim]NotebookLM auth expired — running notebooklm login…[/]")
+    _nlm_login()
+    if not _nlm_auth_ok(retries=1, retry_delay=1.0):
+        _bail(
+            context,
+            "[red]Error:[/] NotebookLM auth expired. Run [cyan]notebooklm login[/] then retry.",
+            "NotebookLM auth expired. Run `notebooklm login` then retry.",
+        )
+
+
 def _preflight_free_backend(inputs: BaseModel, context: Context) -> None:
     """Show free-tier disclaimer, guide Tavily signup if key is missing, and confirm.
 
@@ -304,6 +376,9 @@ def _preflight_docent(inputs: BaseModel, context: Context) -> None:
     """
     _preflight_guide_files(inputs)
     _preflight_free_backend(inputs, context)
+    # Ensure NotebookLM auth up front when this run will push to it, so a stale
+    # session fails fast instead of after the (expensive) research completes.
+    _preflight_notebook_auth(inputs, context)
 
     from .backend import DOCENT_BACKEND_NAMES
     backend_name = getattr(inputs, "backend", None)
@@ -381,6 +456,8 @@ def _preflight_docent(inputs: BaseModel, context: Context) -> None:
 
 def _preflight_oc_only(inputs: BaseModel, context: Context) -> None:
     """Pre-flight check for review/compare/draft/replicate/audit (AI backend, no Tavily needed)."""
+    # Ensure NotebookLM auth up front when --output notebook is selected.
+    _preflight_notebook_auth(inputs, context)
     from .backend import DOCENT_BACKEND_NAMES
     backend_name = getattr(inputs, "backend", None)
     if backend_name not in DOCENT_BACKEND_NAMES:
@@ -617,6 +694,9 @@ def _preflight_to_notebook(inputs: BaseModel, context: Context) -> None:
     """
     import typer
     from docent.ui.console import get_console
+
+    # to-notebook always pushes to NotebookLM — ensure auth before picking files.
+    _preflight_notebook_auth(inputs, context, force=True)
 
     console = get_console()
     output_dir = context.settings.research.output_dir.expanduser()

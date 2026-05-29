@@ -7,7 +7,12 @@ activity log).
 """
 from __future__ import annotations
 
+import types
+
+import pytest
+
 import docent.bundled_plugins.studio._notebook as nb
+from docent.bundled_plugins.studio.preflights import _preflight_notebook_auth
 
 
 def _drain(gen):
@@ -45,3 +50,78 @@ def test_timeout_returns_false(monkeypatch):
     monkeypatch.setattr(nb.time, "monotonic", lambda: next(ticks))
     events, result = _drain(nb._nlm_login_and_wait_ui(poll_timeout=0.5, poll_interval=0))
     assert result is False
+
+
+# ── Upfront preflight (_preflight_notebook_auth) ───────────────────────────────
+
+def _ctx(via_mcp: bool = True):
+    return types.SimpleNamespace(via_mcp=via_mcp)
+
+
+def _inputs(**kw):
+    base = dict(output="local", to_notebook=False)
+    base.update(kw)
+    return types.SimpleNamespace(**base)
+
+
+def test_preflight_skips_when_not_notebook(monkeypatch):
+    seen = {"auth_checked": False}
+    monkeypatch.setattr(nb, "_nlm_exe", lambda: "/usr/bin/notebooklm")
+    monkeypatch.setattr(
+        nb, "_nlm_auth_ok",
+        lambda *a, **k: seen.__setitem__("auth_checked", True) or True,
+    )
+    _preflight_notebook_auth(_inputs(output="local"), _ctx())
+    assert seen["auth_checked"] is False  # output=local: never reaches the check
+
+
+def test_preflight_skips_when_already_authed(monkeypatch):
+    opened = {"n": 0}
+    monkeypatch.setattr(nb, "_nlm_exe", lambda: "/usr/bin/notebooklm")
+    monkeypatch.setattr(nb, "_nlm_auth_ok", lambda *a, **k: True)
+    monkeypatch.setattr(
+        nb, "_open_login_terminal",
+        lambda: (opened.__setitem__("n", opened["n"] + 1), (True, ""))[1],
+    )
+    _preflight_notebook_auth(_inputs(output="notebook"), _ctx())
+    assert opened["n"] == 0  # authed → no terminal opened
+
+
+def test_preflight_skips_when_not_installed(monkeypatch):
+    monkeypatch.setattr(nb, "_nlm_exe", lambda: None)
+    # Must return cleanly (push stage surfaces the install hint), not raise.
+    _preflight_notebook_auth(_inputs(output="notebook"), _ctx())
+
+
+def test_preflight_bails_when_login_times_out(monkeypatch):
+    monkeypatch.setattr(nb, "_nlm_exe", lambda: "/usr/bin/notebooklm")
+    monkeypatch.setattr(nb, "_nlm_auth_ok", lambda *a, **k: False)
+    monkeypatch.setattr(nb, "_open_login_terminal", lambda: (True, ""))
+    monkeypatch.setattr(nb.time, "sleep", lambda *_: None)
+    # deadline = 0 + 120; jump past it after one iteration.
+    ticks = iter([0.0, 0.0, 200.0, 200.0, 200.0])
+    monkeypatch.setattr(nb.time, "monotonic", lambda: next(ticks))
+    with pytest.raises(RuntimeError, match="authentication required"):
+        _preflight_notebook_auth(_inputs(output="notebook"), _ctx(via_mcp=True))
+
+
+def test_preflight_passes_when_login_succeeds(monkeypatch):
+    monkeypatch.setattr(nb, "_nlm_exe", lambda: "/usr/bin/notebooklm")
+    monkeypatch.setattr(nb, "_open_login_terminal", lambda: (True, ""))
+    monkeypatch.setattr(nb.time, "sleep", lambda *_: None)
+    # gate sees expired (False); the poll then sees authed (True).
+    seq = iter([False, True, True, True])
+    monkeypatch.setattr(nb, "_nlm_auth_ok", lambda *a, **k: next(seq))
+    _preflight_notebook_auth(_inputs(output="notebook"), _ctx())  # no raise
+
+
+def test_preflight_force_engages_without_output_field(monkeypatch):
+    # to-notebook inputs have no `output`; force=True must still trigger the check.
+    monkeypatch.setattr(nb, "_nlm_exe", lambda: "/usr/bin/notebooklm")
+    monkeypatch.setattr(nb, "_nlm_auth_ok", lambda *a, **k: False)
+    monkeypatch.setattr(nb, "_open_login_terminal", lambda: (True, ""))
+    monkeypatch.setattr(nb.time, "sleep", lambda *_: None)
+    ticks = iter([0.0, 0.0, 200.0, 200.0, 200.0])
+    monkeypatch.setattr(nb.time, "monotonic", lambda: next(ticks))
+    with pytest.raises(RuntimeError):
+        _preflight_notebook_auth(types.SimpleNamespace(), _ctx(), force=True)

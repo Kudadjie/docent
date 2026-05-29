@@ -85,7 +85,7 @@ All research actions accept a `backend` field from this set:
 ### Flow 3 — Research → NotebookLM
 1. After Flow 1 or 2 completes, user runs `to-notebook`
 2. If `output_file` omitted, auto-detects most recent `.md` in `output_dir`
-3. Phase 0 checks NotebookLM auth; if expired, recovery depends on context: from a real terminal (CLI) it runs `notebooklm login` inline; from the UI (no TTY, `DOCENT_UI_SUBPROCESS=1`) it opens a visible login terminal and polls auth for up to 2 min while the user signs in, then continues
+3. NotebookLM auth is checked **up front in the preflight** for any run that will push to NotebookLM (`output=notebook`, `--to-notebook`, or the `to-notebook` action), so a stale session fails fast *before* an expensive research run rather than after. `_nlm_push` Phase 0 re-checks as a fallback (in case auth lapses mid-run). In both places, recovery depends on context: a real terminal (CLI) runs `notebooklm login` inline; a no-TTY caller (UI subprocess or any `via_mcp` caller) opens a visible login terminal and polls auth for up to 2 min while the user signs in, then continues
 4. Sources ranked and deduplicated (max 20 by default, capped at 1 per domain)
 5. Local package written: `{stem}-notebook/` with `sources_urls.txt` + copy of `.md`
 6. Pipeline phases stream in order:

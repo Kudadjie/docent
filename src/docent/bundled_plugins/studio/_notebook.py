@@ -216,6 +216,15 @@ def _nlm_login_and_wait_ui(
     return False
 
 
+def _login_terminal_mode(context: "Context") -> bool:
+    """True when inline interactive `notebooklm login` is impossible because there
+    is no usable TTY: a UI subprocess (DOCENT_UI_SUBPROCESS) or any via_mcp caller
+    (in-process UI/SSE, MCP stdio server). Such callers must open a detached
+    terminal and poll instead of inheriting a dead stdin (which crashes with EPIPE).
+    """
+    return bool(os.environ.get("DOCENT_UI_SUBPROCESS")) or getattr(context, "via_mcp", False)
+
+
 def _nlm_auth_ok(retries: int = 2, retry_delay: float = 2.0) -> bool:
     """Return True if notebooklm is installed and authenticated.
 
@@ -1049,10 +1058,10 @@ def _nlm_push(
     # ── Phase 0: Auth ──────────────────────────────────────────────────────
     yield ProgressEvent(phase="nlm-check", message="Checking NotebookLM auth...")
     if not _nlm_auth_ok():
-        if os.environ.get("DOCENT_UI_SUBPROCESS"):
-            # UI subprocess has no TTY — the inline `notebooklm login` would run
-            # non-interactively and fail. Open a visible terminal for the browser
-            # sign-in and poll until the user completes it (or we time out).
+        if _login_terminal_mode(context):
+            # No usable TTY — the inline `notebooklm login` would run
+            # non-interactively and fail (EPIPE). Open a visible terminal for the
+            # browser sign-in and poll until the user completes it (or we time out).
             authed = yield from _nlm_login_and_wait_ui()
             if not authed:
                 return {
