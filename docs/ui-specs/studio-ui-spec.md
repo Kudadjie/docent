@@ -207,6 +207,7 @@ Used by: `deep-research`, `lit`, `review`, `compare`, `draft`, `replicate`, `aud
 | `feynman_timeout` | `float` | Default 900s |
 | `notebooklm_notebook_id` | `str\|null` | Default notebook |
 | `notebooklm_source_limit` | `int` | Default 50 |
+| `notebooklm_ask_timeout` | `float` | Default 300s (quality gate / perspectives chat wait) |
 | `obsidian_vault` | `str\|null` | Vault path |
 | `alphaxiv_api_key` | `str\|null` | Masked if set |
 

@@ -281,6 +281,7 @@ or not yet indexed, and should be checked before citing.
 | `local_base_url` / `local_model` / `local_api_key` | — | Generic OAI-compatible local backend |
 | `tavily_api_key` | — | [Free at tavily.com](https://tavily.com) |
 | `notebooklm_notebook_id` | — | NotebookLM notebook ID from URL |
+| `notebooklm_ask_timeout` | `300` | Seconds to wait for a NotebookLM chat answer (quality gate / perspectives); raise for heavy notebooks |
 | `obsidian_vault` | — | Absolute path to Obsidian vault root |
 | `alphaxiv_api_key` | — | [Free at alphaxiv.org/settings](https://alphaxiv.org/settings) |
 

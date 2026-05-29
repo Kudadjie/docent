@@ -333,6 +333,20 @@ class TestConfigActions:
         assert result.value == "/new/path"
         mock_ws.assert_called_once_with("research.output_dir", "/new/path")
 
+    def test_config_set_notebooklm_ask_timeout(self, tmp_path):
+        # Regression: the quality-gate/perspectives chat-wait timeout must be a
+        # known, settable key (added so heavy notebooks don't fail at 180s).
+        tool = StudioTool()
+        ctx = _mock_context(output_dir=tmp_path)
+        fake_config = Path("/fake/config.toml")
+
+        with patch("docent.bundled_plugins.studio._config_actions.write_setting", return_value=fake_config) as mock_ws, \
+             patch("docent.utils.paths.config_file", return_value=fake_config):
+            result = tool.config_set(ConfigSetInputs(key="notebooklm_ask_timeout", value="600"), ctx)
+
+        assert result.ok is True
+        mock_ws.assert_called_once_with("research.notebooklm_ask_timeout", "600")
+
 
 class TestToShapes:
     def test_to_shapes_ok_true_returns_message_and_link(self):

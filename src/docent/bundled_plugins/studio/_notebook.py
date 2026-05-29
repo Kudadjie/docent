@@ -1360,10 +1360,23 @@ def _nlm_push(
     quality_gate: dict | None = None
     gaps_filled = 0
 
+    # NotebookLM's Gemini can take several minutes to analyse a heavy multi-source
+    # notebook. The `ask` subprocess blocks until the answer is ready, so too short
+    # a timeout kills it mid-generation (the answer still lands in the notebook
+    # afterward). Configurable via research.notebooklm_ask_timeout (default 300s).
+    ask_timeout = context.settings.research.notebooklm_ask_timeout
+
     if run_quality_gate:
         yield ProgressEvent(phase="nlm-quality", message="Running quality gate (validation + contradictions + gaps)...")
+        yield ProgressEvent(
+            phase="nlm-quality",
+            message=(
+                f"Asking NotebookLM to analyse the notebook — this can take a few "
+                f"minutes (waiting up to {int(ask_timeout)}s)..."
+            ),
+        )
         gate_prompt = _QUALITY_GATE_PROMPT.format(topic=effective_topic)
-        gate_answer = _nlm_ask(gate_prompt, notebook_id, timeout=180)
+        gate_answer = _nlm_ask(gate_prompt, notebook_id, timeout=ask_timeout)
 
         if gate_answer:
             quality_gate = _parse_quality_gate(gate_answer)
@@ -1428,7 +1441,14 @@ def _nlm_push(
             quality_gate["gaps_filled"] = gaps_filled
         else:
             yield ProgressEvent(
-                phase="nlm-quality", message="Quality gate failed (no response from notebook)."
+                phase="nlm-quality",
+                level="warn",
+                message=(
+                    f"Quality gate skipped — NotebookLM did not answer within "
+                    f"{int(ask_timeout)}s. The notebook may still be generating; "
+                    "increase the wait with: docent studio config-set --key "
+                    "notebooklm_ask_timeout --value 600"
+                ),
             )
 
     # ── Phase 4: Perspectives ─────────────────────────────────────────────
@@ -1445,7 +1465,7 @@ def _nlm_push(
         _PERSP_RETRY_DELAY = 30.0  # seconds between attempts
         persp_answer = None
         for _attempt in range(1, _PERSP_RETRIES + 1):
-            persp_answer = _nlm_ask(_PERSPECTIVES_PROMPT, notebook_id, timeout=180)
+            persp_answer = _nlm_ask(_PERSPECTIVES_PROMPT, notebook_id, timeout=ask_timeout)
             if persp_answer:
                 break
             if _attempt < _PERSP_RETRIES:

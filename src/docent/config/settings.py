@@ -55,6 +55,7 @@ class ResearchSettings(BaseModel):
     semantic_scholar_api_key: str | None = None
     notebooklm_notebook_id: str | None = None  # NotebookLM notebook ID from the URL (e.g. abc123...)
     notebooklm_source_limit: int = 50  # 50 = free tier; set to 100 for NotebookLM Plus
+    notebooklm_ask_timeout: float = 300.0  # seconds to wait for a NotebookLM chat answer (quality gate / perspectives); heavy notebooks need >180s
     obsidian_vault: Path | None = None  # Absolute path to Obsidian vault root (or target subfolder)
     alphaxiv_api_key: str | None = None  # API key from alphaxiv.org (env: ALPHAXIV_API_KEY)
 

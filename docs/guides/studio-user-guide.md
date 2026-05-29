@@ -299,6 +299,7 @@ Settings are stored in `~/.docent/config.toml` under `[research]`.
 | `tavily_research_timeout` | `600` | Tavily research timeout in seconds |
 | `semantic_scholar_api_key` | _(not set)_ | Semantic Scholar key (optional) |
 | `notebooklm_notebook_id` | _(not set)_ | Default NotebookLM notebook ID |
+| `notebooklm_ask_timeout` | `300` | Seconds to wait for a NotebookLM chat answer (quality gate / perspectives) |
 | `obsidian_vault` | _(not set)_ | Obsidian vault path |
 | `alphaxiv_api_key` | _(not set)_ | alphaXiv API key for paper search |
 
