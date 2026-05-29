@@ -266,12 +266,34 @@ def _nlm_create_notebook(title: str) -> str | None:
         return None
 
 
+def _extract_cli_error(stdout: str, stderr: str) -> str:
+    """Best-effort error message from a failed `notebooklm ... --json` call.
+
+    The CLI reports failures as JSON on *stdout* (e.g. {"error": "..."}), so
+    reading stderr alone yields a blank message. Falls back to raw text.
+    """
+    for blob in (stdout, stderr):
+        if not blob:
+            continue
+        try:
+            data = json.loads(blob)
+            if isinstance(data, dict):
+                msg = data.get("error") or data.get("message")
+                if msg:
+                    return str(msg)
+        except (json.JSONDecodeError, ValueError):
+            pass
+    return (stderr or stdout or "").strip() or "unknown error"
+
+
 def _nlm_add_source(source: str, notebook_id: str) -> tuple[int, str]:
     """Add one source (URL or file path). Returns (returncode, error_message)."""
-    rc, _, stderr = _nlm_run(
+    rc, stdout, stderr = _nlm_run(
         ["source", "add", source, "-n", notebook_id, "--json"], timeout=60
     )
-    return rc, stderr
+    if rc == 0:
+        return rc, ""
+    return rc, _extract_cli_error(stdout, stderr)
 
 
 def _nlm_source_list(notebook_id: str) -> list[dict]:
@@ -284,6 +306,17 @@ def _nlm_source_list(notebook_id: str) -> list[dict]:
         return data.get("sources", [])
     except (json.JSONDecodeError, ValueError):
         return []
+
+
+def _nlm_notebook_exists(notebook_id: str) -> bool:
+    """True if the notebook still exists server-side.
+
+    `source list` exits 0 for an existing notebook (even with zero sources) and
+    non-zero when it's gone — unlike _nlm_source_list, which collapses both to an
+    empty list and so can't tell "empty" from "deleted".
+    """
+    rc, _, _ = _nlm_run(["source", "list", "-n", notebook_id, "--json"], timeout=30)
+    return rc == 0
 
 
 def _nlm_source_delete(source_id: str, notebook_id: str) -> bool:
@@ -1105,6 +1138,30 @@ def _save_notebook_map(output_dir: Path, stem: str, notebook_id: str) -> None:
         pass
 
 
+def _forget_notebook(
+    output_dir: Path, stem: str, notebook_id: str, *, from_config: bool
+) -> None:
+    """Drop a stale notebook_id so the next run recreates instead of reusing it.
+
+    Removes the stem→id entry from the per-output map and, if the id came from
+    the saved config pointer, clears that too.
+    """
+    p = output_dir / _NOTEBOOK_MAP_FILENAME
+    nmap = _read_notebook_map(output_dir)
+    if nmap.get(stem) == notebook_id:
+        nmap.pop(stem, None)
+        try:
+            p.write_text(json.dumps(nmap, indent=2, ensure_ascii=False), encoding="utf-8")
+        except OSError:
+            pass
+    if from_config:
+        try:
+            from docent.config import write_setting
+            write_setting("research.notebooklm_notebook_id", "")
+        except Exception:
+            pass
+
+
 def _nlm_push(
     out_path: Path,
     sources_path: Path | None,
@@ -1163,16 +1220,32 @@ def _nlm_push(
     notebook_id = context.settings.research.notebooklm_notebook_id
     _stem = out_path.stem
     _output_dir = out_path.parent
+    _id_from_config = bool(notebook_id)
 
     if not notebook_id:
         # Check per-file map before creating a new notebook
         _nmap = _read_notebook_map(_output_dir)
         notebook_id = _nmap.get(_stem)
-        if notebook_id:
-            yield ProgressEvent(
-                phase="nlm-notebook",
-                message=f"Reusing existing notebook '{effective_topic}': {notebook_id}",
-            )
+
+    # Verify a remembered notebook still exists — the user may have deleted it.
+    # A stale id makes every source-add fail silently, so drop it and recreate.
+    if notebook_id and not _nlm_notebook_exists(notebook_id):
+        yield ProgressEvent(
+            phase="nlm-notebook",
+            level="warn",
+            message=(
+                f"Remembered notebook {notebook_id} no longer exists "
+                "(deleted?) — creating a fresh one."
+            ),
+        )
+        _forget_notebook(_output_dir, _stem, notebook_id, from_config=_id_from_config)
+        notebook_id = None
+
+    if notebook_id:
+        yield ProgressEvent(
+            phase="nlm-notebook",
+            message=f"Reusing existing notebook '{effective_topic}': {notebook_id}",
+        )
 
     if not notebook_id:
         title = f"Docent Studio: {effective_topic}"
@@ -1271,6 +1344,7 @@ def _nlm_push(
     added = 0
     failed = 0
     feynman_added = 0
+    _synthesis_err = ""
 
     if _remaining > 0:
         yield ProgressEvent(phase="nlm-push", message="Adding synthesis document...")
@@ -1281,8 +1355,10 @@ def _nlm_push(
             _remaining -= 1
         else:
             failed += 1
+            _synthesis_err = err
             yield ProgressEvent(
-                phase="nlm-push", message=f"Warning: synthesis doc failed: {err[:80]}"
+                phase="nlm-push", level="warn",
+                message=f"Warning: synthesis doc failed: {err[:120]}",
             )
         time.sleep(1)
 
@@ -1352,6 +1428,24 @@ def _nlm_push(
             else:
                 failed += 1
             time.sleep(1)
+
+    # ── Abort if nothing landed ───────────────────────────────────────────
+    # Every source-add failed AND the notebook was empty to begin with → it's
+    # broken (commonly a deleted/invalid notebook, or auth lapsed mid-run). Don't
+    # run stabilise/quality-gate on an empty notebook — surface a clear error.
+    # (A re-run of an already-populated notebook where everything dedupes has
+    # added==0 but _current_count>0; that's fine, so we don't bail there.)
+    if added == 0 and _current_count == 0:
+        detail = f" Error: {_synthesis_err}." if _synthesis_err else ""
+        return {
+            **_EMPTY_PIPELINE_RESULT,
+            "notebook_id": notebook_id,
+            "message": (
+                "No sources could be added to the notebook — it may have been "
+                f"deleted or become inaccessible.{detail} Re-run to create a "
+                "fresh notebook."
+            ),
+        }
 
     # ── Phase 1 completion: poll NLM research, add found URLs ─────────────
     nlm_added = 0
