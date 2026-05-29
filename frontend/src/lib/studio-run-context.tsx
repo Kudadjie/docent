@@ -57,6 +57,8 @@ export interface ActiveRunView {
   sources: Source[];
   doneData: Record<string, unknown> | null;
   startedAt: number;
+  /** Why a run is parked in `queued` (e.g. "NotebookLM busy"). */
+  queuedReason?: string;
   /** The form the run was launched with — lets the output panel render the
    *  viewed run's result correctly even when the live form has moved on. */
   form: FormState;
@@ -111,6 +113,7 @@ interface InternalRun {
   startedAt: number;
   ws: WebSocket | null;
   stopped: boolean;
+  queuedReason?: string;
 }
 
 // ── Context + hook ────────────────────────────────────────────────────────────
@@ -170,6 +173,7 @@ export function StudioRunProvider({ children }: { children: ReactNode }) {
         sources: [...r.sources],
         doneData: r.doneData,
         startedAt: r.startedAt,
+        queuedReason: r.queuedReason,
         form: r.meta.form,
       });
     }
@@ -196,29 +200,47 @@ export function StudioRunProvider({ children }: { children: ReactNode }) {
     }, ...prev]);
   }, []);
 
-  // ── startRun ─────────────────────────────────────────────────────────────────
+  // ── Admission control (parallel cap + NotebookLM exclusivity) ─────────────────
+  // The parallel cap comes from research.max_parallel_studio_runs (default 3).
+  // NotebookLM is single-session, so only ONE to-notebook run may be live at a
+  // time — a second parks in `queued` and self-starts when the first finishes.
 
-  const startRun = useCallback((input: StartRunInput): string => {
-    const runId = _newRunId();
-    const run: InternalRun = {
-      runId,
-      meta: input,
-      status: 'running',
-      logs: [],
-      sources: [],
-      phase: null,
-      doneData: null,
-      startedAt: Date.now(),
-      ws: null,
-      stopped: false,
-    };
-    runsRef.current.set(runId, run);
-    // View the freshly-started run.
-    setViewedHistory(null);
-    setViewedRunId(runId);
+  const capRef = useRef<number>(3);
+  useEffect(() => {
+    if (typeof fetch !== 'function') return;  // e.g. SSR / test env without fetch
+    let cancelled = false;
+    fetch('/api/config')
+      .then(r => r.json())
+      .then(c => {
+        const n = Number(c?.research?.max_parallel_studio_runs);
+        if (!cancelled && Number.isFinite(n) && n >= 1) capRef.current = n;
+      })
+      .catch(() => { /* keep default */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Decide whether a run may start NOW, given the current set of running runs.
+  const admit = useCallback((run: InternalRun): { start: boolean; reason?: string } => {
+    const running = [...runsRef.current.values()].filter(r => r.status === 'running');
+    if (run.meta.actionId === 'notebook' && running.some(r => r.meta.actionId === 'notebook')) {
+      return { start: false, reason: 'Waiting: NotebookLM busy — another to-notebook run is active.' };
+    }
+    if (running.length >= capRef.current) {
+      return { start: false, reason: `Queued — ${running.length} runs already active (max ${capRef.current}).` };
+    }
+    return { start: true };
+  }, []);
+
+  const admitQueuedRef = useRef<() => void>(() => {});
+
+  // Open the WebSocket for a run and wire its lifecycle. Used by startRun and by
+  // tryAdmitQueued when a queued run is promoted.
+  const openWs = useCallback((run: InternalRun) => {
+    run.status = 'running';
+    run.queuedReason = undefined;
     syncActiveRuns();
 
-    const { actionId, form } = input;
+    const { actionId, form } = run.meta;
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(`${proto}//${window.location.host}/ws/studio/run`);
     run.ws = ws;
@@ -248,7 +270,7 @@ export function StudioRunProvider({ children }: { children: ReactNode }) {
     };
 
     ws.onmessage = (e: MessageEvent) => {
-      const r = runsRef.current.get(runId);
+      const r = runsRef.current.get(run.runId);
       if (!r || r.stopped) return;
       let evt: Record<string, unknown>;
       try { evt = JSON.parse(e.data as string); } catch { return; }
@@ -266,6 +288,7 @@ export function StudioRunProvider({ children }: { children: ReactNode }) {
         pushRun(r, finalStatus);
         syncActiveRuns();
         ws.close();
+        admitQueuedRef.current();
       } else if (evt.type === 'error') {
         r.logs.push({ phase: 'error', text: String(evt.message) });
         r.phase = 'error';
@@ -273,26 +296,70 @@ export function StudioRunProvider({ children }: { children: ReactNode }) {
         pushRun(r, 'failure');
         syncActiveRuns();
         ws.close();
+        admitQueuedRef.current();
       }
     };
 
     ws.onerror = () => {
-      const r = runsRef.current.get(runId);
+      const r = runsRef.current.get(run.runId);
       if (!r || r.stopped) return;
       r.logs.push({ phase: 'error', text: 'Connection error — is the server running?' });
       r.phase = 'error';
       r.status = 'failure';
       pushRun(r, 'failure');
       syncActiveRuns();
+      admitQueuedRef.current();
     };
 
     ws.onclose = () => {
-      const r = runsRef.current.get(runId);
+      const r = runsRef.current.get(run.runId);
       if (r) r.ws = null;
     };
-
-    return runId;
   }, [pushRun, syncActiveRuns]);
+
+  // Promote queued runs (oldest first) whose blocking condition has cleared.
+  const tryAdmitQueued = useCallback(() => {
+    const queued = [...runsRef.current.values()]
+      .filter(r => r.status === 'queued')
+      .sort((a, b) => a.startedAt - b.startedAt);
+    for (const r of queued) {
+      // admit() re-reads the live running set, which openWs() mutates as we go,
+      // so the cap and NLM exclusivity stay correct across the loop.
+      if (admit(r).start) openWs(r);
+    }
+  }, [admit, openWs]);
+  useEffect(() => { admitQueuedRef.current = tryAdmitQueued; }, [tryAdmitQueued]);
+
+  // ── startRun ─────────────────────────────────────────────────────────────────
+
+  const startRun = useCallback((input: StartRunInput): string => {
+    const runId = _newRunId();
+    const run: InternalRun = {
+      runId,
+      meta: input,
+      status: 'queued',
+      logs: [],
+      sources: [],
+      phase: null,
+      doneData: null,
+      startedAt: Date.now(),
+      ws: null,
+      stopped: false,
+    };
+    runsRef.current.set(runId, run);
+    // View the freshly-started run.
+    setViewedHistory(null);
+    setViewedRunId(runId);
+
+    const verdict = admit(run);
+    if (verdict.start) {
+      openWs(run); // sets status='running' + syncs
+    } else {
+      run.queuedReason = verdict.reason;
+      syncActiveRuns();
+    }
+    return runId;
+  }, [admit, openWs, syncActiveRuns]);
 
   // ── viewRun ──────────────────────────────────────────────────────────────────
 
@@ -313,7 +380,9 @@ export function StudioRunProvider({ children }: { children: ReactNode }) {
     r.status = 'stopped';
     pushRun(r, 'stopped');
     syncActiveRuns();
-  }, [viewedRunId, pushRun, syncActiveRuns]);
+    // Stopping a running run frees a slot — let a queued run take it.
+    tryAdmitQueued();
+  }, [viewedRunId, pushRun, syncActiveRuns, tryAdmitQueued]);
 
   // ── reset ─────────────────────────────────────────────────────────────────────
   // Clears the output view. If the viewed run has finished, drop it from the

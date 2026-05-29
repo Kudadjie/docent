@@ -1,7 +1,7 @@
 // Shared types, constants, and pure functions for the Studio page.
 // No React — imported by both _form.tsx and _output.tsx.
 
-export type Status = 'idle' | 'running' | 'success' | 'failure' | 'stopped';
+export type Status = 'idle' | 'queued' | 'running' | 'success' | 'failure' | 'stopped';
 export type ActionId =
   | 'deep' | 'lit' | 'peer' | 'compare' | 'draft' | 'replicate' | 'audit'
   | 'search' | 'getpaper' | 'scholarly' | 'notebook'

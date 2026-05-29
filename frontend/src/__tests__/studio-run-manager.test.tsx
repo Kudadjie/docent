@@ -84,4 +84,42 @@ describe('studio run-manager (concurrent runs)', () => {
     expect(byId.deep).toBe('stopped');
     expect(byId.lit).toBe('running');
   });
+
+  it('queues a second to-notebook run, then auto-starts it when the first finishes', () => {
+    const { result } = renderHook(() => useStudioRun(), { wrapper });
+
+    act(() => { result.current.startRun({ actionId: 'notebook', form }); });
+    act(() => { result.current.startRun({ actionId: 'notebook', form }); });
+
+    // First runs; second is parked (NotebookLM is single-session).
+    expect(result.current.activeRuns.filter(r => r.status === 'running')).toHaveLength(1);
+    const queued = result.current.activeRuns.find(r => r.status === 'queued');
+    expect(queued?.queuedReason).toMatch(/NotebookLM/i);
+    expect(FakeWS.instances).toHaveLength(1); // queued run opened no socket
+
+    // First finishes → the queued run auto-starts (zero clicks).
+    act(() => { FakeWS.instances[0].emit({ type: 'done', status: 'success', raw: '{}' }); });
+    expect(result.current.activeRuns.filter(r => r.status === 'running')).toHaveLength(1);
+    expect(result.current.activeRuns.some(r => r.status === 'queued')).toBe(false);
+    expect(FakeWS.instances).toHaveLength(2); // second socket now opened
+  });
+
+  it('enforces the parallel cap from config', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      json: async () => ({ research: { max_parallel_studio_runs: 1 } }),
+    }));
+    const { result } = renderHook(() => useStudioRun(), { wrapper });
+    // Let the cap-fetch effect settle (fetch → .json() → capRef).
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    act(() => { result.current.startRun({ actionId: 'deep', form }); });
+    act(() => { result.current.startRun({ actionId: 'lit', form }); });
+
+    expect(result.current.activeRuns.filter(r => r.status === 'running')).toHaveLength(1);
+    expect(result.current.activeRuns.filter(r => r.status === 'queued')).toHaveLength(1);
+
+    // Finishing the running one promotes the queued one.
+    act(() => { FakeWS.instances[0].emit({ type: 'done', status: 'success', raw: '{}' }); });
+    expect(result.current.activeRuns.filter(r => r.status === 'running')).toHaveLength(1);
+  });
 });

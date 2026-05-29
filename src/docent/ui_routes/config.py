@@ -89,6 +89,7 @@ async def get_config() -> JSONResponse:
     rcfg = _read_config_research()
     research = {k: _mask_key(rcfg.get(k)) for k in _RESEARCH_KEY_FIELDS}
     research["feynman_model"] = rcfg.get("feynman_model")  # plain string, not a secret
+    research["max_parallel_studio_runs"] = rcfg.get("max_parallel_studio_runs", 3)  # client run cap
     return JSONResponse({
         "reading": {
             "database_dir": _norm_path(cfg.get("database_dir", None)),

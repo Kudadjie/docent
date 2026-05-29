@@ -44,6 +44,24 @@ require an AI backend and will reject `--backend free`.
 
 ---
 
+## Running several actions at once (UI)
+
+In the web UI you can launch multiple Studio actions in one tab and watch them
+stream side by side — fire off a deep research, a lit review, and a draft, then
+switch between them with the run tabs at the top of the output panel. Each run
+has its own **Stop**; starting a new run never cancels the others.
+
+Two guardrails keep concurrent runs safe:
+
+- **NotebookLM is single-session.** Only one `to-notebook` run can touch
+  NotebookLM at a time (this holds across the UI *and* the CLI). A second one
+  parks as **Queued — "Waiting: NotebookLM busy"** and starts itself the moment
+  the first finishes. Zero clicks.
+- **Parallel cap.** At most `max_parallel_studio_runs` (default 3) runs stream at
+  once; extras queue and auto-start as slots free up.
+
+---
+
 ## Deep research
 
 ```bash
@@ -312,6 +330,7 @@ Settings are stored in `~/.docent/config.toml` under `[research]`.
 | `notebooklm_notebook_id` | _(not set)_ | Default NotebookLM notebook ID |
 | `notebooklm_ask_timeout` | `300` | Seconds to wait for a NotebookLM chat answer (quality gate / perspectives) |
 | `notebooklm_lock_timeout` | `1800` | Seconds a queued `to-notebook` run waits for the shared NotebookLM session before aborting. Two `to-notebook` runs (UI or CLI) can never touch NotebookLM at once — the second waits, showing "Waiting: NotebookLM busy", then auto-starts. |
+| `max_parallel_studio_runs` | `3` | Max Studio runs the UI streams at once in one tab. Beyond this, a new run is queued and auto-starts when a slot frees up. |
 | `obsidian_vault` | _(not set)_ | Obsidian vault path |
 | `alphaxiv_api_key` | _(not set)_ | alphaXiv API key for paper search |
 

@@ -696,7 +696,7 @@ const PHASE_SKIP = new Set(['error', 'warn', 'cost', 'console', 'nlm-wait']);
 function _runDotColor(status: string): string {
   if (status === 'running') return BRAND;
   if (status === 'failure') return '#D45656';
-  if (status === 'stopped') return AMBER_BORDER;
+  if (status === 'stopped' || status === 'queued') return AMBER_BORDER;
   return BRAND_DEEP; // success
 }
 
@@ -739,7 +739,9 @@ export function OutputPanel({ action, state, status, logs, sources, currentPhase
 }) {
   const isResult  = status === 'success' || status === 'failure' || status === 'stopped';
   const isRunning = status === 'running';
+  const isQueued  = status === 'queued';
   const isEmpty   = status === 'idle';
+  const queuedReason = activeRuns.find(r => r.runId === currentRunId)?.queuedReason;
 
   const seenPhases = useMemo(() => {
     const seen: string[] = [];
@@ -804,21 +806,33 @@ export function OutputPanel({ action, state, status, logs, sources, currentPhase
         <div style={{ flexShrink: 0, padding: '14px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
             {isRunning && <span style={{ width: 8, height: 8, borderRadius: '50%', background: BRAND, animation: 'logo-dot-blink 1.2s step-end infinite', flexShrink: 0 }} />}
-            {status === 'stopped' && <span style={{ width: 8, height: 8, borderRadius: '50%', background: AMBER_BORDER, flexShrink: 0 }} />}
+            {(status === 'stopped' || isQueued) && <span style={{ width: 8, height: 8, borderRadius: '50%', background: AMBER_BORDER, flexShrink: 0 }} />}
             <span style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500, color: 'var(--fg1)', whiteSpace: 'nowrap' }}>{action.label}</span>
             {breadcrumbDetail && <>
               <span style={{ fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--gray200)' }}>·</span>
               <span style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--fg3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{breadcrumbDetail}</span>
             </>}
           </div>
-          {isRunning
-            ? <GhostBtn onClick={onStop}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><Square size={11} strokeWidth={2} /> Stop</span></GhostBtn>
+          {(isRunning || isQueued)
+            ? <GhostBtn onClick={onStop}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><Square size={11} strokeWidth={2} /> {isQueued ? 'Cancel' : 'Stop'}</span></GhostBtn>
             : isResult && <GhostBtn onClick={onReset}>Clear</GhostBtn>}
         </div>
       )}
 
       <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
         {isEmpty && <OutputEmpty />}
+
+        {isQueued && (
+          <div style={{ padding: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: AMBER_BORDER, flexShrink: 0 }} />
+              <span style={{ fontFamily: 'var(--sans)', fontSize: 14, fontWeight: 600, color: 'var(--fg1)' }}>Queued</span>
+            </div>
+            <div style={{ fontFamily: 'var(--sans)', fontSize: 12.5, color: 'var(--fg2)', lineHeight: 1.55 }}>
+              {queuedReason || 'Waiting to start…'} It will start automatically when a slot frees up — no action needed.
+            </div>
+          </div>
+        )}
 
         {(isRunning || isResult) && (
           <div style={{ padding: '12px 24px 0' }}>
