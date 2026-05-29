@@ -73,6 +73,30 @@ class TestPathTraversal:
         assert (fake_home / "data" / "reading" / "queue.json").read_text() == "[]"
 
 
+class TestDecompressionBomb:
+    def test_oversized_entry_rejected(self, tmp_path, fake_home, monkeypatch):
+        # Shrink the cap so we don't have to write 100 MB to trip the guard.
+        monkeypatch.setattr(
+            "docent.bundled_plugins.backup.manager.MAX_FILE_BYTES", 16
+        )
+        archive = tmp_path / "bomb.zip"
+        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("home/data/big.bin", b"x" * 1024)  # > 16-byte cap
+        with pytest.raises(ValueError, match="exceeds the .* limit"):
+            restore_archive(archive, dest_home=fake_home)
+        assert not (fake_home / "data" / "big.bin").exists()
+
+    def test_under_cap_entry_allowed(self, tmp_path, fake_home, monkeypatch):
+        monkeypatch.setattr(
+            "docent.bundled_plugins.backup.manager.MAX_FILE_BYTES", 1024
+        )
+        archive = tmp_path / "ok.zip"
+        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("home/data/small.bin", b"x" * 8)
+        restore_archive(archive, dest_home=fake_home)
+        assert (fake_home / "data" / "small.bin").read_bytes() == b"x" * 8
+
+
 class TestRoundTrip:
     def test_create_and_restore(self, tmp_path, fake_home, monkeypatch):
         monkeypatch.setattr(

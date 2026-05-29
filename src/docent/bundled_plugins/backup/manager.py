@@ -129,14 +129,23 @@ def restore_archive(archive: Path, dest_home: Path | None = None) -> dict[str, A
     manifest: dict[str, Any] = {}
 
     with zipfile.ZipFile(archive, "r") as zf:
-        names = zf.namelist()
-
-        if "backup_manifest.json" in names:
+        if "backup_manifest.json" in zf.namelist():
             manifest = json.loads(zf.read("backup_manifest.json").decode())
 
-        for name in names:
+        for info in zf.infolist():
+            name = info.filename
             if name == "backup_manifest.json":
                 continue
+
+            # Decompression-bomb guard: refuse any entry whose declared
+            # uncompressed size exceeds the same per-file cap we enforce on
+            # create(). Checked before zf.read() so a crafted archive can't
+            # exhaust memory by claiming a small compressed size.
+            if info.file_size > MAX_FILE_BYTES:
+                raise ValueError(
+                    f"Refusing to extract {name!r}: uncompressed size "
+                    f"{info.file_size} exceeds the {MAX_FILE_BYTES}-byte limit"
+                )
 
             data = zf.read(name)
 

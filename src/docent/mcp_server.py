@@ -274,7 +274,9 @@ def run_server() -> None:
 
     @server.list_tools()
     async def list_tools() -> list[types.Tool]:
-        return build_mcp_tools()
+        # Reuse the list built above — the registry is fixed after load_plugins(),
+        # so there's no need to rebuild on every list_tools request.
+        return tools
 
     @server.call_tool()
     async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextContent]:
@@ -320,7 +322,7 @@ def run_server() -> None:
         # Streaming path: drain generator in a thread, forward each ProgressEvent
         # as a log notification so the MCP connection stays alive during long pipelines.
         event_queue: asyncio.Queue = asyncio.Queue()
-        cur_loop = asyncio.get_event_loop()
+        cur_loop = asyncio.get_running_loop()
         # ProgressEvent.level → MCP LoggingLevel
         _level_map = {"info": "info", "warn": "warning", "error": "error"}
 

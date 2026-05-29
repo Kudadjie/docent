@@ -314,8 +314,11 @@ def _run_pipeline(
                 for f in _as_completed(list(ss_futures_map) + [academic_future]):
                     try:
                         sources.extend(f.result())
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        # Best-effort fetch — one failed query shouldn't abort the
+                        # round, but log it so a systematically broken key/source
+                        # (e.g. bad Semantic Scholar key) isn't silently invisible.
+                        logger.debug("Paper search query failed: %s: %s", type(exc).__name__, exc)
             idx += len(paper_qs)
         # Fetch full text for top web results (first 5 unique URLs not yet fetched).
         seen_urls: set[str] = set()

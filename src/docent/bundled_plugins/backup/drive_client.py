@@ -77,6 +77,13 @@ def get_credentials():
             creds = flow.run_local_server(port=0, open_browser=True)
         token_path.parent.mkdir(parents=True, exist_ok=True)
         token_path.write_text(creds.to_json(), encoding="utf-8")
+        # The token holds a long-lived refresh token — keep it owner-only.
+        # (No-op on Windows beyond the read-only bit, but harmless there.)
+        try:
+            import os
+            os.chmod(token_path, 0o600)
+        except OSError:
+            pass
 
     return creds
 

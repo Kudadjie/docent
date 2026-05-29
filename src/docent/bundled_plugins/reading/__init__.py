@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -628,7 +628,7 @@ class ReadingQueue(Tool):
         """Mutate entry in-place for a status change. Stamps started/finished. Returns previous status."""
         previous = entry.get("status", "queued")
         entry["status"] = status
-        ts = datetime.now().isoformat()
+        ts = datetime.now(timezone.utc).isoformat()
         if status == "reading" and not entry.get("started"):
             entry["started"] = ts
         elif status == "done" and not entry.get("finished"):

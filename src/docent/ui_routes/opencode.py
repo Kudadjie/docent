@@ -47,7 +47,13 @@ def _audit(action: str, detail: str) -> None:
 
 
 def _build_studio_cmd(body: StudioRunBody) -> list[str] | None:
-    """Build a `docent studio <action> ...` subprocess command from the UI form body."""
+    """Build a `docent studio <action> ...` subprocess command from the UI form body.
+
+    This is the CLI-flag mapping for the live WebSocket path. It is a SEPARATE
+    mapping from ui_server._parse_studio_body (the in-process/SSE path) — adding
+    or changing a studio action means editing BOTH. See the warning on
+    `_parse_studio_body` for context.
+    """
     import shutil as _sh
     from docent.ui_server import _STUDIO_ACTION_MAP, _BACKEND_NORM
 
@@ -218,7 +224,7 @@ async def notebooklm_auth_status() -> JSONResponse:
     if not exe:
         return JSONResponse({"installed": False, "playwright_ok": False, "authenticated": False})
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     # Check Playwright binary first — auth check will always fail without it.
     playwright_ok = await loop.run_in_executor(None, _playwright_chromium_ok)
@@ -297,6 +303,14 @@ async def notebooklm_auth() -> JSONResponse:
 @router.websocket("/ws/studio/run")
 async def studio_run_ws(websocket: WebSocket):
     """WebSocket endpoint — pipes `docent studio <action>` subprocess stdout live."""
+    # Cross-site WebSocket hijacking guard: _LocalhostGuard (an HTTP middleware)
+    # does NOT see WebSocket handshakes, so we must enforce the origin policy here.
+    # Without this, any web page the user visits could open this socket and drive
+    # studio subprocesses (spend API credits, write files via to-notebook output).
+    from docent.ui_server import _is_localhost_origin
+    if not _is_localhost_origin(websocket.headers.get("origin", "")):
+        await websocket.close(code=1008)  # 1008 = policy violation
+        return
     await websocket.accept()
 
     try:

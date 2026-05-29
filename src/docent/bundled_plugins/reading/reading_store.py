@@ -15,7 +15,7 @@ import json
 import logging
 import os
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -56,6 +56,10 @@ def _infer_schema_version(entries: list[dict[str, Any]]) -> int:
 
     Keep this logic cheap and conservative — when in doubt return the lowest
     plausible version so the migration guard runs.
+
+    Currently a stub that always reports v1, so the migration path in
+    load_queue() is dormant. The first real migration MUST replace this with
+    actual key-based detection, or the guard will never fire.
     """
     return 1  # only one version exists today; extend as migrations are added
 
@@ -167,7 +171,7 @@ class ReadingQueueStore:
         return {
             e["id"]: {
                 "title": e.get("title", ""),
-                "status": e["status"],
+                "status": e.get("status", "queued"),
                 "order": e.get("order", 0),
             }
             for e in queue
@@ -175,10 +179,10 @@ class ReadingQueueStore:
 
     def _write_state(self, queue: list[dict[str, Any]]) -> None:
         state = {
-            "queued": sum(1 for e in queue if e["status"] == "queued"),
-            "reading": sum(1 for e in queue if e["status"] == "reading"),
-            "done": sum(1 for e in queue if e["status"] == "done"),
-            "last_updated": datetime.now().isoformat(),
+            "queued": sum(1 for e in queue if e.get("status", "queued") == "queued"),
+            "reading": sum(1 for e in queue if e.get("status") == "reading"),
+            "done": sum(1 for e in queue if e.get("status") == "done"),
+            "last_updated": datetime.now(timezone.utc).isoformat(),
         }
         self._atomic_write_json(self.state_path, state)
 

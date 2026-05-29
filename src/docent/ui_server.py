@@ -78,15 +78,42 @@ def _audit(action: str, detail: str) -> None:
     _audit_logger.info("%s | %s", action, detail)
 
 
+_LOCALHOST_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def _is_localhost_origin(origin: str) -> bool:
+    """True if *origin* is empty or points at localhost.
+
+    Shared by the HTTP middleware and the WebSocket handler so the cross-origin
+    policy is identical on both transports. An empty Origin means the request did
+    not originate from a browser (curl, local tooling) and is allowed; browsers
+    always send Origin, so a *present but non-localhost* Origin is the cross-site
+    drive-by vector we reject.
+
+    The host is matched EXACTLY (via urlparse), not by prefix — a prefix check
+    like ``startswith("http://localhost")`` would wrongly accept an attacker
+    domain such as ``http://localhost.evil.com``.
+    """
+    if not origin:
+        return True
+    from urllib.parse import urlparse
+    try:
+        parsed = urlparse(origin)
+    except ValueError:
+        return False
+    return parsed.scheme in ("http", "https") and parsed.hostname in _LOCALHOST_HOSTS
+
+
 class _LocalhostGuard(BaseHTTPMiddleware):
-    """Reject requests whose Origin header points to a non-localhost host."""
+    """Reject requests whose Origin header points to a non-localhost host.
+
+    NOTE: Starlette's BaseHTTPMiddleware only runs on the `http` scope —
+    WebSocket handshakes bypass it entirely. WebSocket endpoints must enforce
+    the origin check themselves via `_is_localhost_origin` (see ui_routes/opencode.py).
+    """
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        origin = request.headers.get("origin", "")
-        if origin and not (
-            origin.startswith("http://localhost")
-            or origin.startswith("http://127.0.0.1")
-        ):
+        if not _is_localhost_origin(request.headers.get("origin", "")):
             return JSONResponse({"error": "Forbidden: non-localhost origin"}, status_code=403)
         return await call_next(request)
 
@@ -211,8 +238,14 @@ def _mask_key(key: str | None) -> Optional[str]:
 
 
 async def _run_command(cmd: str, args: list[str], timeout: float = 30.0) -> tuple[str, str, int]:
+    # Resolve via PATH so Windows .cmd/.bat shims (npm.cmd, docent.cmd) launch
+    # without shell=True — create_subprocess_exec won't find them otherwise.
+    import shutil
+    exe = shutil.which(cmd)
+    if exe is None:
+        raise FileNotFoundError(f"{cmd!r} not found on PATH")
     proc = await asyncio.create_subprocess_exec(
-        cmd, *args,
+        exe, *args,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -423,8 +456,15 @@ class StudioRunBody(BaseModel):
 def _parse_studio_body(body: StudioRunBody) -> tuple[str, dict[str, Any]] | None:
     """Return (studio_action, args_dict) for a StudioRunBody, or None if action unknown.
 
-    Single source of truth for form→action mapping — both _form_to_studio_args and
-    _build_studio_cmd derive from here so adding a new action only requires one edit.
+    Form→action mapping for the *in-process* path: the SSE endpoint
+    (/api/studio/run) and `_form_to_studio_args` both derive from here.
+
+    WARNING: the live frontend uses the *subprocess* WebSocket path
+    (/ws/studio/run), whose CLI-flag builder `_build_studio_cmd` in
+    ui_routes/opencode.py is a SEPARATE mapping that does NOT derive from this
+    function. Any new studio action or argument must be added in BOTH places
+    until the two paths are unified. They already share `_STUDIO_ACTION_MAP`
+    and `_BACKEND_NORM` (below) — keep per-action arg handling in sync by hand.
     """
     studio_action = _STUDIO_ACTION_MAP.get(body.action_id)
     if not studio_action:
