@@ -820,8 +820,21 @@ def _build_callback(
         _log = get_logger("docent.cli")
 
         ctx: typer.Context = kwargs.pop("ctx")
-        inputs = schema(**kwargs)
         context: Context = ctx.obj
+
+        # Render input-validation failures (e.g. an AI-only action given
+        # --backend free) as a clean one-line error instead of a raw traceback.
+        from pydantic import ValidationError
+        try:
+            inputs = schema(**kwargs)
+        except ValidationError as exc:
+            msg = "; ".join(
+                str(e.get("msg", "")).removeprefix("Value error, ")
+                for e in exc.errors()
+            ) or "Invalid input."
+            get_console().print(f"[red]Error:[/] {msg}")
+            raise typer.Exit(1)
+
         try:
             if preflight is not None:
                 preflight(inputs, context)
@@ -844,8 +857,20 @@ def _build_callback(
                     _v = getattr(result, _attr, None)
                     if _v is not None:
                         _r[_attr] = _v
+                # Full structured result for the UI's bespoke panels (search rows,
+                # config table, paper details, notebook perspectives). Secret-bearing
+                # results expose a to_ui() that masks API keys; everything else dumps
+                # its Pydantic model. Best-effort: never let serialization break a run.
+                _to_ui = getattr(result, "to_ui", None)
+                try:
+                    if callable(_to_ui):
+                        _r["data"] = _to_ui()
+                    elif hasattr(result, "model_dump"):
+                        _r["data"] = result.model_dump(mode="json")
+                except Exception:
+                    pass
                 import json as _json
-                print(f"\x00DOCENT_RESULT\x00{_json.dumps(_r)}", flush=True)
+                print(f"\x00DOCENT_RESULT\x00{_json.dumps(_r, default=str)}", flush=True)
                 # When the action itself reports failure (ok=False), emit the
                 # error message as a progress log line and exit non-zero so the
                 # WS handler can surface it as status: 'failure'.

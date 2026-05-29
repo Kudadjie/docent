@@ -42,6 +42,24 @@ _BUNDLED_COMPAT_PATH = Path(__file__).parent / "data" / "source-compat-defaults.
 
 _NOTEBOOK_MAP_FILENAME = ".notebook-map.json"
 
+# Machine-level NotebookLM session mutex.
+# The NotebookLM Playwright session is a single shared resource, global to the
+# machine — two `to-notebook` runs touching it at once corrupt each other. The
+# CLI, the UI subprocess, and MCP all execute the same `to_notebook` action, so a
+# cross-process file lock acquired in the action protects every caller. A lock
+# living only in the UI WebSocket handler would be bypassed by a CLI run.
+_NOTEBOOKLM_LOCK_PATH = _docent_data_dir() / "notebooklm-session.lock"
+
+
+def notebooklm_session_lock(timeout: float):
+    """Return a cross-process FileLock guarding the shared NotebookLM session.
+
+    ``timeout`` is the default acquire timeout; callers may override per-acquire.
+    """
+    from filelock import FileLock
+    _NOTEBOOKLM_LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+    return FileLock(str(_NOTEBOOKLM_LOCK_PATH), timeout=timeout)
+
 
 def _find_sources_path(out_path: Path) -> Path | None:
     """Return the sources JSON path for a research output file, or None.

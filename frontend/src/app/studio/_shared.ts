@@ -92,6 +92,15 @@ export const BACKENDS = ['Free', 'Feynman', 'Docent', 'Groq'];
 // Archived backends (still work via CLI --backend flag):
 // 'Gemini', 'OpenRouter', 'Anthropic', 'OpenAI', 'Ollama', 'LM Studio', 'Mistral', 'Cerebras'
 
+// The default AI backend used when 'Free' is excluded (text-generating actions).
+export const DEFAULT_AI_BACKEND = 'Docent';
+
+/** Only deep research and literature review support the source-only 'Free' backend.
+ *  Text-generating actions (draft/peer/compare/replicate/audit) require an AI backend. */
+export function supportsFreeBackend(actionId: ActionId): boolean {
+  return actionId === 'deep' || actionId === 'lit';
+}
+
 // ── Phases ─────────────────────────────────────────────────────────────────────
 
 export const PHASE_LABELS: Record<string, string> = {
@@ -108,7 +117,7 @@ export const PHASE_LABELS: Record<string, string> = {
   // to-notebook phases
   package: 'Package', 'nlm-check': 'Auth', 'nlm-login': 'Login',
   'nlm-notebook': 'Notebook', 'nlm-push': 'Push', 'nlm-stabilise': 'Stabilise',
-  'nlm-quality': 'Quality', 'nlm-poll': 'Poll',
+  'nlm-quality': 'Quality', 'nlm-poll': 'Poll', 'nlm-wait': 'Waiting',
   // raw subprocess output (CLI passthrough stream)
   console: 'Log',
 };
@@ -120,126 +129,9 @@ export const PHASE_TONE: Record<string, 'info' | 'warn' | 'error'> = {
   search_plan: 'info', write: 'info', review: 'info', refine: 'info',
   verify: 'info', verify_citations: 'info', research: 'info',
   compare: 'info', analyze: 'info', audit: 'info',
-  cost: 'warn', warn: 'warn', error: 'error',
+  cost: 'warn', warn: 'warn', error: 'error', 'nlm-wait': 'warn',
   console: 'info',
 };
-
-export const ACTION_PHASES: Record<string, string[]> = {
-  deep:      ['plan', 'search', 'fetch', 'parse', 'synth', 'save'],
-  lit:       ['plan', 'search', 'fetch', 'parse', 'synth', 'save'],
-  peer:      ['plan', 'parse', 'synth', 'save'],
-  compare:   ['plan', 'parse', 'synth', 'save'],
-  draft:     ['plan', 'search', 'synth', 'save'],
-  replicate: ['plan', 'parse', 'synth', 'save'],
-  audit:     ['plan', 'parse', 'synth', 'save'],
-  notebook:  ['plan', 'fetch', 'parse', 'search', 'synth', 'save'],
-  search:    ['search', 'parse', 'save'],
-  scholarly: ['search', 'parse', 'save'],
-  getpaper:  ['fetch', 'parse', 'synth'],
-  cfgshow:   ['save'],
-  cfgset:    ['save'],
-};
-
-// ── Log scripts ────────────────────────────────────────────────────────────────
-
-export const SCRIPTS: Record<string, LogEntry[]> = {
-  deep: [
-    { phase: 'plan',   text: 'Decomposing topic into 4 sub-questions' },
-    { phase: 'search', text: 'arXiv: 47 candidates; filtering by relevance' },
-    { phase: 'search', text: 'Semantic Scholar: 18 candidates' },
-    { phase: 'fetch',  text: 'Downloading 12 PDFs in parallel', sources: [
-      { title: 'Storm surge attribution under non-stationary sea level rise', year: 2024, src: 'arXiv' },
-      { title: 'Bayesian inundation forecasting',                             year: 2023, src: 'JGR' },
-      { title: 'Compound flooding from tropical cyclones',                    year: 2022, src: 'Nat. Geo.' },
-      { title: 'High-resolution coupled coastal modeling',                    year: 2024, src: 'PNAS' },
-      { title: 'Tide-surge-wave interaction in estuaries',                    year: 2021, src: 'Ocean Eng.' },
-    ]},
-    { phase: 'parse',  text: 'Extracting sections, tables, figures' },
-    { phase: 'cost',   text: 'Estimated synthesis cost: $0.42 (~4k tokens)' },
-    { phase: 'synth',  text: 'Drafting outline → 7 sections, 18 citations' },
-    { phase: 'synth',  text: 'Writing body paragraphs (section 3 of 7)' },
-    { phase: 'save',   text: 'Wrote report.md and citations.bib' },
-    { phase: 'done',   text: 'Run complete in 4m 12s' },
-  ],
-  lit: [
-    { phase: 'plan',   text: 'Building review skeleton (intro · methods · findings · gaps)' },
-    { phase: 'search', text: 'arXiv + Semantic Scholar: 84 candidates' },
-    { phase: 'fetch',  text: 'Downloading 18 PDFs', sources: [
-      { title: 'Survey of LLM reasoning techniques', year: 2024, src: 'arXiv' },
-      { title: 'Chain-of-thought benchmarks',         year: 2023, src: 'NeurIPS' },
-      { title: 'Self-consistency for LLM reasoning',  year: 2022, src: 'ICLR' },
-    ]},
-    { phase: 'parse',  text: 'Clustering papers by methodology' },
-    { phase: 'synth',  text: 'Drafting review sections' },
-    { phase: 'save',   text: 'Saved literature-review.md' },
-    { phase: 'done',   text: 'Run complete in 5m 02s' },
-  ],
-  peer: [
-    { phase: 'plan',   text: 'Reading artifact: 2401.12345' },
-    { phase: 'parse',  text: 'Extracting methods, results, claims' },
-    { phase: 'synth',  text: 'Cross-checking claims against literature' },
-    { phase: 'synth',  text: 'Drafting reviewer comments' },
-    { phase: 'save',   text: 'Saved peer-review.md' },
-    { phase: 'done',   text: 'Run complete in 3m 18s' },
-  ],
-  compare: [
-    { phase: 'plan',   text: 'Loading artifacts A and B' },
-    { phase: 'parse',  text: 'Extracting claims from both papers' },
-    { phase: 'synth',  text: 'Aligning methods (jaccard 0.42)' },
-    { phase: 'synth',  text: 'Identifying shared & divergent findings' },
-    { phase: 'save',   text: 'Saved comparison.md' },
-    { phase: 'done',   text: 'Run complete in 6m 47s' },
-  ],
-  draft: [
-    { phase: 'plan',   text: 'Outlining draft sections' },
-    { phase: 'search', text: 'Pulling 12 supporting sources' },
-    { phase: 'synth',  text: 'Drafting body (1850 words)' },
-    { phase: 'save',   text: 'Saved draft.md' },
-    { phase: 'done',   text: 'Run complete in 4m 28s' },
-  ],
-  replicate: [
-    { phase: 'plan',   text: 'Reading paper + supplementary materials' },
-    { phase: 'parse',  text: 'Identifying replication targets (3 experiments)' },
-    { phase: 'synth',  text: 'Drafting replication protocol' },
-    { phase: 'save',   text: 'Saved replication-protocol.md' },
-    { phase: 'done',   text: 'Run complete in 8m 12s' },
-  ],
-  audit: [
-    { phase: 'plan',   text: 'Loading artifact' },
-    { phase: 'parse',  text: 'Inspecting methods & data availability' },
-    { phase: 'synth',  text: 'Cross-checking statistics' },
-    { phase: 'save',   text: 'Saved audit-report.md' },
-    { phase: 'done',   text: 'Run complete in 5m 51s' },
-  ],
-  notebook: [
-    { phase: 'plan',   text: 'Loading sources.json (24 entries)' },
-    { phase: 'fetch',  text: 'Resolving DOIs and arXiv IDs' },
-    { phase: 'parse',  text: 'Quality gate: scanning for contradictions' },
-    { phase: 'search', text: 'NLM web research: 5 supplementary sources' },
-    { phase: 'synth',  text: 'Generating perspectives (3 personas)' },
-    { phase: 'warn',   text: '2 sources failed quality gate (broken DOI)' },
-    { phase: 'save',   text: 'Notebook nb_4f2c updated' },
-    { phase: 'done',   text: '18 sources added in 1m 38s' },
-  ],
-  search: [
-    { phase: 'search', text: 'Querying arXiv API' },
-    { phase: 'parse',  text: 'Ranking by recency × citation count' },
-    { phase: 'save',   text: '5 results' },
-  ],
-  scholarly: [
-    { phase: 'search', text: 'Querying Semantic Scholar' },
-    { phase: 'search', text: 'Cross-referencing with arXiv' },
-    { phase: 'save',   text: '5 results' },
-  ],
-  getpaper: [
-    { phase: 'fetch',  text: 'Resolving arXiv:2401.12345' },
-    { phase: 'parse',  text: 'Extracting abstract and metadata' },
-    { phase: 'synth',  text: 'Generating AI overview' },
-  ],
-  cfgshow: [{ phase: 'save', text: 'Loaded ~/.docent/config.toml' }],
-  cfgset:  [{ phase: 'save', text: 'Writing ~/.docent/config.toml' }],
-};
-export const scriptFor = (id: ActionId): LogEntry[] => SCRIPTS[id] ?? SCRIPTS.deep;
 
 // ── CLI command preview ────────────────────────────────────────────────────────
 
@@ -264,7 +156,8 @@ export function commandFor(actionId: ActionId, s: FormState): string {
   switch (actionId) {
     case 'deep': case 'lit': case 'draft':
       parts.push('--topic', quoteIfNeeded(s.topic));
-      if (backend) parts.push('--backend', backend);
+      // draft has no free tier — never surface an invalid `--backend free`.
+      if (backend && (backend !== 'free' || supportsFreeBackend(actionId))) parts.push('--backend', backend);
       if (s.dest && s.dest !== 'Local') parts.push('--output', s.dest.toLowerCase().replace(' →', '').trim());
       (s.guides ?? []).forEach(g => parts.push('--guide-files', quoteIfNeeded(g)));
       break;

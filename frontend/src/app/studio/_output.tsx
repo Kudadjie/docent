@@ -423,18 +423,38 @@ function ResultFailure({ errorText }: { errorText?: string }) {
   );
 }
 
-function ResultSearch({ query }: { query: string }) {
-  const rows = [
-    { title: 'Storm surge attribution under non-stationary sea level rise', year: 2024, authors: 'Lin, N. · Emanuel, K.', source: 'arXiv' },
-    { title: 'Bayesian inundation forecasting on US Atlantic coast',         year: 2023, authors: 'Park, J. · Walsh, K. · Vitart, F.', source: 'JGR' },
-    { title: 'Compound flooding from tropical cyclones: a review',          year: 2022, authors: 'Wahl, T. · Jain, S. · Bender, J.', source: 'Nat. Geo.' },
-    { title: 'High-resolution coupled modeling of coastal flood risk',      year: 2024, authors: 'Marsooli, R. · Lin, N.', source: 'PNAS' },
-    { title: 'Tide-surge-wave interaction in shallow estuaries',            year: 2021, authors: 'Vatvani, D. · Zijlema, M.', source: 'Ocean Eng.' },
-  ];
+type PaperRow = { title: string; authors: string; year: string; source: string; url: string | null };
+
+function _normalizePapers(data: Record<string, unknown> | null): PaperRow[] {
+  const papers = Array.isArray(data?.papers) ? (data!.papers as Record<string, unknown>[]) : [];
+  return papers.map(p => {
+    const authorsRaw = p.authors;
+    const authors = Array.isArray(authorsRaw)
+      ? (authorsRaw as string[]).slice(0, 4).join(' · ') + ((authorsRaw as string[]).length > 4 ? ' et al.' : '')
+      : String(authorsRaw ?? '');
+    const published = typeof p.published === 'string' ? p.published.slice(0, 4) : '';
+    const year = String(p.year ?? published ?? '') || '—';
+    const doi = p.doi ? `https://doi.org/${p.doi}` : null;
+    const url = (p.arxiv_url as string) || (p.url as string) || doi || null;
+    const source = (p.arxiv_id as string) ? 'arXiv' : (p.doi ? 'DOI' : (p.venue as string) || '');
+    return { title: String(p.title ?? 'Untitled'), authors, year, source, url };
+  });
+}
+
+function ResultSearch({ query, data }: { query: string; data: Record<string, unknown> | null }) {
+  const rows = _normalizePapers(data);
+  const resolvedQuery = (typeof data?.query === 'string' && data.query) || query;
+  if (rows.length === 0) {
+    return (
+      <div style={{ fontFamily: 'var(--sans)', fontSize: 12.5, color: 'var(--fg3)' }}>
+        No results{resolvedQuery ? <> for <span style={{ fontFamily: 'var(--mono)', color: 'var(--fg2)' }}>&ldquo;{resolvedQuery}&rdquo;</span></> : ''}.
+      </div>
+    );
+  }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ fontFamily: 'var(--sans)', fontSize: 12.5, color: 'var(--fg3)' }}>
-        {rows.length} results · query <span style={{ fontFamily: 'var(--mono)', color: 'var(--fg2)' }}>&ldquo;{query || 'storm surge inundation'}&rdquo;</span>
+        {rows.length} results · query <span style={{ fontFamily: 'var(--mono)', color: 'var(--fg2)' }}>&ldquo;{resolvedQuery}&rdquo;</span>
       </div>
       <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -449,14 +469,18 @@ function ResultSearch({ query }: { query: string }) {
             {rows.map((r, i) => (
               <tr key={i} style={{ borderBottom: i < rows.length - 1 ? '1px solid var(--border)' : 'none' }}>
                 <td style={{ padding: '10px 12px', fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--fg1)', lineHeight: 1.4 }}>
-                  <a href="#" style={{ color: 'var(--fg1)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                    {r.title}<span style={{ color: 'var(--fg4)', opacity: 0.5, display: 'flex' }}><ExternalLink size={12} strokeWidth={1.5} /></span>
-                  </a>
+                  {r.url ? (
+                    <a href={r.url} target="_blank" rel="noreferrer" style={{ color: 'var(--fg1)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                      {r.title}<span style={{ color: 'var(--fg4)', opacity: 0.5, display: 'flex' }}><ExternalLink size={12} strokeWidth={1.5} /></span>
+                    </a>
+                  ) : r.title}
                 </td>
                 <td style={{ padding: '10px 12px', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--fg3)', whiteSpace: 'nowrap' }}>{r.year}</td>
                 <td style={{ padding: '10px 12px', fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg3)', whiteSpace: 'nowrap' }}>{r.authors}</td>
                 <td style={{ padding: '10px 12px', fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--fg4)', letterSpacing: '0.4px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{r.source}</td>
-                <td style={{ padding: '8px 12px', textAlign: 'right' }}><GhostBtn size="sm">Look up</GhostBtn></td>
+                <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                  {r.url && <a href={r.url} target="_blank" rel="noreferrer"><GhostBtn size="sm">Look up</GhostBtn></a>}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -466,47 +490,65 @@ function ResultSearch({ query }: { query: string }) {
   );
 }
 
-function ResultGetPaper() {
+function ResultGetPaper({ data }: { data: Record<string, unknown> | null }) {
   const [more, setMore] = useState(false);
-  const [added, setAdded] = useState(false);
-  const abstract = `We present a high-resolution coupled ocean-atmosphere model for storm surge attribution on the US Atlantic coast. The framework combines tropical cyclone synthetic tracks with a barotropic surge solver and applies Bayesian downscaling to convert ensemble forecasts into actionable inundation depth probabilities. Validation against historical events including Sandy (2012), Florence (2018), and Ian (2022) shows skill improvements of 12–18% over the prior generation of operational systems.`;
-  const overview = `This paper extends Lin & Emanuel (2019) by adding non-stationary sea level rise priors to the Bayesian framework. The key novelty is the joint treatment of tide–surge–wave coupling in shallow estuaries — historically a major source of bias in operational forecasts. The authors release open-source code (GPL-3) and the trained surrogate model. Section 4.2 on hindcast skill is the most actionable for downstream users. The discussion acknowledges that intensity scaling under warmer climates remains uncertain and recommends future work coupling with a CMIP6 ensemble.`;
+  const [showAdd, setShowAdd] = useState(false);
+  const arxivId  = typeof data?.arxiv_id === 'string' ? data.arxiv_id : '';
+  const title    = typeof data?.title === 'string' && data.title ? data.title : (arxivId ? `arXiv:${arxivId}` : 'Paper');
+  const abstract = typeof data?.abstract === 'string' ? data.abstract : '';
+  const overview = typeof data?.overview === 'string' ? data.overview : '';
+  const arxivUrl = arxivId ? `https://arxiv.org/abs/${arxivId}` : null;
+
+  if (!data) {
+    return <div style={{ fontFamily: 'var(--sans)', fontSize: 12.5, color: 'var(--fg3)' }}>No paper details returned.</div>;
+  }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div>
         <div style={{ fontFamily: 'var(--sans)', fontSize: 16, fontWeight: 600, color: 'var(--fg1)', lineHeight: 1.35, marginBottom: 6 }}>
-          High-resolution coupled modeling of coastal flood risk under non-stationary sea level rise
+          {title}
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg3)' }}>
-          <span>Marsooli, R. · Lin, N. · Emanuel, K.</span>
-          <span style={{ color: 'var(--gray200)' }}>·</span>
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--fg4)', letterSpacing: '0.4px', textTransform: 'uppercase' }}>PNAS 2024</span>
-          <span style={{ color: 'var(--gray200)' }}>·</span>
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--fg4)' }}>arXiv:2401.12345</span>
+        {arxivId && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--fg4)' }}>
+            <span>arXiv:{arxivId}</span>
+          </div>
+        )}
+      </div>
+      {abstract && (
+        <div>
+          <FieldLabel>Abstract</FieldLabel>
+          <div style={{ maxHeight: 140, overflowY: 'auto', background: 'var(--bg-subtle)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 14px', fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--fg2)', lineHeight: 1.55 }}>{abstract}</div>
         </div>
-      </div>
-      <div>
-        <FieldLabel>Abstract</FieldLabel>
-        <div style={{ maxHeight: 140, overflowY: 'auto', background: 'var(--bg-subtle)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 14px', fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--fg2)', lineHeight: 1.55 }}>{abstract}</div>
-      </div>
-      <div>
-        <FieldLabel>AI overview</FieldLabel>
-        <div style={{ fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--fg2)', lineHeight: 1.6 }}>
-          {more ? overview : overview.slice(0, 600) + '…'}
-          <button onClick={() => setMore(m => !m)} style={{ marginLeft: 6, background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500, color: BRAND_DEEP, padding: 0 }}>
-            {more ? 'Show less' : 'Show more'}
-          </button>
+      )}
+      {overview && (
+        <div>
+          <FieldLabel>AI overview</FieldLabel>
+          <div style={{ fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--fg2)', lineHeight: 1.6 }}>
+            {more || overview.length <= 600 ? overview : overview.slice(0, 600) + '…'}
+            {overview.length > 600 && (
+              <button onClick={() => setMore(m => !m)} style={{ marginLeft: 6, background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500, color: BRAND_DEEP, padding: 0 }}>
+                {more ? 'Show less' : 'Show more'}
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <button onClick={() => setAdded(true)} disabled={added} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 9999, background: added ? BRAND + '33' : BRAND, color: '#0d0d0d', fontFamily: 'var(--sans)', fontSize: 12.5, fontWeight: 600, border: 'none', cursor: added ? 'default' : 'pointer' }}>
-          {added ? <CheckCircle size={12} strokeWidth={1.5} /> : <Plus size={14} strokeWidth={2} />}
-          {added ? 'Added to Reading' : 'Add to Reading'}
+        <button onClick={() => setShowAdd(s => !s)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 9999, background: 'transparent', color: 'var(--fg2)', border: '1px solid var(--border-md)', fontFamily: 'var(--sans)', fontSize: 12.5, fontWeight: 500, cursor: 'pointer' }}>
+          <Plus size={14} strokeWidth={2} /> Add to Reading
         </button>
-        <a href="#" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 9999, background: 'transparent', color: 'var(--fg2)', border: '1px solid var(--border-md)', fontFamily: 'var(--sans)', fontSize: 12.5, fontWeight: 500, textDecoration: 'none' }}>
-          <ExternalLink size={12} strokeWidth={1.5} /> Open on arXiv
-        </a>
+        {arxivUrl && (
+          <a href={arxivUrl} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 9999, background: 'transparent', color: 'var(--fg2)', border: '1px solid var(--border-md)', fontFamily: 'var(--sans)', fontSize: 12.5, fontWeight: 500, textDecoration: 'none' }}>
+            <ExternalLink size={12} strokeWidth={1.5} /> Open on arXiv
+          </a>
+        )}
       </div>
+      {showAdd && (
+        <div style={{ background: 'var(--gray100)', borderRadius: 8, padding: '12px 14px', fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg2)', lineHeight: 1.6 }}>
+          The reading queue syncs from Mendeley. To add this paper: download its PDF, drop it into your
+          Mendeley watch folder (Settings → reading database folder), then run <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--fg1)' }}>docent reading sync-from-mendeley</span> (or the Sync button on the Reading page).
+        </div>
+      )}
     </div>
   );
 }
@@ -531,66 +573,94 @@ function PerspectiveSection({ title, color, body }: { title: string; color: stri
   );
 }
 
-function ResultNotebook() {
+function ResultNotebook({ data, doneData }: { data: Record<string, unknown> | null; doneData?: Record<string, unknown> | null }) {
+  const num = (k: string): number => (typeof data?.[k] === 'number' ? (data[k] as number) : 0);
+  const notebookId = (typeof data?.notebook_id === 'string' && data.notebook_id)
+    || (typeof doneData?.notebook_id === 'string' ? (doneData.notebook_id as string) : '') || '';
+  const added = num('sources_added');
+  const failed = num('sources_failed');
+  const fromNlm = num('sources_from_nlm');
+  const message = typeof data?.message === 'string' ? data.message : (typeof doneData?.message === 'string' ? doneData!.message as string : '');
+
+  const qg = (data?.quality_gate ?? null) as Record<string, unknown> | null;
+  const contradictions = qg && typeof qg.contradictions === 'number' ? qg.contradictions : null;
+  const validation = qg && typeof qg.validation === 'string' ? qg.validation : null;
+  const gateClean = contradictions === 0;
+
+  const perspectives = (data?.perspectives ?? null) as Record<string, string> | null;
+  const perspEntries = perspectives ? Object.entries(perspectives).filter(([, v]) => typeof v === 'string' && v.trim()) : [];
+  const perspColors = [BLUE, AMBER, BRAND_DEEP];
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <span style={{ color: BRAND_DEEP, display: 'flex' }}><CheckCircle size={16} strokeWidth={1.5} /></span>
         <span style={{ fontFamily: 'var(--sans)', fontSize: 14, fontWeight: 600, color: 'var(--fg1)' }}>Notebook updated</span>
+        {message && <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--fg4)', letterSpacing: '0.5px' }}>{message}</span>}
       </div>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <Chip color={BRAND_DEEP}>18 sources added</Chip>
-        <Chip color={AMBER}>2 failed</Chip>
-        <Chip color={BLUE}>5 from NLM web</Chip>
-      </div>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 9999, background: BRAND + '22', color: BRAND_DEEP, fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600, letterSpacing: '0.5px', textTransform: 'uppercase' }}>
-          <CheckCircle size={11} strokeWidth={1.5} /> Quality gate · clean
-        </span>
-        <span style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg3)' }}>0 contradictions · 1 gap noted</span>
-      </div>
-      <div>
-        <FieldLabel>Perspectives</FieldLabel>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <PerspectiveSection title="Practitioner" color={BLUE} body="Section 4.2 hindcast skill is directly usable; you can replace the prior Lin & Emanuel (2019) module with this one and expect 12–18% improvement. Note that the surrogate model is GPU-only above 4km resolution." />
-          <PerspectiveSection title="Skeptic" color={AMBER} body="The validation set leans on three named storms. Generalization to compound events (rain + surge) is unclear and the paper does not run a leave-one-out cross-check across decades." />
-          <PerspectiveSection title="Beginner" color={BRAND_DEEP} body="Read Section 1 and the figures in Section 5 first. Skip the Bayesian downscaling derivation (Sections 3.2–3.4) unless you specifically need the math — the headline result holds without it." />
+      {(added > 0 || failed > 0 || fromNlm > 0) && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {added > 0 && <Chip color={BRAND_DEEP}>{added} sources added</Chip>}
+          {failed > 0 && <Chip color={AMBER}>{failed} failed</Chip>}
+          {fromNlm > 0 && <Chip color={BLUE}>{fromNlm} from NLM web</Chip>}
         </div>
-      </div>
-      <div style={{ background: 'var(--amber-bg)', borderLeft: '3px solid var(--amber-border)', borderRadius: '4px 8px 8px 4px', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, color: 'var(--amber-text)', fontFamily: 'var(--sans)', fontSize: 12.5, fontWeight: 600 }}>
-          <AlertTriangle size={14} strokeWidth={2} /> Save this notebook ID
+      )}
+      {qg && (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 9999, background: gateClean ? BRAND + '22' : 'var(--amber-bg)', color: gateClean ? BRAND_DEEP : 'var(--amber-text)', fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600, letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+            {gateClean ? <CheckCircle size={11} strokeWidth={1.5} /> : <AlertTriangle size={11} strokeWidth={1.5} />} Quality gate · {gateClean ? 'clean' : 'flags'}
+          </span>
+          {(contradictions !== null || validation) && (
+            <span style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg3)' }}>
+              {contradictions !== null ? `${contradictions} contradiction${contradictions === 1 ? '' : 's'}` : ''}{validation ? `${contradictions !== null ? ' · ' : ''}${validation}` : ''}
+            </span>
+          )}
         </div>
-        <div style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--amber-text)', lineHeight: 1.5 }}>A new notebook was created. Run this once to make it the default:</div>
-        <CodeBlock>{'docent config set notebook_id nb_4f2c'}</CodeBlock>
-      </div>
+      )}
+      {perspEntries.length > 0 && (
+        <div>
+          <FieldLabel>Perspectives</FieldLabel>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {perspEntries.map(([key, body], i) => (
+              <PerspectiveSection key={key} title={key.charAt(0).toUpperCase() + key.slice(1)} color={perspColors[i % perspColors.length]} body={body} />
+            ))}
+          </div>
+        </div>
+      )}
+      {notebookId && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <a href={'https://notebooklm.google.com/notebook/' + notebookId} target="_blank" rel="noreferrer"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: 'var(--sans)', fontSize: 12, color: BRAND_DEEP, textDecoration: 'none', padding: '4px 10px', borderRadius: 9999, background: BRAND + '18', border: '1px solid ' + BRAND + '44' }}>
+            <ExternalLink size={12} strokeWidth={1.5} /> Open in NotebookLM
+          </a>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--fg4)' }}>{notebookId}</span>
+        </div>
+      )}
     </div>
   );
 }
 
-function ResultConfigShow() {
-  const rows = [
-    ['default_backend',     'anthropic'],
-    ['notebook_id',         'nb_4f2c'],
-    ['vault_path',          '~/docent/vault'],
-    ['anthropic_api_key',   'sk-a...xZ9q'],
-    ['openai_api_key',      'sk-p...4Aj1'],
-    ['groq_api_key',        '(not set)'],
-    ['gemini_api_key',      '(not set)'],
-    ['tavily_api_key',      'tvly...kQ2m'],
-    ['mendeley_token',      'eyJh...A8wL'],
-    ['max_research_minutes','30'],
-  ];
+function _formatConfigValue(v: unknown): { text: string; unset: boolean } {
+  if (v === null || v === undefined || v === '' || v === '(not set)') return { text: '(not set)', unset: true };
+  if (Array.isArray(v)) return { text: v.join(' '), unset: false };
+  return { text: String(v), unset: false };
+}
+
+function ResultConfigShow({ data }: { data: Record<string, unknown> | null }) {
+  const rows = data ? Object.entries(data) : [];
+  if (rows.length === 0) {
+    return <div style={{ fontFamily: 'var(--sans)', fontSize: 12.5, color: 'var(--fg3)' }}>No configuration returned.</div>;
+  }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ fontFamily: 'var(--sans)', fontSize: 12.5, color: 'var(--fg3)' }}>Configuration ({rows.length} keys)</div>
       <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
         {rows.map(([k, v], i) => {
-          const unset = v === '(not set)';
+          const { text, unset } = _formatConfigValue(v);
           return (
             <div key={k} style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 0.4fr) 1fr', gap: 14, padding: '9px 14px', borderBottom: i < rows.length - 1 ? '1px solid var(--border)' : 'none', background: i % 2 === 0 ? 'transparent' : 'var(--bg-subtle)', alignItems: 'center' }}>
               <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--fg2)', letterSpacing: '0.3px' }}>{k}</span>
-              <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: unset ? 'var(--fg4)' : 'var(--fg1)', fontStyle: unset ? 'italic' : 'normal' }}>{v}</span>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: unset ? 'var(--fg4)' : 'var(--fg1)', fontStyle: unset ? 'italic' : 'normal', wordBreak: 'break-all' }}>{text}</span>
             </div>
           );
         })}
@@ -599,7 +669,10 @@ function ResultConfigShow() {
   );
 }
 
-function ResultConfigSet({ cfgKey }: { cfgKey: string }) {
+function ResultConfigSet({ cfgKey, data }: { cfgKey: string; data: Record<string, unknown> | null }) {
+  const key = (typeof data?.key === 'string' && data.key) || cfgKey;
+  const message = typeof data?.message === 'string' ? data.message : '';
+  const configPath = typeof data?.config_path === 'string' ? data.config_path : '~/.docent/config.toml';
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -607,74 +680,9 @@ function ResultConfigSet({ cfgKey }: { cfgKey: string }) {
         <span style={{ fontFamily: 'var(--sans)', fontSize: 14, fontWeight: 600, color: 'var(--fg1)' }}>Key saved</span>
       </div>
       <div style={{ fontFamily: 'var(--sans)', fontSize: 12.5, color: 'var(--fg2)', lineHeight: 1.6 }}>
-        <span style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--fg1)' }}>{cfgKey || 'anthropic_api_key'}</span>{' was written to:'}
+        {message || <><span style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--fg1)' }}>{key}</span>{' was written to:'}</>}
       </div>
-      <CodeBlock>{'~/.docent/config.toml'}</CodeBlock>
-    </div>
-  );
-}
-
-function CompareCol({ label, items, color }: { label: string; items: string[]; color: string }) {
-  return (
-    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 600, color, letterSpacing: '0.6px', textTransform: 'uppercase' }}>
-        <span style={{ width: 5, height: 5, borderRadius: '50%', background: color }} />{label}
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {items.map((it, i) => (
-          <div key={i} style={{ padding: '10px 12px', borderRadius: 8, background: 'var(--bg-subtle)', border: '1px solid var(--border)', fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg2)', lineHeight: 1.5 }}>{it}</div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ResultCompare({ a, b }: { a: string; b: string }) {
-  const aOnly  = ['Uses Bayesian downscaling with priors trained on 1979–2020 reanalysis', 'Validation against Sandy, Florence, Ian (3 storms)', 'Open-source GPL-3 release of surrogate model'];
-  const shared = ['Tropical cyclone synthetic tracks coupled with barotropic surge solver', 'Reports 12–18% skill improvement over operational baselines', 'Identifies tide-surge-wave coupling as primary bias source'];
-  const bOnly  = ['Ensemble of 10k members vs. 1k in A', 'No code release; results table only', 'Includes inland riverine flooding component'];
-  const contradictions = [{ label: 'Surrogate model resolution', a: 'A: GPU-only above 4km; CPU fallback degrades quality', b: 'B: claims CPU-only inference is "fully equivalent" at any resolution' }];
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ color: BRAND_DEEP, display: 'flex' }}><CheckCircle size={16} strokeWidth={1.5} /></span>
-        <span style={{ fontFamily: 'var(--sans)', fontSize: 14, fontWeight: 600, color: 'var(--fg1)' }}>Comparison complete</span>
-        <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--fg4)', letterSpacing: '0.5px', textTransform: 'uppercase' }}>· {shared.length + aOnly.length + bOnly.length} findings</span>
-      </div>
-      <div style={{ display: 'flex', gap: 12 }}>
-        {[{ label: 'Paper A', id: a || '2401.12345', color: BLUE }, { label: 'Paper B', id: b || '2310.06825', color: BRAND_DEEP }].map(p => (
-          <div key={p.label} style={{ flex: 1, padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-subtle)' }}>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: 9.5, color: p.color, letterSpacing: '0.7px', textTransform: 'uppercase', marginBottom: 4 }}>{p.label}</div>
-            <div style={{ fontFamily: 'var(--sans)', fontSize: 12.5, fontWeight: 500, color: 'var(--fg1)', lineHeight: 1.4 }}>{p.id}</div>
-          </div>
-        ))}
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, alignItems: 'flex-start' }}>
-        <CompareCol label="Only in A" items={aOnly}  color={BLUE} />
-        <CompareCol label="Shared"    items={shared} color={BRAND_DEEP} />
-        <CompareCol label="Only in B" items={bOnly}  color={BRAND_DEEP} />
-      </div>
-      {contradictions.length > 0 && (
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 600, color: 'var(--amber-text)', letterSpacing: '0.6px', textTransform: 'uppercase' }}>
-            <AlertTriangle size={14} strokeWidth={2} /> Contradictions
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {contradictions.map((c, i) => (
-              <div key={i} style={{ background: 'var(--amber-bg)', borderLeft: '3px solid var(--amber-border)', borderRadius: '4px 8px 8px 4px', padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <div style={{ fontFamily: 'var(--sans)', fontSize: 12.5, fontWeight: 600, color: 'var(--amber-text)' }}>{c.label}</div>
-                <div style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg2)', lineHeight: 1.55 }}>{c.a}</div>
-                <div style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg2)', lineHeight: 1.55 }}>{c.b}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      <div>
-        <FieldLabel>Output file</FieldLabel>
-        <CodeBlock>{'~/docent/runs/2026-05-18_compare_' + (a || '2401').replace(/\./g, '-') + '-vs-' + (b || '2310').replace(/\./g, '-') + '/comparison.md'}</CodeBlock>
-      </div>
+      <CodeBlock>{configPath}</CodeBlock>
     </div>
   );
 }
@@ -682,7 +690,7 @@ function ResultCompare({ a, b }: { a: string; b: string }) {
 // ── Output panel ───────────────────────────────────────────────────────────────
 
 // Phases that don't appear in the breadcrumb progress strip but DO show in the activity log.
-const PHASE_SKIP = new Set(['error', 'warn', 'cost', 'console']);
+const PHASE_SKIP = new Set(['error', 'warn', 'cost', 'console', 'nlm-wait']);
 
 export function OutputPanel({ action, state, status, logs, sources, currentPhase, doneData, onReset, onSaveAsPreset, onPipeToNotebook }: {
   action: ActionMeta; state: FormState; status: string;
@@ -736,14 +744,16 @@ export function OutputPanel({ action, state, status, logs, sources, currentPhase
         : [...logs].reverse().find(l => l.phase === 'console' && l.text.trim());
       return <ResultFailure errorText={errorEntry?.text ?? consoleFallback?.text} />;
     }
+    const data = (doneData?.data ?? null) as Record<string, unknown> | null;
     switch (action.id) {
       case 'search':
-      case 'scholarly':  return <ResultSearch query={state.query} />;
-      case 'getpaper':   return <ResultGetPaper />;
-      case 'notebook':   return <ResultNotebook />;
-      case 'cfgshow':    return <ResultConfigShow />;
-      case 'cfgset':     return <ResultConfigSet cfgKey={state.cfgKey} />;
-      case 'compare':    return <ResultCompare a={state.artifactA} b={state.artifactB} />;
+      case 'scholarly':  return <ResultSearch query={state.query} data={data} />;
+      case 'getpaper':   return <ResultGetPaper data={data} />;
+      case 'notebook':   return <ResultNotebook data={data} doneData={doneData} />;
+      case 'cfgshow':    return <ResultConfigShow data={data} />;
+      case 'cfgset':     return <ResultConfigSet cfgKey={state.cfgKey} data={data} />;
+      // compare returns a ResearchResult (output file + message), not a structured
+      // diff — render it with the same real-data panel as deep/lit/draft.
       default:           return <ResultResearchSuccess topic={state.topic} action={action} dest={state.dest} doneData={doneData} onSaveAsPreset={onSaveAsPreset} onPipeToNotebook={onPipeToNotebook} />;
     }
   }

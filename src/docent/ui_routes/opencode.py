@@ -69,7 +69,12 @@ def _build_studio_cmd(body: StudioRunBody) -> list[str] | None:
     cmd: list[str] = [docent_exe, "studio", action]
 
     if action in ("deep-research", "lit", "draft"):
-        cmd += ["--topic", body.topic, "--backend", backend, "--output", dest, "--confirmed"]
+        cmd += ["--topic", body.topic, "--backend", backend, "--output", dest]
+        # Only deep-research/lit support the free backend and its disclaimer gate,
+        # so only they expose a --confirmed option. draft is AI-backend-only and
+        # has no such flag — passing it makes Click reject the command.
+        if action in ("deep-research", "lit"):
+            cmd += ["--confirmed"]
         for g in (body.guides or []):
             cmd += ["--guide-files", g]
     elif action in ("review", "replicate", "audit"):
@@ -324,6 +329,7 @@ async def studio_run_ws(websocket: WebSocket):
     notebook_id: str | None = None
     result_ok: bool = True        # overridden by RESULT_MARKER if action sets ok=False
     result_message: str | None = None
+    result_data: Any = None       # full structured result for the UI's result panels
     _RESULT_MARKER   = "\x00DOCENT_RESULT\x00"
     _PROGRESS_MARKER = "\x00DOCENT_PROGRESS\x00"
 
@@ -347,6 +353,8 @@ async def studio_run_ws(websocket: WebSocket):
                         result_ok = bool(payload["ok"])
                     if "message" in payload:
                         result_message = str(payload["message"])
+                    if "data" in payload:
+                        result_data = payload["data"]
                 except Exception:
                     pass
                 continue
@@ -400,6 +408,8 @@ async def studio_run_ws(websocket: WebSocket):
         result["notebook_id"] = notebook_id
     if result_message:
         result["message"] = result_message
+    if result_data is not None:
+        result["data"] = result_data
 
     # Success only when the process exits 0 AND the action itself reported ok=True.
     # Feynman (and similar tools) can exit 0 even on credit/quota failures; in that

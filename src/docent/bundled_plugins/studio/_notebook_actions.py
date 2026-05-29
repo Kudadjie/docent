@@ -9,6 +9,7 @@ from docent.core import Context, ProgressEvent, action
 
 from docent.bundled_plugins.studio._notebook import (
     ToNotebookInputs, ToNotebookResult, _find_sources_path, _nlm_push, _rank_sources,
+    notebooklm_session_lock,
 )
 from docent.bundled_plugins.studio.preflights import _preflight_to_notebook
 
@@ -119,20 +120,57 @@ class NotebookMixin:
         if inputs.notebook_id:
             context.settings.research.notebooklm_notebook_id = inputs.notebook_id
 
-        nlm = yield from _nlm_push(
-            out_path=out_path,
-            sources_path=sources_path if has_sources else None,
-            context=context,
-            max_sources=inputs.max_sources,
-            topic=inputs.topic,
-            guide_files=[Path(p).expanduser() for p in inputs.guide_files],
-            extra_synthesis_docs=extra_synthesis_docs or None,
-            run_nlm_research=inputs.run_nlm_research,
-            run_quality_gate=inputs.run_quality_gate,
-            run_perspectives=inputs.run_perspectives,
-        )
-
         sources_file_str = str(sources_path) if has_sources else None
+
+        # ── Machine-level NotebookLM session mutex ────────────────────────────
+        # The shared Playwright session can't be touched by two runs at once.
+        # Acquire non-blocking first; if another run (UI, CLI, or MCP) holds it,
+        # surface a human "waiting" event and then block until it frees up. This
+        # is what makes the client-side auto-queue *correct* rather than advisory,
+        # and it also covers the CLI-vs-UI collision the client can't see.
+        from filelock import Timeout as _FileLockTimeout
+        lock_timeout = context.settings.research.notebooklm_lock_timeout
+        session_lock = notebooklm_session_lock(timeout=lock_timeout)
+        try:
+            session_lock.acquire(timeout=0)
+        except _FileLockTimeout:
+            yield ProgressEvent(
+                phase="nlm-wait",
+                message=(
+                    "Waiting: NotebookLM session is busy — another to-notebook run is "
+                    "active. This run will start automatically when it finishes."
+                ),
+            )
+            try:
+                session_lock.acquire(timeout=lock_timeout)
+            except _FileLockTimeout:
+                return ToNotebookResult(
+                    ok=False,
+                    output_file=str(out_path),
+                    sources_file=sources_file_str,
+                    package_dir=str(package_dir),
+                    sources_count=len(selected),
+                    message=(
+                        f"NotebookLM session stayed busy for over {int(lock_timeout)}s — "
+                        "aborting. Run this again once the other to-notebook run finishes."
+                    ),
+                )
+
+        try:
+            nlm = yield from _nlm_push(
+                out_path=out_path,
+                sources_path=sources_path if has_sources else None,
+                context=context,
+                max_sources=inputs.max_sources,
+                topic=inputs.topic,
+                guide_files=[Path(p).expanduser() for p in inputs.guide_files],
+                extra_synthesis_docs=extra_synthesis_docs or None,
+                run_nlm_research=inputs.run_nlm_research,
+                run_quality_gate=inputs.run_quality_gate,
+                run_perspectives=inputs.run_perspectives,
+            )
+        finally:
+            session_lock.release()
 
         # ── Write quality report to package dir ───────────────────────────────
         qg = nlm.get("quality_gate")

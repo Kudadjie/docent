@@ -48,3 +48,39 @@ def test_tooling_endpoint_marks_matching_version_current(monkeypatch):
 
     assert response.status_code == 200
     assert response.json()[0]["up_to_date"] is True
+
+
+# --- studio command builders: the --confirmed gate ------------------------
+# Regression for the Studio UI "draft" crash: both the subprocess builder
+# (_build_studio_cmd) and the in-process builder (_parse_studio_body) used to
+# emit --confirmed for draft, but DraftInputs has no such field (draft is
+# AI-backend-only and skips the free-tier disclaimer), so Click rejected the
+# command with "No such option '--confirmed'". Only deep/lit may carry it.
+
+def test_subprocess_builder_omits_confirmed_for_draft(monkeypatch):
+    import docent.ui_routes.opencode as oc
+
+    monkeypatch.setattr("shutil.which", lambda _name: "/usr/bin/docent")
+    body = oc.StudioRunBody(action_id="draft", topic="X", backend="free", dest="local")
+    cmd = oc._build_studio_cmd(body)
+    assert cmd is not None
+    assert "--confirmed" not in cmd
+
+
+def test_subprocess_builder_keeps_confirmed_for_deep_and_lit(monkeypatch):
+    import docent.ui_routes.opencode as oc
+
+    monkeypatch.setattr("shutil.which", lambda _name: "/usr/bin/docent")
+    for action_id in ("deep", "lit"):
+        body = oc.StudioRunBody(action_id=action_id, topic="X", backend="free", dest="local")
+        cmd = oc._build_studio_cmd(body)
+        assert cmd is not None
+        assert "--confirmed" in cmd
+
+
+def test_inprocess_builder_confirmed_only_for_deep_and_lit():
+    cases = {"draft": False, "deep": True, "lit": True}
+    for action_id, want_confirmed in cases.items():
+        body = ui_server.StudioRunBody(action_id=action_id, topic="X", backend="free", dest="local")
+        _action, args = ui_server._parse_studio_body(body)
+        assert ("confirmed" in args) is want_confirmed

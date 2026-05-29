@@ -7,7 +7,7 @@ import {
   Info, Bookmark, Trash, Upload, Sparkles, Layers, Pin,
 } from 'lucide-react';
 import {
-  ACTIONS, ALL_ACTIONS, findAction, BACKENDS,
+  ACTIONS, ALL_ACTIONS, findAction, BACKENDS, DEFAULT_AI_BACKEND, supportsFreeBackend,
   commandFor, usesApiCredits, runLabel,
   type ActionId, type ActionMeta, type FormState, type Preset,
 } from './_shared';
@@ -431,17 +431,19 @@ const DEST_NOTES: Record<string, string> = {
   Notebook:   'Uploaded to NotebookLM after the run.',
 };
 
-function FormTopic({ state, set }: { state: FormState; set: SetFn }) {
-  const backendNote = BACKEND_NOTES[state.backend] ?? 'Runs 3–30 min. May time out over MCP.';
+function FormTopic({ state, set, actionId }: { state: FormState; set: SetFn; actionId: ActionId }) {
+  // draft is topic-based but, unlike deep/lit, has no source-only free tier.
+  const freeOk = supportsFreeBackend(actionId);
+  const backend = !freeOk && state.backend === 'Free' ? DEFAULT_AI_BACKEND : state.backend;
+  const backendNote = BACKEND_NOTES[backend] ?? 'Runs 3–30 min. May time out over MCP.';
   const destNote    = DEST_NOTES[state.dest] ?? '';
   return <>
     <Field label="Topic">
       <StudioInput value={state.topic} onChange={v => set('topic', v)} placeholder="e.g. storm surge inundation under climate change" />
     </Field>
     <Field label="Backend">
-      <BackendSelector value={state.backend} onChange={v => set('backend', v)} />
-      <Note icon={state.backend === 'Free' ? <Sparkles size={12} strokeWidth={1.4} /> : undefined}
-        tone={state.backend !== 'Free' && state.backend !== 'Docent' ? undefined : undefined}>
+      <BackendSelector value={backend} onChange={v => set('backend', v)} freeDisabled={!freeOk} />
+      <Note icon={freeOk && backend === 'Free' ? <Sparkles size={12} strokeWidth={1.4} /> : undefined}>
         {backendNote}
       </Note>
     </Field>
@@ -454,7 +456,7 @@ function FormTopic({ state, set }: { state: FormState; set: SetFn }) {
 }
 
 function FormArtifact({ state, set }: { state: FormState; set: SetFn }) {
-  const backend = state.backend === 'Free' ? 'Anthropic' : state.backend;
+  const backend = state.backend === 'Free' ? DEFAULT_AI_BACKEND : state.backend;
   return <>
     <Field label="Artifact" hint="arXiv ID, PDF path, or URL">
       <StudioInput value={state.artifact} onChange={v => set('artifact', v)} placeholder="2401.12345 / paper.pdf / https://…" mono />
@@ -468,7 +470,7 @@ function FormArtifact({ state, set }: { state: FormState; set: SetFn }) {
 }
 
 function FormCompare({ state, set }: { state: FormState; set: SetFn }) {
-  const backend = state.backend === 'Free' ? 'Anthropic' : state.backend;
+  const backend = state.backend === 'Free' ? DEFAULT_AI_BACKEND : state.backend;
   return <>
     <Field label="Artifact A" hint="arXiv / PDF / URL">
       <StudioInput value={state.artifactA} onChange={v => set('artifactA', v)} placeholder="2401.12345" mono />
@@ -579,7 +581,7 @@ function FormCfgSet({ state, set }: { state: FormState; set: SetFn }) {
   </>;
 }
 
-const FORM_MAP: Record<string, React.ComponentType<{ state: FormState; set: SetFn }>> = {
+const FORM_MAP: Record<string, React.ComponentType<{ state: FormState; set: SetFn; actionId: ActionId }>> = {
   topic: FormTopic, artifact: FormArtifact, compare: FormCompare,
   search: FormSearch, getpaper: FormGetPaper, notebook: FormNotebook,
   cfgshow: FormCfgShow, cfgset: FormCfgSet,
@@ -659,6 +661,13 @@ export function LeftColumn({ actionId, setActionId, state, set, onRun, gating, s
   const [dragHover, setDragHover] = useState(false);
   const supportsGuides = ['topic', 'artifact', 'compare'].includes(action.form);
 
+  // AI-only actions have no source-only free tier. Persisted state may still hold
+  // 'Free' (the global default), so normalise it to an AI backend — otherwise the
+  // submitted run would send `--backend free`, which the CLI rejects.
+  useEffect(() => {
+    if (!supportsFreeBackend(actionId) && state.backend === 'Free') set('backend', DEFAULT_AI_BACKEND);
+  }, [actionId, state.backend, set]);
+
   const runDisabled = (() => {
     if (action.form === 'topic')    return !state.topic.trim();
     if (action.form === 'artifact') return !state.artifact.trim();
@@ -679,7 +688,7 @@ export function LeftColumn({ actionId, setActionId, state, set, onRun, gating, s
 
   function handleRunClick() {
     if (runDisabled) return;
-    const usesFree = action.form === 'topic' && state.backend === 'Free';
+    const usesFree = supportsFreeBackend(actionId) && state.backend === 'Free';
     if (usesFree) setGating(true); else onRun();
   }
   function onDragOver(e: React.DragEvent) {
@@ -728,7 +737,7 @@ export function LeftColumn({ actionId, setActionId, state, set, onRun, gating, s
           <span style={{ flex: 1, height: 1, background: 'var(--border)' }} />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14, paddingBottom: 14 }}>
-          <Form state={state} set={set} />
+          <Form state={state} set={set} actionId={actionId} />
           {!['cfgshow', 'cfgset'].includes(action.id) && (
             <CommandPreview actionId={actionId} state={state} />
           )}

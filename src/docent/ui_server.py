@@ -475,8 +475,13 @@ def _parse_studio_body(body: StudioRunBody) -> tuple[str, dict[str, Any]] | None
     if studio_action in ('deep-research', 'lit', 'draft'):
         args: dict[str, Any] = {
             'topic': body.topic, 'backend': backend,
-            'output': dest, 'guide_files': body.guides, 'confirmed': True,
+            'output': dest, 'guide_files': body.guides,
         }
+        # deep-research/lit gate the free backend behind a disclaimer; pre-confirm
+        # it here so the UI doesn't need a second prompt. draft is AI-backend-only
+        # and its DraftInputs model has no `confirmed` field.
+        if studio_action in ('deep-research', 'lit'):
+            args['confirmed'] = True
     elif studio_action in ('review', 'replicate', 'audit'):
         args = {'artifact': body.artifact, 'backend': backend, 'output': dest, 'guide_files': body.guides}
     elif studio_action == 'compare':

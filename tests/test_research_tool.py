@@ -1021,3 +1021,67 @@ class TestAuditAction:
 
         assert result.ok is False
         assert "Audit failed" in result.message
+
+class TestToNotebookSessionMutex:
+    """Slice 1 of concurrent Studio runs: the machine-level NotebookLM mutex.
+
+    The shared NotebookLM Playwright session can't be touched by two to-notebook
+    runs at once. The action acquires a cross-process file lock around _nlm_push,
+    so a second run (UI, CLI, or MCP) waits instead of corrupting the session.
+    """
+
+    def _write_research_files(self, output_dir: Path, slug: str = "test-deep"):
+        output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / f"{slug}.md").write_text("# Draft", encoding="utf-8")
+        (output_dir / f"{slug}-sources.json").write_text(json.dumps(SAMPLE_SOURCES), encoding="utf-8")
+
+    @staticmethod
+    def _collect(gen):
+        events = []
+        try:
+            while True:
+                events.append(next(gen))
+        except StopIteration as e:
+            return events, e.value
+
+    def test_waits_then_aborts_when_session_locked(self, tmp_path, monkeypatch):
+        from docent.bundled_plugins.studio import _notebook
+        monkeypatch.setattr(_notebook, "_NOTEBOOKLM_LOCK_PATH", tmp_path / "nlm.lock")
+
+        output_dir = tmp_path / "research"
+        self._write_research_files(output_dir)
+        tool = StudioTool()
+        ctx = _mock_context(output_dir=output_dir)
+        ctx.settings.research.notebooklm_lock_timeout = 0.3  # abort fast for the test
+
+        held = _notebook.notebooklm_session_lock(timeout=0)
+        held.acquire(timeout=0)
+        try:
+            events, result = self._collect(tool.to_notebook(ToNotebookInputs(), ctx))
+        finally:
+            held.release()
+
+        assert any(e.phase == "nlm-wait" for e in events), "expected a waiting event"
+        assert result.ok is False
+        assert "busy" in result.message.lower()
+
+    def test_releases_lock_after_run(self, tmp_path, monkeypatch):
+        from docent.bundled_plugins.studio import _notebook
+        monkeypatch.setattr(_notebook, "_NOTEBOOKLM_LOCK_PATH", tmp_path / "nlm.lock")
+
+        output_dir = tmp_path / "research"
+        self._write_research_files(output_dir)
+        tool = StudioTool()
+        ctx = _mock_context(output_dir=output_dir)
+
+        with patch(
+            "docent.bundled_plugins.studio._notebook_actions._nlm_push",
+            new=_make_nlm_push(notebook_id="nb-mutex", sources_added=2),
+        ):
+            result = _drain(tool.to_notebook(ToNotebookInputs(), ctx))
+        assert result.ok is True
+
+        # Lock must be free now — a subsequent run can acquire it immediately.
+        lk = _notebook.notebooklm_session_lock(timeout=0)
+        lk.acquire(timeout=0)
+        lk.release()

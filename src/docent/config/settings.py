@@ -56,8 +56,10 @@ class ResearchSettings(BaseModel):
     notebooklm_notebook_id: str | None = None  # NotebookLM notebook ID from the URL (e.g. abc123...)
     notebooklm_source_limit: int = 50  # 50 = free tier; set to 100 for NotebookLM Plus
     notebooklm_ask_timeout: float = 300.0  # seconds to wait for a NotebookLM chat answer (quality gate / perspectives); heavy notebooks need >180s
+    notebooklm_lock_timeout: float = 1800.0  # seconds a queued to-notebook run waits for the shared NotebookLM session before aborting
     obsidian_vault: Path | None = None  # Absolute path to Obsidian vault root (or target subfolder)
     alphaxiv_api_key: str | None = None  # API key from alphaxiv.org (env: ALPHAXIV_API_KEY)
+    max_parallel_studio_runs: int = 3  # client-enforced cap on concurrent Studio runs in one UI tab
 
 
 class ReadingSettings(BaseModel):

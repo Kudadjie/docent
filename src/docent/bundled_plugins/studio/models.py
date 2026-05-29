@@ -40,6 +40,21 @@ _GUIDE_FILES_FIELD = Field(
 # ollama, lm_studio, local) still work from the CLI with --backend <name>.
 _BACKEND_ENUM = ["free", "feynman", "docent", "groq"]
 
+_AI_ONLY_FREE_ERROR = (
+    "The 'free' backend only aggregates sources — it cannot generate or rewrite "
+    "text, so it is not available for this action. Choose an AI backend: "
+    "'docent', 'feynman', or 'groq'."
+)
+
+
+def _reject_free_backend(v: str) -> str:
+    """Validator helper for the text-generating actions (draft/review/compare/
+    replicate/audit). These have no free-tier path, so 'free' must fail loudly
+    here instead of silently falling through to the Feynman branch."""
+    if isinstance(v, str) and v.strip().lower() == "free":
+        raise ValueError(_AI_ONLY_FREE_ERROR)
+    return v
+
 _BACKEND_DEEP_DESC = (
     "Research backend.\n\n"
     "MCP TIMEOUT WARNING: all AI backends run a multi-minute pipeline that WILL time out "
@@ -136,10 +151,8 @@ class ReviewInputs(BaseModel):
 
     @field_validator('backend')
     @classmethod
-    def _backend_valid(cls, v: str) -> str:
-        if v not in _BACKEND_ENUM:
-            raise ValueError(f"backend must be one of {_BACKEND_ENUM}; got {v!r}")
-        return v
+    def _reject_free(cls, v: str) -> str:
+        return _reject_free_backend(v)
 
 
 class ReadOutputInputs(BaseModel):
@@ -220,6 +233,11 @@ class CompareInputs(BaseModel):
     output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
     guide_files: list[str] = _GUIDE_FILES_FIELD
 
+    @field_validator('backend')
+    @classmethod
+    def _reject_free(cls, v: str) -> str:
+        return _reject_free_backend(v)
+
     @property
     def topic(self) -> str:
         return f"{self.artifact_a} vs {self.artifact_b}"
@@ -238,6 +256,11 @@ class DraftInputs(BaseModel):
             raise ValueError('Topic is required and cannot be empty.')
         return v.strip()
 
+    @field_validator('backend')
+    @classmethod
+    def _reject_free(cls, v: str) -> str:
+        return _reject_free_backend(v)
+
 
 class ReplicateInputs(BaseModel):
     artifact: str = Field(..., description="arXiv ID, PDF path, or URL of the paper to replicate.")
@@ -245,12 +268,22 @@ class ReplicateInputs(BaseModel):
     output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
     guide_files: list[str] = _GUIDE_FILES_FIELD
 
+    @field_validator('backend')
+    @classmethod
+    def _reject_free(cls, v: str) -> str:
+        return _reject_free_backend(v)
+
 
 class AuditInputs(BaseModel):
     artifact: str = Field(..., description="arXiv ID, PDF path, or URL of the paper to audit.")
     backend: str = Field("feynman", description="Research backend — ask the user which to use. Options: 'feynman' (requires Feynman CLI; slow via MCP — suggest terminal instead), 'docent' (requires OpenCode server + API credits).")
     output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
     guide_files: list[str] = _GUIDE_FILES_FIELD
+
+    @field_validator('backend')
+    @classmethod
+    def _reject_free(cls, v: str) -> str:
+        return _reject_free_backend(v)
 
 
 # ---------------------------------------------------------------------------
@@ -301,13 +334,36 @@ class ConfigShowResult(BaseModel):
     obsidian_vault: str | None = None
     alphaxiv_api_key: str | None = None
 
+    # Field names that hold secrets and must be masked before leaving the process.
+    _SECRET_FIELDS = (
+        "tavily_api_key",
+        "semantic_scholar_api_key",
+        "alphaxiv_api_key",
+    )
+
+    @staticmethod
+    def _mask_secret(key: str | None) -> str:
+        if not key:
+            return "(not set)"
+        if len(key) <= 8:
+            return "***"
+        return key[:4] + "..." + key[-4:]
+
+    def to_ui(self) -> dict:
+        """JSON-safe dict for the UI config panel, with API keys masked.
+
+        Used by the CLI's UI-subprocess result emitter so raw secrets never
+        cross the WebSocket to the browser.
+        """
+        data = self.model_dump(mode="json")
+        for field in self._SECRET_FIELDS:
+            if field in data:
+                data[field] = self._mask_secret(data.get(field))
+        return data
+
     def to_shapes(self) -> list[Shape]:
         def _mask(key: str | None) -> str:
-            if not key:
-                return "(not set)"
-            if len(key) <= 8:
-                return "***"
-            return key[:4] + "..." + key[-4:]
+            return self._mask_secret(key)
 
         return [
             MetricShape(label="Config", value=self.config_path),
