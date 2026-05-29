@@ -1,13 +1,13 @@
 # CONTEXT - resume hint for next session
 
-**Current Task:** Memory audit + cleanup; confirmed all 4 p1_* briefs were already shipped; cleaned docent install.
+**Current Task:** Office-hours design session for concurrent Studio runs (v1.3) — running multiple Studio actions at once inside one tab. Design approved, no code yet. Brief + decisions entry written on `dev`.
 
 **Key Decisions:**
-- All 4 architectural refactor briefs (studio split, ui_server split, ui/mcp decouple, builder consolidate) were already done — just not marked so
-- Next.js API routes were removed; `next.config.ts` now proxies all /api/* to FastAPI (`ui_routes/`); two-file sync rule is obsolete
-- Removed ghost `docent v0.1.0` install; single editable `docent-cli` install is the correct setup
+- Approach C (phased hybrid): Slice 1 = client run-manager (`Map<runId,RunState>`) + server-side NLM mutex + `queue.json` file lock; Slice 2 = full server JobManager for fire-and-forget queue.
+- Concurrency lives inside one tab (sidesteps `TabGuard`); auto-queue contention behaviour. (full entry in memory/decisions.md, 2026-05-29)
+- Engine already concurrency-capable (one subprocess per `/ws/studio/run`); the work is frontend run-manager + a mandatory server resource-guard layer.
 
 **Next Steps:**
-1. Make Mendeley/Zotero coexistence decision — blocks entire v2.1.0 track (Zotero bridge, plugin docs, tag)
-2. Fix one open UI test: bell dropdown "mark all as read" (tasks/v120_ui_tests.md)
-3. Plugin developer docs — API stable, no docs exist; write before Zotero bridge so bridge is built as a plugin
+1. Land `queue.json` file locking standalone first (backlog #1, prerequisite).
+2. `/plan-eng-review` on `memory/tasks/briefs/concurrent-studio-runs-design.md` — lock NLM mutex mechanism (Win+WSL), parallel-cap config key, test plan.
+3. Build Slice 1; smoke-test the five success criteria in the brief.
