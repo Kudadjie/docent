@@ -134,12 +134,6 @@ function _newRunId(): string {
   return `r${Date.now()}_${_runSeq}`;
 }
 
-// Any run that pushes to NotebookLM contends for the single shared session:
-// the dedicated to-notebook action, or a research action with dest=Notebook.
-function goesToNotebook(r: InternalRun): boolean {
-  return r.meta.actionId === 'notebook' || r.meta.form.dest === 'Notebook';
-}
-
 export function StudioRunProvider({ children }: { children: ReactNode }) {
   const [gating, setGating]             = useState(false);
   const [activeRuns, setActiveRuns]     = useState<ActiveRunView[]>([]);
@@ -225,12 +219,16 @@ export function StudioRunProvider({ children }: { children: ReactNode }) {
     return () => { cancelled = true; };
   }, []);
 
-  // Decide whether a run may start NOW, given the current set of running runs.
+  // Decide whether a run may start NOW. The only client-side gate is the parallel
+  // cap. NotebookLM exclusivity is NOT enforced here on purpose: a notebook-bound
+  // run spends most of its life doing research that has nothing to do with NLM, so
+  // queuing the whole run would needlessly serialize the expensive part. The server
+  // mutex serializes only the actual NLM touchpoints (auth + push), letting runs
+  // research concurrently and surfacing a brief "Waiting: NotebookLM busy" only at
+  // those moments.
   const admit = useCallback((run: InternalRun): { start: boolean; reason?: string } => {
+    void run;
     const running = [...runsRef.current.values()].filter(r => r.status === 'running');
-    if (goesToNotebook(run) && running.some(goesToNotebook)) {
-      return { start: false, reason: 'Waiting: NotebookLM busy — another to-notebook run is active.' };
-    }
     if (running.length >= capRef.current) {
       return { start: false, reason: `Queued — ${running.length} runs already active (max ${capRef.current}).` };
     }

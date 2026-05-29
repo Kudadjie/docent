@@ -53,12 +53,14 @@ has its own **Stop**; starting a new run never cancels the others.
 
 Two guardrails keep concurrent runs safe:
 
-- **NotebookLM is single-session.** Only one run can touch NotebookLM at a time —
-  whether it's a `to-notebook` run or a deep-research/lit run sent to NotebookLM,
-  and across the UI *and* the CLI (the lock even covers the sign-in step, so two
-  runs can't both pop a login browser). A second one parks as **Queued —
-  "Waiting: NotebookLM busy"** and starts itself the moment the first finishes.
-  Zero clicks.
+- **NotebookLM is single-session.** Notebook-bound runs (a `to-notebook`, or a
+  deep-research/lit run sent to NotebookLM) still **research concurrently** — only
+  the actual NotebookLM moments are serialized: sign-in and the push to NotebookLM.
+  When a run reaches one of those while another holds the session, it briefly shows
+  **"Waiting: NotebookLM busy"** in its activity log, then proceeds automatically.
+  This holds across the UI *and* the CLI, and covers the sign-in step so two runs
+  can't both pop a login browser. (The shared Chromium profile — not the notebook —
+  is what forces this, so even pushes to *different* notebooks take turns.)
 - **Parallel cap.** At most `max_parallel_studio_runs` (default 3) runs stream at
   once; extras queue and auto-start as slots free up.
 

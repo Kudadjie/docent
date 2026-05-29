@@ -85,35 +85,18 @@ describe('studio run-manager (concurrent runs)', () => {
     expect(byId.lit).toBe('running');
   });
 
-  it('queues a second to-notebook run, then auto-starts it when the first finishes', () => {
+  it('does NOT client-queue notebook-bound runs (NLM is serialized server-side)', () => {
     const { result } = renderHook(() => useStudioRun(), { wrapper });
 
+    // Two notebook-bound runs (a to-notebook and a deep→notebook) start together:
+    // their research runs concurrently; the server mutex serializes only the brief
+    // NLM auth/push moments. Client-queueing the whole run would waste concurrency.
     act(() => { result.current.startRun({ actionId: 'notebook', form }); });
-    act(() => { result.current.startRun({ actionId: 'notebook', form }); });
-
-    // First runs; second is parked (NotebookLM is single-session).
-    expect(result.current.activeRuns.filter(r => r.status === 'running')).toHaveLength(1);
-    const queued = result.current.activeRuns.find(r => r.status === 'queued');
-    expect(queued?.queuedReason).toMatch(/NotebookLM/i);
-    expect(FakeWS.instances).toHaveLength(1); // queued run opened no socket
-
-    // First finishes → the queued run auto-starts (zero clicks).
-    act(() => { FakeWS.instances[0].emit({ type: 'done', status: 'success', raw: '{}' }); });
-    expect(result.current.activeRuns.filter(r => r.status === 'running')).toHaveLength(1);
-    expect(result.current.activeRuns.some(r => r.status === 'queued')).toBe(false);
-    expect(FakeWS.instances).toHaveLength(2); // second socket now opened
-  });
-
-  it('queues a research→notebook run behind a live to-notebook run', () => {
-    const { result } = renderHook(() => useStudioRun(), { wrapper });
-
-    act(() => { result.current.startRun({ actionId: 'notebook', form }); });
-    // A deep-research run that outputs to NotebookLM also contends for the session.
     act(() => { result.current.startRun({ actionId: 'deep', form: { ...form, dest: 'Notebook' } }); });
 
-    const deep = result.current.activeRuns.find(r => r.actionId === 'deep');
-    expect(deep?.status).toBe('queued');
-    expect(deep?.queuedReason).toMatch(/NotebookLM/i);
+    expect(result.current.activeRuns.filter(r => r.status === 'running')).toHaveLength(2);
+    expect(result.current.activeRuns.some(r => r.status === 'queued')).toBe(false);
+    expect(FakeWS.instances).toHaveLength(2); // both opened sockets immediately
   });
 
   it('enforces the parallel cap from config', async () => {
