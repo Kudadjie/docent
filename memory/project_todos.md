@@ -52,7 +52,7 @@ Last updated: 2026-05-15 (hardening sprint: §4 executor process-group kill, §9
 
 ## Phase 2 — UI
 
-22. **Schema-driven forms** — backend exposes `input_schema` as JSON Schema; React generates forms dynamically. No hard-coded per-tool components.
+22. ~~**Schema-driven forms**~~ — DONE 2026-05-30. Shipped as a **generic `/tools` runner page**, NOT a Studio-form rewrite (Studio's value — backend gating, guide files, dest routing, cost notices — is mostly non-schema-derivable; rewriting it would downgrade UX). New page lists every registered tool/action and auto-generates a form from `model_json_schema()`. Backend: `ui_routes/tools.py` (`GET /api/tools` catalogue + `POST /api/tools/invoke`). Frontend: `app/tools/page.tsx` + `_schema-form.tsx` (handles string/int/bool/enum/string[]/optional/json-fallback). Sidebar utility nav entry. **Bug found + fixed during live verify:** overlay actions (search/next/show — call `asyncio.run()` internally) failed with "asyncio.run() cannot be called from a running event loop" in the async handler → wrapped invoke in `asyncio.to_thread` (same pattern as `ui_routes/reading.py:119`). 7 backend tests (Win+WSL) + 12 vitest. Studio + Reading pages untouched. See decisions.md 2026-05-30.
 
 ---
 
@@ -83,10 +83,11 @@ Last updated: 2026-05-15 (hardening sprint: §4 executor process-group kill, §9
 
 ## v1.3 — Ingestion phase (Vision Phase 1)
 
-> **Prerequisite decision before any work starts:** Mendeley/Zotero coexistence policy. Mendeley is live and battle-tested. Zotero is planned. Researchers are tribal — the answer shapes everything below. Options: (a) coexist as parallel `sync_source` toggle, (b) deprecate Mendeley on a timeline, (c) Zotero is the new default; Mendeley stays for existing users. Decide before coding.
+> **Coexistence decision CONFIRMED 2026-05-30:** coexist model — `sync_source = "mendeley" | "zotero"` toggle; both bridges maintained in parallel. See `decisions.md` 2026-05-30.
 
-35. **Plugin developer docs** — formal guide for external plugin authors. API is stable; no docs exist. Prerequisite for community-built integrations (Zotero bridge, Overleaf sync, etc.). Short doc covering: `@register_tool`, `@action`, `input_schema`, `to_shapes()`, plugin directory layout, and how to publish.
-36. **Zotero SQLite bridge** — monitor `zotero.sqlite` for new entries; auto-insert into reading queue with status "queued". `ReferenceManagerClient` protocol, `pyzotero` vs `zotero-mcp` question open. See `project_zotero_integration.md`. Gate on coexistence decision above.
+35. ~~**Plugin developer docs**~~ — DONE. `docs/plugin-guide.md` already existed and was comprehensive. Fixed §7 (`ProgressShape` → `ProgressEvent` with field table), §9 (bare imports → relative imports), added §13 (how to publish: GitHub one-liner + PyPI `docent-<name>` pattern + `install()` helper).
+35a. **Mendeley client: drop MCP subprocess, use direct httpx REST** — replace `mendeley_client.py` MCP subprocess calls with direct `httpx` calls to `api.mendeley.com`. Removes ~5s cold-start, removes subprocess fragility. Same OAuth token; no change to callers (`list_folders`, `list_documents` signatures stay identical). Do before Zotero bridge so the `ReferenceManagerClient` protocol is built on a clean foundation. **Pre-Zotero prerequisite.**
+36. **Zotero SQLite bridge** — monitor `zotero.sqlite` for new entries; auto-insert into reading queue with status "queued". `ReferenceManagerClient` protocol; use `pyzotero` (decided over `zotero-mcp` — direct REST, no subprocess, stable library). See `project_zotero_integration.md`. Gate on #35a landing first.
 37. ~~**`docent doctor` auto-install**~~ — DONE 2026-05-15. `_collect_install_offers()` + `_AUTO_INSTALL` dict; feynman + mendeley-mcp only (Zotero held). Per-tool confirmation; resolves runner via `shutil.which` before attempting. 5 new tests.
 38. **ASReview agentic screening** — expose an automated screening pipeline: Docent feeds paper abstracts + inclusion/exclusion criteria to Hermes; Hermes tags relevant/irrelevant autonomously. Targets the systematic review use case. Low priority until Zotero bridge lands (needs bulk ingestion to be useful).
 

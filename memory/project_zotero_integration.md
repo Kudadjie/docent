@@ -6,15 +6,16 @@ type: project
 
 Source: `txt/zotero-option.txt` + `txt/More Thoughts.txt`, 2026-05-11
 
-## Key decision
-One reference manager at a time — user picks **Mendeley OR Zotero** via `sync_source` config toggle. No dual-ID merging.
+## Key decision — CONFIRMED 2026-05-30
+One reference manager at a time — user picks **Mendeley OR Zotero** via `sync_source` config toggle. No dual-ID merging. Both bridges maintained in parallel (coexist model). See `decisions.md` 2026-05-30 entry.
 
-**Why:** Dual-source merge is complex and the user explicitly said "Not both."
+**Why:** Researchers are tribal; forced migration has real adoption cost. Toggle is clean, maintenance is bounded.
 
 ## Recommended approach
 
 1. Define a `ReferenceManagerClient` protocol — `list_collections()`, `list_items(collection_id)`, plus field normalization to a canonical intermediate format
-2. Create `zotero_client.py` — likely using `pyzotero` (REST API, no subprocess needed). Alternatively, wire `zotero-mcp` (https://github.com/54yyyu/zotero-mcp) for consistency with the Mendeley MCP pattern. **Open question: MCP subprocess vs pyzotero library — resolve before touching queue code.**
+2. **Pre-requisite (#35a):** Replace `mendeley_client.py` MCP subprocess with direct `httpx` REST calls first — so the protocol is built on a clean foundation.
+3. Create `zotero_client.py` using `pyzotero` — **decided over `zotero-mcp`** (2026-05-30): direct REST, no subprocess overhead, stable widely-used library, no OAuth browser dance per call.
 3. Refactor Mendeley-specific functions into generic field-mapper pattern: `_build_entry_from_source(doc, field_mapper)`
 4. Add `sync_source: Literal["mendeley", "zotero"]` to `ReadingSettings`
 5. Reuse `MendeleyCache` — already parameterized via constructor callables; Zotero cache uses the same pattern

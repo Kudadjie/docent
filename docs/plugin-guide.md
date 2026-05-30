@@ -202,19 +202,32 @@ class MyResult(BaseModel):
 
 ## 7. Generator actions
 
-For long-running operations, `yield` `ProgressShape` values during work and `return` the final result. The CLI streams progress live; MCP callers receive only the final result.
+For long-running operations, `yield` `ProgressEvent` values during work and `return` the final result. The CLI streams progress live; MCP callers receive only the final result.
 
 ```python
-from docent.core.shapes import ProgressShape
+from docent.core import ProgressEvent
 
 @action(description="Process a large dataset.", input_schema=ProcessInputs)
 def process(self, inputs: ProcessInputs, context: Context):
-    yield ProgressShape(phase="loading", message="Reading files...")
+    yield ProgressEvent(phase="loading", message="Reading files...")
     # ... do work ...
-    yield ProgressShape(phase="writing", message="Saving results...", current=50, total=100)
+    yield ProgressEvent(phase="writing", message="Saving results...", current=50, total=100)
     # ... more work ...
     return ProcessResult(count=100, ok=True)
 ```
+
+**`ProgressEvent` fields:**
+
+| Field | Type | Default | Purpose |
+|-------|------|---------|---------|
+| `phase` | `str` | required | Short identifier for the current work stage (e.g. `"discover"`, `"write"`) |
+| `message` | `str` | `""` | Free-form status text; required when `current`/`total` are not set |
+| `current` | `int \| None` | `None` | 1-based progress index within this phase |
+| `total` | `int \| None` | `None` | Total items in this phase; when both set, CLI draws a progress bar |
+| `item` | `str` | `""` | Short label for the current item (filename, DOI, …) |
+| `level` | `"info" \| "warn" \| "error"` | `"info"` | Severity; `warn`/`error` render as console lines outside the bar |
+
+Note: `ProgressShape` (from `docent.core.shapes`) is the UI rendering shape — it is not what actions yield.
 
 ---
 
@@ -244,12 +257,12 @@ For plugins with multiple source files, use a package instead of a flat `.py` fi
     └── helpers.py
 ```
 
-The plugin directory is added to `sys.path`, so sibling modules are importable by bare name:
+Sibling modules are importable via **relative imports**:
 
 ```python
 # __init__.py
-from models import MyInputs, MyResult   # works — myplugin/ is on sys.path
-from helpers import do_thing
+from .models import MyInputs, MyResult  # relative import — always works
+from .helpers import do_thing
 
 from docent.core.tool import Tool, action
 from docent.core.registry import register_tool
@@ -283,6 +296,26 @@ See `docs/cli.md §5` for MCP setup instructions.
 
 ---
 
+## 10a. Web UI exposure (automatic)
+
+Your plugin also appears on the **Tools page** of the web UI (`docent ui` → Tools)
+with **zero frontend code**. The page reads each action's input schema via
+`GET /api/tools` and generates a form from it: `str` fields become text inputs,
+enums become dropdowns, `bool` become toggles, `int`/`float` become number inputs,
+`list[str]` become line-per-item editors, and `T | None` fields render as optional.
+Running the form calls `POST /api/tools/invoke` and shows the JSON result.
+
+This is the schema-driven form system — the same `input_schema` that drives your
+CLI flags and MCP tool description also drives the UI form. Write the schema once.
+
+Notes and limits:
+- Generator (streaming) actions are drained and only their final result is shown on
+  the Tools page. If you want live progress, that's a bespoke page (like Studio).
+- File-path fields render as plain text inputs (the schema can't say "this is a file").
+- Nested-object fields fall back to a JSON textarea.
+
+---
+
 ## 11. The Context object
 
 `context: Context` is passed to every `run()` and `@action` call. It provides:
@@ -307,3 +340,65 @@ See `docs/cli.md §5` for MCP setup instructions.
 - Two `@action` methods resolve to the same CLI name
 
 If the name is already registered (duplicate from another plugin), Docent prints a warning and skips — it does not raise.
+
+---
+
+## 13. Publishing your plugin
+
+### Sharing a single-file plugin
+
+The simplest distribution is a `.py` file on GitHub. Users install it with one command:
+
+```bash
+curl -o ~/.docent/plugins/myplugin.py \
+  https://raw.githubusercontent.com/you/docent-myplugin/main/myplugin.py
+```
+
+### Publishing to PyPI
+
+Name your package `docent-<name>` so it's findable. A minimal `pyproject.toml`:
+
+```toml
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "docent-myplugin"
+version = "0.1.0"
+dependencies = ["docent-cli"]
+
+[project.scripts]
+docent-myplugin-install = "docent_myplugin:install"
+```
+
+Include an `install()` helper that copies the plugin into place:
+
+```python
+# docent_myplugin/__init__.py
+import shutil
+from pathlib import Path
+
+def install() -> None:
+    dest = Path.home() / ".docent" / "plugins" / "myplugin"
+    shutil.copytree(Path(__file__).parent, dest, dirs_exist_ok=True)
+    print(f"Plugin installed to {dest}")
+```
+
+Users then run:
+
+```bash
+pip install docent-myplugin
+docent-myplugin-install
+docent list          # myplugin appears
+```
+
+### Naming conventions
+
+| Convention | Example | Purpose |
+|------------|---------|---------|
+| PyPI package | `docent-zotero` | pip install name |
+| Tool `name` attr | `"zotero"` | CLI command: `docent zotero ...` |
+| MCP prefix | `zotero__` | MCP tool names: `zotero__sync` |
+
+Keep `name` short and lowercase — it becomes every CLI subcommand your users type.

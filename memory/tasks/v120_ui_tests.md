@@ -99,7 +99,7 @@ Run these before tagging v1.2.0. Start with `docent ui` and open http://localhos
 ## Notification Inbox (Bell icon — all pages)
 
 - [/] Bell badge shows unread count
-- [] Opening bell dropdown marks all as read
+- [/] Opening bell dropdown marks all as read
 - [/] No duplicate notifications for same title+body (dedup check)
 - [/] Clicking a notification with a route hint navigates to the relevant page
 - [/] Dismiss (×) on individual notification removes it

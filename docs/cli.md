@@ -324,6 +324,7 @@ docent list   # your tool appears immediately
 - CLI sub-commands: `docent <toolname> <action>`
 - MCP tools via `docent serve`: `<toolname>__<action>`
 - `--help` output from action descriptions and field names
+- A web form on the **Tools page** (`docent ui` → Tools), auto-generated from each action's input schema — no frontend code
 
 For the full plugin contract (Tool ABC, `@action`, `to_shapes()`, `on_startup`), see [`docs/plugin-guide.md`](plugin-guide.md).
 

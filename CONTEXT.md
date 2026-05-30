@@ -1,13 +1,13 @@
 # CONTEXT - resume hint for next session
 
-**Current Task:** Concurrent Studio runs (v1.3, Slice 1) — built and hardened. Client run-manager (`Map<runId>`) + server-side machine-level NotebookLM mutex; notebook-bound runs now research concurrently and only take turns at the brief NLM auth/push moments. All on `dev`, working tree clean.
+**Current Task:** Ploughing through memory audit backlog. Tier 1 + Tier 2 + most of Tier 3 done. Schema-driven forms shipped as a generic /tools page.
 
 **Key Decisions:**
-- NLM exclusivity is enforced **server-side only** (filelock around auth in `_preflight_notebook_auth` + push in `_route_output`/`to_notebook`), NOT client-side — so research runs concurrently. Preflight auth is non-blocking (skips the probe when the session is busy).
-- Pushes can't parallelize even to different notebooks: the shared Chromium **profile** (ProcessSingleton), not the notebook, is the constraint.
-- Also shipped this session: draft `--confirmed` fix, free-backend guard, real Studio result panels (masked config), CI test-job relabel.
+- Schema-driven forms (#22): shipped as a NEW generic `/tools` runner page (auto-form from `model_json_schema()`), NOT a Studio-form rewrite. Studio/Reading untouched. `ui_routes/tools.py` + `app/tools/`. Fixed an asyncio.run-in-loop bug via `asyncio.to_thread`. See decisions.md 2026-05-30.
+- Mendeley/Zotero: coexist via `sync_source` toggle; pyzotero over zotero-mcp. Pre-req #35a: swap Mendeley MCP subprocess → direct httpx REST first.
+- Plugin developer docs (#35): done — fixed plugin-guide.md §7/§9, added §13 (publish) + §10a (auto UI form).
 
 **Next Steps:**
-- User: restart `docent ui` and verify two concurrent `deep → notebook` runs research in parallel.
-- Slice 2 (future): server-side JobManager for true fire-and-forget queue that survives tab close (`memory/tasks/briefs/concurrent-studio-runs-design.md`).
-- If GitHub branch protection requires a status check named `test`, rename it to "CLI (Python)" in repo settings.
+- Commit this work (not yet committed — on `dev`). Files: ui_routes/tools.py, app/tools/, tests, docs, ui_dist rebuild.
+- Tier 3 remaining: Zotero bridge (#35a httpx swap → #36 pyzotero).
+- Harness items (before v2.1.0): prompts-as-first-class-code eval, sub-agent fan-out formalization, model-facing surface review.
