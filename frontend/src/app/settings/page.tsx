@@ -497,7 +497,7 @@ function SectionCard({ icon, title, description, children, accentColor = '#18E29
 }) {
   return (
     <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
-      <div style={{ padding: '16px 20px 14px', borderBottom: '1px solid var(--border)', background: `linear-gradient(135deg, ${accentColor}20 0%, transparent 60%)` }}>
+      <div style={{ padding: '16px 20px 14px', borderBottom: '1px solid var(--border)', background: `${accentColor}18` }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
           {icon}
           <h2 style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600, color: 'var(--fg1)', margin: 0 }}>
@@ -1083,7 +1083,7 @@ export default function SettingsPage() {
                 <div style={{
                   padding: '16px 20px 14px', borderBottom: '1px solid var(--border)',
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  background: 'linear-gradient(135deg, #3B82F620 0%, transparent 60%)',
+                  background: '#3B82F618',
                 }}>
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
