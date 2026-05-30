@@ -32,3 +32,9 @@ Zotero MCP (or pyzotero) should come bundled with docent — not a manual user i
 
 ## How to apply
 This is v1.3+ work. When starting, use `txt/zotero-option.txt` as the brief foundation. Resolve pyzotero vs zotero-mcp question first.
+
+## SHIPPED 2026-05-30
+
+Implemented as a `ReferenceManagerBackend` (the protocol + backend-agnostic `sync_from_mendeley_run` engine already existed — only the sync action hardcoded Mendeley). New files: `reading/zotero_client.py` (pyzotero wrappers: `make_zotero`, `list_collections`, `list_items` — `auth:`/`transport:` error prefixes matching Mendeley), `reading/zotero_backend.py` (`ZoteroBackend` maps Zotero → canonical folder/doc shape so `build_entry_from_mendeley` is untouched). Wiring: `ReadingQueue._select_backend(context)` picks by `reading.reference_manager`; reader overlay guarded to no-op for Zotero (snapshot-only). Config: `zotero_api_key`/`zotero_library_id`/`zotero_library_type` added to `ReadingSettings` + `_KNOWN_READING_KEYS`. `pyzotero>=1.5` core dep. `docent doctor` Zotero check (`_check_zotero`). **Verified against the LIVE Zotero API** (public group 4507109): API surface, return shapes (collection `data.parentCollection` False→None; item `data.creators` firstName/lastName, `date`→year regex, `DOI`, `itemType` book/bookSection map), and end-to-end ZoteroBackend→build_entry→QueueEntry. 20 backend tests + 4 doctor tests, Win+WSL.
+
+**Field-name wart (acceptable):** Zotero item keys are stored in `QueueEntry.mendeley_id` (the generic "external ref id"). Renaming that field is a breaking schema migration — deferred. **Deferred:** reader overlay for Zotero (per-read fresh metadata), `config-show` doesn't surface zotero fields (doctor does), `docent setup` Zotero prompts. **Deviation from #36:** used the Zotero **Web API (pyzotero)**, not local `zotero.sqlite` file-watching — mirrors the Mendeley collection model and drops into the existing engine with zero changes.

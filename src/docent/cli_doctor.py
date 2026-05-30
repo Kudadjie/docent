@@ -163,6 +163,32 @@ def _check_mendeley_mcp(settings: "Settings") -> tuple[str, str, str, str]:
     return "Mendeley MCP", "FAIL", "-", f"{runner} not found - install uv: https://docs.astral.sh/uv/"
 
 
+def _check_zotero(settings: "Settings") -> tuple[str, str, str, str]:
+    """Check the Zotero backend — pyzotero installed + credentials configured.
+
+    Subprocess-free: checks pyzotero availability via find_spec and reads
+    settings. Only an active check (OK/WARN/FAIL) when Zotero is the selected
+    reference manager; otherwise reports availability as SKIP.
+    """
+    import importlib.util
+    rs = settings.reading
+    active = (rs.reference_manager or "mendeley").lower() == "zotero"
+    has_lib = importlib.util.find_spec("pyzotero") is not None
+    configured = bool(rs.zotero_api_key and rs.zotero_library_id)
+
+    if not active:
+        avail = "pyzotero available" if has_lib else "pyzotero not installed"
+        return "Zotero", "SKIP", "-", f"not active (reading.reference_manager=mendeley); {avail}"
+    if not has_lib:
+        return "Zotero", "FAIL", "-", "pyzotero not installed — run: pip install pyzotero"
+    if not configured:
+        return "Zotero", "WARN", "-", (
+            "set reading.zotero_api_key + reading.zotero_library_id "
+            "(get them at zotero.org/settings/keys)"
+        )
+    return "Zotero", "OK", "-", f"configured ({rs.zotero_library_type} library {rs.zotero_library_id})"
+
+
 def _check_tavily(settings: "Settings") -> tuple[str, str, str, str]:
     key = settings.research.tavily_api_key
     if key:

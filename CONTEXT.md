@@ -1,13 +1,13 @@
 # CONTEXT - resume hint for next session
 
-**Current Task:** Ploughing through memory audit backlog. Tier 1 + Tier 2 + most of Tier 3 done. Schema-driven forms shipped as a generic /tools page.
+**Current Task:** Backlog: Tier 1–3 done, incl. schema-driven `/tools` page AND the Zotero bridge. Zotero is uncommitted on `dev`.
 
 **Key Decisions:**
-- Schema-driven forms (#22): shipped as a NEW generic `/tools` runner page (auto-form from `model_json_schema()`), NOT a Studio-form rewrite. Studio/Reading untouched. `ui_routes/tools.py` + `app/tools/`. Fixed an asyncio.run-in-loop bug via `asyncio.to_thread`. See decisions.md 2026-05-30.
-- Mendeley/Zotero: coexist via `sync_source` toggle; pyzotero over zotero-mcp. Pre-req #35a: swap Mendeley MCP subprocess → direct httpx REST first.
-- Plugin developer docs (#35): done — fixed plugin-guide.md §7/§9, added §13 (publish) + §10a (auto UI form).
+- Zotero bridge (#36): SHIPPED. `ZoteroBackend` (pyzotero, API key) behind the existing `ReferenceManagerBackend` protocol; `reading.reference_manager` toggle. #35a (Mendeley httpx swap) DROPPED — it means reimplementing Mendeley OAuth and isn't a prerequisite. **Verified against LIVE Zotero API.** See decisions.md 2026-05-30.
+- Schema-driven forms (#22): generic `/tools` page (committed: 9c5b6f6 + 047043c).
+- Plugin docs (#35): done.
 
 **Next Steps:**
-- Commit this work (not yet committed — on `dev`). Files: ui_routes/tools.py, app/tools/, tests, docs, ui_dist rebuild.
-- Tier 3 remaining: Zotero bridge (#35a httpx swap → #36 pyzotero).
-- Harness items (before v2.1.0): prompts-as-first-class-code eval, sub-agent fan-out formalization, model-facing surface review.
+- Commit the Zotero work (uncommitted on `dev`): settings.py, reading/ (zotero_client/backend, __init__, mendeley_sync), cli.py, cli_doctor.py, pyproject (pyzotero dep), docs, tests. Run safe-commit/build not needed (no frontend change).
+- Tier 4 harness items (before v2.1.0): prompts-as-first-class-code eval, sub-agent fan-out formalization, model-facing surface review.
+- Note: `.venv-wsl` was stale (missing alphaxiv/notebooklm) — synced via `pip install -e .`.

@@ -7,7 +7,7 @@ license = { text = "MIT" }
 authors = [
     { name = "John David K. T. Kudadjie", email = "75898705+Kudadjie@users.noreply.github.com" }
 ]
-keywords = ["cli", "research", "reading-queue", "mendeley", "mcp"]
+keywords = ["cli", "research", "reading-queue", "mendeley", "zotero", "mcp"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
@@ -35,6 +35,7 @@ dependencies = [
     "scholarly>=1.7",
     "ddgs>=0.1",
     "tenacity>=9.0",
+    "pyzotero>=1.5",
 ]
 
 [project.optional-dependencies]

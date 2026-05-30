@@ -12,6 +12,7 @@ from docent.cli import (
     _check_alphaxiv,
     _check_cli_tool,
     _check_mendeley_mcp,
+    _check_zotero,
     _check_notebooklm_py,
     _check_profile,
     _check_reading_db,
@@ -171,6 +172,46 @@ def test_check_mendeley_mcp_not_found() -> None:
         label, status, _version, detail = _check_mendeley_mcp(settings)
     assert status == "FAIL"
     assert "not found" in detail
+
+
+# ─── _check_zotero ────────────────────────────────────────────────────────────
+
+def _zotero_settings(*, manager="zotero", api_key=None, library_id=None) -> Settings:
+    reading = ReadingSettings(
+        reference_manager=manager,
+        zotero_api_key=api_key,
+        zotero_library_id=library_id,
+    )
+    return Settings(reading=reading)
+
+
+def test_check_zotero_skip_when_not_active() -> None:
+    _label, status, _v, detail = _check_zotero(_zotero_settings(manager="mendeley"))
+    assert status == "SKIP"
+    assert "not active" in detail
+
+
+def test_check_zotero_ok_when_active_and_configured() -> None:
+    settings = _zotero_settings(api_key="abc", library_id="12345")
+    with patch("importlib.util.find_spec", return_value=object()):
+        _label, status, _v, detail = _check_zotero(settings)
+    assert status == "OK"
+    assert "12345" in detail
+
+
+def test_check_zotero_warn_when_active_but_unconfigured() -> None:
+    with patch("importlib.util.find_spec", return_value=object()):
+        _label, status, _v, detail = _check_zotero(_zotero_settings())
+    assert status == "WARN"
+    assert "zotero_api_key" in detail
+
+
+def test_check_zotero_fail_when_pyzotero_missing() -> None:
+    settings = _zotero_settings(api_key="abc", library_id="12345")
+    with patch("importlib.util.find_spec", return_value=None):
+        _label, status, _v, detail = _check_zotero(settings)
+    assert status == "FAIL"
+    assert "pyzotero" in detail
 
 
 # ─── _dir_size_gb ─────────────────────────────────────────────────────────────

@@ -53,7 +53,10 @@ from .mendeley_client import (
 
 
 _DEFAULT_DATABASE_DIR = "~/Documents/Papers"
-_KNOWN_READING_KEYS = {"database_dir", "queue_collection", "mendeley_mcp_command", "reference_manager"}
+_KNOWN_READING_KEYS = {
+    "database_dir", "queue_collection", "mendeley_mcp_command", "reference_manager",
+    "zotero_api_key", "zotero_library_id", "zotero_library_type",
+}
 
 @register_tool
 class ReadingQueue(Tool):
@@ -388,7 +391,10 @@ class ReadingQueue(Tool):
         )
 
     @action(
-        description="Set a reading setting (database_dir, queue_collection, mendeley_mcp_command).",
+        description=(
+            "Set a reading setting: database_dir, queue_collection, mendeley_mcp_command, "
+            "reference_manager (mendeley|zotero), zotero_api_key, zotero_library_id, zotero_library_type."
+        ),
         input_schema=ConfigSetInputs,
         name="config-set",
     )
@@ -455,8 +461,7 @@ class ReadingQueue(Tool):
     )
     def sync_from_mendeley(self, inputs: SyncFromMendeleyInputs, context: Context):
         collection_name = context.settings.reading.queue_collection
-        launch_command = context.settings.reading.mendeley_mcp_command
-        backend = MendeleyBackend(launch_command)
+        backend = self._select_backend(context)
         return sync_from_mendeley_run(
             self._store,
             collection_name,
@@ -545,8 +550,28 @@ class ReadingQueue(Tool):
     ) -> str | None:
         return self._mendeley_cache().get_folder_id(collection_name, launch_command)
 
+    @staticmethod
+    def _select_backend(context: Context):
+        """Pick the reference-manager backend from config.
+
+        Both implement the ``ReferenceManagerBackend`` protocol, so the
+        backend-agnostic ``sync_from_mendeley_run`` engine works with either.
+        """
+        rs = context.settings.reading
+        if (rs.reference_manager or "mendeley").lower() == "zotero":
+            from .zotero_backend import ZoteroBackend
+            return ZoteroBackend(
+                rs.zotero_api_key, rs.zotero_library_id, rs.zotero_library_type,
+            )
+        return MendeleyBackend(rs.mendeley_mcp_command)
+
     def _load_mendeley_overlay(self, context: Context) -> dict[str, dict[str, Any]] | None:
         rs = context.settings.reading
+        # Read-through metadata overlay is Mendeley-only. Zotero entries use
+        # their sync-time snapshot (no per-read refresh) — return no overlay so
+        # readers don't try to spawn mendeley-mcp for a Zotero user.
+        if (rs.reference_manager or "mendeley").lower() != "mendeley":
+            return None
         collection_name = rs.queue_collection
         launch_command = rs.mendeley_mcp_command
         folder_id = self._resolve_collection_folder_id_quiet(collection_name, launch_command)

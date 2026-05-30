@@ -92,8 +92,12 @@ Key settings under `[reading]`:
 | Key | Description | Default |
 |-----|-------------|---------|
 | `database_dir` | Path to your PDF database folder | prompted on first use |
-| `queue_collection` | Mendeley collection name to sync from | `"Docent-Queue"` |
+| `queue_collection` | Reference-manager collection name to sync from | `"Docent-Queue"` |
+| `reference_manager` | Active backend: `mendeley` or `zotero` | `"mendeley"` |
 | `mendeley_mcp_command` | Command to launch the Mendeley MCP server | `["uvx", "mendeley-mcp"]` |
+| `zotero_api_key` | Zotero API key (used when `reference_manager = zotero`) | — |
+| `zotero_library_id` | Zotero numeric user/group id | — |
+| `zotero_library_type` | `user` or `group` | `"user"` |
 
 Set them with:
 
@@ -101,6 +105,29 @@ Set them with:
 docent reading config-set --key database_dir --value ~/Documents/Papers
 docent reading config-set --key queue_collection --value "Docent-Queue"
 ```
+
+### Reference manager: Mendeley or Zotero
+
+Docent syncs your reading queue from a named collection in your reference manager.
+Pick one with `reference_manager` (you can switch anytime — one active at a time):
+
+- **Mendeley** (default) — uses the `mendeley-mcp` server (`uvx mendeley-mcp`), which
+  owns the OAuth login. Put papers in a collection named `Docent-Queue`, then
+  `docent reading sync-from-mendeley`.
+- **Zotero** — uses the Zotero Web API via an API key (no browser login). Get a key +
+  your library id at [zotero.org/settings/keys](https://www.zotero.org/settings/keys):
+
+  ```bash
+  docent reading config-set --key reference_manager --value zotero
+  docent reading config-set --key zotero_api_key --value <your-key>
+  docent reading config-set --key zotero_library_id --value <your-numeric-id>
+  # group library? also: config-set --key zotero_library_type --value group
+  docent reading sync-from-mendeley   # same command; pulls from the Zotero collection
+  ```
+
+  Create a Zotero collection named `Docent-Queue` (or whatever `queue_collection` is set
+  to), add the papers you want to read, then sync. Sub-collections become categories,
+  same as Mendeley.
 
 ---
 

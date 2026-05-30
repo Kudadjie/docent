@@ -70,9 +70,9 @@ See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full design. The short version:
 
 ### `reading` — Reading Queue
 
-Manages your academic reading queue and syncs with Mendeley.
+Manages your academic reading queue and syncs with your reference manager — **Mendeley or Zotero** (pick one via `reading.reference_manager`; see [docs/cli.md §4](docs/cli.md)).
 
-**Workflow:** Drop a PDF in your `database_dir` → Mendeley auto-imports it → drag it into your `Docent-Queue` collection → run `docent reading sync-from-mendeley`. Category is automatically detected from Mendeley sub-collections.
+**Workflow:** Drop a PDF in your `database_dir` → your reference manager imports it → add it to your `Docent-Queue` collection → run `docent reading sync-from-mendeley`. Category is automatically detected from sub-collections. (Zotero uses a Web API key — no browser login; Mendeley uses the `mendeley-mcp` server.)
 
 **Queue management**
 

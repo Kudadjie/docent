@@ -74,11 +74,14 @@ def candidate_summary(item: dict[str, Any]) -> dict[str, str]:
     }
 
 
-def mendeley_failure_hint(error: str) -> str:
-    if error.startswith("auth:"):
-        return f"{error} (run `mendeley-auth login` to refresh tokens)"
-    if "launch command not found" in error:
-        return f"{error} (install with `uv tool install mendeley-mcp` or set reading.mendeley_mcp_command)"
+def mendeley_failure_hint(error: str, backend_name: str = "Mendeley") -> str:
+    # Mendeley errors get MCP-specific remediation; other backends (Zotero)
+    # already return self-describing errors, so leave them as-is.
+    if backend_name == "Mendeley":
+        if error.startswith("auth:"):
+            return f"{error} (run `mendeley-auth login` to refresh tokens)"
+        if "launch command not found" in error:
+            return f"{error} (install with `uv tool install mendeley-mcp` or set reading.mendeley_mcp_command)"
     return error
 
 
@@ -155,7 +158,7 @@ def sync_from_mendeley_run(
     if folders_resp.get("error"):
         err = folders_resp["error"]
         return empty.model_copy(update={"message": (
-            f"Could not list {backend_name} folders: {mendeley_failure_hint(err)}"
+            f"Could not list {backend_name} folders: {mendeley_failure_hint(err, backend_name)}"
         )})
     folders = folders_resp.get("items") or []
     matches = [f for f in folders if isinstance(f, dict) and f.get("name") == collection_name]
@@ -203,7 +206,7 @@ def sync_from_mendeley_run(
         err = docs_resp["error"]
         return empty.model_copy(update={
             "folder_id": folder_id,
-            "message": f"Could not list documents in {collection_name!r}: {mendeley_failure_hint(err)}",
+            "message": f"Could not list documents in {collection_name!r}: {mendeley_failure_hint(err, backend_name)}",
         })
 
     # doc_with_category: {mendeley_id: (doc, category_path)} — deepest path wins.
@@ -394,7 +397,10 @@ def sync_from_mendeley_run(
     summary_parts.append(f"{len(failed)} failed")
     summary = ", ".join(summary_parts) + "."
     if any("auth:" in f.get("error", "") for f in failed):
-        summary += " Auth failure detected — run `mendeley-auth login` and retry."
+        if backend_name == "Mendeley":
+            summary += " Auth failure detected — run `mendeley-auth login` and retry."
+        else:
+            summary += f" Auth failure detected — check your {backend_name} credentials and retry."
 
     return SyncFromMendeleyResult(
         queue_collection=collection_name,

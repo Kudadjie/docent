@@ -74,7 +74,13 @@ class ReadingSettings(BaseModel):
     database_dir: Path | None = None
     mendeley_mcp_command: list[str] | None = None  # e.g. ["uvx", "mendeley-mcp"]; None -> default in mendeley_client.
     queue_collection: str = "Docent-Queue"  # Collection name that defines reading-queue membership.
-    reference_manager: str = "mendeley"     # Active backend: "mendeley" | "zotero" (future).
+    reference_manager: str = "mendeley"     # Active backend: "mendeley" | "zotero".
+
+    # Zotero backend (used when reference_manager == "zotero"). API key + library
+    # id come from zotero.org/settings/keys — no OAuth browser flow.
+    zotero_api_key: str | None = None
+    zotero_library_id: str | None = None       # numeric user id, or group id for a group library
+    zotero_library_type: str = "user"          # "user" | "group"
 
 
 class Settings(BaseSettings):

@@ -706,6 +706,7 @@ from docent.cli_doctor import (  # noqa: E402
     _dir_size_gb,  # noqa: F401 — re-exported for tests and external callers
     _check_feynman,
     _check_mendeley_mcp,
+    _check_zotero,
     _check_tavily,
     _check_semantic_scholar,
     _check_alphaxiv,
@@ -1300,6 +1301,7 @@ def doctor_command(ctx: typer.Context) -> None:
         lambda: _check_feynman(settings),
         lambda: _check_opencode(settings),
         lambda: _check_mendeley_mcp(settings),
+        lambda: _check_zotero(settings),
         lambda: _check_tavily(settings),
         lambda: _check_semantic_scholar(settings),
         lambda: _check_alphaxiv(settings),
