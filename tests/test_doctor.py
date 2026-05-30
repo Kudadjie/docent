@@ -193,22 +193,23 @@ def test_check_zotero_skip_when_not_active() -> None:
 
 def test_check_zotero_ok_when_active_and_configured() -> None:
     settings = _zotero_settings(api_key="abc", library_id="12345")
-    with patch("importlib.util.find_spec", return_value=object()):
+    with patch("importlib.metadata.Distribution.from_name", return_value=object()):
         _label, status, _v, detail = _check_zotero(settings)
     assert status == "OK"
     assert "12345" in detail
 
 
 def test_check_zotero_warn_when_active_but_unconfigured() -> None:
-    with patch("importlib.util.find_spec", return_value=object()):
+    with patch("importlib.metadata.Distribution.from_name", return_value=object()):
         _label, status, _v, detail = _check_zotero(_zotero_settings())
     assert status == "WARN"
     assert "zotero_api_key" in detail
 
 
 def test_check_zotero_fail_when_pyzotero_missing() -> None:
+    from importlib.metadata import PackageNotFoundError as _PkgNF
     settings = _zotero_settings(api_key="abc", library_id="12345")
-    with patch("importlib.util.find_spec", return_value=None):
+    with patch("importlib.metadata.Distribution.from_name", side_effect=_PkgNF("pyzotero")):
         _label, status, _v, detail = _check_zotero(settings)
     assert status == "FAIL"
     assert "pyzotero" in detail

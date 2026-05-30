@@ -680,7 +680,7 @@ export default function SettingsPage() {
     {
       popover: {
         title: 'Reading configuration',
-        description: 'Set your Mendeley collection name and local PDF folder. These tell Docent where your papers live and which collection to sync from.',
+        description: 'Choose your reference manager (Mendeley or Zotero), set the collection name to sync from, and point Docent at your local PDF folder. Your library is read-only — Docent never modifies it.',
       },
     },
     {

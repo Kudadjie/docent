@@ -114,16 +114,30 @@ Pick one with `reference_manager` (you can switch anytime — one active at a ti
 - **Mendeley** (default) — uses the `mendeley-mcp` server (`uvx mendeley-mcp`), which
   owns the OAuth login. Put papers in a collection named `Docent-Queue`, then
   `docent reading sync-from-mendeley`.
-- **Zotero** — uses the Zotero Web API via an API key (no browser login). Get a key +
-  your library id at [zotero.org/settings/keys](https://www.zotero.org/settings/keys):
+- **Zotero** — uses the Zotero Web API via an API key (no browser login, no OAuth).
+
+  #### Getting your Zotero API key and Library ID
+
+  1. Go to [zotero.org/settings/keys](https://www.zotero.org/settings/keys) (sign in if prompted).
+  2. Click **Create new private key**.
+  3. Give it a name (e.g. "Docent").
+  4. Under **Personal Library**, tick **Allow library access** and set it to **Read Only**.  
+     Read Only is all Docent needs — it never writes back to your Zotero library.
+  5. Click **Save Key**. Copy the key shown — it is displayed only once.
+  6. Your **Library ID** (numeric user ID) is shown on the same settings page, below  
+     your display name. It is a 7–8 digit number (e.g. `1234567`).
+
+  Then configure Docent:
 
   ```bash
   docent reading config-set --key reference_manager --value zotero
   docent reading config-set --key zotero_api_key --value <your-key>
   docent reading config-set --key zotero_library_id --value <your-numeric-id>
-  # group library? also: config-set --key zotero_library_type --value group
+  # group library? also set: --key zotero_library_type --value group
   docent reading sync-from-mendeley   # same command; pulls from the Zotero collection
   ```
+
+  Or do it in the UI: **Settings → Reading → Zotero** (reference manager toggle).
 
   Create a Zotero collection named `Docent-Queue` (or whatever `queue_collection` is set
   to), add the papers you want to read, then sync. Sub-collections become categories,

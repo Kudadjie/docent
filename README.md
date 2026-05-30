@@ -112,11 +112,11 @@ Manages your academic reading queue and syncs with your reference manager — **
 
 **Entry types:** Automatically detected from Mendeley document type on sync. Override with `edit --type book_chapter`.
 
-**Mendeley sync**
+**Sync**
 
 | Command | Description |
 |---|---|
-| `docent reading sync-from-mendeley` | Pull from your Mendeley Docent-Queue collection |
+| `docent reading sync-from-mendeley` | Pull from your Docent-Queue collection (Mendeley or Zotero) |
 | `docent reading sync-from-mendeley --dry-run` | Preview changes without writing |
 | `docent reading sync-status` | Report queue size and PDFs in database_dir |
 
@@ -124,9 +124,10 @@ Manages your academic reading queue and syncs with your reference manager — **
 
 | Command | Description |
 |---|---|
-| `docent reading config-show` | Show current reading settings |
+| `docent reading config-show` | Show current reading settings (incl. Zotero credentials if active) |
 | `docent reading config-set --key database_dir --value ~/path/to/Papers` | Set the PDF database folder |
-| `docent reading config-set --key queue_collection --value "Docent-Queue"` | Set the Mendeley collection name |
+| `docent reading config-set --key queue_collection --value "Docent-Queue"` | Set the collection name to sync from |
+| `docent reading config-set --key reference_manager --value zotero` | Switch to Zotero (or `mendeley`) |
 
 **Other**
 

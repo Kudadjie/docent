@@ -166,27 +166,50 @@ def _check_mendeley_mcp(settings: "Settings") -> tuple[str, str, str, str]:
 def _check_zotero(settings: "Settings") -> tuple[str, str, str, str]:
     """Check the Zotero backend — pyzotero installed + credentials configured.
 
-    Subprocess-free: checks pyzotero availability via find_spec and reads
-    settings. Only an active check (OK/WARN/FAIL) when Zotero is the selected
-    reference manager; otherwise reports availability as SKIP.
+    Uses importlib.metadata (dist name lookup) rather than find_spec so the
+    check is consistent with how the backup status route detects packages.
     """
-    import importlib.util
+    from importlib.metadata import Distribution, PackageNotFoundError as _PkgNF
     rs = settings.reading
     active = (rs.reference_manager or "mendeley").lower() == "zotero"
-    has_lib = importlib.util.find_spec("pyzotero") is not None
+    try:
+        Distribution.from_name("pyzotero")
+        has_lib = True
+    except _PkgNF:
+        has_lib = False
     configured = bool(rs.zotero_api_key and rs.zotero_library_id)
 
     if not active:
         avail = "pyzotero available" if has_lib else "pyzotero not installed"
         return "Zotero", "SKIP", "-", f"not active (reading.reference_manager=mendeley); {avail}"
     if not has_lib:
-        return "Zotero", "FAIL", "-", "pyzotero not installed — run: pip install pyzotero"
+        return "Zotero", "FAIL", "-", (
+            "pyzotero not found — run: uv sync  (or: pip install pyzotero)"
+        )
     if not configured:
         return "Zotero", "WARN", "-", (
             "set reading.zotero_api_key + reading.zotero_library_id "
             "(get them at zotero.org/settings/keys)"
         )
     return "Zotero", "OK", "-", f"configured ({rs.zotero_library_type} library {rs.zotero_library_id})"
+
+
+def _check_google_drive() -> tuple[str, str, str, str]:
+    """Check Google Drive backup dependencies (importlib.metadata, no subprocess)."""
+    from importlib.metadata import Distribution, PackageNotFoundError as _PkgNF
+    missing = []
+    for dist in ["google-api-python-client", "google-auth-oauthlib", "google-auth-httplib2"]:
+        try:
+            Distribution.from_name(dist)
+        except _PkgNF:
+            missing.append(dist)
+    if missing:
+        return "Google Drive deps", "WARN", "-", (
+            "backup extra not installed — run: "
+            "pip install 'docent-cli[backup]'  "
+            "(or: uv tool install --with 'docent-cli[backup]' docent)"
+        )
+    return "Google Drive deps", "OK", "-", "backup libraries available"
 
 
 def _check_tavily(settings: "Settings") -> tuple[str, str, str, str]:

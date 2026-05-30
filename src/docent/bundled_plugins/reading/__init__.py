@@ -383,11 +383,17 @@ class ReadingQueue(Tool):
         from docent.utils.paths import config_file
         rs = context.settings.reading
         db = str(rs.database_dir) if rs.database_dir else None
+        key = rs.zotero_api_key
+        masked = (key[:4] + "..." + key[-4:]) if key and len(key) > 8 else ("set" if key else None)
         return ConfigShowResult(
             config_path=str(config_file()),
             database_dir=db,
             queue_collection=rs.queue_collection,
             mendeley_mcp_command=rs.mendeley_mcp_command,
+            reference_manager=rs.reference_manager or "mendeley",
+            zotero_api_key=masked,
+            zotero_library_id=rs.zotero_library_id,
+            zotero_library_type=rs.zotero_library_type,
         )
 
     @action(

@@ -148,15 +148,27 @@ class ConfigShowResult(BaseModel):
     database_dir: str | None
     queue_collection: str
     mendeley_mcp_command: list[str] | None = None
+    reference_manager: str = "mendeley"
+    zotero_api_key: str | None = None       # pre-masked by caller
+    zotero_library_id: str | None = None
+    zotero_library_type: str = "user"
 
     def to_shapes(self) -> list[Shape]:
         mmc = " ".join(self.mendeley_mcp_command) if self.mendeley_mcp_command else "(default: uvx mendeley-mcp)"
-        return [
+        shapes = [
             MetricShape(label="Config", value=self.config_path),
             MetricShape(label="database_dir", value=self.database_dir or "(not set)"),
             MetricShape(label="queue_collection", value=self.queue_collection),
+            MetricShape(label="reference_manager", value=self.reference_manager),
             MetricShape(label="mendeley_mcp_command", value=mmc),
         ]
+        if self.reference_manager == "zotero":
+            shapes += [
+                MetricShape(label="zotero_api_key", value=self.zotero_api_key or "(not set)"),
+                MetricShape(label="zotero_library_id", value=self.zotero_library_id or "(not set)"),
+                MetricShape(label="zotero_library_type", value=self.zotero_library_type),
+            ]
+        return shapes
 
 
 
