@@ -25,6 +25,8 @@ from pydantic import BaseModel, Field
 from docent.core import ProgressEvent
 from docent.core.shapes import ErrorShape, LinkShape, MessageShape, MetricShape, Shape
 
+from .prompts import load_prompt
+
 if TYPE_CHECKING:
     from docent.core import Context
 
@@ -75,30 +77,6 @@ def _find_sources_path(out_path: Path) -> Path | None:
     if dot_form.exists():
         return dot_form
     return None
-
-_QUALITY_GATE_PROMPT = (
-    "Analyze this notebook and answer in THREE clearly-headed sections.\n\n"
-    "### VALIDATION\n"
-    "Compare the synthesis document against the other sources. Flag any claims in the synthesis "
-    "that are NOT supported by the sources, or that misrepresent them. Quote the problematic "
-    "claim and explain the discrepancy. If clean, say so explicitly.\n\n"
-    "### CONTRADICTIONS\n"
-    "List source-vs-source contradictions. For each, cite the specific claims and the sources "
-    "that disagree. If none, say so.\n\n"
-    "### GAPS\n"
-    "List the most important subtopics or perspectives a researcher studying {topic} would "
-    "expect but that the current sources do NOT cover. Be specific about what is absent."
-)
-
-_PERSPECTIVES_PROMPT = (
-    "Produce THREE summaries with clear headers.\n\n"
-    "### PRACTITIONER\n"
-    "Key findings as a practitioner who needs to apply this work. Actionable takeaways.\n\n"
-    "### SKEPTIC\n"
-    "Key findings as a skeptical peer reviewer. Main weaknesses and what you would push back on.\n\n"
-    "### BEGINNER\n"
-    "Plain-language overview for someone with no background in this field."
-)
 
 # ---------------------------------------------------------------------------
 # Low-level helpers
@@ -1555,7 +1533,7 @@ def _nlm_push(
                 "watching the notebook for the answer)..."
             ),
         )
-        gate_prompt = _QUALITY_GATE_PROMPT.format(topic=effective_topic)
+        gate_prompt = load_prompt("quality_gate").replace("{topic}", effective_topic)
         gate_answer = _nlm_ask(
             gate_prompt, notebook_id, timeout=ask_timeout, recovery_timeout=ask_timeout
         )
@@ -1648,7 +1626,7 @@ def _nlm_push(
         persp_answer = None
         for _attempt in range(1, _PERSP_RETRIES + 1):
             persp_answer = _nlm_ask(
-                _PERSPECTIVES_PROMPT, notebook_id, timeout=ask_timeout,
+                load_prompt("perspectives"), notebook_id, timeout=ask_timeout,
                 recovery_timeout=ask_timeout,
             )
             if persp_answer:

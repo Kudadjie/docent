@@ -22,19 +22,14 @@ from .backend import StudioBackend
 from .search import fetch_page, tavily_research  # kept for direct callers
 from .search import academic_search_parallel  # kept for direct callers
 from .search_adapter import DefaultSearchAdapter, SearchAdapter
+from .prompts import load_prompt as _load_prompt
 
 try:
     from tavily.errors import UsageLimitExceededError
 except ImportError:
     UsageLimitExceededError = RuntimeError  # type: ignore[misc,assignment]
 
-_AGENTS_DIR = Path(__file__).parent / "agents"
-
 logger = logging.getLogger(__name__)
-
-
-def _load_prompt(name: str) -> str:
-    return (_AGENTS_DIR / f"{name}.md").read_text(encoding="utf-8")
 
 
 def _parse_json(text: str) -> dict:

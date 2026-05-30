@@ -56,6 +56,14 @@ Last updated: 2026-05-15 (hardening sprint: §4 executor process-group kill, §9
 
 ---
 
+## Tier 4 — Harness completion (the deferred ⏳ rows in harness_principles.md; before v2.1.0 tag)
+
+A1. ~~**Prompts as first-class code**~~ — DONE 2026-05-30. `studio/prompts.py` registry (`PROMPT_NAMES` + `load_prompt`); 2 inline `_notebook.py` prompts extracted to `agents/quality_gate.md` + `perspectives.md`; `pipeline.py` delegates via `_load_prompt` alias. `tests/test_prompts_registry.py` = registry↔disk parity + call-site check + newline-normalized hash tripwire (`prompt_hashes.json`). Win+WSL green, ruff clean. See decisions.md 2026-05-30.
+C1. ~~**Model-facing surface review**~~ — DONE 2026-05-30. Audited all 36 MCP descriptors via `build_mcp_tools()`. **Surface was already fully described — zero fields missing descriptions; no code fixes needed** (every action has a description, every `Field` carries help, optional `X|None` fields carry top-level descriptions). Deliverable: regression gate `tests/test_mcp_surface.py` enforcing every tool + every field has a present, non-placeholder description. See decisions.md 2026-05-30.
+B1. **Sub-agent fan-out primitive** — DEFERRED until citation-scavenger (#42) is the real 2nd consumer (two-consumer rule). Recorded in harness_principles.md.
+
+---
+
 ## Remote access / HTTP transport
 
 > **Context:** Docent currently uses stdio MCP transport only. This blocks mobile use cases (Claude mobile app doesn't support MCP) and shared-server deployments. The roadmap item below is the foundational piece that unlocks both.
