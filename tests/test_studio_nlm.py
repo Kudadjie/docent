@@ -63,28 +63,36 @@ class TestNlmAuthOk:
             assert _nlm_auth_ok() is False
 
     def test_returns_false_on_nonzero_returncode(self):
-        with patch("docent.bundled_plugins.studio._notebook._nlm_run", return_value=(1, "", "auth error")):
+        with patch("docent.bundled_plugins.studio._notebook._nlm_exe", return_value="/bin/notebooklm"), \
+             patch("docent.bundled_plugins.studio._notebook._nlm_run", return_value=(1, "", "auth error")):
             assert _nlm_auth_ok() is False
 
     def test_returns_true_when_list_succeeds_with_array(self):
+        # Patch _nlm_exe too: _nlm_auth_ok() short-circuits to False when the
+        # notebooklm binary isn't on PATH (e.g. a venv whose bin isn't
+        # activated), so this test must stub it to stay hermetic.
         notebooks = [{"id": "nb1", "title": "My Notebook"}]
-        with patch("docent.bundled_plugins.studio._notebook._nlm_run",
+        with patch("docent.bundled_plugins.studio._notebook._nlm_exe", return_value="/bin/notebooklm"), \
+             patch("docent.bundled_plugins.studio._notebook._nlm_run",
                    return_value=(0, json.dumps(notebooks), "")):
             assert _nlm_auth_ok() is True
 
     def test_returns_true_when_list_returns_empty_array(self):
-        with patch("docent.bundled_plugins.studio._notebook._nlm_run",
+        with patch("docent.bundled_plugins.studio._notebook._nlm_exe", return_value="/bin/notebooklm"), \
+             patch("docent.bundled_plugins.studio._notebook._nlm_run",
                    return_value=(0, "[]", "")):
             assert _nlm_auth_ok() is True
 
     def test_returns_false_when_response_has_error_flag(self):
-        with patch("docent.bundled_plugins.studio._notebook._nlm_run",
+        with patch("docent.bundled_plugins.studio._notebook._nlm_exe", return_value="/bin/notebooklm"), \
+             patch("docent.bundled_plugins.studio._notebook._nlm_run",
                    return_value=(0, json.dumps({"error": True, "message": "not logged in"}), "")):
             assert _nlm_auth_ok() is False
 
     def test_returns_false_on_invalid_json(self):
         # Unparseable output is treated conservatively as auth failure
-        with patch("docent.bundled_plugins.studio._notebook._nlm_run",
+        with patch("docent.bundled_plugins.studio._notebook._nlm_exe", return_value="/bin/notebooklm"), \
+             patch("docent.bundled_plugins.studio._notebook._nlm_run",
                    return_value=(0, "not json", "")):
             assert _nlm_auth_ok() is False
 
