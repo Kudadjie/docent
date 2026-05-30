@@ -612,6 +612,35 @@ function CostNotice({ actionId, backend }: { actionId: ActionId; backend: string
   );
 }
 
+function TavilyUsageNotice({ backend }: { backend: string }) {
+  const [pct, setPct] = useState<number | null>(null);
+  const [used, setUsed] = useState<number | null>(null);
+  const [limit, setLimit] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (backend !== 'Docent') return;
+    fetch('/api/studio/tavily-usage')
+      .then(r => r.json())
+      .then((d: { ok: boolean; pct_used?: number | null; plan_usage?: number | null; plan_limit?: number | null }) => {
+        if (d.ok) { setPct(d.pct_used ?? null); setUsed(d.plan_usage ?? null); setLimit(d.plan_limit ?? null); }
+      })
+      .catch(() => {});
+  }, [backend]);
+
+  if (backend !== 'Docent' || pct === null || pct < 70) return null;
+
+  const color = pct >= 90 ? '#D45656' : '#C97B00';
+  const bg    = pct >= 90 ? 'rgba(212,86,86,0.08)' : 'rgba(201,123,0,0.08)';
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 10px', background: bg, borderRadius: 6, border: `1px solid ${color}40` }}>
+      <span style={{ display: 'flex', color }}><AlertTriangle size={11} strokeWidth={2} /></span>
+      <span style={{ fontFamily: 'var(--sans)', fontSize: 11.5, color }}>
+        Tavily quota: {used}/{limit} credits used ({pct.toFixed(0)}%)
+      </span>
+    </div>
+  );
+}
+
 // ── Free-tier gate ─────────────────────────────────────────────────────────────
 
 function FreeTierGate({ onCancel, onProceed }: { onCancel: () => void; onProceed: () => void }) {
@@ -746,6 +775,7 @@ export function LeftColumn({ actionId, setActionId, state, set, onRun, gating, s
 
       <div style={{ padding: '12px 22px 18px', borderTop: '1px solid var(--border)', background: 'transparent', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 -4px 16px rgba(0,0,0,0.04)' }}>
         {!gating && <CostNotice actionId={actionId} backend={state.backend} />}
+        {!gating && <TavilyUsageNotice backend={state.backend} />}
         {gating ? (
           <FreeTierGate onCancel={() => setGating(false)} onProceed={() => { setGating(false); onRun(); }} />
         ) : (

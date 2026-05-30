@@ -372,6 +372,89 @@ function SecretKeyRow({
   );
 }
 
+// ── Tavily usage bar ─────────────────────────────────────────────────────────
+
+interface TavilyUsage {
+  ok: boolean;
+  plan?: string | null;
+  plan_usage?: number | null;
+  plan_limit?: number | null;
+  key_search_usage?: number | null;
+  pct_used?: number | null;
+  message?: string;
+}
+
+function TavilyUsageWidget({ keyIsSet }: { keyIsSet: boolean }) {
+  const [usage, setUsage] = useState<TavilyUsage | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const r = await fetch('/api/studio/tavily-usage');
+      const d = await r.json() as TavilyUsage;
+      setUsage(d);
+    } catch {
+      setUsage({ ok: false, message: 'Could not reach server.' });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (keyIsSet) load();
+  }, [keyIsSet]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!keyIsSet) return null;
+
+  const pct = usage?.pct_used ?? null;
+  const barColor = pct === null ? 'var(--fg4)' : pct >= 90 ? '#D45656' : pct >= 70 ? '#C97B00' : '#18E299';
+
+  return (
+    <div style={{ padding: '10px 0 4px', borderBottom: '1px solid var(--border)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+        <span style={{ fontFamily: 'var(--sans)', fontSize: 11.5, color: 'var(--fg4)' }}>
+          Monthly usage
+        </span>
+        <button
+          onClick={load}
+          disabled={loading}
+          style={{ background: 'none', border: 'none', cursor: loading ? 'default' : 'pointer', padding: 0, display: 'flex', opacity: loading ? 0.5 : 1 }}
+          title="Refresh Tavily usage"
+        >
+          <RefreshCw size={11} strokeWidth={1.5} color="var(--fg4)" style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} />
+        </button>
+      </div>
+      {loading && !usage ? (
+        <span style={{ fontFamily: 'var(--sans)', fontSize: 11.5, color: 'var(--fg4)' }}>Loading…</span>
+      ) : usage?.ok === false ? (
+        <span style={{ fontFamily: 'var(--sans)', fontSize: 11.5, color: '#D45656' }}>{usage.message ?? 'Failed to load.'}</span>
+      ) : usage ? (
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <div style={{ flex: 1, height: 5, borderRadius: 9999, background: 'var(--gray100)', overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${Math.min(pct ?? 0, 100)}%`, background: barColor, borderRadius: 9999, transition: 'width 0.4s' }} />
+            </div>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--fg3)', flexShrink: 0 }}>
+              {usage.plan_usage ?? '?'} / {usage.plan_limit ?? '?'}
+            </span>
+            {pct !== null && (
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: barColor, flexShrink: 0, fontWeight: 600 }}>
+                {pct.toFixed(0)}%
+              </span>
+            )}
+          </div>
+          {usage.plan && (
+            <span style={{ fontFamily: 'var(--sans)', fontSize: 10.5, color: 'var(--fg4)' }}>
+              {usage.plan} plan · resets monthly
+            </span>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 // ── Doctor status badge ───────────────────────────────────────────────────────
 
 const STATUS_COLOR: Record<DoctorCheck['status'], string> = {
@@ -405,15 +488,16 @@ function StatusBadge({ status }: { status: DoctorCheck['status'] }) {
 
 // ── Section card ─────────────────────────────────────────────────────────────
 
-function SectionCard({ icon, title, description, children }: {
+function SectionCard({ icon, title, description, children, accentColor = '#18E299' }: {
   icon: React.ReactNode;
   title: string;
   description: React.ReactNode;
   children: React.ReactNode;
+  accentColor?: string;
 }) {
   return (
     <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
-      <div style={{ padding: '16px 20px 14px', borderBottom: '1px solid var(--border)', background: 'linear-gradient(135deg, #18E29920 0%, transparent 60%)' }}>
+      <div style={{ padding: '16px 20px 14px', borderBottom: '1px solid var(--border)', background: `linear-gradient(135deg, ${accentColor}20 0%, transparent 60%)` }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
           {icon}
           <h2 style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600, color: 'var(--fg1)', margin: 0 }}>
@@ -957,7 +1041,8 @@ export default function SettingsPage() {
             {/* Left column: Reading config + System health */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
               <SectionCard
-                icon={<BookOpen size={14} strokeWidth={1.5} color="#0fa76e" />}
+                accentColor="#14B8A6"
+                icon={<BookOpen size={14} strokeWidth={1.5} color="#14B8A6" />}
                 title="Reading"
                 description="Controls how Docent syncs your reading queue with Mendeley and your local paper database."
               >
@@ -975,6 +1060,7 @@ export default function SettingsPage() {
 
               {/* Studio settings */}
               <SectionCard
+                accentColor="#8B5CF6"
                 icon={<FlaskConical size={14} strokeWidth={1.5} color="#8B5CF6" />}
                 title="Studio"
                 description="Controls which AI model Feynman uses when running deep research and literature review tasks."
@@ -997,11 +1083,11 @@ export default function SettingsPage() {
                 <div style={{
                   padding: '16px 20px 14px', borderBottom: '1px solid var(--border)',
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  background: 'linear-gradient(135deg, #18E29920 0%, transparent 60%)',
+                  background: 'linear-gradient(135deg, #3B82F620 0%, transparent 60%)',
                 }}>
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-                      <Activity size={14} strokeWidth={1.5} color="#0fa76e" />
+                      <Activity size={14} strokeWidth={1.5} color="#3B82F6" />
                       <h2 style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600, color: 'var(--fg1)', margin: 0 }}>
                         System health
                       </h2>
@@ -1084,15 +1170,21 @@ export default function SettingsPage() {
 
             {/* Right column: API keys */}
             <SectionCard
-              icon={<Key size={14} strokeWidth={1.5} color="#0fa76e" />}
+              accentColor="#F59E0B"
+              icon={<Key size={14} strokeWidth={1.5} color="#F59E0B" />}
               title="API keys"
               description={<>Keys for research backends and paper search. Stored in <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>~/.docent/config.toml</span> — never sent anywhere except the respective provider.</>}
             >
               <KeyGroup label="Search & discovery">
                 {RESEARCH_KEY_FIELDS.filter(f => ['tavily_api_key','alphaxiv_api_key','semantic_scholar_api_key'].includes(f.key)).map(f => (
-                  <SecretKeyRow key={f.key} label={f.label} description={f.description}
-                    masked={res ? (res[f.key] ?? null) : null} placeholder={f.placeholder}
-                    onSave={v => handleSaveResearch(f.key, v)} />
+                  <div key={f.key}>
+                    <SecretKeyRow label={f.label} description={f.description}
+                      masked={res ? (res[f.key] ?? null) : null} placeholder={f.placeholder}
+                      onSave={v => handleSaveResearch(f.key, v)} />
+                    {f.key === 'tavily_api_key' && (
+                      <TavilyUsageWidget keyIsSet={!!(res?.tavily_api_key)} />
+                    )}
+                  </div>
                 ))}
               </KeyGroup>
               <KeyGroup label="AI backends">
@@ -1395,7 +1487,8 @@ export default function SettingsPage() {
             {/* Walkthrough — full width */}
             <section style={{ gridColumn: '1 / -1' }}>
               <SectionCard
-                icon={<Zap size={14} strokeWidth={1.5} color="#8B5CF6" />}
+                accentColor="#06B6D4"
+                icon={<Zap size={14} strokeWidth={1.5} color="#06B6D4" />}
                 title="Walkthrough tours"
                 description="Each page has a guided walkthrough that runs the first time you visit it. Reset individual tours below or restart all of them at once."
               >

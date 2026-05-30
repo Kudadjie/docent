@@ -450,6 +450,36 @@ class GetPaperResult(BaseModel):
         return shapes
 
 
+class TavilyUsageInputs(BaseModel):
+    pass
+
+
+class TavilyUsageResult(BaseModel):
+    ok: bool
+    plan: str | None = None
+    plan_usage: int | None = None
+    plan_limit: int | None = None
+    key_search_usage: int | None = None
+    pct_used: float | None = None
+    message: str
+
+    def to_shapes(self) -> list[Shape]:
+        if not self.ok:
+            return [ErrorShape(reason=self.message)]
+        shapes: list[Shape] = []
+        if self.plan_usage is not None and self.plan_limit is not None:
+            pct = f"{self.pct_used:.0f}%" if self.pct_used is not None else "?"
+            shapes.append(MetricShape(
+                label="Tavily credits used",
+                value=f"{self.plan_usage} / {self.plan_limit} ({pct})",
+            ))
+        if self.plan:
+            shapes.append(MetricShape(label="Plan", value=self.plan))
+        if self.key_search_usage is not None:
+            shapes.append(MetricShape(label="Search calls (this key)", value=str(self.key_search_usage)))
+        return shapes
+
+
 class ScholarlySearchResult(BaseModel):
     ok: bool
     query: str

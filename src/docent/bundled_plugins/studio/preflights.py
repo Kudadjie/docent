@@ -503,6 +503,26 @@ def _preflight_docent(inputs: BaseModel, context: Context) -> None:
             "Get one at https://tavily.com or switch to --backend free.",
         )
 
+    # Non-blocking quota warning for CLI users (skip silently on any failure).
+    import os as _os
+    if not context.via_mcp and not _os.environ.get("DOCENT_UI_SUBPROCESS"):
+        try:
+            from .tavily_usage import fetch_tavily_usage
+            _usage = fetch_tavily_usage(tavily_key, timeout=4.0)
+            _account = _usage.get("account", {})
+            _used = _account.get("plan_usage")
+            _limit = _account.get("plan_limit")
+            if _used is not None and _limit and _limit > 0:
+                _pct = _used / _limit * 100
+                if _pct >= 80:
+                    from docent.ui import get_console
+                    get_console().print(
+                        f"[yellow]⚠ Tavily quota:[/] {_used}/{_limit} credits used ({_pct:.0f}%). "
+                        "Running low — top up at app.tavily.com."
+                    )
+        except Exception:
+            pass
+
 
 def _preflight_oc_only(inputs: BaseModel, context: Context) -> None:
     """Pre-flight check for review/compare/draft/replicate/audit (AI backend, no Tavily needed)."""

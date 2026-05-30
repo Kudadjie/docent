@@ -45,6 +45,8 @@ from .models import (  # noqa: F401
     ScholarlySearchResult,
     SearchPapersInputs,
     SearchPapersResult,
+    TavilyUsageInputs,
+    TavilyUsageResult,
 )
 from .preflights import (  # noqa: F401
     _preflight_docent,
