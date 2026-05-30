@@ -138,19 +138,24 @@ except Exception as exc:
     return []
 ```
 
-## Windows .venv vs WSL .venv-wsl — deps must be in BOTH
+## WSL test venv: build it in native home (`~/docent-venv`), NOT on /mnt/c or /tmp
 
-Docent runs from Windows Python (`.venv`), but tests run from WSL (`.venv-wsl`). Adding a dep to `pyproject.toml` requires syncing BOTH venvs:
+**The fast, correct way to run the suite on Linux** (learned 2026-05-30, after a 20-min detour):
 
 ```bash
-# WSL (testing):
-cd /mnt/c/Users/DELL/Desktop/Docent
-.venv-wsl/bin/pip install -e ".[dev]"
-
-# Windows (running docent):
-cd C:\Users\DELL\Desktop\Docent
-uv sync
+wsl -d Ubuntu bash -lc 'cd /mnt/c/Users/DELL/Desktop/Docent && \
+  UV_PROJECT_ENVIRONMENT=/home/dell/docent-venv uv sync && \
+  /home/dell/docent-venv/bin/python -m pytest -q'
 ```
+
+Why this and not the alternatives:
+- **`.venv-wsl` on /mnt/c is brutally slow** — `uv sync` writes thousands of small files through WSL's 9p layer; it ran >10 min and never finished. The CLAUDE.md testing rule warns about exactly this cross-filesystem trap.
+- **`/tmp/docent-venv` is fast but non-persistent** — WSL auto-terminates on idle and clears `/tmp`, so the venv vanishes between background commands (`/tmp/docent-venv/bin/python: No such file or directory`).
+- **`~/docent-venv` (native ext4 home) is both fast AND persistent.** Use it.
+- The legacy `.venv-wsl` (if present) is Python **3.11**, but the project requires **3.12+** — so `alphaxiv-py` won't install there ("no matching distribution"). `uv sync` fetches a managed 3.12+ automatically.
+- Combine sync + pytest in ONE `wsl` invocation (or write logs to `~/`, not `/tmp`) so an idle-restart between commands can't lose state.
+
+**Older note (legacy `.venv-wsl`):** deps must be in both venvs; symptom of wrong venv is `ModuleNotFoundError` from `docent` CLI even though `uv run pytest` passes.
 
 **Symptom of wrong venv:** `ModuleNotFoundError: No module named 'X'` from `docent` CLI even though `uv run pytest` passes.
 
