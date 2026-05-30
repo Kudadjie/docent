@@ -95,6 +95,9 @@ async def get_config() -> JSONResponse:
             "database_dir": _norm_path(cfg.get("database_dir", None)),
             "queue_collection": cfg.get("queue_collection", "Docent-Queue"),
             "reference_manager": cfg.get("reference_manager", "mendeley"),
+            "zotero_api_key": _mask_key(cfg.get("zotero_api_key")),
+            "zotero_library_id": cfg.get("zotero_library_id", None),
+            "zotero_library_type": cfg.get("zotero_library_type", "user"),
             "output_dir": _norm_path(rcfg.get("output_dir", None)),
         },
         "research": research,
@@ -123,6 +126,10 @@ async def post_config(body: ConfigBody) -> JSONResponse:
             "reading": {
                 "database_dir": _norm_path(cfg.get("database_dir", None)),
                 "queue_collection": cfg.get("queue_collection", "Docent-Queue"),
+                "reference_manager": cfg.get("reference_manager", "mendeley"),
+                "zotero_api_key": _mask_key(cfg.get("zotero_api_key")),
+                "zotero_library_id": cfg.get("zotero_library_id", None),
+                "zotero_library_type": cfg.get("zotero_library_type", "user"),
                 "output_dir": _norm_path(rcfg.get("output_dir", None)),
             }
         })

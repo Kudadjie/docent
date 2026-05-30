@@ -14,6 +14,10 @@ import { extractMessage } from '@/lib/toast-utils';
 interface ReadingConfig {
   database_dir: string | null;
   queue_collection: string;
+  reference_manager: string;
+  zotero_api_key: string | null;
+  zotero_library_id: string | null;
+  zotero_library_type: string;
   output_dir: string | null;
 }
 
@@ -39,32 +43,6 @@ interface DoctorCheck {
 }
 
 // ── Config row (for non-secret values) ───────────────────────────────────────
-
-const READING_FIELDS: {
-  key: keyof ReadingConfig;
-  label: string;
-  description: string;
-  placeholder: string;
-}[] = [
-  {
-    key: 'database_dir',
-    label: 'Database directory',
-    description: 'Local folder where your PDFs are stored. Docent counts PDFs here and uses this path for paper scanning.',
-    placeholder: '~/Documents/Papers',
-  },
-  {
-    key: 'queue_collection',
-    label: 'Mendeley collection',
-    description: 'Name of the Mendeley collection to sync from. Must exactly match the collection name in the Mendeley desktop app.',
-    placeholder: 'Docent-Queue',
-  },
-  {
-    key: 'output_dir',
-    label: 'Research output directory',
-    description: 'Folder where Studio research outputs are saved. Defaults to ~/docent/research/ if not set.',
-    placeholder: '~/docent/research',
-  },
-];
 
 const RESEARCH_KEY_FIELDS: {
   key: keyof ResearchConfig;
@@ -944,7 +922,7 @@ export default function SettingsPage() {
         signalDot('error');
       } else {
         if (body.reading) setConfig(c => c ? { ...c, reading: body.reading! } : c);
-        setToast({ type: 'success', message: `Saved reading.${key}.` });
+        setToast({ type: 'success', message: key === 'zotero_api_key' ? 'Saved Zotero API key.' : `Saved reading.${key}.` });
         signalDot('done');
       }
     } catch {
@@ -1044,18 +1022,110 @@ export default function SettingsPage() {
                 accentColor="#14B8A6"
                 icon={<BookOpen size={14} strokeWidth={1.5} color="#14B8A6" />}
                 title="Reading"
-                description="Controls how Docent syncs your reading queue with Mendeley and your local paper database."
+                description="Controls how Docent syncs your reading queue with your reference manager and local paper database."
               >
-                {READING_FIELDS.map(f => (
-                  <ConfigRow
-                    key={f.key}
-                    label={f.label}
-                    description={f.description}
-                    value={rc ? (rc[f.key] as string | null) : null}
-                    placeholder={f.placeholder}
-                    onSave={v => handleSaveReading(f.key, v)}
-                  />
-                ))}
+                {/* Reference manager toggle */}
+                <div style={{ padding: '16px 0', borderBottom: '1px solid var(--border)' }}>
+                  <div style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500, color: 'var(--fg1)', marginBottom: 3 }}>
+                    Reference manager
+                  </div>
+                  <div style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg4)', lineHeight: 1.5, marginBottom: 10 }}>
+                    Docent reads from your library to build the queue. Your data is never modified.
+                  </div>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    {(['mendeley', 'zotero'] as const).map(rm => {
+                      const active = (rc?.reference_manager ?? 'mendeley') === rm;
+                      return (
+                        <button
+                          key={rm}
+                          onClick={() => { void handleSaveReading('reference_manager', rm); }}
+                          style={{
+                            padding: '5px 14px', borderRadius: 6,
+                            border: active ? 'none' : '1px solid var(--border-md)',
+                            background: active ? '#14B8A6' : 'transparent',
+                            color: active ? '#fff' : 'var(--fg3)',
+                            fontFamily: 'var(--sans)', fontSize: 12, fontWeight: active ? 600 : 400,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {rm === 'mendeley' ? 'Mendeley' : 'Zotero'}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <ConfigRow
+                  label="Database directory"
+                  description="Local folder where your PDFs are stored. Docent counts PDFs here and uses this path for paper scanning."
+                  value={rc?.database_dir ?? null}
+                  placeholder="~/Documents/Papers"
+                  onSave={v => handleSaveReading('database_dir', v)}
+                />
+                <ConfigRow
+                  label="Queue collection"
+                  description="Name of the collection to sync from. Must exactly match the collection name in your reference manager."
+                  value={rc?.queue_collection ?? null}
+                  placeholder="Docent-Queue"
+                  onSave={v => handleSaveReading('queue_collection', v)}
+                />
+
+                {/* Zotero credentials — shown only when Zotero is the active backend */}
+                {rc?.reference_manager === 'zotero' && (
+                  <>
+                    <SecretKeyRow
+                      label="Zotero API key"
+                      description="From zotero.org/settings/keys — create a key with read access to your personal library. No OAuth, no browser login."
+                      masked={rc.zotero_api_key ?? null}
+                      placeholder="your-zotero-key"
+                      onSave={v => handleSaveReading('zotero_api_key', v)}
+                    />
+                    <ConfigRow
+                      label="Library ID"
+                      description="Your numeric Zotero user ID — visible in the URL at zotero.org/settings/keys (e.g. 1234567)."
+                      value={rc.zotero_library_id ?? null}
+                      placeholder="1234567"
+                      onSave={v => handleSaveReading('zotero_library_id', v)}
+                    />
+                    <div style={{ padding: '14px 0', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500, color: 'var(--fg1)', marginBottom: 3 }}>
+                        Library type
+                      </div>
+                      <div style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg4)', lineHeight: 1.5, marginBottom: 8 }}>
+                        Use <em>User</em> for your personal Zotero library; <em>Group</em> for a shared group library.
+                      </div>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        {(['user', 'group'] as const).map(lt => {
+                          const active = (rc.zotero_library_type ?? 'user') === lt;
+                          return (
+                            <button
+                              key={lt}
+                              onClick={() => { void handleSaveReading('zotero_library_type', lt); }}
+                              style={{
+                                padding: '5px 14px', borderRadius: 6,
+                                border: active ? 'none' : '1px solid var(--border-md)',
+                                background: active ? '#14B8A6' : 'transparent',
+                                color: active ? '#fff' : 'var(--fg3)',
+                                fontFamily: 'var(--sans)', fontSize: 12, fontWeight: active ? 600 : 400,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              {lt.charAt(0).toUpperCase() + lt.slice(1)}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                <ConfigRow
+                  label="Research output directory"
+                  description="Folder where Studio research outputs are saved. Defaults to ~/docent/research/ if not set."
+                  value={rc?.output_dir ?? null}
+                  placeholder="~/docent/research"
+                  onSave={v => handleSaveReading('output_dir', v)}
+                />
               </SectionCard>
 
               {/* Studio settings */}
@@ -1575,12 +1645,8 @@ export default function SettingsPage() {
                       Clear reading queue
                     </div>
                     <div style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg3)', lineHeight: 1.5 }}>
-                      Removes all entries from the local queue. Your Mendeley library is not affected —
-                      you can restore the queue by running{' '}
-                      <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--fg2)' }}>
-                        Sync Mendeley
-                      </span>{' '}
-                      on the Reading page.
+                      Removes all entries from the local queue. Your reference manager library is not affected —
+                      you can restore the queue by syncing again on the Reading page.
                     </div>
                   </div>
 
