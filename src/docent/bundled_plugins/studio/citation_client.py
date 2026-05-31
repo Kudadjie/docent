@@ -36,16 +36,28 @@ def resolve_s2_id(doi: str | None, arxiv_id: str | None) -> str:
     raise ValueError("Provide either doi or arxiv_id.")
 
 
+_RATE_LIMIT_MSG = (
+    "Semantic Scholar rate limit hit. "
+    "Get a free API key at semanticscholar.org/product/api and add it in "
+    "Settings → API keys → Semantic Scholar, then try again."
+)
+
+_RETRY_DELAYS = [5, 15, 30]  # seconds between attempts
+
+
 def _s2_get(path: str, params: dict, api_key: str | None) -> dict:
     headers: dict[str, str] = {}
     if api_key:
         headers["x-api-key"] = api_key
-    for attempt in range(2):
+    last_exc: Exception | None = None
+    for attempt, delay in enumerate([0] + _RETRY_DELAYS):
+        if delay:
+            logger.warning("Semantic Scholar rate-limited, retrying in %ds (attempt %d)", delay, attempt)
+            time.sleep(delay)
         try:
             resp = httpx.get(f"{_S2_BASE}{path}", params=params, headers=headers, timeout=20)
-            if resp.status_code == 429 and attempt == 0:
-                logger.warning("Semantic Scholar rate-limited, retrying in 10s")
-                time.sleep(10)
+            if resp.status_code == 429:
+                last_exc = RuntimeError(_RATE_LIMIT_MSG)
                 continue
             if resp.status_code == 404:
                 raise LookupError(f"Paper not found in Semantic Scholar: {path}")
@@ -55,9 +67,11 @@ def _s2_get(path: str, params: dict, api_key: str | None) -> dict:
             raise
         except httpx.HTTPStatusError as e:
             raise RuntimeError(f"Semantic Scholar error {e.response.status_code}: {path}") from e
+        except RuntimeError:
+            raise
         except Exception as e:
             raise RuntimeError(f"Semantic Scholar request failed: {e}") from e
-    return {}
+    raise last_exc or RuntimeError(_RATE_LIMIT_MSG)
 
 
 def _parse_authors(authors: list[dict]) -> str:
