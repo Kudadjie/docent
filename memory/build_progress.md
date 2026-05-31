@@ -43,7 +43,7 @@ Docent is a Python CLI "control center" for grad-school workflows. Design lives 
 - [x] Tier-4 A: Prompts as first-class code — 2026-05-30. `studio/prompts.py` registry; 2 inline `_notebook.py` prompts → `agents/*.md`; `tests/test_prompts_registry.py` (registry parity + call-site check + hash tripwire). Win+WSL green. See decisions.md + harness_principles.md.
 - [x] Tier-4 C: Model-facing surface review — 2026-05-30. The 36 shipped MCP descriptors are fully described (isolated audit: 0 offenders; no source fixes needed). Added regression gate `tests/test_mcp_surface.py`. Fixed test-pollution where sibling fixture tools (`fixture__run`/`test-ping-xyz__pong`/`test-stream-xyz__stream`) leak into the global `_REGISTRY` that `build_mcp_tools()` reads — `_mcp_tools()` now snapshots/clears/restores `_REGISTRY`. **Verified green: Win 631 passed, WSL 631 passed; polluted-order 21 passed; ruff clean.**
 - [ ] Tier-4 B: Sub-agent fan-out primitive — DEFERRED until citation-scavenger (#42) lands (two-consumer rule).
-- [ ] Then: Zotero integration into the UI (Settings reference-manager selector + key fields; backend shipped #36, UI surface missing).
+- [x] Zotero integration into the UI — Settings ref-manager selector, key fields, and health check all shipped (Wave 5 + doctor fix 2026-05-31).
 
 ## Status as of 2026-05-06 (Step 12 shipped — plugin discovery + reading as bundled plugin; Step 13 next — Full MCP adapter)
 
