@@ -24,6 +24,7 @@ import GhostBtn from '@/components/reading/GhostBtn';
 import DatabaseInspectorModal from '@/components/reading/DatabaseInspectorModal';
 import SubCollectionOnlyModal from '@/components/reading/SubCollectionOnlyModal';
 import NotInLibraryModal from '@/components/reading/NotInLibraryModal';
+import RefManagerSetupCard from '@/components/reading/RefManagerSetupCard';
 
 export default function ReadingPage() {
   const { dark, toggleDark } = useDarkMode();
@@ -77,6 +78,10 @@ export default function ReadingPage() {
   const [serverError, setServerError] = useState(false);
   const [queueCollection, setQueueCollection] = useState<string>('Docent-Queue');
   const [refManagerName, setRefManagerName] = useState<string>('Mendeley');
+  const [rmChosen, setRmChosen] = useState<boolean>(() => {
+    try { return localStorage.getItem('docent:rm:chosen') === '1'; } catch { return true; }
+  });
+  const [rmBusy, setRmBusy] = useState(false);
   const [flaggedModal, setFlaggedModal] = useState(false);
   const [parentFlaggedModal, setParentFlaggedModal] = useState(false);
   const [dbModal, setDbModal] = useState(false);
@@ -101,6 +106,11 @@ export default function ReadingPage() {
     }
   }, []);
 
+  function markRmChosen() {
+    try { localStorage.setItem('docent:rm:chosen', '1'); } catch {}
+    setRmChosen(true);
+  }
+
   // Parallel fetch on mount — queue + config in one round-trip window.
   useEffect(() => {
     Promise.all([
@@ -110,6 +120,8 @@ export default function ReadingPage() {
       if (queueJson) {
         setData(queueJson as QueueData);
         setServerError(false);
+        // Existing users who already have entries never need the setup card.
+        if ((queueJson as QueueData).entries?.length > 0) markRmChosen();
       } else {
         setServerError(true);
       }
@@ -123,6 +135,25 @@ export default function ReadingPage() {
       }
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleChooseRM(rm: 'mendeley' | 'zotero') {
+    setRmBusy(true);
+    try {
+      await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ section: 'reading', key: 'reference_manager', value: rm }),
+      });
+    } catch {}
+    const name = rm.charAt(0).toUpperCase() + rm.slice(1);
+    setRefManagerName(name);
+    markRmChosen();
+    setRmBusy(false);
+    setToast({
+      type: 'success',
+      message: `${name} selected. Complete your connection setup in Settings.`,
+    });
+  }
 
   // Read filter + search from URL on mount; fall back to sessionStorage
   useEffect(() => {
@@ -896,23 +927,27 @@ ${sectionsHtml}
           </div>
         </div>
 
-        {/* Table */}
+        {/* Table or setup card */}
         <div style={{ flex: 1, overflow: 'hidden', background: 'var(--bg-card)', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-          <PaperTable
-            entries={filtered}
-            newIds={newIds}
-            highlightId={highlightId}
-            activeFilter={filter}
-            hasSearch={!!search.trim()}
-            dark={dark}
-            onMarkDone={handleMarkDone}
-            onEdit={(entry) => setEditEntry(entry)}
-            onStart={handleStart}
-            onMoveUp={handleMoveUp}
-            onMoveDown={handleMoveDown}
-            onShowDetail={(entry) => setDetailEntry(entry)}
-            onReorder={handleReorder}
-          />
+          {data !== null && entries.length === 0 && !rmChosen ? (
+            <RefManagerSetupCard onChoose={handleChooseRM} busy={rmBusy} />
+          ) : (
+            <PaperTable
+              entries={filtered}
+              newIds={newIds}
+              highlightId={highlightId}
+              activeFilter={filter}
+              hasSearch={!!search.trim()}
+              dark={dark}
+              onMarkDone={handleMarkDone}
+              onEdit={(entry) => setEditEntry(entry)}
+              onStart={handleStart}
+              onMoveUp={handleMoveUp}
+              onMoveDown={handleMoveDown}
+              onShowDetail={(entry) => setDetailEntry(entry)}
+              onReorder={handleReorder}
+            />
+          )}
         </div>
       </main>
 
