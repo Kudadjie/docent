@@ -163,6 +163,29 @@ async def get_doctor() -> JSONResponse:
             return _row("Mendeley MCP", "OK", detail="uvx found")
         return _row("Mendeley MCP", "FAIL", detail="uvx not found — install uv: https://docs.astral.sh/uv/")
 
+    def _zotero_row() -> dict:
+        from importlib.metadata import Distribution, PackageNotFoundError as _PkgNF
+        active = (cfg_reading.get("reference_manager") or "mendeley").lower() == "zotero"
+        try:
+            Distribution.from_name("pyzotero")
+            has_lib = True
+        except _PkgNF:
+            has_lib = False
+        configured = bool(cfg_reading.get("zotero_api_key") and cfg_reading.get("zotero_library_id"))
+
+        if not active:
+            avail = "pyzotero available" if has_lib else "pyzotero not installed"
+            return _row("Zotero", "SKIP", detail=f"not active (reference_manager=mendeley); {avail}")
+        if not has_lib:
+            return _row("Zotero", "FAIL",
+                        detail="pyzotero not found — run: uv sync  (or: pip install pyzotero)")
+        if not configured:
+            return _row("Zotero", "WARN",
+                        detail="set zotero_api_key + zotero_library_id in Settings (zotero.org/settings/keys)")
+        lib_type = cfg_reading.get("zotero_library_type") or "user"
+        lib_id = cfg_reading.get("zotero_library_id")
+        return _row("Zotero", "OK", detail=f"configured ({lib_type} library {lib_id})")
+
     async def _opencode_row() -> dict:
         try:
             async with httpx.AsyncClient(timeout=3.0) as client:
@@ -302,13 +325,6 @@ async def get_doctor() -> JSONResponse:
             return _row("Reading DB", "OK", detail=str(expanded))
         return _row("Reading DB", "WARN", detail=f"{expanded} does not exist")
 
-    def _key_row(label: str, cfg_key: str, hint: str, warn_if_missing: bool = False) -> dict:
-        key = cfg_research.get(cfg_key)
-        if key:
-            return _row(label, "OK", detail=f"key configured ({_mask_key(key)})")
-        status = "WARN" if warn_if_missing else "SKIP"
-        return _row(label, status, detail=hint)
-
     (
         docent_row,
         uv_row, node_row, npm_row,
@@ -325,9 +341,10 @@ async def get_doctor() -> JSONResponse:
         asyncio.to_thread(_notebooklm_sync),
         asyncio.to_thread(_alphaxiv_sync),
     )
-    db_row, drive_row = await asyncio.gather(
+    db_row, drive_row, zotero_row = await asyncio.gather(
         asyncio.to_thread(_reading_db_row),
         asyncio.to_thread(_drive_backup_row),
+        asyncio.to_thread(_zotero_row),
     )
 
     checks = [
@@ -339,20 +356,12 @@ async def get_doctor() -> JSONResponse:
         npm_row,
         feynman_row,
         mendeley_row,
+        zotero_row,
         opencode_row,
         nlm_row,
         ax_row,
         db_row,
         drive_row,
-        _key_row("Tavily", "tavily_api_key",
-                 "Not set — get free key at app.tavily.com. Falls back to DuckDuckGo.", warn_if_missing=True),
-        _key_row("Semantic Scholar", "semantic_scholar_api_key",
-                 "Optional — raises rate limits (api.semanticscholar.org)"),
-        _key_row("Groq", "groq_api_key", "Free tier at console.groq.com"),
-        _key_row("Gemini", "gemini_api_key", "Free tier at aistudio.google.com"),
-        _key_row("OpenRouter", "openrouter_api_key", "Pay-as-you-go at openrouter.ai"),
-        _key_row("Mistral", "mistral_api_key", "console.mistral.ai"),
-        _key_row("Cerebras", "cerebras_api_key", "cloud.cerebras.ai"),
     ]
     return JSONResponse(checks)
 
