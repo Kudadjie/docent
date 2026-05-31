@@ -1,15 +1,18 @@
 """Config action mixins: config-show, config-set."""
+
 from __future__ import annotations
 
-
-from docent.core import Context, action
-
-from docent.config import write_setting
 from docent.bundled_plugins.studio._studio_shared import _KNOWN_RESEARCH_KEYS
 from docent.bundled_plugins.studio.models import (
-    ConfigSetInputs, ConfigSetResult, ConfigShowInputs, ConfigShowResult,
-    TavilyUsageInputs, TavilyUsageResult,
+    ConfigSetInputs,
+    ConfigSetResult,
+    ConfigShowInputs,
+    ConfigShowResult,
+    TavilyUsageInputs,
+    TavilyUsageResult,
 )
+from docent.config import write_setting
+from docent.core import Context, action
 
 
 class ConfigMixin:
@@ -22,6 +25,7 @@ class ConfigMixin:
     )
     def config_show(self, inputs: ConfigShowInputs, context: Context) -> ConfigShowResult:
         from docent.utils.paths import config_file
+
         rs = context.settings.research
         return ConfigShowResult(
             config_path=str(config_file()),
@@ -98,6 +102,7 @@ class ConfigMixin:
     )
     def config_set(self, inputs: ConfigSetInputs, context: Context) -> ConfigSetResult:
         from docent.utils.paths import config_file
+
         if inputs.key not in _KNOWN_RESEARCH_KEYS:
             return ConfigSetResult(
                 ok=False,
@@ -114,4 +119,3 @@ class ConfigMixin:
             config_path=str(path),
             message=f"Set research.{inputs.key} = {inputs.value!r} in {path}.",
         )
-

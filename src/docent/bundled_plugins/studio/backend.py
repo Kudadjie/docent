@@ -1,4 +1,5 @@
 """Platform-agnostic backend protocol for the Docent studio pipeline."""
+
 from __future__ import annotations
 
 import os
@@ -53,8 +54,9 @@ class OcBackend:
         "researcher": "oc_model_researcher",
     }
 
-    def __init__(self, settings: "Settings") -> None:
+    def __init__(self, settings: Settings) -> None:
         from .oc_client import OcClient
+
         self._oc = OcClient(
             provider=settings.research.oc_provider,
         )
@@ -101,6 +103,7 @@ class LiteLLMBackend:
         timeout: int = 300,
     ) -> str:
         import litellm
+
         litellm.suppress_debug_info = True
         litellm.set_verbose = False
 
@@ -127,6 +130,7 @@ class LiteLLMBackend:
             raise AuthError(f"Authentication failed for {self._model}: {e}") from e
         except litellm.RateLimitError as e:
             from docent.errors import UsageLimitError
+
             raise UsageLimitError(f"Rate limited by {self._model}: {e}") from e
         except litellm.ServiceUnavailableError as e:
             raise ServiceUnavailableError(f"Provider unavailable for {self._model}: {e}") from e
@@ -139,7 +143,7 @@ class LiteLLMBackend:
             return False
 
 
-def get_backend(settings: "Settings", *, override: str | None = None) -> StudioBackend:
+def get_backend(settings: Settings, *, override: str | None = None) -> StudioBackend:
     """Return the correct StudioBackend.
 
     override: a provider name ("groq", "gemini", ...) or "docent"/"opencode".
@@ -152,8 +156,7 @@ def get_backend(settings: "Settings", *, override: str | None = None) -> StudioB
 
     if name not in _PROVIDER_SPECS:
         raise ValueError(
-            f"Unknown studio backend {name!r}. "
-            f"Valid: {', '.join(sorted(DOCENT_BACKEND_NAMES))}"
+            f"Unknown studio backend {name!r}. Valid: {', '.join(sorted(DOCENT_BACKEND_NAMES))}"
         )
 
     spec = _PROVIDER_SPECS[name]

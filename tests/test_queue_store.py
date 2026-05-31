@@ -7,8 +7,12 @@ from reading.reading_store import BannerCounts, ReadingQueueStore
 
 def _entry(eid: str, status: str = "queued", order: int = 1) -> dict:
     return {
-        "id": eid, "title": f"t-{eid}", "authors": "a", "status": status,
-        "order": order, "reference_id": f"m-{eid}",
+        "id": eid,
+        "title": f"t-{eid}",
+        "authors": "a",
+        "status": status,
+        "order": order,
+        "reference_id": f"m-{eid}",
     }
 
 
@@ -28,10 +32,12 @@ def test_save_load_round_trip(tmp_path):
 
 def test_save_recomputes_index(tmp_path):
     store = ReadingQueueStore(tmp_path / "reading")
-    store.save_queue([
-        _entry("a-2024-x", status="queued", order=1),
-        _entry("b-2023-y", status="done", order=2),
-    ])
+    store.save_queue(
+        [
+            _entry("a-2024-x", status="queued", order=1),
+            _entry("b-2023-y", status="done", order=2),
+        ]
+    )
 
     index = store.load_index()
     assert set(index.keys()) == {"a-2024-x", "b-2023-y"}
@@ -42,12 +48,14 @@ def test_save_recomputes_index(tmp_path):
 
 def test_banner_counts_reflect_queue(tmp_path):
     store = ReadingQueueStore(tmp_path / "reading")
-    store.save_queue([
-        _entry("a", "queued"),
-        _entry("b", "queued"),
-        _entry("c", "reading"),
-        _entry("d", "done"),
-    ])
+    store.save_queue(
+        [
+            _entry("a", "queued"),
+            _entry("b", "queued"),
+            _entry("c", "reading"),
+            _entry("d", "done"),
+        ]
+    )
 
     counts = store.banner_counts()
     assert counts.queued == 2

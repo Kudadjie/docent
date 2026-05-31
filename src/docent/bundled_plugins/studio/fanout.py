@@ -3,6 +3,7 @@
 parallel_fetch() is the one public symbol — run independent blocking/IO-bound
 callables in parallel threads and get back results in submission order.
 """
+
 from __future__ import annotations
 
 import logging
@@ -40,6 +41,8 @@ def parallel_fetch(
             except Exception as exc:
                 logger.warning(
                     "parallel_fetch task[%d] failed: %s: %s",
-                    idx, type(exc).__name__, exc,
+                    idx,
+                    type(exc).__name__,
+                    exc,
                 )
     return results

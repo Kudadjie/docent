@@ -1,4 +1,5 @@
 """Thin OpenCode REST API client for in-process LLM calls."""
+
 from __future__ import annotations
 
 import json
@@ -14,7 +15,7 @@ _DEFAULT_PROVIDER = "opencode-go"
 
 # Module-level model check cache: model_id → OcModelError (failed) or None (ok).
 # Persists across OcClient instances within a single process.
-_model_check_cache: dict[str, "OcModelError | None"] = {}
+_model_check_cache: dict[str, OcModelError | None] = {}
 
 
 def _detect_base_url() -> str:
@@ -55,6 +56,7 @@ class OcModelError(AuthError):
 
     Check ``self.http_code`` for the HTTP status (0 if unknown).
     """
+
     def __init__(self, message: str, http_code: int = 0) -> None:
         self.http_code = http_code
         super().__init__(message)
@@ -77,7 +79,7 @@ class OcClient:
         self.provider = provider
         # Per-instance cache for check_model() results: model → OcModelError or None.
         # None means "last check passed"; an OcModelError means it failed.
-        self._check_cache: dict[str, "OcModelError | None"] = {}
+        self._check_cache: dict[str, OcModelError | None] = {}
 
     def is_available(self) -> bool:
         try:
@@ -155,8 +157,7 @@ class OcClient:
             _waited += _poll
             if _waited >= _limit:
                 raise OcUnavailableError(
-                    f"OpenCode model call timed out after {_limit:.0f}s "
-                    f"at {self.base_url}."
+                    f"OpenCode model call timed out after {_limit:.0f}s at {self.base_url}."
                 )
             _since_conn_check += _poll
             if _since_conn_check >= _CONN_CHECK_INTERVAL:
@@ -168,8 +169,10 @@ class OcClient:
                         "Restart it with: opencode serve --port 4096"
                     )
                 from docent.bundled_plugins.studio.helpers import _check_connectivity
+
                 if not _check_connectivity():
                     from docent.errors import NetworkError
+
                     raise NetworkError(
                         "Internet connection lost during model call. "
                         "Check your connection and retry."
@@ -178,8 +181,10 @@ class OcClient:
         if holder[1] is not None:
             exc = holder[1]
             from docent.bundled_plugins.studio.helpers import _is_network_error
+
             if _is_network_error(exc):
                 from docent.errors import NetworkError
+
                 raise NetworkError(
                     f"Network error during OpenCode model call at {self.base_url}: {exc}",
                     cause=exc,
@@ -204,8 +209,16 @@ class OcClient:
                     code = 0
                 msg_lower = msg.lower()
                 _credit_keywords = (
-                    "quota", "usage", "exhausted", "exceeded", "resource_exhausted",
-                    "credit", "balance", "billing", "too low", "insufficient",
+                    "quota",
+                    "usage",
+                    "exhausted",
+                    "exceeded",
+                    "resource_exhausted",
+                    "credit",
+                    "balance",
+                    "billing",
+                    "too low",
+                    "insufficient",
                 )
                 if any(k in msg_lower for k in _credit_keywords):
                     raise OcModelError(
@@ -215,7 +228,9 @@ class OcClient:
                         "  docent studio deep-research --backend free",
                         http_code=code,
                     )
-                if any(k in msg_lower for k in ("auth", "unauthorized", "forbidden", "invalid key")):
+                if any(
+                    k in msg_lower for k in ("auth", "unauthorized", "forbidden", "invalid key")
+                ):
                     raise OcModelError(
                         f"Model authentication failed for {model!r}: {msg}\n"
                         "Run `feynman setup` or check your provider API keys.",
@@ -228,7 +243,9 @@ class OcClient:
                         "  docent studio config-set --key oc_model_planner --value <model>",
                         http_code=code,
                     )
-                raise OcModelError(f"Model error for {model!r} (code {code}): {msg}", http_code=code)
+                raise OcModelError(
+                    f"Model error for {model!r} (code {code}): {msg}", http_code=code
+                )
             raise OcModelError(
                 f"Model {model!r} returned no response (empty parts, no error).\n"
                 "The OpenCode server accepted the request but the provider returned nothing.\n"
@@ -237,11 +254,11 @@ class OcClient:
                 http_code=0,
             )
 
-        return "\n".join(
-            p["text"] for p in parts if p.get("type") == "text"
-        )
+        return "\n".join(p["text"] for p in parts if p.get("type") == "text")
 
-    def _api(self, method: str, path: str, body: dict | None = None, timeout: int | None = 10) -> dict:
+    def _api(
+        self, method: str, path: str, body: dict | None = None, timeout: int | None = 10
+    ) -> dict:
         url = f"{self.base_url}{path}"
         data = json.dumps(body).encode() if body is not None else None
         headers = {"Content-Type": "application/json"} if data else {}
@@ -274,6 +291,5 @@ class OcClient:
             ) from e
         except urllib.error.URLError as e:
             raise OcUnavailableError(
-                f"OpenCode server not reachable at {self.base_url}. "
-                "Run: opencode serve --port 4096"
+                f"OpenCode server not reachable at {self.base_url}. Run: opencode serve --port 4096"
             ) from e

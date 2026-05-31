@@ -1,4 +1,5 @@
 """Unit tests for _resolve_tavily_key onboarding flow (research_to_notebook/__init__.py)."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -13,8 +14,9 @@ def _make_context(tavily_api_key: str | None = None) -> Context:
     """Build a minimal Context with ResearchSettings for testing."""
     research_settings = ResearchSettings(tavily_api_key=tavily_api_key)
     settings = Settings(research=research_settings)
-    from docent.llm import LLMClient
     from docent.execution import Executor
+    from docent.llm import LLMClient
+
     llm = MagicMock(spec=LLMClient)
     executor = MagicMock(spec=Executor)
     return Context(settings=settings, llm=llm, executor=executor)

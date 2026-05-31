@@ -3,16 +3,18 @@
 Empties the queue. Two-step safety: without --yes the action reports the size
 and exits without mutating; with --yes it persists an empty queue.
 """
+
 from __future__ import annotations
+
+from reading import (
+    QueueClearInputs,
+    ReadingQueue,
+)
 
 from docent.config import load_settings
 from docent.core.context import Context
 from docent.execution.executor import ProcessResult
 from docent.llm import LLMClient
-from reading import (
-    ReadingQueue,
-    QueueClearInputs,
-)
 
 
 class _StubExecutor:

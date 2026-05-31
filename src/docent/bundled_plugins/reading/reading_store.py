@@ -9,15 +9,17 @@ Reads return safe defaults if a file is missing. Writes self-initialize the
 directory and use atomic rename so a crash mid-write can't leave a partial
 JSON file in place.
 """
+
 from __future__ import annotations
 
 import json
 import logging
 import os
+from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from filelock import FileLock
 from pydantic import BaseModel
@@ -33,7 +35,8 @@ def cleanup_legacy_paper_dirs() -> None:
     Called once at server startup.
     """
     import shutil
-    from docent.utils.paths import data_dir, cache_dir
+
+    from docent.utils.paths import cache_dir, data_dir
 
     for legacy in (data_dir() / "paper", cache_dir() / "paper"):
         if legacy.exists():
@@ -116,14 +119,14 @@ class ReadingQueueStore:
         timeout=0 (default): fail immediately if another process holds the lock.
         """
         from filelock import Timeout as _FileLockTimeout
+
         self.root.mkdir(parents=True, exist_ok=True)
         try:
             with FileLock(str(self.root / "queue.json.lock"), timeout=timeout):
                 yield
         except _FileLockTimeout:
             raise RuntimeError(
-                "Queue is busy — another Docent process is currently writing. "
-                "Retry in a moment."
+                "Queue is busy — another Docent process is currently writing. Retry in a moment."
             ) from None
 
     def load_queue(self) -> list[dict[str, Any]]:
@@ -138,7 +141,8 @@ class ReadingQueueStore:
         if detected < _QUEUE_SCHEMA_VERSION:
             _logger.info(
                 "queue.json schema v%d detected; migrating to v%d",
-                detected, _QUEUE_SCHEMA_VERSION,
+                detected,
+                _QUEUE_SCHEMA_VERSION,
             )
             entries = _run_migrations(entries, detected)
         return entries
@@ -197,7 +201,7 @@ class ReadingQueueStore:
             "queued": sum(1 for e in queue if e.get("status", "queued") == "queued"),
             "reading": sum(1 for e in queue if e.get("status") == "reading"),
             "done": sum(1 for e in queue if e.get("status") == "done"),
-            "last_updated": datetime.now(timezone.utc).isoformat(),
+            "last_updated": datetime.now(UTC).isoformat(),
         }
         self._atomic_write_json(self.state_path, state)
 

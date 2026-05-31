@@ -14,6 +14,7 @@ To update the manifest after an *intentional* prompt change:
 
     uv run python tests/test_prompts_registry.py --update
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -43,6 +44,7 @@ def _hash(path: Path) -> str:
 
 
 # ─── 1. registry ↔ disk correspondence ─────────────────────────────────────────
+
 
 def test_no_orphan_or_dangling_prompts() -> None:
     on_disk = set(_prompt_files())
@@ -78,6 +80,7 @@ def test_literal_call_sites_are_registered() -> None:
 
 # ─── 3. change tripwire ─────────────────────────────────────────────────────────
 
+
 def test_prompt_hashes_unchanged() -> None:
     manifest = json.loads(_MANIFEST.read_text(encoding="utf-8"))
     current = {name: _hash(p) for name, p in _prompt_files().items()}
@@ -95,6 +98,7 @@ def test_prompt_hashes_unchanged() -> None:
 
 
 # ─── manifest regeneration ──────────────────────────────────────────────────────
+
 
 def regenerate_manifest() -> None:
     """Write the hash manifest from the current prompt files. Used by --update."""

@@ -1,11 +1,11 @@
 """Tests for the update check utility."""
+
 from __future__ import annotations
 
 import datetime
 import json
 from pathlib import Path
 from unittest.mock import patch
-
 
 from docent.utils.update_check import (
     _is_newer,
@@ -85,6 +85,7 @@ def test_check_npm_silent_on_network_failure(tmp_path: Path):
 
 
 # ─── check_pypi ───────────────────────────────────────────────────────────────
+
 
 def test_check_pypi_returns_update_when_newer(tmp_path: Path):
     with patch("docent.utils.update_check._fetch_pypi_latest", return_value="9.9.9"):

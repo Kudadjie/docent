@@ -10,8 +10,8 @@ router = APIRouter()
 # Slug → path relative to the docs root directory.
 _SLUG_MAP: dict[str, str] = {
     "reading": "guides/reading-user-guide.md",
-    "studio":  "guides/studio-user-guide.md",
-    "cli":     "cli.md",
+    "studio": "guides/studio-user-guide.md",
+    "cli": "cli.md",
     "ecosystem": "ecosystem.md",
     "plugins": "plugin-guide.md",
 }
@@ -51,7 +51,4 @@ async def get_doc(slug: str) -> PlainTextResponse:
 async def list_docs() -> dict[str, bool]:
     """Return available doc slugs and whether their files exist on disk."""
     root = _docs_root()
-    return {
-        slug: (root / rel).is_file()
-        for slug, rel in _SLUG_MAP.items()
-    }
+    return {slug: (root / rel).is_file() for slug, rel in _SLUG_MAP.items()}

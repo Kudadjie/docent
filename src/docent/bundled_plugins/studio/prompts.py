@@ -15,6 +15,7 @@ Placeholders use ``{name}`` and are filled by the caller with
 literal braces. Several do (JSON examples in ``gap_evaluator.md``,
 ``search_planner.md``), which ``str.format`` would raise on.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

@@ -25,9 +25,11 @@ Claude Code .mcp.json:
       }
     }
 """
+
 from __future__ import annotations
 
 import warnings
+
 warnings.filterwarnings("ignore", category=SyntaxWarning, module=r"scholarly")
 
 import asyncio
@@ -49,10 +51,10 @@ from docent.core import (
 )
 from docent.tools import discover_tools
 
-
 # ---------------------------------------------------------------------------
 # Naming helpers
 # ---------------------------------------------------------------------------
+
 
 def mcp_tool_name(tool_name: str, action_cli_name: str) -> str:
     """Build the MCP tool name from a (tool, action) pair."""
@@ -71,6 +73,7 @@ def parse_mcp_tool_name(mcp_name: str) -> tuple[str, str] | None:
 # ---------------------------------------------------------------------------
 # Registry introspection
 # ---------------------------------------------------------------------------
+
 
 def _mcp_input_schema(model: type) -> dict:
     """Return the JSON schema for an input model, adjusted for MCP callers.
@@ -133,15 +136,18 @@ from docent.core.invoke import serialize_result as _serialize  # noqa: F401
 
 
 def _confirmation_payload(exc: Exception) -> str:
-    return json.dumps({
-        "ok": False,
-        "confirmation_required": True,
-        "notes": exc.notes,  # type: ignore[attr-defined]
-        "message": (
-            "Present the notes above to the user. "
-            "Once they acknowledge, call this tool again with confirmed=true to proceed."
-        ),
-    }, indent=2)
+    return json.dumps(
+        {
+            "ok": False,
+            "confirmation_required": True,
+            "notes": exc.notes,  # type: ignore[attr-defined]
+            "message": (
+                "Present the notes above to the user. "
+                "Once they acknowledge, call this tool again with confirmed=true to proceed."
+            ),
+        },
+        indent=2,
+    )
 
 
 def invoke_action(
@@ -157,6 +163,7 @@ def invoke_action(
     """
     from docent.core.exceptions import ConfirmationRequired
     from docent.core.invoke import make_context
+
     mcp_context = make_context(via_mcp=True)
     try:
         raw = run_action(tool_name, action_cli_name, arguments, context=mcp_context)
@@ -255,21 +262,29 @@ def _maybe_inline_research_output(lines: list[str], result: Any) -> None:
 # MCP server
 # ---------------------------------------------------------------------------
 
+
 def run_server() -> None:
     """Load plugins, build the MCP tool list, and serve over stdio.
 
     Called by `docent serve`. Blocks until the client disconnects.
     """
     import sys
+
     from docent.ui.console import configure_console
+
     # Redirect Rich console to stderr — stdout must stay clean for JSON-RPC.
     configure_console(stderr=True)
     discover_tools()
     load_plugins()
     tools = build_mcp_tools()
-    print(f"[docent] MCP server ready — {len(tools)} tools registered. Waiting for client…", file=sys.stderr, flush=True)
+    print(
+        f"[docent] MCP server ready — {len(tools)} tools registered. Waiting for client…",
+        file=sys.stderr,
+        flush=True,
+    )
 
     from docent._version import __version__
+
     server = Server("Docent", version=__version__)
 
     @server.list_tools()

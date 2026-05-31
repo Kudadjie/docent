@@ -5,12 +5,13 @@ D, O, C, E, N rounded edges instead of sharp rectangular corners.
 Each "pixel" is repeated px_w times horizontally, so the text scales to
 fill the terminal width at any size.
 """
+
 from __future__ import annotations
 
 import shutil
 
 _FG = "#18E299"  # brand green  (pixel fills)
-_M  = "#3a3a3a"  # muted        (separator / meta)
+_M = "#3a3a3a"  # muted        (separator / meta)
 
 # ── Pixel font — 5 × 5 grid per glyph ────────────────────────────────────────
 #
@@ -24,51 +25,51 @@ _M  = "#3a3a3a"  # muted        (separator / meta)
 _FONT: dict[str, list[str]] = {
     # D — flat left side, right side curves outward
     "d": [
-        "████▄",   # top bar → right-top corner curves down (▄)
-        "█   ▐",   # left solid │  right side = thin curve (▐)
+        "████▄",  # top bar → right-top corner curves down (▄)
+        "█   ▐",  # left solid │  right side = thin curve (▐)
         "█   ▐",
         "█   ▐",
-        "████▀",   # bottom bar → right-bottom corner curves up (▀)
+        "████▀",  # bottom bar → right-bottom corner curves up (▀)
     ],
     # O — oval, all four corners curved
     "o": [
-        "▄███▄",   # top:    left-top & right-top curve inward
-        "▐   ▐",   # sides:  thin left & right strokes
+        "▄███▄",  # top:    left-top & right-top curve inward
+        "▐   ▐",  # sides:  thin left & right strokes
         "▐   ▐",
         "▐   ▐",
-        "▀███▀",   # bottom: left-bottom & right-bottom curve inward
+        "▀███▀",  # bottom: left-bottom & right-bottom curve inward
     ],
     # C — left arc, open on the right
     "c": [
-        "▄████",   # top-left corner curves (▄), bar extends right
-        "▐    ",   # left side = thin arc stroke (▐)
+        "▄████",  # top-left corner curves (▄), bar extends right
+        "▐    ",  # left side = thin arc stroke (▐)
         "▐    ",
         "▐    ",
-        "▀████",   # bottom-left corner curves (▀), bar extends right
+        "▀████",  # bottom-left corner curves (▀), bar extends right
     ],
     # E — closed top (like O), middle crossbar, open bottom (like C)
     "e": [
-        "▄███▄",   # top closed — same as O top
-        "▐   ▐",   # right side closes the top loop
-        "▐████",   # midbar: left arc continues + bar closes right
-        "▐    ",   # bottom left arc, open right
-        "▀████",   # bottom curve + arm, same as C bottom
+        "▄███▄",  # top closed — same as O top
+        "▐   ▐",  # right side closes the top loop
+        "▐████",  # midbar: left arc continues + bar closes right
+        "▐    ",  # bottom left arc, open right
+        "▀████",  # bottom curve + arm, same as C bottom
     ],
     # N — arch at top, two legs going straight down
     "n": [
-        "▄███▄",   # arch (identical shape to O top)
-        "▐   ▐",   # two legs begin
+        "▄███▄",  # arch (identical shape to O top)
+        "▐   ▐",  # two legs begin
         "▐   ▐",
         "▐   ▐",
-        "▐   ▐",   # legs reach the bottom (no bottom arc = open = 'n' not 'o')
+        "▐   ▐",  # legs reach the bottom (no bottom arc = open = 'n' not 'o')
     ],
     # T — plain solid crossbar (no curves, distinguishes it from N's arch)
     "t": [
-        "█████",   # solid crossbar
-        "  █  ",   # stem (2 spaces + pixel + 2 spaces)
+        "█████",  # solid crossbar
+        "  █  ",  # stem (2 spaces + pixel + 2 spaces)
         "  █  ",
         "  █  ",
-        "  ██ ",   # slight right foot
+        "  ██ ",  # slight right foot
     ],
 }
 
@@ -109,19 +110,20 @@ def _px_scale(word: str, term_cols: int, margin: int = 2) -> int:
 def _short_version() -> str:
     try:
         from docent._version import __version__ as v  # type: ignore[import]
+
         return v.split(".dev")[0].split("+")[0]
     except Exception:
         return ""
 
 
 def print_banner(console: object) -> None:
-    ver       = _short_version()
+    ver = _short_version()
     term_cols = shutil.get_terminal_size((80, 24)).columns
 
-    px   = 2  # fixed size — looks good without filling the whole terminal
+    px = 2  # fixed size — looks good without filling the whole terminal
     rows = _render("docent", px)
 
-    _p = getattr(console, "print")
+    _p = console.print
     _p("")
     for row in rows:
         _p(" " + row)

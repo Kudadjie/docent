@@ -1,5 +1,7 @@
 from __future__ import annotations
-from typing import Annotated, Literal, Union
+
+from typing import Annotated, Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -49,14 +51,12 @@ class ProgressShape(BaseModel):
 
 
 Shape = Annotated[
-    Union[
-        MarkdownShape,
-        DataTableShape,
-        MetricShape,
-        LinkShape,
-        MessageShape,
-        ErrorShape,
-        ProgressShape,
-    ],
+    MarkdownShape
+    | DataTableShape
+    | MetricShape
+    | LinkShape
+    | MessageShape
+    | ErrorShape
+    | ProgressShape,
     Field(discriminator="type"),
 ]

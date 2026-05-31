@@ -1,4 +1,5 @@
 """Tests for OcClient error handling and model checking."""
+
 import urllib.error
 from unittest.mock import patch
 
@@ -32,6 +33,7 @@ def test_call_no_cost_field_still_succeeds():
 
 # ── OcModelError — HTTP-level detection ────────────────────────────────────
 
+
 def test_api_raises_model_error_on_429(monkeypatch):
     """HTTP 429 from the OpenCode server → OcModelError (not OcUnavailableError)."""
     client = OcClient()
@@ -59,9 +61,13 @@ def test_api_raises_model_error_on_401(monkeypatch):
 def test_api_raises_unavailable_on_500(monkeypatch):
     """HTTP 500 → OcUnavailableError (not a model quota error)."""
     import io
+
     client = OcClient()
     err = urllib.error.HTTPError(
-        url="", code=500, msg="Server Error", hdrs=None,
+        url="",
+        code=500,
+        msg="Server Error",
+        hdrs=None,
         fp=io.BytesIO(b"internal error"),
     )
 
@@ -71,6 +77,7 @@ def test_api_raises_unavailable_on_500(monkeypatch):
 
 
 # ── OcModelError — embedded model errors in 200 response body ──────────────
+
 
 def test_call_raises_model_error_on_quota_in_response():
     """Response with error.message containing 'quota exceeded' → OcModelError."""
@@ -114,6 +121,7 @@ def test_call_raises_model_error_on_generic_error_in_response():
 
 
 # ── check_model() — pre-task usage limit gate ──────────────────────────────
+
 
 def test_check_model_passes_and_caches(monkeypatch):
     """check_model() caches a successful result; second call skips the API."""

@@ -5,12 +5,12 @@ verified against the live Zotero API during development. Shapes here mirror
 real Zotero v3 API responses: collections expose data.name/data.parentCollection
 (False for top-level), items expose data.itemType/title/creators/date/DOI.
 """
+
 from __future__ import annotations
 
 import pytest
-
-from reading.zotero_backend import ZoteroBackend
 from reading.sync_engine import build_entry_from_mendeley, extract_mendeley_id
+from reading.zotero_backend import ZoteroBackend
 
 
 class FakeZot:
@@ -61,11 +61,14 @@ def _backend(collections=None, items_by_key=None, raises=None):
 
 # ── folders ───────────────────────────────────────────────────────────────────
 
+
 def test_list_folders_maps_canonical_shape():
-    be = _backend(collections=[
-        _coll("AAA", "Docent-Queue", parent=False),
-        _coll("BBB", "Sub", parent="AAA"),
-    ])
+    be = _backend(
+        collections=[
+            _coll("AAA", "Docent-Queue", parent=False),
+            _coll("BBB", "Sub", parent="AAA"),
+        ]
+    )
     resp = be.list_folders()
     assert resp["error"] is None
     items = {f["id"]: f for f in resp["items"]}
@@ -75,12 +78,22 @@ def test_list_folders_maps_canonical_shape():
 
 # ── documents ─────────────────────────────────────────────────────────────────
 
+
 def test_list_documents_maps_fields():
-    be = _backend(items_by_key={"AAA": [
-        _item("X1", "journalArticle", "A Study",
-              creators=[{"creatorType": "author", "firstName": "Jane", "lastName": "Doe"}],
-              date="September 29, 2010", doi="10.1/abc"),
-    ]})
+    be = _backend(
+        items_by_key={
+            "AAA": [
+                _item(
+                    "X1",
+                    "journalArticle",
+                    "A Study",
+                    creators=[{"creatorType": "author", "firstName": "Jane", "lastName": "Doe"}],
+                    date="September 29, 2010",
+                    doi="10.1/abc",
+                ),
+            ]
+        }
+    )
     resp = be.list_documents("AAA")
     assert resp["error"] is None
     d = resp["items"][0]
@@ -92,43 +105,61 @@ def test_list_documents_maps_fields():
     assert d["type"] == "paper"
 
 
-@pytest.mark.parametrize("item_type,expected", [
-    ("book", "book"),
-    ("bookSection", "book_section"),
-    ("journalArticle", "paper"),
-    ("webpage", "paper"),
-])
+@pytest.mark.parametrize(
+    "item_type,expected",
+    [
+        ("book", "book"),
+        ("bookSection", "book_section"),
+        ("journalArticle", "paper"),
+        ("webpage", "paper"),
+    ],
+)
 def test_item_type_mapping(item_type, expected):
     be = _backend(items_by_key={"C": [_item("k", item_type, "T")]})
     assert be.list_documents("C")["items"][0]["type"] == expected
 
 
 def test_skips_non_document_item_types():
-    be = _backend(items_by_key={"C": [
-        _item("a", "attachment", "PDF"),
-        _item("n", "note", "a note"),
-        _item("r", "journalArticle", "real"),
-    ]})
+    be = _backend(
+        items_by_key={
+            "C": [
+                _item("a", "attachment", "PDF"),
+                _item("n", "note", "a note"),
+                _item("r", "journalArticle", "real"),
+            ]
+        }
+    )
     docs = be.list_documents("C")["items"]
     assert [d["id"] for d in docs] == ["r"]
 
 
 def test_institutional_creator_becomes_string():
-    be = _backend(items_by_key={"C": [
-        _item("k", "report", "Gov Report",
-              creators=[{"creatorType": "author", "name": "World Bank"}]),
-    ]})
+    be = _backend(
+        items_by_key={
+            "C": [
+                _item(
+                    "k",
+                    "report",
+                    "Gov Report",
+                    creators=[{"creatorType": "author", "name": "World Bank"}],
+                ),
+            ]
+        }
+    )
     assert be.list_documents("C")["items"][0]["authors"] == ["World Bank"]
 
 
-@pytest.mark.parametrize("date,year", [
-    ("September 29, 2010", 2010),
-    ("2021-03", 2021),
-    ("2019", 2019),
-    ("", None),
-    (None, None),
-    ("no year here", None),
-])
+@pytest.mark.parametrize(
+    "date,year",
+    [
+        ("September 29, 2010", 2010),
+        ("2021-03", 2021),
+        ("2019", 2019),
+        ("", None),
+        (None, None),
+        ("no year here", None),
+    ],
+)
 def test_year_parsing(date, year):
     be = _backend(items_by_key={"C": [_item("k", "journalArticle", "T", date=date)]})
     assert be.list_documents("C")["items"][0]["year"] == year
@@ -140,6 +171,7 @@ def test_missing_doi_yields_empty_identifiers():
 
 
 # ── error paths ───────────────────────────────────────────────────────────────
+
 
 def test_not_configured_returns_auth_error():
     be = ZoteroBackend(api_key=None, library_id=None)  # no client, no creds
@@ -162,12 +194,24 @@ def test_client_network_error_classified_as_transport():
 
 # ── integration with the shared mapper ────────────────────────────────────────
 
+
 def test_mapped_doc_builds_valid_queue_entry():
-    be = _backend(items_by_key={"C": [
-        _item("ZK99", "book", "Coastal Dynamics",
-              creators=[{"creatorType": "author", "firstName": "Ada", "lastName": "Lovelace"}],
-              date="2018", doi="10.5/xyz"),
-    ]})
+    be = _backend(
+        items_by_key={
+            "C": [
+                _item(
+                    "ZK99",
+                    "book",
+                    "Coastal Dynamics",
+                    creators=[
+                        {"creatorType": "author", "firstName": "Ada", "lastName": "Lovelace"}
+                    ],
+                    date="2018",
+                    doi="10.5/xyz",
+                ),
+            ]
+        }
+    )
     doc = be.list_documents("C")["items"][0]
     entry = build_entry_from_mendeley(doc, extract_mendeley_id(doc), set(), 1, category="thesis")
     assert entry.title == "Coastal Dynamics"
@@ -180,12 +224,14 @@ def test_mapped_doc_builds_valid_queue_entry():
 
 # ── client construction (arg order) ───────────────────────────────────────────
 
+
 def test_make_zotero_passes_args_in_correct_order():
     """make_zotero(api_key, library_id, library_type) must map onto pyzotero's
     Zotero(library_id, library_type, api_key) — a silent swap would send the
     API key as the library id. Construction is offline (no API call)."""
     pytest.importorskip("pyzotero")
     from reading.zotero_client import make_zotero
+
     z = make_zotero(api_key="SECRET", library_id="9999", library_type="user")
     assert z.library_id == "9999"
     assert z.api_key == "SECRET"
@@ -194,14 +240,18 @@ def test_make_zotero_passes_args_in_correct_order():
 
 # ── backend selection ─────────────────────────────────────────────────────────
 
+
 def test_select_backend_picks_zotero_vs_mendeley():
     from types import SimpleNamespace
+
     from reading import ReadingQueue
 
     def ctx(manager):
         rs = SimpleNamespace(
-            reference_manager=manager, zotero_api_key="k",
-            zotero_library_id="1", zotero_library_type="user",
+            reference_manager=manager,
+            zotero_api_key="k",
+            zotero_library_id="1",
+            zotero_library_type="user",
             mendeley_mcp_command=None,
         )
         return SimpleNamespace(settings=SimpleNamespace(reading=rs))

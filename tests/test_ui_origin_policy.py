@@ -4,6 +4,7 @@ Regression coverage for the cross-site WebSocket hijacking fix: _LocalhostGuard
 (HTTP middleware) does not see WebSocket handshakes, so /ws/studio/run must
 enforce the same origin policy itself via _is_localhost_origin.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -47,9 +48,7 @@ class TestOriginHelper:
 
 class TestHttpGuard:
     def test_foreign_origin_gets_403(self):
-        resp = TestClient(ui_server.app).get(
-            "/api/tooling", headers={"origin": "http://evil.com"}
-        )
+        resp = TestClient(ui_server.app).get("/api/tooling", headers={"origin": "http://evil.com"})
         assert resp.status_code == 403
 
     def test_no_origin_passes_guard(self):
@@ -62,7 +61,5 @@ class TestWebSocketGate:
     def test_foreign_origin_rejected_before_accept(self):
         client = TestClient(ui_server.app)
         with pytest.raises(WebSocketDisconnect):
-            with client.websocket_connect(
-                "/ws/studio/run", headers={"origin": "http://evil.com"}
-            ):
+            with client.websocket_connect("/ws/studio/run", headers={"origin": "http://evil.com"}):
                 pass  # server closes with 1008 before accepting

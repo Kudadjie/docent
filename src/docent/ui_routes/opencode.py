@@ -1,11 +1,13 @@
 """OpenCode server management and WebSocket subprocess streaming."""
+
 import asyncio
 import json
+import logging
 import os
 import re
 import subprocess
 import sys
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -14,93 +16,37 @@ from fastapi.responses import JSONResponse
 router = APIRouter()
 from docent.ui_server import StudioRunBody  # noqa: E402
 
+_log = logging.getLogger("docent.ui.opencode")
 
-_opencode_proc: Optional[subprocess.Popen] = None
+_opencode_proc: subprocess.Popen | None = None
 
 
 def _audit(action: str, detail: str) -> None:
     from docent.ui_server import _audit as _a
+
     _a(action, detail)
 
 
 def _build_studio_cmd(body: StudioRunBody) -> list[str] | None:
-    """Build a `docent studio <action> ...` subprocess command from the UI form body.
+    """Build the `docent studio <action> ...` subprocess command for the live
+    WebSocket path.
 
-    This is the CLI-flag mapping for the live WebSocket path. It is a SEPARATE
-    mapping from ui_server._parse_studio_body (the in-process/SSE path) — adding
-    or changing a studio action means editing BOTH. See the warning on
-    `_parse_studio_body` for context.
+    Renders from :func:`docent.ui_server.build_studio_request` — the SAME source
+    of truth as the in-process/SSE builder (`_parse_studio_body`). Per-action
+    argument handling lives in exactly one place, so the two surfaces can no
+    longer drift. This function only prepends the resolved `docent` executable.
     """
     import shutil as _sh
-    from docent.ui_server import _STUDIO_ACTION_MAP, _BACKEND_NORM
 
-    action = _STUDIO_ACTION_MAP.get(body.action_id)
-    if not action:
+    from docent.ui_server import build_studio_request
+
+    req = build_studio_request(body)
+    if req is None:
         return None
     docent_exe = _sh.which("docent")
     if not docent_exe:
         return None
-
-    backend = _BACKEND_NORM.get(body.backend.lower().replace(" ", "_"), "free")
-    dest = body.dest.lower().replace(" →", "").strip()
-    cmd: list[str] = [docent_exe, "studio", action]
-
-    if action in ("deep-research", "lit", "draft"):
-        cmd += ["--topic", body.topic, "--backend", backend, "--output", dest]
-        # Only deep-research/lit support the free backend and its disclaimer gate,
-        # so only they expose a --confirmed option. draft is AI-backend-only and
-        # has no such flag — passing it makes Click reject the command.
-        if action in ("deep-research", "lit"):
-            cmd += ["--confirmed"]
-            if getattr(body, "expand_citations", False):
-                cmd += ["--expand-citations"]
-        for g in (body.guides or []):
-            cmd += ["--guide-files", g]
-    elif action in ("review", "replicate", "audit"):
-        cmd += ["--artifact", body.artifact, "--backend", backend, "--output", dest]
-        for g in (body.guides or []):
-            cmd += ["--guide-files", g]
-    elif action == "compare":
-        cmd += ["--artifact-a", body.artifact_a, "--artifact-b", body.artifact_b,
-                "--backend", backend, "--output", dest]
-        for g in (body.guides or []):
-            cmd += ["--guide-files", g]
-    elif action in ("search-papers", "scholarly-search"):
-        cmd += ["--query", body.query, "--max-results", str(body.max_results)]
-    elif action == "get-paper":
-        cmd += ["--arxiv-id", body.arxiv_id]
-    elif action == "cite-graph":
-        ident = body.cite_identifier.strip()
-        is_arxiv = bool(
-            "arxiv" in ident.lower()
-            or re.match(r"^\d{4}\.\d{4,5}", ident)
-        )
-        if is_arxiv:
-            cmd += ["--arxiv-id", ident]
-        else:
-            cmd += ["--doi", ident]
-        cmd += ["--direction", body.cite_direction, "--max-results", str(body.cite_max)]
-    elif action == "to-notebook":
-        if body.src_path:
-            cmd += ["--sources-file", body.src_path]
-        # Derive output-file from sources path when not explicitly set.
-        # This prevents the interactive preflight file-picker from activating
-        # (which hangs in a non-TTY subprocess when multiple outputs exist).
-        out_file = body.out_path or re.sub(r"-sources\.json$", ".md", body.src_path)
-        if out_file and out_file != body.src_path:
-            cmd += ["--output-file", out_file]
-        cmd += ["--max-sources", str(body.max_sources)]
-        if not body.nlm:
-            cmd += ["--no-run-nlm-research"]
-        if not body.gate:
-            cmd += ["--no-run-quality-gate"]
-        if not body.persp:
-            cmd += ["--no-run-perspectives"]
-    elif action == "config-set":
-        cmd += ["--key", body.cfg_key, "--value", body.cfg_val]
-    # config-show has no extra args
-
-    return cmd
+    return [docent_exe, "studio", req.action, *req.argv]
 
 
 @router.post("/api/opencode/start")
@@ -108,6 +54,7 @@ async def opencode_start() -> JSONResponse:
     global _opencode_proc
     _audit("opencode-start", "requested")
     import shutil
+
     try:
         async with httpx.AsyncClient(timeout=2.0) as client:
             r = await client.get("http://127.0.0.1:4096/global/health")
@@ -141,9 +88,13 @@ async def opencode_start() -> JSONResponse:
             rc = _opencode_proc.returncode
             err = ""
             try:
-                err = (_opencode_proc.stderr.read() or b"").decode("utf-8", errors="replace")[:400] if _opencode_proc.stderr else ""
-            except Exception:
-                pass
+                err = (
+                    (_opencode_proc.stderr.read() or b"").decode("utf-8", errors="replace")[:400]
+                    if _opencode_proc.stderr
+                    else ""
+                )
+            except Exception as exc:
+                _log.debug("Could not read opencode stderr after immediate exit: %s", exc)
             _opencode_proc = None
             return JSONResponse(
                 {"ok": False, "error": f"opencode exited immediately (rc={rc}). {err}".strip()},
@@ -154,16 +105,20 @@ async def opencode_start() -> JSONResponse:
             async with httpx.AsyncClient(timeout=2.0) as client:
                 r = await client.get("http://127.0.0.1:4096/global/health")
                 if r.status_code == 200:
-                    return JSONResponse({"ok": True, "status": "started", "pid": _opencode_proc.pid})
+                    return JSONResponse(
+                        {"ok": True, "status": "started", "pid": _opencode_proc.pid}
+                    )
         except Exception:
             pass
 
-        return JSONResponse({
-            "ok": True,
-            "status": "started",
-            "pid": _opencode_proc.pid,
-            "warning": "Process started but :4096 not yet reachable. Retry status check in a few seconds.",
-        })
+        return JSONResponse(
+            {
+                "ok": True,
+                "status": "started",
+                "pid": _opencode_proc.pid,
+                "warning": "Process started but :4096 not yet reachable. Retry status check in a few seconds.",
+            }
+        )
     except Exception as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
 
@@ -174,6 +129,14 @@ async def opencode_stop() -> JSONResponse:
     _audit("opencode-stop", "requested")
     if _opencode_proc is not None:
         try:
+            # opencode was started in its own process group (CREATE_NEW_PROCESS_GROUP
+            # on Windows); signal the group so child workers don't orphan, then
+            # fall back to a hard terminate.
+            if sys.platform == "win32":
+                try:
+                    os.kill(_opencode_proc.pid, __import__("signal").CTRL_BREAK_EVENT)
+                except (OSError, AttributeError, ValueError) as exc:
+                    _log.debug("CTRL_BREAK_EVENT to opencode failed: %s", exc)
             _opencode_proc.terminate()
             _opencode_proc = None
             return JSONResponse({"ok": True, "status": "stopped"})
@@ -196,16 +159,19 @@ async def opencode_status() -> JSONResponse:
 
 # ── NotebookLM auth endpoints ─────────────────────────────────────────────────
 
+
 def _playwright_chromium_ok() -> bool:
     """Return True if Playwright's Chromium binary exists on disk."""
     try:
         from playwright.sync_api import sync_playwright
+
         with sync_playwright() as p:
             # executable_path is None when not downloaded; non-None when it exists.
             path = p.chromium.executable_path
             if not path:
                 return False
             import os
+
             return os.path.isfile(path)
     except Exception:
         return False
@@ -215,6 +181,7 @@ def _playwright_chromium_ok() -> bool:
 async def notebooklm_auth_status() -> JSONResponse:
     """Return whether the notebooklm CLI is installed, Playwright is ready, and auth is current."""
     import shutil as _sh
+
     exe = _sh.which("notebooklm")
     if not exe:
         return JSONResponse({"installed": False, "playwright_ok": False, "authenticated": False})
@@ -224,15 +191,18 @@ async def notebooklm_auth_status() -> JSONResponse:
     # Check Playwright binary first — auth check will always fail without it.
     playwright_ok = await loop.run_in_executor(None, _playwright_chromium_ok)
     if not playwright_ok:
-        return JSONResponse({
-            "installed": True,
-            "playwright_ok": False,
-            "authenticated": False,
-            "fix": "playwright install chromium",
-        })
+        return JSONResponse(
+            {
+                "installed": True,
+                "playwright_ok": False,
+                "authenticated": False,
+                "fix": "playwright install chromium",
+            }
+        )
 
     try:
         from docent.bundled_plugins.studio._notebook import _nlm_auth_ok
+
         authenticated = await loop.run_in_executor(
             None, lambda: _nlm_auth_ok(retries=1, retry_delay=1.0)
         )
@@ -246,11 +216,15 @@ async def notebooklm_auth() -> JSONResponse:
     """Open a visible terminal window to run `notebooklm login` interactively."""
     # Shares the terminal-spawn logic with the in-run auth recovery in _notebook.py.
     from docent.bundled_plugins.studio._notebook import _open_login_terminal
+
     launched, err = _open_login_terminal()
     if not launched:
         if "not found on PATH" in err:
             return JSONResponse(
-                {"ok": False, "error": "notebooklm not found on PATH. Install with: pip install notebooklm"},
+                {
+                    "ok": False,
+                    "error": "notebooklm not found on PATH. Install with: pip install notebooklm",
+                },
                 status_code=404,
             )
         return JSONResponse({"ok": False, "error": err}, status_code=500)
@@ -266,6 +240,7 @@ async def studio_run_ws(websocket: WebSocket):
     # Without this, any web page the user visits could open this socket and drive
     # studio subprocesses (spend API credits, write files via to-notebook output).
     from docent.ui_server import _is_localhost_origin
+
     if not _is_localhost_origin(websocket.headers.get("origin", "")):
         await websocket.close(code=1008)  # 1008 = policy violation
         return
@@ -286,13 +261,15 @@ async def studio_run_ws(websocket: WebSocket):
     cmd = _build_studio_cmd(body)
     if cmd is None:
         try:
-            await websocket.send_json({
-                "type": "error",
-                "message": (
-                    f"Action '{body.action_id}' not found or 'docent' not on PATH. "
-                    "Make sure docent is installed and on PATH."
-                ),
-            })
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "message": (
+                        f"Action '{body.action_id}' not found or 'docent' not on PATH. "
+                        "Make sure docent is installed and on PATH."
+                    ),
+                }
+            )
         except Exception:
             pass
         return
@@ -317,10 +294,10 @@ async def studio_run_ws(websocket: WebSocket):
 
     output_file: str | None = None
     notebook_id: str | None = None
-    result_ok: bool = True        # overridden by RESULT_MARKER if action sets ok=False
+    result_ok: bool = True  # overridden by RESULT_MARKER if action sets ok=False
     result_message: str | None = None
-    result_data: Any = None       # full structured result for the UI's result panels
-    _RESULT_MARKER   = "\x00DOCENT_RESULT\x00"
+    result_data: Any = None  # full structured result for the UI's result panels
+    _RESULT_MARKER = "\x00DOCENT_RESULT\x00"
     _PROGRESS_MARKER = "\x00DOCENT_PROGRESS\x00"
 
     try:
@@ -334,7 +311,7 @@ async def studio_run_ws(websocket: WebSocket):
             # Structured result line (emitted at process end)
             if _RESULT_MARKER in line:
                 try:
-                    payload = json.loads(line[line.index(_RESULT_MARKER) + len(_RESULT_MARKER):])
+                    payload = json.loads(line[line.index(_RESULT_MARKER) + len(_RESULT_MARKER) :])
                     output_file = payload.get("output_file") or output_file
                     notebook_id = payload.get("notebook_id") or notebook_id
                     # Track ok/message so we can set status correctly even when
@@ -352,11 +329,11 @@ async def studio_run_ws(websocket: WebSocket):
             # Structured progress line — unambiguous, emitted by _drive_progress
             # Format: \x00DOCENT_PROGRESS\x00<phase>\x00<message>
             if _PROGRESS_MARKER in line:
-                rest = line[line.index(_PROGRESS_MARKER) + len(_PROGRESS_MARKER):]
+                rest = line[line.index(_PROGRESS_MARKER) + len(_PROGRESS_MARKER) :]
                 parts = rest.split("\x00", 1)
                 phase = parts[0]
                 # Unescape \x02 → \n (CLI escapes newlines to keep the marker on one line)
-                text  = (parts[1] if len(parts) > 1 else "").replace("\x02", "\n")
+                text = (parts[1] if len(parts) > 1 else "").replace("\x02", "\n")
                 if phase:
                     try:
                         await websocket.send_json({"type": "log", "phase": phase, "text": text})
@@ -369,8 +346,8 @@ async def studio_run_ws(websocket: WebSocket):
             # is relayed as a "console" phase log so the UI shows a live stream
             # of everything the CLI would print.  ANSI escape codes and carriage
             # returns are stripped so the text is readable without a real terminal.
-            _ANSI_RE = re.compile(r'\x1b\[[0-9;]*[mGKHFJA-Za-z]|\r')
-            stripped = _ANSI_RE.sub('', line).strip()
+            _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[mGKHFJA-Za-z]|\r")
+            stripped = _ANSI_RE.sub("", line).strip()
             if stripped:
                 try:
                     await websocket.send_json({"type": "log", "phase": "console", "text": stripped})
@@ -408,12 +385,20 @@ async def studio_run_ws(websocket: WebSocket):
 
     try:
         if action_ok:
-            await websocket.send_json({
-                "type": "done", "status": "success", "raw": json.dumps(result),
-            })
+            await websocket.send_json(
+                {
+                    "type": "done",
+                    "status": "success",
+                    "raw": json.dumps(result),
+                }
+            )
         else:
-            await websocket.send_json({
-                "type": "done", "status": "failure", "raw": json.dumps(result),
-            })
+            await websocket.send_json(
+                {
+                    "type": "done",
+                    "status": "failure",
+                    "raw": json.dumps(result),
+                }
+            )
     except Exception:
         pass

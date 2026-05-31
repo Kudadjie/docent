@@ -1,4 +1,5 @@
 """Feynman CLI wrapper: error classes, executable resolution, runner."""
+
 from __future__ import annotations
 
 import json
@@ -10,10 +11,10 @@ from pathlib import Path
 
 from docent.errors import ToolNotFoundError
 
-
 # ---------------------------------------------------------------------------
 # Errors
 # ---------------------------------------------------------------------------
+
 
 class FeynmanNotFoundError(ToolNotFoundError):
     """Raised when the feynman executable cannot be found on PATH or known locations."""
@@ -34,6 +35,7 @@ class FeynmanNotFoundError(ToolNotFoundError):
 # ---------------------------------------------------------------------------
 # Executable resolution
 # ---------------------------------------------------------------------------
+
 
 def _find_feynman(configured_command: list[str] | None) -> list[str]:
     """Resolve the feynman executable, with Windows npm path detection.
@@ -100,13 +102,14 @@ def _feynman_version_from_package_json(cmd: list[str]) -> str:
 
 def _extract_feynman_cost(output: str) -> float:
     """Parse Feynman's stdout/stderr for a cost line. Returns 0.0 if not found."""
-    match = re.search(r'\$(\d+(?:\.\d+)?)', output)
+    match = re.search(r"\$(\d+(?:\.\d+)?)", output)
     return float(match.group(1)) if match else 0.0
 
 
 # ---------------------------------------------------------------------------
 # Error message helpers
 # ---------------------------------------------------------------------------
+
 
 def _model_note(last_model: str | None, configured_model: str | None) -> str:
     """Build a human-readable model note for error messages."""
@@ -162,9 +165,9 @@ def _summarize_feynman_error(stderr: str, configured_model: str | None = None) -
             # JSON "retryDelay": "14s" (with possibly escaped quotes)
             r'retryDelay\\?"?\s*:\s*\\?"?(\d+(?:\.\d+)?)\s*s',
             # Text: "Please retry in 14.068081295s"
-            r'retry in\s+(\d+(?:\.\d+)?)\s*s',
+            r"retry in\s+(\d+(?:\.\d+)?)\s*s",
             # HTTP-style: Retry-After: 14
-            r'[Rr]etry-?[Aa]fter\D+(\d+(?:\.\d+)?)',
+            r"[Rr]etry-?[Aa]fter\D+(\d+(?:\.\d+)?)",
         ]
         for pat in patterns:
             m = re.search(pat, text)
@@ -179,7 +182,7 @@ def _summarize_feynman_error(stderr: str, configured_model: str | None = None) -
             retry_secs = int(float(retry)) + 1 if retry else None
         except ValueError:
             retry_secs = None
-        is_free_tier = bool(re.search(r'free.?tier|FreeTier', text))
+        is_free_tier = bool(re.search(r"free.?tier|FreeTier", text))
         provider, url = _billing_link(model_hint)
 
         lines = [f"{provider} quota exhausted.{model_note}"]
@@ -198,7 +201,9 @@ def _summarize_feynman_error(stderr: str, configured_model: str | None = None) -
             step += 1
         if is_free_tier:
             if url:
-                lines.append(f"  {step}. Upgrade {provider_possessive} account to a paid tier: {url}")
+                lines.append(
+                    f"  {step}. Upgrade {provider_possessive} account to a paid tier: {url}"
+                )
             else:
                 lines.append(f"  {step}. Upgrade {provider_possessive} account to a paid tier")
         else:
@@ -209,7 +214,9 @@ def _summarize_feynman_error(stderr: str, configured_model: str | None = None) -
         step += 1
         lines.append(f"  {step}. Or switch to a different provider/model:")
         lines.append("     docent studio config-set --key feynman_model --value <provider/model>")
-        lines.append("     (e.g. anthropic/claude-sonnet-4-5, openai/gpt-4o, google/gemini-2.0-flash)")
+        lines.append(
+            "     (e.g. anthropic/claude-sonnet-4-5, openai/gpt-4o, google/gemini-2.0-flash)"
+        )
 
         return "\n".join(lines) + f"\n{_DOCS_FOOTER}"
 
@@ -262,9 +269,7 @@ def _summarize_feynman_error(stderr: str, configured_model: str | None = None) -
         # Include a short tail only as a fallback for non-TTY callers (e.g. MCP).
         tail = stderr.strip()[-200:] if stderr.strip() else "(no output)"
         return (
-            f"Feynman exited with an error.{model_note}\n"
-            f"  Last output: ...{tail}\n"
-            f"{_DOCS_FOOTER}"
+            f"Feynman exited with an error.{model_note}\n  Last output: ...{tail}\n{_DOCS_FOOTER}"
         )
 
     try:
@@ -311,10 +316,7 @@ def _summarize_feynman_error(stderr: str, configured_model: str | None = None) -
                 "  `feynman model list` or see:\n"
                 f"  {_DOCS_LINK}"
             )
-        return (
-            f"Feynman invalid request (400).{model_note}{hint}\n"
-            f"{_DOCS_FOOTER}"
-        )
+        return f"Feynman invalid request (400).{model_note}{hint}\n{_DOCS_FOOTER}"
 
     if code in (500, 502, 503):
         provider = last_model.split("/")[0] if last_model else "the provider"
@@ -339,16 +341,13 @@ def _summarize_feynman_error(stderr: str, configured_model: str | None = None) -
             f"{_DOCS_FOOTER}"
         )
 
-    return (
-        f"Feynman error (code {code}).{model_note}\n"
-        f"Details: {msg[:400]}\n"
-        f"{_DOCS_FOOTER}"
-    )
+    return f"Feynman error (code {code}).{model_note}\nDetails: {msg[:400]}\n{_DOCS_FOOTER}"
 
 
 # ---------------------------------------------------------------------------
 # Main runner
 # ---------------------------------------------------------------------------
+
 
 def _run_feynman(
     configured_command: list[str],
@@ -395,10 +394,13 @@ def _run_feynman(
 
     try:
         proc = subprocess.Popen(
-            full_cmd, cwd=workspace_dir,
+            full_cmd,
+            cwd=workspace_dir,
             stdin=subprocess.DEVNULL,
-            stderr=subprocess.PIPE, text=True,
-            encoding="utf-8", errors="replace",
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
             **popen_kwargs,
         )
     except FileNotFoundError:
@@ -433,7 +435,9 @@ def _run_feynman(
 
     if task_name and task_name in _TASK_ESTIMATES:
         estimate, recommended = _TASK_ESTIMATES[task_name]
-        task_line = f"  /{task_name} typically takes {estimate} (recommended timeout: {recommended}s)."
+        task_line = (
+            f"  /{task_name} typically takes {estimate} (recommended timeout: {recommended}s)."
+        )
         if timeout < recommended:
             task_line += (
                 f"\n  WARNING: Your timeout is {timeout:.0f}s, below recommended. Increase with:"
@@ -446,7 +450,8 @@ def _run_feynman(
         f"\n  Feynman is running - output will stream below.\n"
         f"{task_line}\n"
         f"  Press Ctrl+C to cancel.\n",
-        file=_sys.stderr, flush=True,
+        file=_sys.stderr,
+        flush=True,
     )
 
     stderr_lines: list[str] = []
@@ -461,9 +466,7 @@ def _run_feynman(
                 try:
                     print(line, end="", flush=True)
                 except (UnicodeEncodeError, OSError):
-                    _sys.stdout.buffer.write(
-                        line.encode("utf-8", errors="replace")
-                    )
+                    _sys.stdout.buffer.write(line.encode("utf-8", errors="replace"))
                     _sys.stdout.flush()
         except BaseException as e:  # noqa: BLE001
             stream_error.append(e)
@@ -502,6 +505,7 @@ def _run_feynman(
     except KeyboardInterrupt:
         if platform.system() == "Windows":
             import signal as _signal
+
             try:
                 os.kill(proc.pid, _signal.CTRL_BREAK_EVENT)
             except Exception:

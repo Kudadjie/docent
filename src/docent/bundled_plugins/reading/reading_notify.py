@@ -4,6 +4,7 @@ Called once per day on first `docent` invocation. Prints a warning for any
 entry whose deadline is within 3 days or already past. Deduplicates within a
 calendar day so the same alert doesn't repeat across multiple commands.
 """
+
 from __future__ import annotations
 
 import json
@@ -62,7 +63,9 @@ def check_deadlines(store_root: Path) -> list[str]:
             days_left = (deadline - today).days
             title = entry.get("title") or eid
             if days_left < 0:
-                alerts.append(f"[OVERDUE {abs(days_left)}d] {title!r} — deadline was {deadline_str}")
+                alerts.append(
+                    f"[OVERDUE {abs(days_left)}d] {title!r} — deadline was {deadline_str}"
+                )
             elif days_left == 0:
                 alerts.append(f"[DUE TODAY] {title!r} — deadline {deadline_str}")
             else:

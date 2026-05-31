@@ -29,7 +29,13 @@ jobs:
         run: uv sync
 
       - name: Lint
-        run: uv run ruff check src/
+        run: uv run ruff check src/ tests/
+
+      - name: Format check
+        run: uv run ruff format --check src/ tests/
+
+      - name: Type check (incremental scope — see [tool.mypy] in pyproject.toml)
+        run: uv run mypy
 
       - name: Unit tests
         env:

@@ -5,6 +5,7 @@ visible login terminal and poll until the user authenticates — not attempt a
 non-interactive inline `notebooklm login` (which silently fails into the
 activity log).
 """
+
 from __future__ import annotations
 
 import types
@@ -54,8 +55,12 @@ def test_timeout_returns_false(monkeypatch):
 
 # ── Upfront preflight (_preflight_notebook_auth) ───────────────────────────────
 
+
 def _ctx(via_mcp: bool = True):
-    return types.SimpleNamespace(via_mcp=via_mcp)
+    # via_mcp historically meant "non-interactive, pre-confirmed caller"; that
+    # concept is now split across three flags. A via_mcp caller is always also
+    # non_interactive + auto_confirm, so mirror that here.
+    return types.SimpleNamespace(via_mcp=via_mcp, non_interactive=via_mcp, auto_confirm=via_mcp)
 
 
 def _inputs(**kw):
@@ -68,7 +73,8 @@ def test_preflight_skips_when_not_notebook(monkeypatch):
     seen = {"auth_checked": False}
     monkeypatch.setattr(nb, "_nlm_exe", lambda: "/usr/bin/notebooklm")
     monkeypatch.setattr(
-        nb, "_nlm_auth_ok",
+        nb,
+        "_nlm_auth_ok",
         lambda *a, **k: seen.__setitem__("auth_checked", True) or True,
     )
     _preflight_notebook_auth(_inputs(output="local"), _ctx())
@@ -80,7 +86,8 @@ def test_preflight_skips_when_already_authed(monkeypatch):
     monkeypatch.setattr(nb, "_nlm_exe", lambda: "/usr/bin/notebooklm")
     monkeypatch.setattr(nb, "_nlm_auth_ok", lambda *a, **k: True)
     monkeypatch.setattr(
-        nb, "_open_login_terminal",
+        nb,
+        "_open_login_terminal",
         lambda: (opened.__setitem__("n", opened["n"] + 1), (True, ""))[1],
     )
     _preflight_notebook_auth(_inputs(output="notebook"), _ctx())
@@ -132,6 +139,7 @@ def test_preflight_force_engages_without_output_field(monkeypatch):
 # single shared profile (Chromium ProcessSingleton crash). The auth preflight now
 # serializes the check+login behind the machine lock.
 
+
 def test_preflight_skips_upfront_check_when_session_busy(monkeypatch, tmp_path):
     # When another run holds the session, the upfront auth probe is SKIPPED (no
     # browser launch, no block) — that run is authed, so this run proceeds straight
@@ -140,7 +148,8 @@ def test_preflight_skips_upfront_check_when_session_busy(monkeypatch, tmp_path):
     monkeypatch.setattr(nb, "_nlm_exe", lambda: "/usr/bin/notebooklm")
     probed = {"n": 0}
     monkeypatch.setattr(
-        nb, "_nlm_auth_ok",
+        nb,
+        "_nlm_auth_ok",
         lambda *a, **k: probed.__setitem__("n", probed["n"] + 1) or True,
     )
     held = nb.notebooklm_session_lock(timeout=0)

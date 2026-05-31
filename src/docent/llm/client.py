@@ -21,12 +21,22 @@ class LLMClient:
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        # Propagate config-provided API keys into env if the env var is unset.
-        # Env vars set by the user always win.
-        if settings.anthropic_api_key and not os.environ.get("ANTHROPIC_API_KEY"):
-            os.environ["ANTHROPIC_API_KEY"] = settings.anthropic_api_key
-        if settings.openai_api_key and not os.environ.get("OPENAI_API_KEY"):
-            os.environ["OPENAI_API_KEY"] = settings.openai_api_key
+
+    def _resolve_api_key(self, model: str) -> str | None:
+        """Resolve the API key for *model*'s provider without mutating the
+        process environment.
+
+        Env vars set by the user always win over config-file values (preserves
+        the original precedence). Returns None for providers Docent doesn't hold
+        a top-level key for — litellm then falls back to its own env lookup,
+        exactly as before.
+        """
+        provider = model.split("/", 1)[0].lower() if "/" in model else ""
+        if provider == "anthropic" or model.startswith("claude"):
+            return os.environ.get("ANTHROPIC_API_KEY") or self.settings.anthropic_api_key
+        if provider == "openai" or model.startswith("gpt"):
+            return os.environ.get("OPENAI_API_KEY") or self.settings.openai_api_key
+        return None
 
     def complete(
         self,
@@ -44,12 +54,16 @@ class LLMClient:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
 
+        resolved_model = model or self.settings.default_model
         kwargs: dict[str, object] = {}
         if max_tokens is not None:
             kwargs["max_tokens"] = max_tokens
+        api_key = self._resolve_api_key(resolved_model)
+        if api_key:
+            kwargs["api_key"] = api_key
 
         response = litellm.completion(
-            model=model or self.settings.default_model,
+            model=resolved_model,
             messages=messages,
             temperature=temperature,
             num_retries=2,

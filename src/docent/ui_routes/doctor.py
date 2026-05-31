@@ -1,10 +1,10 @@
 """Doctor and tooling health-check endpoints."""
+
 import asyncio
 import os
 import shutil
 import subprocess as _sp
 import sys
-from typing import Optional
 
 import httpx
 from fastapi import APIRouter
@@ -24,20 +24,23 @@ TOOLING = [
 
 def _run(args, timeout=30.0):
     from docent.ui_server import _run as _r
+
     return _r(args, timeout=timeout)
 
 
 def _run_command(cmd, args, timeout=30.0):
     from docent.ui_server import _run_command as _rc
+
     return _rc(cmd, args, timeout=timeout)
 
 
 def _version_at_least(installed, latest):
     from docent.ui_server import _version_at_least as _val
+
     return _val(installed, latest)
 
 
-async def _fetch_npm_latest(package: str) -> Optional[str]:
+async def _fetch_npm_latest(package: str) -> str | None:
     try:
         encoded = package.replace("@", "%40").replace("/", "%2F")
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -51,7 +54,7 @@ async def _fetch_npm_latest(package: str) -> Optional[str]:
         return None
 
 
-async def _get_npm_installed(package: str) -> Optional[str]:
+async def _get_npm_installed(package: str) -> str | None:
     try:
         stdout, _, rc = await _run_command(
             "npm",
@@ -68,26 +71,31 @@ async def _get_npm_installed(package: str) -> Optional[str]:
 
 def _mask_key(key):
     from docent.ui_server import _mask_key as _mk
+
     return _mk(key)
 
 
 def _read_config_reading():
     from docent.ui_server import _read_config_reading as _rcr
+
     return _rcr()
 
 
 def _read_config_research():
     from docent.ui_server import _read_config_research as _rcr2
+
     return _rcr2()
 
 
 def _user_file():
     from docent.ui_server import _user_file as _uf
+
     return _uf()
 
 
 def _read_json(path, default):
     from docent.ui_server import _read_json as _rj
+
     return _rj(path, default)
 
 
@@ -120,7 +128,11 @@ async def get_doctor() -> JSONResponse:
 
     name = (user_data.get("name") or "").strip()
     profile_row = (
-        _row("Profile", "OK", detail=f"{name} · {user_data.get('level', '?')} · {user_data.get('program', '?')}")
+        _row(
+            "Profile",
+            "OK",
+            detail=f"{name} · {user_data.get('level', '?')} · {user_data.get('program', '?')}",
+        )
         if name and name != "You"
         else _row("Profile", "WARN", detail="Not set — use 'Set up your profile' in the sidebar")
     )
@@ -138,7 +150,9 @@ async def get_doctor() -> JSONResponse:
                     latest = r.json()["info"]["version"]
                 if version == latest:
                     return _row("Docent", "OK", version, "up to date")
-                return _row("Docent", "WARN", version, f"update available: {latest} — run: docent update")
+                return _row(
+                    "Docent", "WARN", version, f"update available: {latest} — run: docent update"
+                )
             except Exception:
                 return _row("Docent", "OK", version)
         except Exception as exc:
@@ -152,7 +166,7 @@ async def get_doctor() -> JSONResponse:
             stdout, _, rc = await _run_command(exe, cmd[1:], timeout=8.0)
             version = (stdout.strip() or "?").splitlines()[0].strip()
             return _row(label, "OK", version)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return _row(label, "WARN", "?", "version check timed out")
         except Exception as exc:
             return _row(label, "WARN", "?", str(exc)[:80])
@@ -161,27 +175,41 @@ async def get_doctor() -> JSONResponse:
         uvx = await asyncio.to_thread(shutil.which, "uvx")
         if uvx:
             return _row("Mendeley MCP", "OK", detail="uvx found")
-        return _row("Mendeley MCP", "FAIL", detail="uvx not found — install uv: https://docs.astral.sh/uv/")
+        return _row(
+            "Mendeley MCP", "FAIL", detail="uvx not found — install uv: https://docs.astral.sh/uv/"
+        )
 
     def _zotero_row() -> dict:
-        from importlib.metadata import Distribution, PackageNotFoundError as _PkgNF
+        from importlib.metadata import Distribution
+        from importlib.metadata import PackageNotFoundError as _PkgNF
+
         active = (cfg_reading.get("reference_manager") or "mendeley").lower() == "zotero"
         try:
             Distribution.from_name("pyzotero")
             has_lib = True
         except _PkgNF:
             has_lib = False
-        configured = bool(cfg_reading.get("zotero_api_key") and cfg_reading.get("zotero_library_id"))
+        configured = bool(
+            cfg_reading.get("zotero_api_key") and cfg_reading.get("zotero_library_id")
+        )
 
         if not active:
             avail = "pyzotero available" if has_lib else "pyzotero not installed"
-            return _row("Zotero", "SKIP", detail=f"not active (reference_manager=mendeley); {avail}")
+            return _row(
+                "Zotero", "SKIP", detail=f"not active (reference_manager=mendeley); {avail}"
+            )
         if not has_lib:
-            return _row("Zotero", "FAIL",
-                        detail="pyzotero not found — run: uv sync  (or: pip install pyzotero)")
+            return _row(
+                "Zotero",
+                "FAIL",
+                detail="pyzotero not found — run: uv sync  (or: pip install pyzotero)",
+            )
         if not configured:
-            return _row("Zotero", "WARN",
-                        detail="set zotero_api_key + zotero_library_id in Settings (zotero.org/settings/keys)")
+            return _row(
+                "Zotero",
+                "WARN",
+                detail="set zotero_api_key + zotero_library_id in Settings (zotero.org/settings/keys)",
+            )
         lib_type = cfg_reading.get("zotero_library_type") or "user"
         lib_id = cfg_reading.get("zotero_library_id")
         return _row("Zotero", "OK", detail=f"configured ({lib_type} library {lib_id})")
@@ -209,6 +237,7 @@ async def get_doctor() -> JSONResponse:
 
     async def _feynman_row() -> dict:
         from pathlib import Path as _P
+
         feynman_cmd: list[str] | None = None
         resolved = shutil.which("feynman")
         if resolved:
@@ -223,10 +252,15 @@ async def get_doctor() -> JSONResponse:
         if feynman_cmd is None:
             installed = await _get_npm_installed("@companion-ai/feynman")
             if installed is None:
-                return _row("Feynman CLI", "WARN", detail="Not installed — npm install -g @companion-ai/feynman")
+                return _row(
+                    "Feynman CLI",
+                    "WARN",
+                    detail="Not installed — npm install -g @companion-ai/feynman",
+                )
             feynman_cmd = ["feynman"]
 
         from docent.bundled_plugins.studio.feynman import _feynman_version_from_package_json
+
         version = _feynman_version_from_package_json(feynman_cmd)
 
         # package.json lookup can fail on non-standard npm layouts — cascade through
@@ -242,11 +276,14 @@ async def get_doctor() -> JSONResponse:
             # On Windows, .cmd wrappers require shell=True to execute.
             try:
                 import subprocess as _sub
+
                 _needs_shell = sys.platform == "win32"
                 proc = await asyncio.to_thread(
                     lambda: _sub.run(
                         feynman_cmd + ["--version"],
-                        capture_output=True, text=True, timeout=8,
+                        capture_output=True,
+                        text=True,
+                        timeout=8,
                         shell=_needs_shell,
                     )
                 )
@@ -260,8 +297,12 @@ async def get_doctor() -> JSONResponse:
         latest = await _fetch_npm_latest("@companion-ai/feynman")
         clean_version = version if version and version not in ("?", "") else None
         if latest and clean_version and not _version_at_least(clean_version, latest):
-            return _row("Feynman CLI", "WARN", clean_version,
-                        f"update available: {latest} — npm install -g @companion-ai/feynman@latest")
+            return _row(
+                "Feynman CLI",
+                "WARN",
+                clean_version,
+                f"update available: {latest} — npm install -g @companion-ai/feynman@latest",
+            )
         return _row("Feynman CLI", "OK", clean_version or "unknown")
 
     def _notebooklm_sync() -> dict:
@@ -269,8 +310,10 @@ async def get_doctor() -> JSONResponse:
             import contextlib
             import io as _io
             import sys as _sys
+
             if "notebooklm" not in _sys.modules:
                 import os as _os
+
                 _os.environ.setdefault("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "1")
                 with contextlib.redirect_stderr(_io.StringIO()):
                     import notebooklm as _nlm
@@ -278,13 +321,16 @@ async def get_doctor() -> JSONResponse:
                 import notebooklm as _nlm
             version = getattr(_nlm, "__version__", "-")
         except ImportError:
-            return _row("NotebookLM", "FAIL", detail='not installed — pip install "notebooklm-py[browser]"')
+            return _row(
+                "NotebookLM", "FAIL", detail='not installed — pip install "notebooklm-py[browser]"'
+            )
         exe = shutil.which("notebooklm")
         if not exe:
             return _row("NotebookLM", "WARN", version, "CLI not on PATH")
         try:
             result = _sp.run([exe, "list", "--json"], capture_output=True, text=True, timeout=10)
             import json as _j
+
             data = _j.loads(result.stdout or "{}")
             if result.returncode == 0 and not data.get("error"):
                 return _row("NotebookLM", "OK", version, "authenticated")
@@ -304,22 +350,33 @@ async def get_doctor() -> JSONResponse:
 
     def _drive_backup_row() -> dict:
         from docent.bundled_plugins.backup.drive_client import credentials_file_exists
+
         if credentials_file_exists():
             # Verify the optional deps are importable too
             try:
                 import google.oauth2.credentials  # noqa: F401
                 import google_auth_oauthlib  # noqa: F401
                 import googleapiclient  # noqa: F401
-                return _row("Drive Backup", "OK", detail="Credentials configured — run 'docent backup'")
+
+                return _row(
+                    "Drive Backup", "OK", detail="Credentials configured — run 'docent backup'"
+                )
             except ImportError:
-                return _row("Drive Backup", "WARN",
-                            detail="Credentials found but dependencies missing — run: pip install 'docent-cli[backup]'")
-        return _row("Drive Backup", "SKIP", detail="Optional — run 'docent backup --setup' to configure")
+                return _row(
+                    "Drive Backup",
+                    "WARN",
+                    detail="Credentials found but dependencies missing — run: pip install 'docent-cli[backup]'",
+                )
+        return _row(
+            "Drive Backup", "SKIP", detail="Optional — run 'docent backup --setup' to configure"
+        )
 
     def _reading_db_row() -> dict:
         db = cfg_reading.get("database_dir")
         if db is None:
-            return _row("Reading DB", "WARN", detail="Not configured — set database_dir in Settings")
+            return _row(
+                "Reading DB", "WARN", detail="Not configured — set database_dir in Settings"
+            )
         expanded = Path(str(db)).expanduser()
         if expanded.exists():
             return _row("Reading DB", "OK", detail=str(expanded))
@@ -327,9 +384,14 @@ async def get_doctor() -> JSONResponse:
 
     (
         docent_row,
-        uv_row, node_row, npm_row,
-        feynman_row, mendeley_row, opencode_row,
-        nlm_row, ax_row,
+        uv_row,
+        node_row,
+        npm_row,
+        feynman_row,
+        mendeley_row,
+        opencode_row,
+        nlm_row,
+        ax_row,
     ) = await asyncio.gather(
         _docent_version_row(),
         _cli_row("uv", ["uv", "--version"], "Install uv: https://docs.astral.sh/uv/"),

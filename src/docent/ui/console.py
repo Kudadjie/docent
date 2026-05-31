@@ -14,7 +14,9 @@ def get_console() -> Console:
     return _console
 
 
-def configure_console(*, no_color: bool = False, quiet: bool = False, stderr: bool = False) -> Console:
+def configure_console(
+    *, no_color: bool = False, quiet: bool = False, stderr: bool = False
+) -> Console:
     """Replace the singleton with one matching the given flags.
 
     Called once from the CLI root callback, after parsing global flags.

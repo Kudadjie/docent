@@ -1,4 +1,5 @@
 """Tests for the research tool (Feynman backend)."""
+
 from __future__ import annotations
 
 import inspect
@@ -10,29 +11,29 @@ from unittest.mock import MagicMock, patch
 import pytest
 import typer
 
-from docent.config.settings import ResearchSettings, Settings
-from docent.core.context import Context
-from docent.core.shapes import ErrorShape, LinkShape, MessageShape
 from docent.bundled_plugins.studio import (
     AuditInputs,
     CompareInputs,
     ConfigSetInputs,
+    ConfigSetResult,
     ConfigShowInputs,
     ConfigShowResult,
-    ConfigSetResult,
     DeepInputs,
     DraftInputs,
     LitInputs,
     ReplicateInputs,
-    ReviewInputs,
     ResearchResult,
+    ReviewInputs,
     StudioTool,
     ToNotebookInputs,
-    _slugify,
     _artifact_slug,
     _preflight_docent,
     _preflight_oc_only,
+    _slugify,
 )
+from docent.config.settings import ResearchSettings, Settings
+from docent.core.context import Context
+from docent.core.shapes import ErrorShape, LinkShape, MessageShape
 
 
 def _drain(maybe_gen: Any) -> Any:
@@ -69,6 +70,7 @@ def _make_nlm_push(
     calls or subprocess spawns inside _nlm_push's internals.
     """
     from docent.core import ProgressEvent
+
     _msg = message or f"Notebook ready. {notebook_id}"
 
     def _push(*args, **kwargs):
@@ -136,6 +138,7 @@ class TestStripReferencesSection:
         from docent.bundled_plugins.studio import (
             _strip_references_section,
         )
+
         draft = "Introduction\n\n## References\n1. **Paper A** — https://example.com [web]"
         result = _strip_references_section(draft)
         assert "## References" not in result
@@ -146,6 +149,7 @@ class TestStripReferencesSection:
         from docent.bundled_plugins.studio import (
             _strip_references_section,
         )
+
         draft = "Just a regular draft with no references section."
         result = _strip_references_section(draft)
         assert result == draft
@@ -154,6 +158,7 @@ class TestStripReferencesSection:
         from docent.bundled_plugins.studio import (
             _append_references,
         )
+
         sources = [
             {"title": "Source A", "url": "https://a.com", "source_type": "web"},
             {"title": "Source B", "url": "https://b.com", "source_type": "paper"},
@@ -171,6 +176,7 @@ class TestStripReferencesSection:
         from docent.bundled_plugins.studio import (
             _append_references,
         )
+
         sources = [
             {"title": "Source A", "url": "https://a.com", "source_type": "web"},
         ]
@@ -237,9 +243,7 @@ class TestDeepFeynman:
         output_dir = tmp_path / "research"
         ctx = _mock_context(output_dir=output_dir)
 
-        with patch(
-            "docent.bundled_plugins.studio.oc_client.OcClient"
-        ) as MockOc:
+        with patch("docent.bundled_plugins.studio.oc_client.OcClient") as MockOc:
             mock_oc_instance = MagicMock()
             mock_oc_instance.is_available.return_value = False
             MockOc.return_value = mock_oc_instance
@@ -321,8 +325,13 @@ class TestConfigActions:
         ctx = _mock_context(output_dir=tmp_path)
         fake_config = Path("/fake/config.toml")
 
-        with patch("docent.bundled_plugins.studio._config_actions.write_setting", return_value=fake_config) as mock_ws, \
-             patch("docent.utils.paths.config_file", return_value=fake_config):
+        with (
+            patch(
+                "docent.bundled_plugins.studio._config_actions.write_setting",
+                return_value=fake_config,
+            ) as mock_ws,
+            patch("docent.utils.paths.config_file", return_value=fake_config),
+        ):
             result = tool.config_set(ConfigSetInputs(key="output_dir", value="/new/path"), ctx)
 
         assert result.ok is True
@@ -337,9 +346,16 @@ class TestConfigActions:
         ctx = _mock_context(output_dir=tmp_path)
         fake_config = Path("/fake/config.toml")
 
-        with patch("docent.bundled_plugins.studio._config_actions.write_setting", return_value=fake_config) as mock_ws, \
-             patch("docent.utils.paths.config_file", return_value=fake_config):
-            result = tool.config_set(ConfigSetInputs(key="notebooklm_ask_timeout", value="600"), ctx)
+        with (
+            patch(
+                "docent.bundled_plugins.studio._config_actions.write_setting",
+                return_value=fake_config,
+            ) as mock_ws,
+            patch("docent.utils.paths.config_file", return_value=fake_config),
+        ):
+            result = tool.config_set(
+                ConfigSetInputs(key="notebooklm_ask_timeout", value="600"), ctx
+            )
 
         assert result.ok is True
         mock_ws.assert_called_once_with("research.notebooklm_ask_timeout", "600")
@@ -396,9 +412,7 @@ class TestLitDocent:
         output_dir = tmp_path / "research"
         ctx = _mock_context(output_dir=output_dir)
 
-        with patch(
-            "docent.bundled_plugins.studio.oc_client.OcClient"
-        ) as MockOc:
+        with patch("docent.bundled_plugins.studio.oc_client.OcClient") as MockOc:
             mock_oc_instance = MagicMock()
             mock_oc_instance.is_available.return_value = False
             MockOc.return_value = mock_oc_instance
@@ -412,26 +426,24 @@ class TestLitDocent:
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir, tavily_api_key="test-key")
 
-        mock_run_lit.return_value = _fake_pipeline_gen({
-            "ok": True,
-            "topic": "climate change",
-            "draft": "Literature review content",
-            "review": "Review content",
-            "sources": [{"title": "Source 1"}],
-            "rounds": 1,
-            "error": None,
-        })
+        mock_run_lit.return_value = _fake_pipeline_gen(
+            {
+                "ok": True,
+                "topic": "climate change",
+                "draft": "Literature review content",
+                "review": "Review content",
+                "sources": [{"title": "Source 1"}],
+                "rounds": 1,
+                "error": None,
+            }
+        )
 
-        with patch(
-            "docent.bundled_plugins.studio.oc_client.OcClient"
-        ) as MockOc:
+        with patch("docent.bundled_plugins.studio.oc_client.OcClient") as MockOc:
             mock_oc_instance = MagicMock()
             mock_oc_instance.is_available.return_value = True
             MockOc.return_value = mock_oc_instance
 
-            result = _drain(
-                tool.lit(LitInputs(topic="climate change", backend="docent"), ctx)
-            )
+            result = _drain(tool.lit(LitInputs(topic="climate change", backend="docent"), ctx))
 
         assert result.ok is True
         assert result.backend == "docent"
@@ -444,9 +456,7 @@ class TestReviewDocent:
         output_dir = tmp_path / "research"
         ctx = _mock_context(output_dir=output_dir)
 
-        with patch(
-            "docent.bundled_plugins.studio.oc_client.OcClient"
-        ) as MockOc:
+        with patch("docent.bundled_plugins.studio.oc_client.OcClient") as MockOc:
             mock_oc_instance = MagicMock()
             mock_oc_instance.is_available.return_value = False
             MockOc.return_value = mock_oc_instance
@@ -460,25 +470,23 @@ class TestReviewDocent:
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
 
-        mock_run_review.return_value = _fake_pipeline_gen({
-            "ok": True,
-            "artifact": "2401.12345",
-            "artifact_content": "Paper content",
-            "researcher_notes": "Notes",
-            "review": "Review content",
-            "error": None,
-        })
+        mock_run_review.return_value = _fake_pipeline_gen(
+            {
+                "ok": True,
+                "artifact": "2401.12345",
+                "artifact_content": "Paper content",
+                "researcher_notes": "Notes",
+                "review": "Review content",
+                "error": None,
+            }
+        )
 
-        with patch(
-            "docent.bundled_plugins.studio.oc_client.OcClient"
-        ) as MockOc:
+        with patch("docent.bundled_plugins.studio.oc_client.OcClient") as MockOc:
             mock_oc_instance = MagicMock()
             mock_oc_instance.is_available.return_value = True
             MockOc.return_value = mock_oc_instance
 
-            result = _drain(
-                tool.review(ReviewInputs(artifact="2401.12345", backend="docent"), ctx)
-            )
+            result = _drain(tool.review(ReviewInputs(artifact="2401.12345", backend="docent"), ctx))
 
         assert result.ok is True
         assert result.backend == "docent"
@@ -487,10 +495,31 @@ class TestReviewDocent:
 
 
 SAMPLE_SOURCES = [
-    {"title": "Paper A", "url": "https://arxiv.org/abs/2401.00001", "source_type": "paper", "snippet": "Abstract A"},
-    {"title": "Web B", "url": "https://example.com/b", "source_type": "web", "full_text": "Full text B", "snippet": "Snippet B"},
-    {"title": "Web C", "url": "https://example.com/c", "source_type": "web", "snippet": "Snippet C"},
-    {"title": "Paper D", "url": "https://arxiv.org/abs/2401.00002", "source_type": "paper", "snippet": "Abstract D"},
+    {
+        "title": "Paper A",
+        "url": "https://arxiv.org/abs/2401.00001",
+        "source_type": "paper",
+        "snippet": "Abstract A",
+    },
+    {
+        "title": "Web B",
+        "url": "https://example.com/b",
+        "source_type": "web",
+        "full_text": "Full text B",
+        "snippet": "Snippet B",
+    },
+    {
+        "title": "Web C",
+        "url": "https://example.com/c",
+        "source_type": "web",
+        "snippet": "Snippet C",
+    },
+    {
+        "title": "Paper D",
+        "url": "https://arxiv.org/abs/2401.00002",
+        "source_type": "paper",
+        "snippet": "Abstract D",
+    },
 ]
 
 
@@ -549,8 +578,9 @@ class TestToNotebook:
         ctx = _mock_context(output_dir=output_dir)
         with patch(
             "docent.bundled_plugins.studio._notebook_actions._nlm_push",
-            new=_make_nlm_push(notebook_id="new-nb-id", sources_added=2,
-                               message="Notebook ready. new-nb-id"),
+            new=_make_nlm_push(
+                notebook_id="new-nb-id", sources_added=2, message="Notebook ready. new-nb-id"
+            ),
         ):
             result = self._run(tool, ToNotebookInputs(), ctx)
         assert result.ok is True
@@ -565,7 +595,10 @@ class TestToNotebook:
         md_file, _ = self._write_research_files(output_dir, slug="climate-lit")
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
-        with patch("docent.bundled_plugins.studio._notebook_actions._nlm_push", new=_make_nlm_push(notebook_id="nb-x")):
+        with patch(
+            "docent.bundled_plugins.studio._notebook_actions._nlm_push",
+            new=_make_nlm_push(notebook_id="nb-x"),
+        ):
             result = self._run(tool, ToNotebookInputs(output_file=str(md_file)), ctx)
         assert result.ok is True
         assert "climate-lit" in result.output_file
@@ -575,7 +608,10 @@ class TestToNotebook:
         self._write_research_files(output_dir)
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
-        with patch("docent.bundled_plugins.studio._notebook_actions._nlm_push", new=_make_nlm_push(notebook_id="nb-x")):
+        with patch(
+            "docent.bundled_plugins.studio._notebook_actions._nlm_push",
+            new=_make_nlm_push(notebook_id="nb-x"),
+        ):
             result = self._run(tool, ToNotebookInputs(), ctx)
         urls_content = (Path(result.package_dir) / "sources_urls.txt").read_text()
         lines = [ln for ln in urls_content.strip().splitlines() if ln]
@@ -586,7 +622,10 @@ class TestToNotebook:
         self._write_research_files(output_dir)
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
-        with patch("docent.bundled_plugins.studio._notebook_actions._nlm_push", new=_make_nlm_push(notebook_id="nb-x")):
+        with patch(
+            "docent.bundled_plugins.studio._notebook_actions._nlm_push",
+            new=_make_nlm_push(notebook_id="nb-x"),
+        ):
             result = self._run(tool, ToNotebookInputs(max_sources=2), ctx)
         assert result.sources_count == 2
         urls_content = (Path(result.package_dir) / "sources_urls.txt").read_text()
@@ -612,9 +651,12 @@ class TestToNotebook:
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
         with (
-            patch("docent.bundled_plugins.studio._notebook_actions._nlm_push",
-                  new=_make_nlm_push(ok=False, notebook_id=None, sources_added=0,
-                                     message="NLM not found")),
+            patch(
+                "docent.bundled_plugins.studio._notebook_actions._nlm_push",
+                new=_make_nlm_push(
+                    ok=False, notebook_id=None, sources_added=0, message="NLM not found"
+                ),
+            ),
             patch("webbrowser.open") as mock_browser,
         ):
             result = self._run(tool, ToNotebookInputs(notebook_id="nb-abc123"), ctx)
@@ -629,9 +671,12 @@ class TestToNotebook:
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
         with (
-            patch("docent.bundled_plugins.studio._notebook_actions._nlm_push",
-                  new=_make_nlm_push(ok=False, notebook_id=None, sources_added=0,
-                                     message="Auth expired")),
+            patch(
+                "docent.bundled_plugins.studio._notebook_actions._nlm_push",
+                new=_make_nlm_push(
+                    ok=False, notebook_id=None, sources_added=0, message="Auth expired"
+                ),
+            ),
             patch("webbrowser.open") as mock_browser,
         ):
             result = self._run(tool, ToNotebookInputs(notebook_id="nb-abc123"), ctx)
@@ -661,8 +706,7 @@ class TestToNotebook:
         ctx = _mock_context(output_dir=output_dir, notebooklm_notebook_id="config-nb-id")
         with patch(
             "docent.bundled_plugins.studio._notebook_actions._nlm_push",
-            new=_make_nlm_push(notebook_id="config-nb-id",
-                               message="Notebook ready: config-nb-id"),
+            new=_make_nlm_push(notebook_id="config-nb-id", message="Notebook ready: config-nb-id"),
         ):
             result = self._run(tool, ToNotebookInputs(), ctx)
         assert result.ok is True
@@ -681,8 +725,10 @@ class TestOutputDestinations:
         fake_path = output_dir / "test-deep.md"
         fake_path.write_text(self.FAKE_MD, encoding="utf-8")
         inputs = DeepInputs(topic="test topic", **(extra_inputs or {}))
-        with patch("docent.bundled_plugins.studio._research._run_feynman",
-                   return_value=(0, feynman_output or str(fake_path), "")):
+        with patch(
+            "docent.bundled_plugins.studio._research._run_feynman",
+            return_value=(0, feynman_output or str(fake_path), ""),
+        ):
             return _drain(tool.deep_research(inputs, ctx))
 
     def test_output_local_default(self, tmp_path):
@@ -695,8 +741,10 @@ class TestOutputDestinations:
     def test_output_notebook_pushes(self, tmp_path):
         output_dir = tmp_path / "r"
         ctx = _mock_context(output_dir=output_dir)
-        with patch("docent.bundled_plugins.studio._notebook._nlm_push",
-                   new=_make_nlm_push(notebook_id="new-nb")):
+        with patch(
+            "docent.bundled_plugins.studio._notebook._nlm_push",
+            new=_make_nlm_push(notebook_id="new-nb"),
+        ):
             result = self._run_deep(ctx, extra_inputs={"output": "notebook"})
         assert result.ok is True
         assert result.notebook_id == "new-nb"
@@ -736,6 +784,7 @@ class TestOutputDestinations:
 # Phase E: compare, draft, replicate, audit
 # ---------------------------------------------------------------------------
 
+
 class TestCompareAction:
     def test_compare_feynman_happy_path(self, tmp_path):
         output_dir = tmp_path / "research"
@@ -743,7 +792,10 @@ class TestCompareAction:
         ctx = _mock_context(output_dir=output_dir, feynman_command=["feynman"])
 
         fake_output = str(output_dir / "2401-12345-vs-2402-67890-compare.md")
-        with patch("docent.bundled_plugins.studio._research._run_feynman", return_value=(0, fake_output, "")):
+        with patch(
+            "docent.bundled_plugins.studio._research._run_feynman",
+            return_value=(0, fake_output, ""),
+        ):
             result = _drain(
                 tool.compare(CompareInputs(artifact_a="2401.12345", artifact_b="2402.67890"), ctx)
             )
@@ -758,7 +810,10 @@ class TestCompareAction:
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir, feynman_command=["feynman"])
 
-        with patch("docent.bundled_plugins.studio._research._run_feynman", return_value=(1, None, '{"errorMessage": "{}"}')) :
+        with patch(
+            "docent.bundled_plugins.studio._research._run_feynman",
+            return_value=(1, None, '{"errorMessage": "{}"}'),
+        ):
             result = _drain(
                 tool.compare(CompareInputs(artifact_a="2401.12345", artifact_b="2402.67890"), ctx)
             )
@@ -771,7 +826,9 @@ class TestCompareAction:
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir, feynman_command=["feynman"])
 
-        with patch("docent.bundled_plugins.studio._research._run_feynman", return_value=(0, None, "")):
+        with patch(
+            "docent.bundled_plugins.studio._research._run_feynman", return_value=(0, None, "")
+        ):
             result = _drain(
                 tool.compare(CompareInputs(artifact_a="2401.12345", artifact_b="2402.67890"), ctx)
             )
@@ -787,12 +844,14 @@ class TestCompareAction:
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
 
-        mock_run_compare.return_value = _fake_pipeline_gen({
-            "ok": True,
-            "comparison": "Comparison content",
-            "review": "Review content",
-            "error": None,
-        })
+        mock_run_compare.return_value = _fake_pipeline_gen(
+            {
+                "ok": True,
+                "comparison": "Comparison content",
+                "review": "Review content",
+                "error": None,
+            }
+        )
 
         with patch("docent.bundled_plugins.studio.oc_client.OcClient") as MockOc:
             mock_oc_instance = MagicMock()
@@ -800,7 +859,12 @@ class TestCompareAction:
             MockOc.return_value = mock_oc_instance
 
             result = _drain(
-                tool.compare(CompareInputs(artifact_a="2401.12345", artifact_b="2402.67890", backend="docent"), ctx)
+                tool.compare(
+                    CompareInputs(
+                        artifact_a="2401.12345", artifact_b="2402.67890", backend="docent"
+                    ),
+                    ctx,
+                )
             )
 
         assert result.ok is True
@@ -820,7 +884,10 @@ class TestDraftAction:
         ctx = _mock_context(output_dir=output_dir, feynman_command=["feynman"])
 
         fake_output = str(output_dir / "storm-surge-draft.md")
-        with patch("docent.bundled_plugins.studio._research._run_feynman", return_value=(0, fake_output, "")):
+        with patch(
+            "docent.bundled_plugins.studio._research._run_feynman",
+            return_value=(0, fake_output, ""),
+        ):
             result = _drain(tool.draft(DraftInputs(topic="storm surge modelling"), ctx))
 
         assert result.ok is True
@@ -832,7 +899,10 @@ class TestDraftAction:
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir, feynman_command=["feynman"])
 
-        with patch("docent.bundled_plugins.studio._research._run_feynman", return_value=(1, None, '{"errorMessage": "{}"}')):
+        with patch(
+            "docent.bundled_plugins.studio._research._run_feynman",
+            return_value=(1, None, '{"errorMessage": "{}"}'),
+        ):
             result = _drain(tool.draft(DraftInputs(topic="storm surge modelling"), ctx))
 
         assert result.ok is False
@@ -843,11 +913,13 @@ class TestDraftAction:
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
 
-        mock_run_draft.return_value = _fake_pipeline_gen({
-            "ok": True,
-            "draft": "Draft content here",
-            "error": None,
-        })
+        mock_run_draft.return_value = _fake_pipeline_gen(
+            {
+                "ok": True,
+                "draft": "Draft content here",
+                "error": None,
+            }
+        )
 
         with patch("docent.bundled_plugins.studio.oc_client.OcClient") as MockOc:
             mock_oc_instance = MagicMock()
@@ -869,11 +941,13 @@ class TestDraftAction:
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
 
-        mock_run_draft.return_value = _fake_pipeline_gen({
-            "ok": False,
-            "draft": "",
-            "error": "Writer failed: timeout",
-        })
+        mock_run_draft.return_value = _fake_pipeline_gen(
+            {
+                "ok": False,
+                "draft": "",
+                "error": "Writer failed: timeout",
+            }
+        )
 
         with patch("docent.bundled_plugins.studio.oc_client.OcClient") as MockOc:
             mock_oc_instance = MagicMock()
@@ -895,7 +969,10 @@ class TestReplicateAction:
         ctx = _mock_context(output_dir=output_dir, feynman_command=["feynman"])
 
         fake_output = str(output_dir / "2401-12345-replicate.md")
-        with patch("docent.bundled_plugins.studio._research._run_feynman", return_value=(0, fake_output, "")):
+        with patch(
+            "docent.bundled_plugins.studio._research._run_feynman",
+            return_value=(0, fake_output, ""),
+        ):
             result = _drain(tool.replicate(ReplicateInputs(artifact="2401.12345"), ctx))
 
         assert result.ok is True
@@ -907,7 +984,9 @@ class TestReplicateAction:
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir, feynman_command=["feynman"])
 
-        with patch("docent.bundled_plugins.studio._research._run_feynman", return_value=(0, None, "")):
+        with patch(
+            "docent.bundled_plugins.studio._research._run_feynman", return_value=(0, None, "")
+        ):
             result = _drain(tool.replicate(ReplicateInputs(artifact="2401.12345"), ctx))
 
         # ff95e61: output_file is None → ok=False regardless of exit code
@@ -920,12 +999,14 @@ class TestReplicateAction:
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
 
-        mock_run_replicate.return_value = _fake_pipeline_gen({
-            "ok": True,
-            "guide": "Replication guide content",
-            "review": "Review notes",
-            "error": None,
-        })
+        mock_run_replicate.return_value = _fake_pipeline_gen(
+            {
+                "ok": True,
+                "guide": "Replication guide content",
+                "review": "Review notes",
+                "error": None,
+            }
+        )
 
         with patch("docent.bundled_plugins.studio.oc_client.OcClient") as MockOc:
             mock_oc_instance = MagicMock()
@@ -949,7 +1030,10 @@ class TestAuditAction:
         ctx = _mock_context(output_dir=output_dir, feynman_command=["feynman"])
 
         fake_output = str(output_dir / "2401-12345-audit.md")
-        with patch("docent.bundled_plugins.studio._research._run_feynman", return_value=(0, fake_output, "")):
+        with patch(
+            "docent.bundled_plugins.studio._research._run_feynman",
+            return_value=(0, fake_output, ""),
+        ):
             result = _drain(tool.audit(AuditInputs(artifact="2401.12345"), ctx))
 
         assert result.ok is True
@@ -961,7 +1045,10 @@ class TestAuditAction:
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir, feynman_command=["feynman"])
 
-        with patch("docent.bundled_plugins.studio._research._run_feynman", return_value=(1, None, '{"errorMessage": "{}"}')):
+        with patch(
+            "docent.bundled_plugins.studio._research._run_feynman",
+            return_value=(1, None, '{"errorMessage": "{}"}'),
+        ):
             result = _drain(tool.audit(AuditInputs(artifact="2401.12345"), ctx))
 
         assert result.ok is False
@@ -973,21 +1060,21 @@ class TestAuditAction:
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
 
-        mock_run_audit.return_value = _fake_pipeline_gen({
-            "ok": True,
-            "report": "Audit report content",
-            "review": "Reviewer notes",
-            "error": None,
-        })
+        mock_run_audit.return_value = _fake_pipeline_gen(
+            {
+                "ok": True,
+                "report": "Audit report content",
+                "review": "Reviewer notes",
+                "error": None,
+            }
+        )
 
         with patch("docent.bundled_plugins.studio.oc_client.OcClient") as MockOc:
             mock_oc_instance = MagicMock()
             mock_oc_instance.is_available.return_value = True
             MockOc.return_value = mock_oc_instance
 
-            result = _drain(
-                tool.audit(AuditInputs(artifact="2401.12345", backend="docent"), ctx)
-            )
+            result = _drain(tool.audit(AuditInputs(artifact="2401.12345", backend="docent"), ctx))
 
         assert result.ok is True
         assert result.backend == "docent"
@@ -1000,24 +1087,25 @@ class TestAuditAction:
         tool = StudioTool()
         ctx = _mock_context(output_dir=output_dir)
 
-        mock_run_audit.return_value = _fake_pipeline_gen({
-            "ok": False,
-            "report": "",
-            "review": "",
-            "error": "Audit failed: timeout",
-        })
+        mock_run_audit.return_value = _fake_pipeline_gen(
+            {
+                "ok": False,
+                "report": "",
+                "review": "",
+                "error": "Audit failed: timeout",
+            }
+        )
 
         with patch("docent.bundled_plugins.studio.oc_client.OcClient") as MockOc:
             mock_oc_instance = MagicMock()
             mock_oc_instance.is_available.return_value = True
             MockOc.return_value = mock_oc_instance
 
-            result = _drain(
-                tool.audit(AuditInputs(artifact="2401.12345", backend="docent"), ctx)
-            )
+            result = _drain(tool.audit(AuditInputs(artifact="2401.12345", backend="docent"), ctx))
 
         assert result.ok is False
         assert "Audit failed" in result.message
+
 
 class TestToNotebookSessionMutex:
     """Slice 1 of concurrent Studio runs: the machine-level NotebookLM mutex.
@@ -1030,7 +1118,9 @@ class TestToNotebookSessionMutex:
     def _write_research_files(self, output_dir: Path, slug: str = "test-deep"):
         output_dir.mkdir(parents=True, exist_ok=True)
         (output_dir / f"{slug}.md").write_text("# Draft", encoding="utf-8")
-        (output_dir / f"{slug}-sources.json").write_text(json.dumps(SAMPLE_SOURCES), encoding="utf-8")
+        (output_dir / f"{slug}-sources.json").write_text(
+            json.dumps(SAMPLE_SOURCES), encoding="utf-8"
+        )
 
     @staticmethod
     def _collect(gen):
@@ -1043,6 +1133,7 @@ class TestToNotebookSessionMutex:
 
     def test_waits_then_aborts_when_session_locked(self, tmp_path, monkeypatch):
         from docent.bundled_plugins.studio import _notebook
+
         monkeypatch.setattr(_notebook, "_NOTEBOOKLM_LOCK_PATH", tmp_path / "nlm.lock")
 
         output_dir = tmp_path / "research"
@@ -1064,6 +1155,7 @@ class TestToNotebookSessionMutex:
 
     def test_releases_lock_after_run(self, tmp_path, monkeypatch):
         from docent.bundled_plugins.studio import _notebook
+
         monkeypatch.setattr(_notebook, "_NOTEBOOKLM_LOCK_PATH", tmp_path / "nlm.lock")
 
         output_dir = tmp_path / "research"

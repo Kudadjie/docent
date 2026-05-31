@@ -4,6 +4,7 @@ Two cross-cutting concerns: redirect ~/.docent to a tmp dir so tests can't
 touch the user's real config/data, and snapshot the global tool registry so
 tests that call @register_tool don't leak into one another.
 """
+
 from __future__ import annotations
 
 import os
@@ -52,6 +53,7 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
 
 def pytest_runtest_teardown(item: pytest.Item, nextitem: pytest.Item | None) -> None:  # noqa: ARG001
     socket.socket.connect = _real_socket_connect
+
 
 # Make bundled plugins importable (mirrors what plugin_loader does at runtime)
 _BUNDLED = _Path(__file__).parent.parent / "src" / "docent" / "bundled_plugins"

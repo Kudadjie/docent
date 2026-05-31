@@ -3,6 +3,7 @@
 Requires the optional [backup] extras:
     pip install 'docent-cli[backup]'
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -18,13 +19,16 @@ MIME_FOLDER = "application/vnd.google-apps.folder"
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 
+
 def _creds_path() -> Path:
     from docent.utils.paths import root_dir
+
     return root_dir() / "drive_credentials.json"
 
 
 def _token_path() -> Path:
     from docent.utils.paths import root_dir
+
     return root_dir() / "drive_token.json"
 
 
@@ -33,6 +37,7 @@ def credentials_file_exists() -> bool:
 
 
 # ── Auth ─────────────────────────────────────────────────────────────────────
+
 
 def _check_imports() -> None:
     try:
@@ -81,6 +86,7 @@ def get_credentials():
         # (No-op on Windows beyond the read-only bit, but harmless there.)
         try:
             import os
+
             os.chmod(token_path, 0o600)
         except OSError:
             pass
@@ -90,56 +96,77 @@ def get_credentials():
 
 def get_service():
     from googleapiclient.discovery import build
+
     return build("drive", "v3", credentials=get_credentials(), cache_discovery=False)
 
 
 # ── Folder ───────────────────────────────────────────────────────────────────
 
+
 def get_or_create_backup_folder(service: Any) -> str:
     """Return the ID of the 'Docent Backups' Drive folder, creating it if absent."""
-    results = service.files().list(
-        q=f"name='{FOLDER_NAME}' and mimeType='{MIME_FOLDER}' and trashed=false",
-        fields="files(id)",
-        spaces="drive",
-    ).execute()
+    results = (
+        service.files()
+        .list(
+            q=f"name='{FOLDER_NAME}' and mimeType='{MIME_FOLDER}' and trashed=false",
+            fields="files(id)",
+            spaces="drive",
+        )
+        .execute()
+    )
     items = results.get("files", [])
     if items:
         return items[0]["id"]
-    folder = service.files().create(
-        body={"name": FOLDER_NAME, "mimeType": MIME_FOLDER},
-        fields="id",
-    ).execute()
+    folder = (
+        service.files()
+        .create(
+            body={"name": FOLDER_NAME, "mimeType": MIME_FOLDER},
+            fields="id",
+        )
+        .execute()
+    )
     return folder["id"]
 
 
 # ── Upload / Download / List ──────────────────────────────────────────────────
 
+
 def upload_backup(service: Any, local_path: Path, folder_id: str, filename: str) -> str:
     """Upload *local_path* to the backup folder. Returns the Drive file ID."""
     from googleapiclient.http import MediaFileUpload
+
     media = MediaFileUpload(str(local_path), mimetype="application/zip", resumable=True)
-    result = service.files().create(
-        body={"name": filename, "parents": [folder_id]},
-        media_body=media,
-        fields="id",
-    ).execute()
+    result = (
+        service.files()
+        .create(
+            body={"name": filename, "parents": [folder_id]},
+            media_body=media,
+            fields="id",
+        )
+        .execute()
+    )
     return result["id"]
 
 
 def list_backups(service: Any, folder_id: str) -> list[dict[str, Any]]:
     """Return backup file metadata sorted newest-first."""
-    results = service.files().list(
-        q=f"'{folder_id}' in parents and name contains 'docent_backup' and trashed=false",
-        fields="files(id, name, size, createdTime)",
-        orderBy="createdTime desc",
-        spaces="drive",
-    ).execute()
+    results = (
+        service.files()
+        .list(
+            q=f"'{folder_id}' in parents and name contains 'docent_backup' and trashed=false",
+            fields="files(id, name, size, createdTime)",
+            orderBy="createdTime desc",
+            spaces="drive",
+        )
+        .execute()
+    )
     return results.get("files", [])
 
 
 def download_backup(service: Any, file_id: str, dest: Path) -> None:
     """Stream a Drive file to *dest*."""
     from googleapiclient.http import MediaIoBaseDownload
+
     request = service.files().get_media(fileId=file_id)
     dest.parent.mkdir(parents=True, exist_ok=True)
     with dest.open("wb") as fh:

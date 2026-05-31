@@ -1,11 +1,13 @@
 """Tests for `reading add` action — guidance-only after sidecar removal."""
+
 from __future__ import annotations
+
+from reading import AddInputs, ReadingQueue
 
 from docent.config import load_settings
 from docent.core.context import Context
 from docent.execution.executor import ProcessResult
 from docent.llm import LLMClient
-from reading import AddInputs, ReadingQueue
 
 
 class _StubExecutor:

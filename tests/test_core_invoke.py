@@ -1,4 +1,5 @@
 """Tests for docent.core.invoke — make_context() and run_action()."""
+
 from __future__ import annotations
 
 import inspect
@@ -7,15 +8,15 @@ import pytest
 from pydantic import BaseModel
 
 from docent.core import Context
-from docent.core.invoke import make_context, run_action
-from docent.core.tool import Tool, action
-from docent.core.registry import register_tool
 from docent.core.events import ProgressEvent
-
+from docent.core.invoke import make_context, run_action
+from docent.core.registry import register_tool
+from docent.core.tool import Tool, action
 
 # ---------------------------------------------------------------------------
 # Fixture tools — unique names to avoid registry collisions.
 # ---------------------------------------------------------------------------
+
 
 class _EchoInputs(BaseModel):
     value: str = "default"
@@ -51,6 +52,7 @@ class _GenInvokeTool(Tool):
 # make_context()
 # ---------------------------------------------------------------------------
 
+
 def test_make_context_returns_context():
     ctx = make_context()
     assert isinstance(ctx, Context)
@@ -64,6 +66,7 @@ def test_make_context_has_settings():
 # ---------------------------------------------------------------------------
 # run_action() — sync
 # ---------------------------------------------------------------------------
+
 
 def test_run_action_sync_returns_raw_result():
     result = run_action("test-echo-invoke", "echo", {"value": "hi"})
@@ -84,6 +87,7 @@ def test_run_action_accepts_provided_context():
 # ---------------------------------------------------------------------------
 # run_action() — generator
 # ---------------------------------------------------------------------------
+
 
 def test_run_action_generator_returns_generator():
     raw = run_action("test-gen-invoke", "gen", {"steps": 3})
@@ -107,6 +111,7 @@ def test_run_action_generator_yields_progress_then_returns():
 # ---------------------------------------------------------------------------
 # Error paths
 # ---------------------------------------------------------------------------
+
 
 def test_run_action_unknown_tool_raises():
     with pytest.raises(ValueError, match="No tool named"):

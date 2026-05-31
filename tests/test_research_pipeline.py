@@ -1,4 +1,5 @@
 """Unit tests for pipeline.py (run_deep, _parse_json)."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -20,8 +21,11 @@ from docent.core import ProgressEvent
 
 _WEB_RESULT = {"title": "Web Result", "url": "https://example.com", "snippet": "A snippet"}
 _PAPER_RESULT = {
-    "title": "Paper Result", "url": "https://arxiv.org/abs/2401.12345",
-    "snippet": "Abstract", "authors": "Smith, J", "year": 2024,
+    "title": "Paper Result",
+    "url": "https://arxiv.org/abs/2401.12345",
+    "snippet": "Abstract",
+    "authors": "Smith, J",
+    "year": 2024,
 }
 
 
@@ -140,17 +144,20 @@ class TestRunDeep:
     @pytest.fixture(autouse=True)
     def patch_network(self, monkeypatch):
         import docent.bundled_plugins.studio.helpers as _h
+
         monkeypatch.setattr(_h, "_check_connectivity", lambda *a, **kw: True)
 
     def test_run_deep_happy_path(self):
-        oc = _make_oc_client({
-            "planner": PLANNER_JSON,
-            "gap_eval": GAP_SUFFICIENT_JSON,
-            "writer": WRITER_OUTPUT,
-            "verifier": VERIFIER_OUTPUT,
-            "reviewer": REVIEWER_OUTPUT,
-            "refiner": REFINER_OUTPUT,
-        })
+        oc = _make_oc_client(
+            {
+                "planner": PLANNER_JSON,
+                "gap_eval": GAP_SUFFICIENT_JSON,
+                "writer": WRITER_OUTPUT,
+                "verifier": VERIFIER_OUTPUT,
+                "reviewer": REVIEWER_OUTPUT,
+                "refiner": REFINER_OUTPUT,
+            }
+        )
         result, events = _drain(run_deep("climate change", oc, adapter=_fake_adapter()))
 
         assert result["ok"] is True
@@ -188,8 +195,12 @@ class TestRunDeep:
         oc = MagicMock(spec=StudioBackend)
         oc.is_available.return_value = True
         oc.call.side_effect = [
-            PLANNER_JSON, GAP_SUFFICIENT_JSON, WRITER_OUTPUT,
-            Exception("Verifier LLM down"), REVIEWER_OUTPUT, REFINER_OUTPUT,
+            PLANNER_JSON,
+            GAP_SUFFICIENT_JSON,
+            WRITER_OUTPUT,
+            Exception("Verifier LLM down"),
+            REVIEWER_OUTPUT,
+            REFINER_OUTPUT,
         ]
         result, _ = _drain(run_deep("climate change", oc, adapter=_fake_adapter()))
 
@@ -200,8 +211,12 @@ class TestRunDeep:
         oc = MagicMock(spec=StudioBackend)
         oc.is_available.return_value = True
         oc.call.side_effect = [
-            PLANNER_JSON, GAP_INSUFFICIENT_JSON,
-            WRITER_OUTPUT, VERIFIER_OUTPUT, REVIEWER_OUTPUT, REFINER_OUTPUT,
+            PLANNER_JSON,
+            GAP_INSUFFICIENT_JSON,
+            WRITER_OUTPUT,
+            VERIFIER_OUTPUT,
+            REVIEWER_OUTPUT,
+            REFINER_OUTPUT,
         ]
         result, _ = _drain(run_deep("climate change", oc, adapter=_fake_adapter()))
 
@@ -212,8 +227,12 @@ class TestRunDeep:
         oc = MagicMock(spec=StudioBackend)
         oc.is_available.return_value = True
         oc.call.side_effect = [
-            PLANNER_JSON, GAP_SUFFICIENT_JSON,
-            WRITER_OUTPUT, VERIFIER_OUTPUT, REVIEWER_OUTPUT, REFINER_OUTPUT,
+            PLANNER_JSON,
+            GAP_SUFFICIENT_JSON,
+            WRITER_OUTPUT,
+            VERIFIER_OUTPUT,
+            REVIEWER_OUTPUT,
+            REFINER_OUTPUT,
         ]
         result, _ = _drain(run_deep("climate change", oc, adapter=_fake_adapter()))
 
@@ -221,16 +240,22 @@ class TestRunDeep:
         assert result["rounds"] == 1
 
     def test_run_deep_deduplicates_sources(self):
-        adapter = _fake_adapter(web_results=[
-            {"title": "Dup", "url": "https://example.com", "snippet": "S1"},
-            {"title": "Dup", "url": "https://example.com", "snippet": "S2"},
-            {"title": "Unique", "url": "https://other.com", "snippet": "S3"},
-        ])
+        adapter = _fake_adapter(
+            web_results=[
+                {"title": "Dup", "url": "https://example.com", "snippet": "S1"},
+                {"title": "Dup", "url": "https://example.com", "snippet": "S2"},
+                {"title": "Unique", "url": "https://other.com", "snippet": "S3"},
+            ]
+        )
         oc = MagicMock(spec=StudioBackend)
         oc.is_available.return_value = True
         oc.call.side_effect = [
-            PLANNER_JSON, GAP_SUFFICIENT_JSON,
-            WRITER_OUTPUT, VERIFIER_OUTPUT, REVIEWER_OUTPUT, REFINER_OUTPUT,
+            PLANNER_JSON,
+            GAP_SUFFICIENT_JSON,
+            WRITER_OUTPUT,
+            VERIFIER_OUTPUT,
+            REVIEWER_OUTPUT,
+            REFINER_OUTPUT,
         ]
         result, _ = _drain(run_deep("climate change", oc, adapter=adapter))
 
@@ -266,8 +291,13 @@ class TestRunDeep:
         oc = MagicMock(spec=StudioBackend)
         oc.is_available.return_value = True
         oc.call.side_effect = [
-            PLANNER_JSON, GAP_INSUFFICIENT_JSON, GAP_SUFFICIENT_JSON,
-            WRITER_OUTPUT, VERIFIER_OUTPUT, REVIEWER_OUTPUT, REFINER_OUTPUT,
+            PLANNER_JSON,
+            GAP_INSUFFICIENT_JSON,
+            GAP_SUFFICIENT_JSON,
+            WRITER_OUTPUT,
+            VERIFIER_OUTPUT,
+            REVIEWER_OUTPUT,
+            REFINER_OUTPUT,
         ]
         _drain(run_deep("climate change", oc, adapter=adapter))
 
@@ -286,17 +316,20 @@ class TestRunLit:
     @pytest.fixture(autouse=True)
     def patch_network(self, monkeypatch):
         import docent.bundled_plugins.studio.helpers as _h
+
         monkeypatch.setattr(_h, "_check_connectivity", lambda *a, **kw: True)
 
     def test_run_lit_happy_path(self):
-        oc = _make_oc_client({
-            "planner": LIT_PLANNER_JSON,
-            "gap_eval": GAP_SUFFICIENT_JSON,
-            "writer": WRITER_OUTPUT,
-            "verifier": VERIFIER_OUTPUT,
-            "reviewer": REVIEWER_OUTPUT,
-            "refiner": REFINER_OUTPUT,
-        })
+        oc = _make_oc_client(
+            {
+                "planner": LIT_PLANNER_JSON,
+                "gap_eval": GAP_SUFFICIENT_JSON,
+                "writer": WRITER_OUTPUT,
+                "verifier": VERIFIER_OUTPUT,
+                "reviewer": REVIEWER_OUTPUT,
+                "refiner": REFINER_OUTPUT,
+            }
+        )
         result, _ = _drain(run_lit("climate change", oc, adapter=_fake_adapter()))
 
         assert result["ok"] is True
@@ -318,14 +351,16 @@ class TestRunLit:
         assert "Search planner failed" in result["error"]
 
     def test_run_lit_uses_lit_prompts(self):
-        oc = _make_oc_client({
-            "planner": LIT_PLANNER_JSON,
-            "gap_eval": GAP_SUFFICIENT_JSON,
-            "writer": WRITER_OUTPUT,
-            "verifier": VERIFIER_OUTPUT,
-            "reviewer": REVIEWER_OUTPUT,
-            "refiner": REFINER_OUTPUT,
-        })
+        oc = _make_oc_client(
+            {
+                "planner": LIT_PLANNER_JSON,
+                "gap_eval": GAP_SUFFICIENT_JSON,
+                "writer": WRITER_OUTPUT,
+                "verifier": VERIFIER_OUTPUT,
+                "reviewer": REVIEWER_OUTPUT,
+                "refiner": REFINER_OUTPUT,
+            }
+        )
         result, _ = _drain(run_lit("climate change", oc, adapter=_fake_adapter()))
         assert result["ok"] is True
 
@@ -337,7 +372,11 @@ class TestRunLit:
     def test_run_lit_writer_failure(self):
         oc = MagicMock(spec=StudioBackend)
         oc.is_available.return_value = True
-        oc.call.side_effect = [LIT_PLANNER_JSON, GAP_SUFFICIENT_JSON, Exception("Writer LLM failed")]
+        oc.call.side_effect = [
+            LIT_PLANNER_JSON,
+            GAP_SUFFICIENT_JSON,
+            Exception("Writer LLM failed"),
+        ]
 
         result, _ = _drain(run_lit("climate change", oc, adapter=_fake_adapter()))
 
@@ -347,14 +386,16 @@ class TestRunLit:
     def test_fake_adapter_records_calls(self):
         """FakeSearchAdapter call counters enable fine-grained test assertions."""
         adapter = _fake_adapter()
-        oc = _make_oc_client({
-            "planner": LIT_PLANNER_JSON,
-            "gap_eval": GAP_SUFFICIENT_JSON,
-            "writer": WRITER_OUTPUT,
-            "verifier": VERIFIER_OUTPUT,
-            "reviewer": REVIEWER_OUTPUT,
-            "refiner": REFINER_OUTPUT,
-        })
+        oc = _make_oc_client(
+            {
+                "planner": LIT_PLANNER_JSON,
+                "gap_eval": GAP_SUFFICIENT_JSON,
+                "writer": WRITER_OUTPUT,
+                "verifier": VERIFIER_OUTPUT,
+                "reviewer": REVIEWER_OUTPUT,
+                "refiner": REFINER_OUTPUT,
+            }
+        )
         _drain(run_lit("climate change", oc, adapter=adapter))
 
         # LIT_PLANNER_JSON has 1 web query and 2 paper queries
@@ -466,6 +507,7 @@ class TestZeroSourceAbort:
     @pytest.fixture(autouse=True)
     def patch_network(self, monkeypatch):
         import docent.bundled_plugins.studio.helpers as _h
+
         monkeypatch.setattr(_h, "_check_connectivity", lambda *a, **kw: True)
 
     def test_zero_sources_returns_error(self):
@@ -486,6 +528,7 @@ class TestTavilyResearchPipeline:
     @pytest.fixture(autouse=True)
     def patch_network(self, monkeypatch):
         import docent.bundled_plugins.studio.helpers as _h
+
         monkeypatch.setattr(_h, "_check_connectivity", lambda *a, **kw: True)
 
     @patch("docent.bundled_plugins.studio.pipeline.academic_search_parallel", return_value=[])
@@ -510,6 +553,7 @@ class TestTavilyResearchPipeline:
                 "sources": [{"title": "S1", "url": "https://s1.com", "snippet": "s1 text"}],
                 "request_id": "req-123",
             }
+
         mock_research.side_effect = research_gen
 
         refined_output = (
@@ -542,13 +586,15 @@ class TestTavilyResearchPipeline:
         """When tavily_research raises, run_deep falls back to manual pipeline."""
         mock_research.side_effect = RuntimeError("Tavily research start failed: API error")
 
-        oc = _make_oc_client({
-            "planner": PLANNER_JSON,
-            "gap_eval": GAP_SUFFICIENT_JSON,
-            "writer": WRITER_OUTPUT,
-            "verifier": VERIFIER_OUTPUT,
-            "reviewer": REVIEWER_OUTPUT,
-        })
+        oc = _make_oc_client(
+            {
+                "planner": PLANNER_JSON,
+                "gap_eval": GAP_SUFFICIENT_JSON,
+                "writer": WRITER_OUTPUT,
+                "verifier": VERIFIER_OUTPUT,
+                "reviewer": REVIEWER_OUTPUT,
+            }
+        )
         result, events = _drain(
             run_deep("climate change", oc, tavily_api_key="tvly-test", adapter=_fake_adapter())
         )
@@ -559,13 +605,17 @@ class TestTavilyResearchPipeline:
 
     def test_deep_no_tavily_key_uses_manual(self):
         """When no Tavily key, run_deep uses the manual pipeline."""
-        oc = _make_oc_client({
-            "planner": PLANNER_JSON,
-            "gap_eval": GAP_SUFFICIENT_JSON,
-            "writer": WRITER_OUTPUT,
-            "verifier": VERIFIER_OUTPUT,
-            "reviewer": REVIEWER_OUTPUT,
-        })
-        result, _ = _drain(run_deep("climate change", oc, tavily_api_key=None, adapter=_fake_adapter()))
+        oc = _make_oc_client(
+            {
+                "planner": PLANNER_JSON,
+                "gap_eval": GAP_SUFFICIENT_JSON,
+                "writer": WRITER_OUTPUT,
+                "verifier": VERIFIER_OUTPUT,
+                "reviewer": REVIEWER_OUTPUT,
+            }
+        )
+        result, _ = _drain(
+            run_deep("climate change", oc, tavily_api_key=None, adapter=_fake_adapter())
+        )
 
         assert result["ok"] is True

@@ -1,4 +1,5 @@
 """Backup/restore endpoints for the Docent web UI."""
+
 from __future__ import annotations
 
 import asyncio
@@ -14,11 +15,13 @@ router = APIRouter()
 
 # ── Status ────────────────────────────────────────────────────────────────────
 
+
 @router.get("/api/backup/status")
 async def backup_status() -> JSONResponse:
     """Return drive credentials state without making any Drive API calls."""
     from docent.bundled_plugins.backup.drive_client import (
-        credentials_file_exists, _token_path,
+        _token_path,
+        credentials_file_exists,
     )
 
     creds_ok = credentials_file_exists()
@@ -34,71 +37,89 @@ async def backup_status() -> JSONResponse:
         except PackageNotFoundError:
             return False
 
-    deps_ok = all(_installed(d) for d in [
-        "google-api-python-client",
-        "google-auth-oauthlib",
-        "google-auth-httplib2",
-    ])
+    deps_ok = all(
+        _installed(d)
+        for d in [
+            "google-api-python-client",
+            "google-auth-oauthlib",
+            "google-auth-httplib2",
+        ]
+    )
 
-    return JSONResponse({
-        "credentials_configured": creds_ok,
-        "deps_installed": deps_ok,
-        "token_exists": token_ok,
-        "install_cmd": "pip install 'docent-cli[backup]'" if not deps_ok else None,
-    })
+    return JSONResponse(
+        {
+            "credentials_configured": creds_ok,
+            "deps_installed": deps_ok,
+            "token_exists": token_ok,
+            "install_cmd": "pip install 'docent-cli[backup]'" if not deps_ok else None,
+        }
+    )
 
 
 # ── List ──────────────────────────────────────────────────────────────────────
+
 
 @router.get("/api/backup/list")
 async def list_drive_backups() -> JSONResponse:
     """Return recent backups from Google Drive."""
     try:
         from docent.bundled_plugins.backup.drive_client import (
-            get_service, get_or_create_backup_folder, list_backups,
+            get_or_create_backup_folder,
+            get_service,
+            list_backups,
         )
+
         service = await asyncio.to_thread(get_service)
         folder_id = await asyncio.to_thread(get_or_create_backup_folder, service)
         backups = await asyncio.to_thread(list_backups, service, folder_id)
-        return JSONResponse({
-            "ok": True,
-            "backups": [
-                {
-                    "id": b["id"],
-                    "name": b["name"],
-                    "size_mb": round(int(b.get("size", 0)) / 1_048_576, 1),
-                    "created": b.get("createdTime", "")[:10],
-                }
-                for b in backups
-            ],
-        })
+        return JSONResponse(
+            {
+                "ok": True,
+                "backups": [
+                    {
+                        "id": b["id"],
+                        "name": b["name"],
+                        "size_mb": round(int(b.get("size", 0)) / 1_048_576, 1),
+                        "created": b.get("createdTime", "")[:10],
+                    }
+                    for b in backups
+                ],
+            }
+        )
     except Exception as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
 
 
 # ── Run backup ────────────────────────────────────────────────────────────────
 
+
 @router.post("/api/backup/install-deps")
 async def install_backup_deps() -> JSONResponse:
     """Install the optional google-api-python-client deps into the running Python env."""
-    import sys
     import subprocess as _sp
+    import sys
 
     try:
         result = await asyncio.to_thread(
             lambda: _sp.run(
                 [
-                    sys.executable, "-m", "pip", "install",
+                    sys.executable,
+                    "-m",
+                    "pip",
+                    "install",
                     # --upgrade-strategy only-if-needed prevents pip from
                     # upgrading already-installed packages (including docent
                     # itself) — avoids the WinError 32 "file in use" error
                     # when docent.exe is running while pip tries to overwrite it.
-                    "--upgrade-strategy", "only-if-needed",
+                    "--upgrade-strategy",
+                    "only-if-needed",
                     "google-api-python-client>=2.100",
                     "google-auth-oauthlib>=1.0",
                     "google-auth-httplib2>=0.2",
                 ],
-                capture_output=True, text=True, timeout=120,
+                capture_output=True,
+                text=True,
+                timeout=120,
             )
         )
         if result.returncode == 0:
@@ -112,25 +133,35 @@ async def install_backup_deps() -> JSONResponse:
 
 
 class SetupBody(BaseModel):
-    credentials_json: str   # raw JSON string from the downloaded credentials file
+    credentials_json: str  # raw JSON string from the downloaded credentials file
 
 
 @router.post("/api/backup/setup")
 async def save_credentials(body: SetupBody) -> JSONResponse:
     """Validate and save Google Drive OAuth credentials to ~/.docent/drive_credentials.json."""
     import json as _json
+
     from docent.bundled_plugins.backup.drive_client import _creds_path
 
     # Basic validation — must be a valid JSON object with expected keys
     try:
         parsed = _json.loads(body.credentials_json)
     except Exception:
-        return JSONResponse({"ok": False, "error": "Invalid JSON — paste the full contents of the downloaded file."}, status_code=400)
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": "Invalid JSON — paste the full contents of the downloaded file.",
+            },
+            status_code=400,
+        )
 
     top = parsed.get("installed") or parsed.get("web")
     if not top or "client_id" not in top:
         return JSONResponse(
-            {"ok": False, "error": "Unrecognised credentials format. Download a Desktop app OAuth 2.0 Client ID from Google Cloud Console."},
+            {
+                "ok": False,
+                "error": "Unrecognised credentials format. Download a Desktop app OAuth 2.0 Client ID from Google Cloud Console.",
+            },
             status_code=400,
         )
 
@@ -147,7 +178,7 @@ class BackupBody(BaseModel):
 @router.post("/api/backup/run")
 async def run_backup(body: BackupBody) -> JSONResponse:
     """Create a backup archive and optionally upload to Google Drive."""
-    from docent.bundled_plugins.backup.manager import create_archive, archive_name
+    from docent.bundled_plugins.backup.manager import archive_name, create_archive
 
     tmp_dir = Path(tempfile.mkdtemp())
     dest = tmp_dir / archive_name()
@@ -157,36 +188,44 @@ async def run_backup(body: BackupBody) -> JSONResponse:
 
         if body.local_only:
             # Caller will download via /api/backup/download — leave file in tmp
-            return JSONResponse({
-                "ok": True,
-                "local_only": True,
-                "archive_name": dest.name,
-                "size_mb": manifest["archive_size_mb"],
-                "files_included": manifest["files_included"],
-                "files_excluded": manifest["files_excluded"],
-                "excluded": manifest.get("excluded", []),
-            })
+            return JSONResponse(
+                {
+                    "ok": True,
+                    "local_only": True,
+                    "archive_name": dest.name,
+                    "size_mb": manifest["archive_size_mb"],
+                    "files_included": manifest["files_included"],
+                    "files_excluded": manifest["files_excluded"],
+                    "excluded": manifest.get("excluded", []),
+                }
+            )
 
         # Upload to Drive
         from docent.bundled_plugins.backup.drive_client import (
-            get_service, get_or_create_backup_folder, upload_backup, trim_old_backups,
+            get_or_create_backup_folder,
+            get_service,
+            trim_old_backups,
+            upload_backup,
         )
+
         service = await asyncio.to_thread(get_service)
         folder_id = await asyncio.to_thread(get_or_create_backup_folder, service)
         file_id = await asyncio.to_thread(upload_backup, service, dest, folder_id, dest.name)
         deleted = await asyncio.to_thread(trim_old_backups, service, folder_id)
 
-        return JSONResponse({
-            "ok": True,
-            "local_only": False,
-            "drive_file_id": file_id,
-            "archive_name": dest.name,
-            "size_mb": manifest["archive_size_mb"],
-            "files_included": manifest["files_included"],
-            "files_excluded": manifest["files_excluded"],
-            "excluded": manifest.get("excluded", []),
-            "old_backups_deleted": deleted,
-        })
+        return JSONResponse(
+            {
+                "ok": True,
+                "local_only": False,
+                "drive_file_id": file_id,
+                "archive_name": dest.name,
+                "size_mb": manifest["archive_size_mb"],
+                "files_included": manifest["files_included"],
+                "files_excluded": manifest["files_excluded"],
+                "excluded": manifest.get("excluded", []),
+                "old_backups_deleted": deleted,
+            }
+        )
     except Exception as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
     finally:
@@ -199,10 +238,11 @@ async def run_backup(body: BackupBody) -> JSONResponse:
 
 # ── Download local zip ────────────────────────────────────────────────────────
 
+
 @router.get("/api/backup/download")
 async def download_local_zip(background_tasks: BackgroundTasks) -> FileResponse:
     """Create a backup zip and stream it to the browser as a file download."""
-    from docent.bundled_plugins.backup.manager import create_archive, archive_name
+    from docent.bundled_plugins.backup.manager import archive_name, create_archive
 
     tmp_dir = Path(tempfile.mkdtemp())
     dest = tmp_dir / archive_name()
@@ -226,6 +266,7 @@ async def download_local_zip(background_tasks: BackgroundTasks) -> FileResponse:
 
 # ── Restore ───────────────────────────────────────────────────────────────────
 
+
 class DeleteBody(BaseModel):
     backup_id: str
 
@@ -233,7 +274,8 @@ class DeleteBody(BaseModel):
 @router.post("/api/backup/delete")
 async def delete_drive_backup(body: DeleteBody) -> JSONResponse:
     """Permanently delete a backup from Google Drive."""
-    from docent.bundled_plugins.backup.drive_client import get_service, delete_backup
+    from docent.bundled_plugins.backup.drive_client import delete_backup, get_service
+
     try:
         service = await asyncio.to_thread(get_service)
         await asyncio.to_thread(delete_backup, service, body.backup_id)
@@ -250,7 +292,10 @@ class RestoreBody(BaseModel):
 async def restore_from_drive(body: RestoreBody) -> JSONResponse:
     """Download a Drive backup by ID and restore it."""
     from docent.bundled_plugins.backup.drive_client import (
-        get_service, get_or_create_backup_folder, list_backups, download_backup,
+        download_backup,
+        get_or_create_backup_folder,
+        get_service,
+        list_backups,
     )
     from docent.bundled_plugins.backup.manager import restore_archive
 
@@ -271,12 +316,14 @@ async def restore_from_drive(body: RestoreBody) -> JSONResponse:
         await asyncio.to_thread(download_backup, service, body.backup_id, dest)
         manifest = await asyncio.to_thread(restore_archive, dest)
 
-        return JSONResponse({
-            "ok": True,
-            "restored_from": chosen["name"],
-            "timestamp": manifest.get("timestamp", ""),
-            "files_included": manifest.get("files_included", "?"),
-        })
+        return JSONResponse(
+            {
+                "ok": True,
+                "restored_from": chosen["name"],
+                "timestamp": manifest.get("timestamp", ""),
+                "files_included": manifest.get("files_included", "?"),
+            }
+        )
     except Exception as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
     finally:

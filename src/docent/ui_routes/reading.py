@@ -1,6 +1,8 @@
 """Reading queue action endpoints."""
+
 import asyncio
-from typing import Any, Optional
+from datetime import UTC
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
@@ -13,12 +15,12 @@ from docent.core.invoke import invoke_action_for_ui as invoke_action  # noqa: E4
 
 class ActionBody(BaseModel):
     action: str
-    id: Optional[str] = None
-    status: Optional[str] = None
-    order: Optional[int] = None
-    deadline: Optional[str] = None
-    notes: Optional[str] = None
-    tags: Optional[list[str]] = None
+    id: str | None = None
+    status: str | None = None
+    order: int | None = None
+    deadline: str | None = None
+    notes: str | None = None
+    tags: list[str] | None = None
     confirmed: bool = False
 
 
@@ -37,48 +39,60 @@ _ACTION_MAP: dict[str, tuple[str, str]] = {
 
 def _read_config_reading():
     from docent.ui_server import _read_config_reading as _rcr
+
     return _rcr()
 
 
 def _get_database_files(path):
     from docent.ui_server import _get_database_files as _gdf
+
     return _gdf(path)
 
 
 def _audit(action: str, detail: str) -> None:
     from docent.ui_server import _audit as _a
+
     _a(action, detail)
 
 
 def _docent_dir():
     from docent.ui_server import _docent_dir as _dd
+
     return _dd()
 
 
 @router.get("/api/queue")
 def get_queue() -> JSONResponse:
     from docent.bundled_plugins.reading import load_queue_for_ui
+
     return JSONResponse(load_queue_for_ui())
 
 
 @router.get("/api/database")
 def get_database() -> JSONResponse:
     """Return the list of PDF filenames in the configured database/watch folder."""
+    from datetime import datetime
     from pathlib import Path
-    from datetime import datetime, timezone
+
     reading_cfg = _read_config_reading()
     db_dir = reading_cfg.get("database_dir")
     if not db_dir:
-        return JSONResponse({"database_dir": None, "pdfs": [], "last_checked": datetime.now(timezone.utc).isoformat()})
+        return JSONResponse(
+            {"database_dir": None, "pdfs": [], "last_checked": datetime.now(UTC).isoformat()}
+        )
     p = Path(db_dir).expanduser()
     if not p.is_dir():
-        return JSONResponse({"database_dir": str(p), "pdfs": [], "last_checked": datetime.now(timezone.utc).isoformat()})
+        return JSONResponse(
+            {"database_dir": str(p), "pdfs": [], "last_checked": datetime.now(UTC).isoformat()}
+        )
     pdfs = _get_database_files(p)
-    return JSONResponse({
-        "database_dir": str(p),
-        "pdfs": pdfs,
-        "last_checked": datetime.now(timezone.utc).isoformat(),
-    })
+    return JSONResponse(
+        {
+            "database_dir": str(p),
+            "pdfs": pdfs,
+            "last_checked": datetime.now(UTC).isoformat(),
+        }
+    )
 
 
 @router.post("/api/actions")

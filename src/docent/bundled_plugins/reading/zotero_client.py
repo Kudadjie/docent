@@ -10,6 +10,7 @@ is uniform across backends.
 ``pyzotero`` is lazy-imported so importing this module stays cheap and the
 dependency is only required when the Zotero backend is actually used.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -18,6 +19,7 @@ from typing import Any
 def make_zotero(api_key: str, library_id: str, library_type: str = "user") -> Any:
     """Construct a pyzotero client. Raises ImportError if pyzotero is missing."""
     from pyzotero import zotero
+
     return zotero.Zotero(library_id, library_type, api_key)
 
 
@@ -30,9 +32,19 @@ def _classify_error(exc: Exception) -> str:
     name = type(exc).__name__.lower()
     msg = str(exc).lower()
     blob = f"{name} {msg}"
-    if any(s in blob for s in (
-        "notauthor", "unauthor", "forbidden", "401", "403", "api key", "apikey", "invalid key",
-    )):
+    if any(
+        s in blob
+        for s in (
+            "notauthor",
+            "unauthor",
+            "forbidden",
+            "401",
+            "403",
+            "api key",
+            "apikey",
+            "invalid key",
+        )
+    ):
         return "auth"
     return "transport"
 

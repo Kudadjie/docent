@@ -7,6 +7,7 @@ Phases:
   3  Quality gate          (validation + contradictions + gap-fill)
   4  Perspectives          (practitioner / skeptic / beginner)
 """
+
 from __future__ import annotations
 
 import json
@@ -16,8 +17,9 @@ import shutil
 import subprocess
 import sys
 import time
+from collections.abc import Iterator
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qsl, urlencode, urlparse
 
 from pydantic import BaseModel, Field
@@ -35,6 +37,7 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 from docent.utils.paths import data_dir as _docent_data_dir
+
 _LEARN_DIR = _docent_data_dir() / "notebook-learning"
 _SKILL_COMPAT_PATH = _LEARN_DIR / "source-compat.json"
 _SKILL_RUN_LOG_PATH = _LEARN_DIR / "run-log.jsonl"
@@ -59,6 +62,7 @@ def notebooklm_session_lock(timeout: float):
     ``timeout`` is the default acquire timeout; callers may override per-acquire.
     """
     from filelock import FileLock
+
     _NOTEBOOKLM_LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
     return FileLock(str(_NOTEBOOKLM_LOCK_PATH), timeout=timeout)
 
@@ -78,9 +82,11 @@ def _find_sources_path(out_path: Path) -> Path | None:
         return dot_form
     return None
 
+
 # ---------------------------------------------------------------------------
 # Low-level helpers
 # ---------------------------------------------------------------------------
+
 
 def _nlm_exe() -> str | None:
     """Return the notebooklm executable path, or None if not on PATH."""
@@ -164,9 +170,7 @@ def _open_login_terminal() -> tuple[bool, str]:
                     subprocess.Popen([term] + args)
                     break
             else:
-                return False, (
-                    "No terminal emulator found. Run `notebooklm login` manually."
-                )
+                return False, ("No terminal emulator found. Run `notebooklm login` manually.")
         return True, ""
     except Exception as exc:  # noqa: BLE001 — surface any spawn failure to the caller
         return False, str(exc)
@@ -184,7 +188,8 @@ def _nlm_login_and_wait_ui(
     launched, err = _open_login_terminal()
     if not launched:
         yield ProgressEvent(
-            phase="nlm-login", level="error",
+            phase="nlm-login",
+            level="error",
             message=(
                 f"Could not open a login terminal: {err}. "
                 "Authenticate via Settings → NotebookLM, then retry."
@@ -212,13 +217,15 @@ def _nlm_login_and_wait_ui(
     return False
 
 
-def _login_terminal_mode(context: "Context") -> bool:
+def _login_terminal_mode(context: Context) -> bool:
     """True when inline interactive `notebooklm login` is impossible because there
-    is no usable TTY: a UI subprocess (DOCENT_UI_SUBPROCESS) or any via_mcp caller
-    (in-process UI/SSE, MCP stdio server). Such callers must open a detached
+    is no usable TTY: a UI subprocess (DOCENT_UI_SUBPROCESS) or any non-interactive
+    caller (in-process UI/SSE, MCP stdio server). Such callers must open a detached
     terminal and poll instead of inheriting a dead stdin (which crashes with EPIPE).
     """
-    return bool(os.environ.get("DOCENT_UI_SUBPROCESS")) or getattr(context, "via_mcp", False)
+    return bool(os.environ.get("DOCENT_UI_SUBPROCESS")) or getattr(
+        context, "non_interactive", False
+    )
 
 
 def _nlm_auth_ok(retries: int = 2, retry_delay: float = 2.0) -> bool:
@@ -253,11 +260,7 @@ def _nlm_create_notebook(title: str) -> str | None:
     try:
         data = json.loads(stdout)
         # CLI returns {"notebook": {"id": "..."}}; also accept flat {"id": ...}
-        return (
-            data.get("notebook", {}).get("id")
-            or data.get("id")
-            or data.get("notebook_id")
-        )
+        return data.get("notebook", {}).get("id") or data.get("id") or data.get("notebook_id")
     except (json.JSONDecodeError, ValueError):
         return None
 
@@ -321,9 +324,7 @@ def _nlm_source_delete(source_id: str, notebook_id: str) -> bool:
     return rc == 0
 
 
-def _nlm_wait_stable(
-    notebook_id: str, max_wait: float = 90, interval: float = 5
-) -> dict[str, Any]:
+def _nlm_wait_stable(notebook_id: str, max_wait: float = 90, interval: float = 5) -> dict[str, Any]:
     """Poll source list until no sources are in 'preparing' state.
 
     Returns {stable, waited_s, error_ids, counts, total}.
@@ -363,9 +364,7 @@ def _nlm_poll_research(notebook_id: str, poll_timeout: float = 300) -> list[str]
     """Poll research status until complete. Returns list of found source URLs."""
     deadline = time.monotonic() + poll_timeout
     while time.monotonic() < deadline:
-        rc, stdout, _ = _nlm_run(
-            ["research", "status", "-n", notebook_id, "--json"], timeout=30
-        )
+        rc, stdout, _ = _nlm_run(["research", "status", "-n", notebook_id, "--json"], timeout=30)
         if rc == 0:
             try:
                 data = json.loads(stdout)
@@ -408,9 +407,7 @@ def _poll_research_gen(
     start = time.monotonic()
     prefix = f"{label}: " if label else ""
     while time.monotonic() < deadline:
-        rc, stdout, _ = _nlm_run(
-            ["research", "status", "-n", notebook_id, "--json"], timeout=30
-        )
+        rc, stdout, _ = _nlm_run(["research", "status", "-n", notebook_id, "--json"], timeout=30)
         if rc == 0:
             try:
                 data = json.loads(stdout)
@@ -454,16 +451,16 @@ def _nlm_history(notebook_id: str) -> list[tuple[str, str]]:
         return []
     try:
         data = json.loads(stdout)
-        return [
-            (p.get("question", ""), p.get("answer", ""))
-            for p in data.get("qa_pairs", [])
-        ]
+        return [(p.get("question", ""), p.get("answer", "")) for p in data.get("qa_pairs", [])]
     except (json.JSONDecodeError, ValueError):
         return []
 
 
 def _recover_answer_from_history(
-    question: str, notebook_id: str, recovery_timeout: float, poll_interval: float = 15.0,
+    question: str,
+    notebook_id: str,
+    recovery_timeout: float,
+    poll_interval: float = 15.0,
 ) -> str | None:
     """Poll conversation history until the answer to *question* appears, or timeout.
 
@@ -512,15 +509,14 @@ def _nlm_ask(
     # rc != 0: recover only from a *timeout* (answer may still be generating) —
     # not from "not found on PATH" or other hard failures.
     if recovery_timeout > 0 and "Timeout" in (stderr or ""):
-        return _recover_answer_from_history(
-            question, notebook_id, recovery_timeout, poll_interval
-        )
+        return _recover_answer_from_history(question, notebook_id, recovery_timeout, poll_interval)
     return None
 
 
 # ---------------------------------------------------------------------------
 # URL utilities
 # ---------------------------------------------------------------------------
+
 
 def _strip_utm(url: str) -> str:
     """Strip utm_* tracking parameters from a URL."""
@@ -534,6 +530,7 @@ def _strip_utm(url: str) -> str:
 
 def _load_merged_compat() -> dict:
     """Merge bundled defaults with user-learned data. User data wins on conflicts."""
+
     def _read(p: Path) -> dict:
         try:
             return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
@@ -575,7 +572,11 @@ def _update_compat(outcomes: list[tuple[str, bool]]) -> None:
         return
     try:
         _LEARN_DIR.mkdir(parents=True, exist_ok=True)
-        compat = json.loads(_SKILL_COMPAT_PATH.read_text(encoding="utf-8")) if _SKILL_COMPAT_PATH.exists() else {}
+        compat = (
+            json.loads(_SKILL_COMPAT_PATH.read_text(encoding="utf-8"))
+            if _SKILL_COMPAT_PATH.exists()
+            else {}
+        )
     except (json.JSONDecodeError, OSError):
         compat = {}
     domains_data = compat.setdefault("domains", {})
@@ -590,6 +591,7 @@ def _update_compat(outcomes: list[tuple[str, bool]]) -> None:
         total = entry["success"] + entry["fail"]
         entry["rate"] = round(entry["success"] / total, 2) if total else -1
     import datetime
+
     compat["last_updated"] = datetime.date.today().isoformat()
     try:
         _SKILL_COMPAT_PATH.write_text(
@@ -663,7 +665,8 @@ def _extract_section(answer: str, section_name: str, max_chars: int = 500) -> st
     """Extract the body of a ### SECTION_NAME block, truncated to max_chars."""
     m = re.search(
         rf"###\s*{re.escape(section_name)}\s*\n(.*?)(?=###|\Z)",
-        answer, re.DOTALL | re.IGNORECASE,
+        answer,
+        re.DOTALL | re.IGNORECASE,
     )
     if not m:
         return ""
@@ -702,7 +705,9 @@ def _parse_quality_gate(answer: str) -> dict[str, Any]:
     )
     if con_m:
         t = con_m.group(1).strip()
-        if not re.search(r"\bnone\b|\bno contradictions\b|\bno source.?vs.?source\b", t, re.IGNORECASE):
+        if not re.search(
+            r"\bnone\b|\bno contradictions\b|\bno source.?vs.?source\b", t, re.IGNORECASE
+        ):
             numbered = re.findall(r"(?m)^\d+\.", t)
             contradictions = len(numbered) if numbered else 1
 
@@ -719,9 +724,7 @@ def _parse_perspectives(answer: str) -> dict[str, str]:
     answer = _strip_followup(answer)
     out: dict[str, str] = {}
     for key in ("PRACTITIONER", "SKEPTIC", "BEGINNER"):
-        m = re.search(
-            rf"###\s*{key}\s*\n(.*?)(?=###|\Z)", answer, re.DOTALL | re.IGNORECASE
-        )
+        m = re.search(rf"###\s*{key}\s*\n(.*?)(?=###|\Z)", answer, re.DOTALL | re.IGNORECASE)
         out[key.lower()] = m.group(1).strip() if m else ""
     return out
 
@@ -731,7 +734,18 @@ def _parse_perspectives(answer: str) -> dict[str, str]:
 # ---------------------------------------------------------------------------
 
 _BACKEND_SUFFIXES = ("-free", "-feynman", "-docent")
-_WORKFLOW_SUFFIXES = ("-deep", "-lit", "-review", "-compare", "-replicate", "-audit", "-draft", "-update", "-verify", "-analysis")
+_WORKFLOW_SUFFIXES = (
+    "-deep",
+    "-lit",
+    "-review",
+    "-compare",
+    "-replicate",
+    "-audit",
+    "-draft",
+    "-update",
+    "-verify",
+    "-analysis",
+)
 
 
 def _derive_topic(out_path: Path) -> str:
@@ -783,30 +797,77 @@ def _derive_topic(out_path: Path) -> str:
 # Score 1.0 = top tier (intergovernmental, peer-reviewed journals, major health agencies).
 # Score 0.6 = reputable tier (established journalism, policy think-tanks).
 # Anything else defaults to 0.3.
-_AUTHORITY_TOP = frozenset({
-    # Health / science agencies
-    "who.int", "cdc.gov", "nih.gov", "ncbi.nlm.nih.gov", "pubmed.ncbi.nlm.nih.gov",
-    "emro.who.int", "afro.who.int", "euro.who.int",
-    # Intergovernmental
-    "un.org", "undp.org", "unep.org", "worldbank.org", "imf.org", "oecd.org",
-    "ipcc.ch", "iea.org", "fao.org", "ifad.org", "wfp.org",
-    # Peer-reviewed journals
-    "nature.com", "science.org", "thelancet.com", "nejm.org", "cell.com",
-    "bmj.com", "jamanetwork.com", "plos.org", "plosone.org",
-    "mdpi.com", "frontiersin.org", "wiley.com", "springer.com", "elsevier.com",
-    "oxfordjournals.org", "cambridge.org", "tandfonline.com",
-    # Preprint / open access
-    "arxiv.org", "biorxiv.org", "medrxiv.org", "ssrn.com",
-    "researchgate.net", "semanticscholar.org",
-})
+_AUTHORITY_TOP = frozenset(
+    {
+        # Health / science agencies
+        "who.int",
+        "cdc.gov",
+        "nih.gov",
+        "ncbi.nlm.nih.gov",
+        "pubmed.ncbi.nlm.nih.gov",
+        "emro.who.int",
+        "afro.who.int",
+        "euro.who.int",
+        # Intergovernmental
+        "un.org",
+        "undp.org",
+        "unep.org",
+        "worldbank.org",
+        "imf.org",
+        "oecd.org",
+        "ipcc.ch",
+        "iea.org",
+        "fao.org",
+        "ifad.org",
+        "wfp.org",
+        # Peer-reviewed journals
+        "nature.com",
+        "science.org",
+        "thelancet.com",
+        "nejm.org",
+        "cell.com",
+        "bmj.com",
+        "jamanetwork.com",
+        "plos.org",
+        "plosone.org",
+        "mdpi.com",
+        "frontiersin.org",
+        "wiley.com",
+        "springer.com",
+        "elsevier.com",
+        "oxfordjournals.org",
+        "cambridge.org",
+        "tandfonline.com",
+        # Preprint / open access
+        "arxiv.org",
+        "biorxiv.org",
+        "medrxiv.org",
+        "ssrn.com",
+        "researchgate.net",
+        "semanticscholar.org",
+    }
+)
 
-_AUTHORITY_REPUTABLE = frozenset({
-    "reuters.com", "apnews.com", "bbc.com", "bbc.co.uk",
-    "theguardian.com", "ft.com", "economist.com",
-    "nytimes.com", "washingtonpost.com", "theatlantic.com",
-    "brookings.edu", "cfr.org", "rand.org", "chathamhouse.org",
-    "pewresearch.org", "statista.com",
-})
+_AUTHORITY_REPUTABLE = frozenset(
+    {
+        "reuters.com",
+        "apnews.com",
+        "bbc.com",
+        "bbc.co.uk",
+        "theguardian.com",
+        "ft.com",
+        "economist.com",
+        "nytimes.com",
+        "washingtonpost.com",
+        "theatlantic.com",
+        "brookings.edu",
+        "cfr.org",
+        "rand.org",
+        "chathamhouse.org",
+        "pewresearch.org",
+        "statista.com",
+    }
+)
 
 _CURRENT_YEAR = 2026
 _MAX_PER_DOMAIN = 3  # never allocate more than this many slots to one domain
@@ -895,7 +956,8 @@ def _rank_sources(sources: list[dict], max_sources: int) -> list[dict]:
 
     # Compute year range across all papers in this batch for relative recency
     paper_years = [
-        y for s in unique
+        y
+        for s in unique
         if s.get("source_type") == "paper"
         for y in [_parse_year(s.get("year"))]
         if y is not None
@@ -925,6 +987,7 @@ def _rank_sources(sources: list[dict], max_sources: int) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Models
 # ---------------------------------------------------------------------------
+
 
 class ToNotebookInputs(BaseModel):
     output_file: str | None = Field(
@@ -1016,6 +1079,7 @@ class ToNotebookResult(BaseModel):
 
     def to_shapes(self) -> list[Shape]:
         from docent.core.shapes import MarkdownShape
+
         if not self.ok:
             return [ErrorShape(reason=self.message)]
         shapes: list[Shape] = [MessageShape(text=self.message, level="success")]
@@ -1061,7 +1125,9 @@ class ToNotebookResult(BaseModel):
             # Gaps list
             if gaps:
                 bullets = "\n".join(f"- {g[:120]}" for g in gaps)
-                filled_note = f" ({gaps_filled} filled by follow-up research)" if gaps_filled else ""
+                filled_note = (
+                    f" ({gaps_filled} filled by follow-up research)" if gaps_filled else ""
+                )
                 md.append(f"**Gaps identified{filled_note}:**\n\n{bullets}")
 
             if md:
@@ -1094,10 +1160,14 @@ class ToNotebookResult(BaseModel):
 # ---------------------------------------------------------------------------
 
 _EMPTY_PIPELINE_RESULT: dict[str, Any] = {
-    "ok": False, "notebook_id": None,
-    "sources_added": 0, "sources_failed": 0,
-    "sources_from_feynman": 0, "sources_from_nlm": 0,
-    "quality_gate": None, "perspectives": None,
+    "ok": False,
+    "notebook_id": None,
+    "sources_added": 0,
+    "sources_failed": 0,
+    "sources_from_feynman": 0,
+    "sources_from_nlm": 0,
+    "quality_gate": None,
+    "perspectives": None,
     "message": "",
 }
 
@@ -1134,9 +1204,7 @@ def _save_notebook_map(output_dir: Path, stem: str, notebook_id: str) -> None:
         pass
 
 
-def _forget_notebook(
-    output_dir: Path, stem: str, notebook_id: str, *, from_config: bool
-) -> None:
+def _forget_notebook(output_dir: Path, stem: str, notebook_id: str, *, from_config: bool) -> None:
     """Drop a stale notebook_id so the next run recreates instead of reusing it.
 
     Removes the stem→id entry from the per-output map and, if the id came from
@@ -1153,6 +1221,7 @@ def _forget_notebook(
     if from_config:
         try:
             from docent.config import write_setting
+
             write_setting("research.notebooklm_notebook_id", "")
         except Exception:
             pass
@@ -1161,7 +1230,7 @@ def _forget_notebook(
 def _nlm_push(
     out_path: Path,
     sources_path: Path | None,
-    context: "Context",
+    context: Context,
     max_sources: int = 20,
     topic: str | None = None,
     guide_files: list[Path] | None = None,
@@ -1194,7 +1263,9 @@ def _nlm_push(
                 }
             yield ProgressEvent(phase="nlm-login", message="Login successful.")
         else:
-            yield ProgressEvent(phase="nlm-login", message="Auth expired -- running notebooklm login...")
+            yield ProgressEvent(
+                phase="nlm-login", message="Auth expired -- running notebooklm login..."
+            )
             login_ok, login_err = _nlm_login()
             # Always re-check auth after login regardless of exit code — a code-1
             # exit can mean "already authenticated" (Playwright redirect case).
@@ -1265,8 +1336,8 @@ def _nlm_push(
     if _remaining == 0:
         tier_hint = (
             "If you're on NotebookLM Plus (100 sources), run `docent setup` to update your plan."
-            if _source_limit == 50 else
-            f"Notebook is at the {_source_limit}-source limit for your plan."
+            if _source_limit == 50
+            else f"Notebook is at the {_source_limit}-source limit for your plan."
         )
         return {
             **_EMPTY_PIPELINE_RESULT,
@@ -1293,6 +1364,7 @@ def _nlm_push(
 
     # ── Run tracking ──────────────────────────────────────────────────────
     import datetime as _dt
+
     _run_start = time.monotonic()
     _url_outcomes: list[tuple[str, bool]] = []  # (domain, success)
     _errors: list[str] = []
@@ -1300,7 +1372,7 @@ def _nlm_push(
 
     # ── Resolve guide files ───────────────────────────────────────────────
     _guide_paths: list[Path] = []
-    for _gf in (guide_files or []):
+    for _gf in guide_files or []:
         _gp = Path(_gf).expanduser()
         if _gp.exists():
             _guide_paths.append(_gp)
@@ -1315,9 +1387,9 @@ def _nlm_push(
     if _guide_paths:
         try:
             from docent.bundled_plugins.studio.helpers import _decode_text_file
+
             guide_snippet = " ".join(
-                _decode_text_file(gp)[:300].replace("\n", " ")
-                for gp in _guide_paths
+                _decode_text_file(gp)[:300].replace("\n", " ") for gp in _guide_paths
             )
             research_query = f"{effective_topic} -- {guide_snippet}"
         except OSError:
@@ -1353,27 +1425,32 @@ def _nlm_push(
             failed += 1
             _synthesis_err = err
             yield ProgressEvent(
-                phase="nlm-push", level="warn",
+                phase="nlm-push",
+                level="warn",
                 message=f"Warning: synthesis doc failed: {err[:120]}",
             )
         time.sleep(1)
 
     # ── Extra synthesis docs (from multi-file picker) ─────────────────────
-    for _extra in (extra_synthesis_docs or []):
+    for _extra in extra_synthesis_docs or []:
         if _remaining <= 0:
             yield ProgressEvent(
                 phase="nlm-push",
                 message=f"Source limit reached ({_source_limit}) — skipping {_extra.name}.",
             )
             break
-        yield ProgressEvent(phase="nlm-push", message=f"Adding synthesis document: {_extra.name}...")
+        yield ProgressEvent(
+            phase="nlm-push", message=f"Adding synthesis document: {_extra.name}..."
+        )
         rc, err = _nlm_add_source(str(_extra), notebook_id)
         if rc == 0:
             added += 1
             feynman_added += 1
             _remaining -= 1
         else:
-            yield ProgressEvent(phase="nlm-push", message=f"Warning: {_extra.name} failed: {err[:80]}")
+            yield ProgressEvent(
+                phase="nlm-push", message=f"Warning: {_extra.name} failed: {err[:80]}"
+            )
         time.sleep(1)
 
     # ── Guide files as sources ────────────────────────────────────────────
@@ -1524,7 +1601,10 @@ def _nlm_push(
     ask_timeout = context.settings.research.notebooklm_ask_timeout
 
     if run_quality_gate:
-        yield ProgressEvent(phase="nlm-quality", message="Running quality gate (validation + contradictions + gaps)...")
+        yield ProgressEvent(
+            phase="nlm-quality",
+            message="Running quality gate (validation + contradictions + gaps)...",
+        )
         yield ProgressEvent(
             phase="nlm-quality",
             message=(
@@ -1554,7 +1634,9 @@ def _nlm_push(
 
             # Fill each gap (unless override says skip)
             if overrides.get("skip_gap_analysis") and gaps:
-                yield ProgressEvent(phase="nlm-quality", message="Gap analysis skipped (active-overrides).")
+                yield ProgressEvent(
+                    phase="nlm-quality", message="Gap analysis skipped (active-overrides)."
+                )
                 gaps = []
 
             total_gaps = len(gaps)
@@ -1575,7 +1657,7 @@ def _nlm_push(
                     )
                     gap_urls = _nlm_compat_filter(gap_urls)
                     gap_urls = _nlm_deduplicate(gap_urls, notebook_id)
-                    for url in gap_urls[:min(5, _remaining)]:  # cap per-gap and respect limit
+                    for url in gap_urls[: min(5, _remaining)]:  # cap per-gap and respect limit
                         rc, _ = _nlm_add_source(url, notebook_id)
                         ok = rc == 0
                         _url_outcomes.append((_domain_from_url(url), ok))
@@ -1626,7 +1708,9 @@ def _nlm_push(
         persp_answer = None
         for _attempt in range(1, _PERSP_RETRIES + 1):
             persp_answer = _nlm_ask(
-                load_prompt("perspectives"), notebook_id, timeout=ask_timeout,
+                load_prompt("perspectives"),
+                notebook_id,
+                timeout=ask_timeout,
                 recovery_timeout=ask_timeout,
             )
             if persp_answer:
@@ -1644,9 +1728,7 @@ def _nlm_push(
 
         if persp_answer:
             perspectives = _parse_perspectives(persp_answer)
-            yield ProgressEvent(
-                phase="nlm-perspectives", message="Perspectives generated."
-            )
+            yield ProgressEvent(phase="nlm-perspectives", message="Perspectives generated.")
         else:
             yield ProgressEvent(
                 phase="nlm-perspectives",
@@ -1678,34 +1760,41 @@ def _nlm_push(
 
     _nlm_hit_rate = (
         round(sum(1 for _, ok in _url_outcomes if ok) / len(_url_outcomes), 2)
-        if _url_outcomes else 0.0
+        if _url_outcomes
+        else 0.0
     )
-    _append_run_log({
-        "timestamp": _dt.datetime.now().isoformat(),
-        "mode": "research",
-        "topic": effective_topic[:120],
-        "notebook_id": notebook_id,
-        "duration_min": round((time.monotonic() - _run_start) / 60, 1),
-        "sources_final": added,
-        "sources_added_manual": feynman_added,
-        "sources_from_nlm_research": nlm_added,
-        "sources_errors_deleted": _errors_deleted,
-        "nlm_research_mode": "fast",
-        "nlm_sources_found": nlm_sources_found,
-        "nlm_source_hit_rate": _nlm_hit_rate,
-        "stabilization_wait_s": snap.get("waited_s", 0),
-        "quality_gate": {
-            "combined_ask_used": True,
-            "validation": quality_gate.get("validation", "skipped") if quality_gate else "skipped",
-            "contradictions": quality_gate.get("contradictions", 0) if quality_gate else 0,
-            "gaps_filled": gaps_filled,
-            "multi_perspective_combined": perspectives is not None,
-        },
-        "auth_expired_mid_run": False,
-        "errors": _errors,
-        "auto_tune_overrides": [k for k, v in overrides.items() if v and k != "wait_stable_max"],
-        "guide_files": [str(gp) for gp in _guide_paths],
-    })
+    _append_run_log(
+        {
+            "timestamp": _dt.datetime.now().isoformat(),
+            "mode": "research",
+            "topic": effective_topic[:120],
+            "notebook_id": notebook_id,
+            "duration_min": round((time.monotonic() - _run_start) / 60, 1),
+            "sources_final": added,
+            "sources_added_manual": feynman_added,
+            "sources_from_nlm_research": nlm_added,
+            "sources_errors_deleted": _errors_deleted,
+            "nlm_research_mode": "fast",
+            "nlm_sources_found": nlm_sources_found,
+            "nlm_source_hit_rate": _nlm_hit_rate,
+            "stabilization_wait_s": snap.get("waited_s", 0),
+            "quality_gate": {
+                "combined_ask_used": True,
+                "validation": quality_gate.get("validation", "skipped")
+                if quality_gate
+                else "skipped",
+                "contradictions": quality_gate.get("contradictions", 0) if quality_gate else 0,
+                "gaps_filled": gaps_filled,
+                "multi_perspective_combined": perspectives is not None,
+            },
+            "auth_expired_mid_run": False,
+            "errors": _errors,
+            "auto_tune_overrides": [
+                k for k, v in overrides.items() if v and k != "wait_stable_max"
+            ],
+            "guide_files": [str(gp) for gp in _guide_paths],
+        }
+    )
 
     return {
         "ok": True,

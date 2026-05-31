@@ -1,12 +1,13 @@
 """Tests for the generic /api/tools introspection + invocation endpoints."""
+
 from __future__ import annotations
 
+import studio  # noqa: F401
 from fastapi.testclient import TestClient
 
 # Importing the bundled tools triggers @register_tool, populating the registry
 # that /api/tools introspects.
 from reading import ReadingQueue  # noqa: F401
-import studio  # noqa: F401
 
 from docent import ui_server
 
@@ -35,7 +36,8 @@ def test_list_tools_exposes_action_schemas():
 def test_single_action_tool_uses_run(monkeypatch):
     # Register a throwaway single-action tool and confirm it surfaces as "run".
     from pydantic import BaseModel
-    from docent.core.registry import register_tool, _REGISTRY
+
+    from docent.core.registry import _REGISTRY, register_tool
     from docent.core.tool import Tool
 
     class PingInputs(BaseModel):
@@ -59,9 +61,14 @@ def test_single_action_tool_uses_run(monkeypatch):
 
 
 def test_invoke_read_only_action_succeeds(tmp_docent_home):
-    resp = _client().post("/api/tools/invoke", json={
-        "tool": "reading", "action": "stats", "inputs": {},
-    })
+    resp = _client().post(
+        "/api/tools/invoke",
+        json={
+            "tool": "reading",
+            "action": "stats",
+            "inputs": {},
+        },
+    )
     assert resp.status_code == 200
     body = resp.json()
     assert body["ok"] is True
@@ -69,18 +76,28 @@ def test_invoke_read_only_action_succeeds(tmp_docent_home):
 
 
 def test_invoke_unknown_tool_returns_400():
-    resp = _client().post("/api/tools/invoke", json={
-        "tool": "nope", "action": "run", "inputs": {},
-    })
+    resp = _client().post(
+        "/api/tools/invoke",
+        json={
+            "tool": "nope",
+            "action": "run",
+            "inputs": {},
+        },
+    )
     assert resp.status_code == 400
     assert resp.json()["ok"] is False
 
 
 def test_invoke_missing_required_field_returns_400(tmp_docent_home):
     # reading.show requires `id`; omitting it must fail validation, not 500.
-    resp = _client().post("/api/tools/invoke", json={
-        "tool": "reading", "action": "show", "inputs": {},
-    })
+    resp = _client().post(
+        "/api/tools/invoke",
+        json={
+            "tool": "reading",
+            "action": "show",
+            "inputs": {},
+        },
+    )
     assert resp.status_code == 400
     body = resp.json()
     assert body["ok"] is False
@@ -93,8 +110,10 @@ def test_invoke_action_that_calls_asyncio_run_succeeds():
     called from a running event loop'. The route runs them in a worker thread.
     """
     import asyncio
+
     from pydantic import BaseModel
-    from docent.core.registry import register_tool, _REGISTRY
+
+    from docent.core.registry import _REGISTRY, register_tool
     from docent.core.tool import Tool, action
 
     class _Inp(BaseModel):
@@ -109,12 +128,18 @@ def test_invoke_action_that_calls_asyncio_run_succeeds():
         def go(self, inputs, context):  # noqa: ANN001
             async def _coro():
                 return "ran"
+
             return {"value": asyncio.run(_coro())}
 
     try:
-        resp = _client().post("/api/tools/invoke", json={
-            "tool": "asyncruntest", "action": "go", "inputs": {},
-        })
+        resp = _client().post(
+            "/api/tools/invoke",
+            json={
+                "tool": "asyncruntest",
+                "action": "go",
+                "inputs": {},
+            },
+        )
         assert resp.status_code == 200
         body = resp.json()
         assert body["ok"] is True

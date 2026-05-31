@@ -1,42 +1,54 @@
 """Backup archive creation and restoration logic."""
+
 from __future__ import annotations
 
 import json
 import zipfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-MAX_FILE_BYTES = 100 * 1_024 * 1_024   # 100 MB per-file exclusion threshold
+MAX_FILE_BYTES = 100 * 1_024 * 1_024  # 100 MB per-file exclusion threshold
 ARCHIVE_PREFIX = "docent_backup_"
 
 # Files/directories always excluded from the archive.
-_EXCLUDE_NAMES: frozenset[str] = frozenset({
-    "drive_token.json",     # OAuth token — sensitive and regenerable
-})
+_EXCLUDE_NAMES: frozenset[str] = frozenset(
+    {
+        "drive_token.json",  # OAuth token — sensitive and regenerable
+    }
+)
 _EXCLUDE_SUFFIXES: frozenset[str] = frozenset({".lock", ".tmp", ".pyc"})
-_EXCLUDE_DIRS: frozenset[str] = frozenset({
-    "__pycache__", ".git", "ui_dist", "node_modules", ".venv", "venv",
-    # Legacy directories from when the reading tool was named "paper".
-    # The live data lives in data/reading/ and cache/reading/; these are stale.
-    "paper",
-})
+_EXCLUDE_DIRS: frozenset[str] = frozenset(
+    {
+        "__pycache__",
+        ".git",
+        "ui_dist",
+        "node_modules",
+        ".venv",
+        "venv",
+        # Legacy directories from when the reading tool was named "paper".
+        # The live data lives in data/reading/ and cache/reading/; these are stale.
+        "paper",
+    }
+)
 
 
 def archive_name() -> str:
     """Return a timestamped zip filename safe for all OSes."""
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
+    ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
     return f"{ARCHIVE_PREFIX}{ts}.zip"
 
 
 def _docent_home() -> Path:
     from docent.utils.paths import root_dir
+
     return root_dir()
 
 
 def _research_output_dir() -> Path | None:
     try:
         from docent.config import load_settings
+
         p = load_settings().research.output_dir.expanduser()
         return p if p.is_dir() else None
     except Exception:
@@ -52,6 +64,7 @@ def _excluded(path: Path) -> bool:
 
 # ── Create ───────────────────────────────────────────────────────────────────
 
+
 def create_archive(dest: Path) -> dict[str, Any]:
     """Write a backup zip to *dest*. Returns the manifest dict."""
     from docent._version import __version__
@@ -63,7 +76,6 @@ def create_archive(dest: Path) -> dict[str, Any]:
     excluded_files: list[dict[str, Any]] = []
 
     with zipfile.ZipFile(dest, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
-
         # ── Docent home ──────────────────────────────────────────────────────
         for path in sorted(home.rglob("*")):
             if path.is_dir() or _excluded(path):
@@ -71,9 +83,13 @@ def create_archive(dest: Path) -> dict[str, Any]:
             size = path.stat().st_size
             rel = str(path.relative_to(home))
             if size > MAX_FILE_BYTES:
-                excluded_files.append({
-                    "path": rel, "size_mb": round(size / 1_048_576, 1), "reason": "size_limit",
-                })
+                excluded_files.append(
+                    {
+                        "path": rel,
+                        "size_mb": round(size / 1_048_576, 1),
+                        "reason": "size_limit",
+                    }
+                )
                 continue
             zf.write(path, arcname=f"home/{rel}")
             included.append(rel)
@@ -86,18 +102,20 @@ def create_archive(dest: Path) -> dict[str, Any]:
                 size = path.stat().st_size
                 rel = str(path.relative_to(research_dir))
                 if size > MAX_FILE_BYTES:
-                    excluded_files.append({
-                        "path": f"research/{rel}",
-                        "size_mb": round(size / 1_048_576, 1),
-                        "reason": "size_limit",
-                    })
+                    excluded_files.append(
+                        {
+                            "path": f"research/{rel}",
+                            "size_mb": round(size / 1_048_576, 1),
+                            "reason": "size_limit",
+                        }
+                    )
                     continue
                 zf.write(path, arcname=f"research/{rel}")
                 included.append(f"research/{rel}")
 
         # ── Manifest ─────────────────────────────────────────────────────────
         manifest: dict[str, Any] = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "docent_version": __version__,
             "docent_home": str(home),
             "research_dir": str(research_dir) if research_dir else None,
@@ -121,6 +139,7 @@ def _is_relative_to(path: Path, parent: Path) -> bool:
 
 
 # ── Restore ──────────────────────────────────────────────────────────────────
+
 
 def restore_archive(archive: Path, dest_home: Path | None = None) -> dict[str, Any]:
     """Extract *archive*, restoring docent state. Returns the manifest."""
@@ -150,22 +169,18 @@ def restore_archive(archive: Path, dest_home: Path | None = None) -> dict[str, A
             data = zf.read(name)
 
             if name.startswith("home/"):
-                rel = name[len("home/"):]
+                rel = name[len("home/") :]
                 target = (home / rel).resolve()
                 if not _is_relative_to(target, home.resolve()):
-                    raise ValueError(
-                        f"Refusing to extract {name!r}: resolves outside docent home"
-                    )
+                    raise ValueError(f"Refusing to extract {name!r}: resolves outside docent home")
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(data)
 
             elif name.startswith("research/") and research_dir:
-                rel = name[len("research/"):]
+                rel = name[len("research/") :]
                 target = (research_dir / rel).resolve()
                 if not _is_relative_to(target, research_dir.resolve()):
-                    raise ValueError(
-                        f"Refusing to extract {name!r}: resolves outside research dir"
-                    )
+                    raise ValueError(f"Refusing to extract {name!r}: resolves outside research dir")
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(data)
 
@@ -173,6 +188,7 @@ def restore_archive(archive: Path, dest_home: Path | None = None) -> dict[str, A
 
 
 # ── Read manifest from archive ────────────────────────────────────────────────
+
 
 def read_manifest(archive: Path) -> dict[str, Any]:
     with zipfile.ZipFile(archive, "r") as zf:

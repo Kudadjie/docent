@@ -1,17 +1,21 @@
 """NotebookLM action mixin: to-notebook."""
+
 from __future__ import annotations
 
 import json
 import shutil
 from pathlib import Path
 
-from docent.core import Context, ProgressEvent, action
-
 from docent.bundled_plugins.studio._notebook import (
-    ToNotebookInputs, ToNotebookResult, _find_sources_path, _nlm_push, _rank_sources,
+    ToNotebookInputs,
+    ToNotebookResult,
+    _find_sources_path,
+    _nlm_push,
+    _rank_sources,
     notebooklm_session_lock,
 )
 from docent.bundled_plugins.studio.preflights import _preflight_to_notebook
+from docent.core import Context, ProgressEvent, action
 
 
 class NotebookMixin:
@@ -35,14 +39,20 @@ class NotebookMixin:
         # Preflight resolves output_file before the action runs. When called
         # directly (e.g. in tests, bypassing preflight) we auto-detect.
         if inputs.output_file is None:
-            candidates = sorted(
-                [
-                    p for p in output_dir.glob("*.md")
-                    if not p.name.endswith("-review.md") and not p.name.endswith("-sources.json")
-                ],
-                key=lambda p: p.stat().st_mtime,
-                reverse=True,
-            ) if output_dir.is_dir() else []
+            candidates = (
+                sorted(
+                    [
+                        p
+                        for p in output_dir.glob("*.md")
+                        if not p.name.endswith("-review.md")
+                        and not p.name.endswith("-sources.json")
+                    ],
+                    key=lambda p: p.stat().st_mtime,
+                    reverse=True,
+                )
+                if output_dir.is_dir()
+                else []
+            )
             if not candidates:
                 return ToNotebookResult(
                     ok=False,
@@ -63,7 +73,7 @@ class NotebookMixin:
 
         # Extra synthesis docs selected by the multi-file picker
         extra_synthesis_docs: list[Path] = []
-        for extra_str in (inputs.output_files or []):
+        for extra_str in inputs.output_files or []:
             ep = Path(extra_str)
             if not ep.is_absolute():
                 ep = output_dir / extra_str
@@ -77,7 +87,9 @@ class NotebookMixin:
                 _explicit_src = output_dir / inputs.sources_file
             sources_path = _explicit_src
         else:
-            sources_path = _find_sources_path(out_path) or (out_path.parent / f"{stem}-sources.json")
+            sources_path = _find_sources_path(out_path) or (
+                out_path.parent / f"{stem}-sources.json"
+            )
 
         has_sources = sources_path.exists()
 
@@ -87,15 +99,11 @@ class NotebookMixin:
             extra_src = _find_sources_path(extra_doc)
             if extra_src and extra_src.exists():
                 try:
-                    extra_sources_raw.extend(
-                        json.loads(extra_src.read_text(encoding="utf-8"))
-                    )
+                    extra_sources_raw.extend(json.loads(extra_src.read_text(encoding="utf-8")))
                 except (json.JSONDecodeError, OSError):
                     pass
 
-        primary_raw = (
-            json.loads(sources_path.read_text(encoding="utf-8")) if has_sources else []
-        )
+        primary_raw = json.loads(sources_path.read_text(encoding="utf-8")) if has_sources else []
         all_raw = primary_raw + extra_sources_raw
         selected = _rank_sources(all_raw, inputs.max_sources) if all_raw else []
 
@@ -129,6 +137,7 @@ class NotebookMixin:
         # is what makes the client-side auto-queue *correct* rather than advisory,
         # and it also covers the CLI-vs-UI collision the client can't see.
         from filelock import Timeout as _FileLockTimeout
+
         lock_timeout = context.settings.research.notebooklm_lock_timeout
         session_lock = notebooklm_session_lock(timeout=lock_timeout)
         try:
@@ -190,25 +199,29 @@ class NotebookMixin:
                         report_parts.append(f"### {label}\n\n{persp[key]}\n")
             report_path = package_dir / "quality-report.md"
             report_path.write_text("\n".join(report_parts), encoding="utf-8")
-            yield ProgressEvent(
-                phase="package", message=f"Quality report: {report_path}"
-            )
+            yield ProgressEvent(phase="package", message=f"Quality report: {report_path}")
 
         if not nlm["ok"]:
             import webbrowser
+
             webbrowser.open("https://notebooklm.google.com")
             return ToNotebookResult(
                 ok=True,
-                output_file=str(out_path), sources_file=sources_file_str,
-                package_dir=str(package_dir), sources_count=len(selected),
-                sources_added=0, sources_failed=0,
+                output_file=str(out_path),
+                sources_file=sources_file_str,
+                package_dir=str(package_dir),
+                sources_count=len(selected),
+                sources_added=0,
+                sources_failed=0,
                 message=f"{nlm['message']} -- opened browser. Local package at {package_dir}.",
             )
 
         nb_id = nlm["notebook_id"]
         save_hint = ""
         if nb_id and nb_id != context.settings.research.notebooklm_notebook_id:
-            save_hint = f" Save with: docent studio config-set --key notebooklm_notebook_id --value {nb_id}"
+            save_hint = (
+                f" Save with: docent studio config-set --key notebooklm_notebook_id --value {nb_id}"
+            )
 
         return ToNotebookResult(
             ok=True,
@@ -225,4 +238,3 @@ class NotebookMixin:
             perspectives=nlm["perspectives"],
             message=nlm["message"] + save_hint,
         )
-

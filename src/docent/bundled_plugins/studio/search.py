@@ -1,10 +1,11 @@
 """Web search, academic paper search, page fetching, and Tavily research for the research pipeline."""
+
 from __future__ import annotations
 
 import logging
 import re
 import time
-from typing import Generator
+from collections.abc import Generator
 
 import httpx
 
@@ -49,16 +50,21 @@ def web_search(query: str, max_results: int = 8, api_key: str | None = None) -> 
             for r in response.get("results", [])
         ]
         if not results:
-            logger.warning("Tavily search for %r returned 0 results (response keys: %s)",
-                           query, list(response.keys()))
+            logger.warning(
+                "Tavily search for %r returned 0 results (response keys: %s)",
+                query,
+                list(response.keys()),
+            )
         return results
     except (InvalidAPIKeyError, UsageLimitExceededError):
         # Auth/rate-limit errors should not be silently swallowed.
         raise
     except Exception as e:
         from docent.bundled_plugins.studio.helpers import _is_network_error
+
         if _is_network_error(e):
             from docent.errors import NetworkError
+
             raise NetworkError(
                 f"No internet connection — Tavily search failed: {e}", cause=e
             ) from e
@@ -97,7 +103,10 @@ def paper_search(
                 wait = 5 * (attempt + 1)
                 logger.warning(
                     "Semantic Scholar rate-limited for %r, retrying in %ds (attempt %d/%d)",
-                    query, wait, attempt + 1, max_retries,
+                    query,
+                    wait,
+                    attempt + 1,
+                    max_retries,
                 )
                 time.sleep(wait)
                 continue
@@ -106,26 +115,29 @@ def paper_search(
         except Exception as e:
             logger.warning(
                 "Semantic Scholar search for %r failed: %s: %s",
-                query, type(e).__name__, e,
+                query,
+                type(e).__name__,
+                e,
             )
             return []
     else:
         # All retries exhausted on 429
-        logger.warning("Semantic Scholar search for %r failed after %d retries (429)", query, max_retries)
+        logger.warning(
+            "Semantic Scholar search for %r failed after %d retries (429)", query, max_retries
+        )
         return []
 
     data = resp.json()
     results: list[dict] = []
     for p in data.get("data", []):
-        authors = ", ".join(
-            a.get("name", "") for a in (p.get("authors") or [])[:3]
-        )
+        authors = ", ".join(a.get("name", "") for a in (p.get("authors") or [])[:3])
         ext = p.get("externalIds") or {}
         arxiv_id = ext.get("ArXiv")
         doi = ext.get("DOI")
         # Prefer arXiv URL; fall back to DOI URL so _extract_anchor_ids can find it
         url = (
-            f"https://arxiv.org/abs/{arxiv_id}" if arxiv_id
+            f"https://arxiv.org/abs/{arxiv_id}"
+            if arxiv_id
             else (f"https://doi.org/{doi}" if doi else "")
         )
         entry: dict = {
@@ -199,13 +211,15 @@ def academic_search_parallel(
 
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
+    from .alphaxiv_client import AlphaXivAuthError
+    from .alphaxiv_client import search_papers as alphaxiv_search
     from .scholarly_client import search_scholarly
-    from .alphaxiv_client import AlphaXivAuthError, search_papers as alphaxiv_search
 
     def _scholarly(q: str) -> list[dict]:
         try:
             papers, _ = search_scholarly(
-                q, max_per_query,
+                q,
+                max_per_query,
                 semantic_scholar_api_key=semantic_scholar_api_key,
             )
             return [_scholarly_to_source(p, q) for p in papers]
@@ -215,7 +229,9 @@ def academic_search_parallel(
     def _alphaxiv(q: str) -> list[dict]:
         try:
             papers = alphaxiv_search(
-                q, api_key=alphaxiv_api_key, max_results=max_per_query,
+                q,
+                api_key=alphaxiv_api_key,
+                max_results=max_per_query,
             )
             return [_alphaxiv_to_source(p, q) for p in papers]
         except (AlphaXivAuthError, Exception):
@@ -242,23 +258,90 @@ def academic_search_parallel(
     return unique
 
 
+_MAX_REDIRECTS = 5
+
+
+def _url_is_fetchable(url: str) -> bool:
+    """SSRF guard: True only for http(s) URLs whose host resolves to a public IP.
+
+    Rejects non-HTTP schemes and any host that resolves to a loopback,
+    private, link-local, or otherwise non-global address. Page URLs come from
+    search providers (Tavily / Semantic Scholar), so they are attacker-
+    influenceable — without this a crafted result (or a redirect, see
+    fetch_page) could make Docent fetch ``http://169.254.169.254/`` or a
+    service bound to localhost.
+    """
+    import ipaddress
+    import socket as _socket
+    from urllib.parse import urlparse
+
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    if parsed.scheme not in ("http", "https"):
+        return False
+    host = parsed.hostname
+    if not host:
+        return False
+    try:
+        infos = _socket.getaddrinfo(host, None)
+    except _socket.gaierror:
+        return False
+    if not infos:
+        return False
+    for info in infos:
+        raw_ip = str(info[4][0]).split("%", 1)[0]  # strip IPv6 zone id
+        try:
+            addr = ipaddress.ip_address(raw_ip)
+        except ValueError:
+            return False
+        if (
+            addr.is_loopback
+            or addr.is_private
+            or addr.is_link_local
+            or addr.is_reserved
+            or addr.is_multicast
+            or addr.is_unspecified
+            or not addr.is_global
+        ):
+            return False
+    return True
+
+
 def fetch_page(url: str, max_chars: int = 3000) -> str:
-    """Fetch a URL, strip HTML tags, return first *max_chars* chars of text."""
+    """Fetch a URL, strip HTML tags, return first *max_chars* chars of text.
+
+    Redirects are followed manually (not via httpx ``follow_redirects``) so the
+    SSRF guard in :func:`_url_is_fetchable` runs on every hop — a public URL
+    that 30x-redirects into the local network is rejected.
+    """
     if not url:
         return ""
     try:
-        resp = httpx.get(
-            url,
-            timeout=10,
-            follow_redirects=True,
-            headers={"User-Agent": "Docent/1.0"},
-        )
-        resp.raise_for_status()
-        text = re.sub(r"<[^>]+>", " ", resp.text)
-        text = re.sub(r"\s+", " ", text).strip()
-        return text[:max_chars]
+        current = url
+        for _ in range(_MAX_REDIRECTS):
+            if not _url_is_fetchable(current):
+                logger.debug("Refusing to fetch non-public or invalid URL: %s", current)
+                return ""
+            resp = httpx.get(
+                current,
+                timeout=10,
+                follow_redirects=False,
+                headers={"User-Agent": "Docent/1.0"},
+            )
+            if resp.is_redirect and resp.headers.get("location"):
+                current = str(httpx.URL(current).join(resp.headers["location"]))
+                continue
+            resp.raise_for_status()
+            text = re.sub(r"<[^>]+>", " ", resp.text)
+            text = re.sub(r"\s+", " ", text).strip()
+            return text[:max_chars]
+        logger.debug("Too many redirects fetching %s", url)
+        return ""
     except Exception as e:
         from docent.bundled_plugins.studio.helpers import _is_network_error
+
         if _is_network_error(e):
             logger.warning("Network error fetching %s — check internet connection: %s", url, e)
         else:
@@ -308,12 +391,15 @@ def tavily_research(
         e_str = str(e)
         # Detect plan/permission errors by HTTP status or keyword in the message
         import re as _re
+
         _status = None
-        m = _re.search(r'\b(4\d{2})\b', e_str)
+        m = _re.search(r"\b(4\d{2})\b", e_str)
         if m:
             _status = int(m.group(1))
         _lower = e_str.lower()
-        if _status in (402, 403) or any(k in _lower for k in ("plan", "upgrade", "premium", "not available", "forbidden")):
+        if _status in (402, 403) or any(
+            k in _lower for k in ("plan", "upgrade", "premium", "not available", "forbidden")
+        ):
             raise RuntimeError(
                 f"Tavily Research API is not available on your current plan "
                 f"({e_str[:200]}). "
@@ -338,8 +424,7 @@ def tavily_research(
         elapsed = time.time() - start
         if elapsed > timeout:
             raise TimeoutError(
-                f"Tavily research timed out after {timeout:.0f}s "
-                f"(request {request_id})"
+                f"Tavily research timed out after {timeout:.0f}s (request {request_id})"
             )
 
         try:
@@ -355,15 +440,16 @@ def tavily_research(
         poll_count += 1
 
         if status == "completed":
-
             sources = []
             for s in result.get("sources", []):
-                sources.append({
-                    "title": s.get("title", ""),
-                    "url": s.get("url", ""),
-                    "snippet": s.get("content", "")[:500] if s.get("content") else "",
-                    "source_type": "web",
-                })
+                sources.append(
+                    {
+                        "title": s.get("title", ""),
+                        "url": s.get("url", ""),
+                        "snippet": s.get("content", "")[:500] if s.get("content") else "",
+                        "source_type": "web",
+                    }
+                )
 
             yield ProgressEvent(
                 phase="research",

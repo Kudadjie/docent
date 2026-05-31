@@ -1,19 +1,22 @@
 """Corrupt JSON recovery tests for all persistent state files (item 56)."""
+
 from __future__ import annotations
 
 import json
+
 import pytest
 
 from docent.bundled_plugins.reading.reading_store import ReadingQueueStore
-
 
 # ---------------------------------------------------------------------------
 # ReadingQueueStore — queue.json, queue-index.json, state.json
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def store(tmp_docent_home):
     from docent.utils.paths import data_dir
+
     root = data_dir() / "reading"
     root.mkdir(parents=True, exist_ok=True)
     return ReadingQueueStore(root=root)
@@ -27,6 +30,7 @@ class TestQueueJsonRecovery:
 
     def test_corrupt_queue_json_logs_warning(self, store, caplog):
         import logging
+
         store.queue_path.write_text("{bad}", encoding="utf-8")
         caplog.set_level(logging.WARNING, logger="docent.bundled_plugins.reading.reading_store")
         store.load_queue()
@@ -81,6 +85,7 @@ class TestStateJsonRecovery:
 # ---------------------------------------------------------------------------
 # MendeleyCache — mendeley_collection.json
 # ---------------------------------------------------------------------------
+
 
 class TestMendeleyCacheRecovery:
     def test_corrupt_cache_treated_as_empty(self, tmp_docent_home):

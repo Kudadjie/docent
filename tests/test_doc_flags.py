@@ -1,4 +1,5 @@
 """Contract test: every --flag in docs/cli.md and README.md must exist in some registered tool schema."""
+
 import re
 from pathlib import Path
 
@@ -14,16 +15,16 @@ _EXTRA_VALID = {
     # README example plugin (hypothetical echo tool in plugin docs)
     "msg",
     "count",
-    "flag",      # generic --flag placeholder used in plugin example text
+    "flag",  # generic --flag placeholder used in plugin example text
     # Other CLI tools documented in README/docs (uv, pip, npm)
-    "all-extras",   # uv sync --all-extras
-    "editable",     # uv tool install --editable .
-    "python",       # uv tool install --python 3.13
-    "reinstall",    # uv tool install --reinstall
-    "upgrade",      # pip install --upgrade docent-cli
+    "all-extras",  # uv sync --all-extras
+    "editable",  # uv tool install --editable .
+    "python",  # uv tool install --python 3.13
+    "reinstall",  # uv tool install --reinstall
+    "upgrade",  # pip install --upgrade docent-cli
     # MCP JSON config argument (not a CLI flag)
-    "directory",    # "--directory" in .mcp.json args array
-    "no-sync",      # "uv run --no-sync" in MCP config example (uv flag, not Docent)
+    "directory",  # "--directory" in .mcp.json args array
+    "no-sync",  # "uv run --no-sync" in MCP config example (uv flag, not Docent)
 }
 
 
@@ -62,7 +63,6 @@ def test_doc_flags_are_valid():
             if flag not in valid:
                 stale.append(f"{doc}: --{flag}")
 
-    assert not stale, (
-        "Docs reference flags not in any registered schema:\n"
-        + "\n".join(f"  {s}" for s in sorted(set(stale)))
+    assert not stale, "Docs reference flags not in any registered schema:\n" + "\n".join(
+        f"  {s}" for s in sorted(set(stale))
     )

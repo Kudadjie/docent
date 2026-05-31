@@ -14,6 +14,7 @@ Note: generator (streaming) actions are drained synchronously and only the
 final result is returned. Long-running Studio actions keep their dedicated
 streaming page (`/studio`); this surface targets quick CRUD-style actions.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -44,24 +45,30 @@ async def list_tools() -> JSONResponse:
         actions = []
         if actions_meta:
             for action_cli_name, (_method, meta) in sorted(actions_meta.items()):
-                actions.append({
-                    "action": action_cli_name,
-                    "description": meta.description,
-                    "schema": meta.input_schema.model_json_schema(),
-                })
+                actions.append(
+                    {
+                        "action": action_cli_name,
+                        "description": meta.description,
+                        "schema": meta.input_schema.model_json_schema(),
+                    }
+                )
         elif tool_cls.input_schema is not None:
             # Single-action tool — exposed as the "run" action.
-            actions.append({
-                "action": "run",
+            actions.append(
+                {
+                    "action": "run",
+                    "description": tool_cls.description,
+                    "schema": tool_cls.input_schema.model_json_schema(),
+                }
+            )
+        catalogue.append(
+            {
+                "tool": tool_name,
                 "description": tool_cls.description,
-                "schema": tool_cls.input_schema.model_json_schema(),
-            })
-        catalogue.append({
-            "tool": tool_name,
-            "description": tool_cls.description,
-            "category": tool_cls.category,
-            "actions": actions,
-        })
+                "category": tool_cls.category,
+                "actions": actions,
+            }
+        )
     return JSONResponse(catalogue)
 
 
@@ -77,7 +84,10 @@ async def invoke_tool(body: InvokeBody) -> JSONResponse:
         # Run in a worker thread: actions may call asyncio.run() internally (e.g.
         # the Mendeley overlay), which fails inside this handler's running loop.
         raw = await asyncio.to_thread(
-            invoke_action_for_ui, body.tool, body.action, body.inputs,
+            invoke_action_for_ui,
+            body.tool,
+            body.action,
+            body.inputs,
         )
     except ValueError as exc:
         # Unknown tool/action or wrong action name for a single-action tool.

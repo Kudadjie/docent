@@ -1,4 +1,5 @@
 """Tests for Step 13 — MCP server adapter (src/docent/mcp_server.py)."""
+
 from __future__ import annotations
 
 import json
@@ -19,10 +20,10 @@ from docent.mcp_server import (
     parse_mcp_tool_name,
 )
 
-
 # ---------------------------------------------------------------------------
 # Naming helpers
 # ---------------------------------------------------------------------------
+
 
 def test_mcp_tool_name_simple():
     assert mcp_tool_name("reading", "next") == "reading__next"
@@ -45,6 +46,7 @@ def test_parse_mcp_tool_name_no_separator():
 # ---------------------------------------------------------------------------
 # Registry introspection
 # ---------------------------------------------------------------------------
+
 
 def test_build_mcp_tools_returns_reading_actions():
     tools = build_mcp_tools()
@@ -78,6 +80,7 @@ def test_build_mcp_tools_description_prefixed_with_tool():
 # Action invocation
 # ---------------------------------------------------------------------------
 
+
 def test_invoke_action_stats(tmp_docent_home):
     """invoke_action('reading', 'stats', {}) should return valid JSON."""
     text = invoke_action("reading", "stats", {})
@@ -98,6 +101,7 @@ def test_invoke_action_bad_action():
 # ---------------------------------------------------------------------------
 # Single-action tool support
 # ---------------------------------------------------------------------------
+
 
 class _SingleActionInputs(BaseModel):
     name: str = "world"

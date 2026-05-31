@@ -17,7 +17,9 @@ class ResearchSettings(BaseModel):
 
     output_dir: Path = Field(default_factory=lambda: Path("~/Documents/Docent/research"))
     feynman_command: list[str] | None = None
-    feynman_model: str | None = None  # e.g. "anthropic/claude-sonnet-4-5" — passes --model to feynman
+    feynman_model: str | None = (
+        None  # e.g. "anthropic/claude-sonnet-4-5" — passes --model to feynman
+    )
     feynman_timeout: float = 1800.0  # seconds before killing stuck feynman runs (/review with code repo access needs ~20-25 min)
     studio_backend: str = "opencode"  # active Docent-tier backend
     oc_provider: str = "opencode-go"
@@ -53,7 +55,9 @@ class ResearchSettings(BaseModel):
     tavily_api_key: str | None = None
     tavily_research_timeout: float = 600.0  # seconds to wait for Tavily Research API results
     semantic_scholar_api_key: str | None = None
-    notebooklm_notebook_id: str | None = None  # NotebookLM notebook ID from the URL (e.g. abc123...)
+    notebooklm_notebook_id: str | None = (
+        None  # NotebookLM notebook ID from the URL (e.g. abc123...)
+    )
     notebooklm_source_limit: int = 50  # 50 = free tier; set to 100 for NotebookLM Plus
     notebooklm_ask_timeout: float = 300.0  # seconds to wait for a NotebookLM chat answer (quality gate / perspectives); heavy notebooks need >180s
     notebooklm_lock_timeout: float = 1800.0  # seconds a queued to-notebook run waits for the shared NotebookLM session before aborting
@@ -72,15 +76,17 @@ class ReadingSettings(BaseModel):
     """
 
     database_dir: Path | None = None
-    mendeley_mcp_command: list[str] | None = None  # e.g. ["uvx", "mendeley-mcp"]; None -> default in mendeley_client.
+    mendeley_mcp_command: list[str] | None = (
+        None  # e.g. ["uvx", "mendeley-mcp"]; None -> default in mendeley_client.
+    )
     queue_collection: str = "Docent-Queue"  # Collection name that defines reading-queue membership.
-    reference_manager: str = "mendeley"     # Active backend: "mendeley" | "zotero".
+    reference_manager: str = "mendeley"  # Active backend: "mendeley" | "zotero".
 
     # Zotero backend (used when reference_manager == "zotero"). API key + library
     # id come from zotero.org/settings/keys — no OAuth browser flow.
     zotero_api_key: str | None = None
-    zotero_library_id: str | None = None       # numeric user id, or group id for a group library
-    zotero_library_type: str = "user"          # "user" | "group"
+    zotero_library_id: str | None = None  # numeric user id, or group id for a group library
+    zotero_library_type: str = "user"  # "user" | "group"
 
 
 class Settings(BaseSettings):

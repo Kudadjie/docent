@@ -1,8 +1,8 @@
 """Unit tests for search.py (web_search, paper_search, fetch_page, Tavily spend tracking)."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
-
 
 
 class TestWebSearch:
@@ -58,7 +58,11 @@ class TestWebSearchTavily:
 
         fake_response = {
             "results": [
-                {"title": "Tavily Result", "url": "https://tavily.com/1", "content": "Tavily snippet"},
+                {
+                    "title": "Tavily Result",
+                    "url": "https://tavily.com/1",
+                    "content": "Tavily snippet",
+                },
                 {"title": "Another", "url": "https://tavily.com/2", "content": "More content"},
             ]
         }
@@ -71,7 +75,9 @@ class TestWebSearchTavily:
             results = web_search("test query", api_key="test-key")
 
         MockClient.assert_called_once_with(api_key="test-key")
-        mock_instance.search.assert_called_once_with("test query", max_results=8, search_depth="advanced")
+        mock_instance.search.assert_called_once_with(
+            "test query", max_results=8, search_depth="advanced"
+        )
         assert len(results) == 2
         assert results[0] == {
             "title": "Tavily Result",
@@ -186,11 +192,18 @@ class TestFetchPage:
 
         fake_response = MagicMock()
         fake_response.text = "<html><body><p>Hello <b>world</b></p></body></html>"
+        fake_response.is_redirect = False
         fake_response.raise_for_status = MagicMock()
 
-        with patch(
-            "docent.bundled_plugins.studio.search.httpx.get",
-            return_value=fake_response,
+        with (
+            patch(
+                "docent.bundled_plugins.studio.search._url_is_fetchable",
+                return_value=True,
+            ),
+            patch(
+                "docent.bundled_plugins.studio.search.httpx.get",
+                return_value=fake_response,
+            ),
         ):
             result = fetch_page("https://example.com")
 
@@ -203,11 +216,18 @@ class TestFetchPage:
         long_text = "word " * 2000
         fake_response = MagicMock()
         fake_response.text = long_text
+        fake_response.is_redirect = False
         fake_response.raise_for_status = MagicMock()
 
-        with patch(
-            "docent.bundled_plugins.studio.search.httpx.get",
-            return_value=fake_response,
+        with (
+            patch(
+                "docent.bundled_plugins.studio.search._url_is_fetchable",
+                return_value=True,
+            ),
+            patch(
+                "docent.bundled_plugins.studio.search.httpx.get",
+                return_value=fake_response,
+            ),
         ):
             result = fetch_page("https://example.com", max_chars=100)
 
@@ -216,9 +236,15 @@ class TestFetchPage:
     def test_fetch_page_returns_empty_on_error(self):
         from docent.bundled_plugins.studio.search import fetch_page
 
-        with patch(
-            "docent.bundled_plugins.studio.search.httpx.get",
-            side_effect=Exception("timeout"),
+        with (
+            patch(
+                "docent.bundled_plugins.studio.search._url_is_fetchable",
+                return_value=True,
+            ),
+            patch(
+                "docent.bundled_plugins.studio.search.httpx.get",
+                side_effect=Exception("timeout"),
+            ),
         ):
             result = fetch_page("https://example.com")
 
@@ -229,3 +255,53 @@ class TestFetchPage:
 
         result = fetch_page("")
         assert result == ""
+
+    def test_fetch_page_blocks_ssrf_to_private_host(self):
+        """A URL whose host resolves to a private/loopback IP is never fetched."""
+        from docent.bundled_plugins.studio.search import fetch_page
+
+        get_mock = MagicMock()
+        with (
+            patch(
+                "docent.bundled_plugins.studio.search._url_is_fetchable",
+                return_value=False,
+            ),
+            patch(
+                "docent.bundled_plugins.studio.search.httpx.get",
+                get_mock,
+            ),
+        ):
+            result = fetch_page("http://169.254.169.254/latest/meta-data/")
+
+        assert result == ""
+        get_mock.assert_not_called()  # guard short-circuits before any request
+
+    def test_fetch_page_re_checks_redirect_target(self):
+        """A public URL that 30x-redirects to a private host is rejected mid-chain."""
+        from docent.bundled_plugins.studio.search import fetch_page
+
+        redirect = MagicMock()
+        redirect.is_redirect = True
+        redirect.headers = {"location": "http://169.254.169.254/"}
+
+        # First hop (public) passes the guard, second hop (the redirect target)
+        # fails it. httpx.get is only called for the first hop.
+        with (
+            patch(
+                "docent.bundled_plugins.studio.search._url_is_fetchable",
+                side_effect=[True, False],
+            ),
+            patch(
+                "docent.bundled_plugins.studio.search.httpx.get",
+                return_value=redirect,
+            ),
+        ):
+            result = fetch_page("https://example.com")
+
+        assert result == ""
+
+    def test_url_is_fetchable_rejects_non_http_scheme(self):
+        from docent.bundled_plugins.studio.search import _url_is_fetchable
+
+        assert _url_is_fetchable("file:///etc/passwd") is False
+        assert _url_is_fetchable("ftp://example.com/x") is False

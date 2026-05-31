@@ -50,6 +50,7 @@ def test_register_multi_action_tool(isolated_registry):
 
 def test_reserved_name_rejected(isolated_registry):
     with pytest.raises(ValueError, match="reserved"):
+
         @register_tool
         class _BadTool(Tool):
             name = "list"
@@ -62,6 +63,7 @@ def test_reserved_name_rejected(isolated_registry):
 
 def test_missing_input_schema_rejected(isolated_registry):
     with pytest.raises(TypeError, match="input_schema"):
+
         @register_tool
         class _BadTool(Tool):
             name = "test-missing-schema-xyz"
@@ -73,6 +75,7 @@ def test_missing_input_schema_rejected(isolated_registry):
 
 def test_double_registration_warns_and_skips(isolated_registry, capsys):
     """v1.2.0: duplicate registration prints a warning and skips instead of raising."""
+
     @register_tool
     class _OneTool(Tool):
         name = "test-dup-xyz"
@@ -108,6 +111,7 @@ def test_litellm_lazy_import_invariant():
     import docent.core  # noqa: F401
     import docent.core.registry  # noqa: F401
     import docent.core.tool  # noqa: F401
+
     assert "litellm" not in sys.modules, (
         "litellm leaked into sys.modules from a non-LLM import path"
     )

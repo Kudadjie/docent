@@ -1,4 +1,5 @@
 """Tests for studio cite-graph action."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -12,22 +13,26 @@ from docent.bundled_plugins.studio.citation_client import (
 )
 from docent.bundled_plugins.studio.models import CiteGraphInputs
 
-
 # ---------------------------------------------------------------------------
 # resolve_s2_id
 # ---------------------------------------------------------------------------
 
+
 def test_resolve_doi_bare():
     assert resolve_s2_id("10.1234/example", None) == "DOI:10.1234/example"
+
 
 def test_resolve_doi_url():
     assert resolve_s2_id("https://doi.org/10.1234/example", None) == "DOI:10.1234/example"
 
+
 def test_resolve_arxiv_bare():
     assert resolve_s2_id(None, "2301.12345") == "ARXIV:2301.12345"
 
+
 def test_resolve_arxiv_url():
     assert resolve_s2_id(None, "https://arxiv.org/abs/2301.12345v2") == "ARXIV:2301.12345"
+
 
 def test_resolve_requires_identifier():
     with pytest.raises(ValueError, match="either doi or arxiv_id"):
@@ -38,13 +43,16 @@ def test_resolve_requires_identifier():
 # CiteGraphInputs validation
 # ---------------------------------------------------------------------------
 
+
 def test_inputs_rejects_missing_identifier():
     with pytest.raises(Exception):
         CiteGraphInputs()
 
+
 def test_inputs_rejects_invalid_direction():
     with pytest.raises(Exception):
         CiteGraphInputs(doi="10.1/x", direction="sideways")
+
 
 def test_inputs_accepts_valid():
     inp = CiteGraphInputs(doi="10.1/x", direction="both", max_results=10)
@@ -65,6 +73,7 @@ _ANCHOR_RESPONSE = {
     "openAccessPdf": {"url": "https://arxiv.org/pdf/1706.03762"},
 }
 
+
 def test_fetch_anchor_happy_path():
     with patch("docent.bundled_plugins.studio.citation_client.httpx.get") as mock_get:
         mock_get.return_value = MagicMock(
@@ -78,15 +87,21 @@ def test_fetch_anchor_happy_path():
     assert result["oa_url"] == "https://arxiv.org/pdf/1706.03762"
     assert "Vaswani" in result["authors"]
 
+
 def test_fetch_anchor_404_raises_lookup_error():
     import httpx as _httpx
+
     mock_resp = MagicMock(status_code=404)
     with patch("docent.bundled_plugins.studio.citation_client.httpx.get") as mock_get:
         mock_get.return_value = MagicMock(
             status_code=404,
-            raise_for_status=MagicMock(side_effect=_httpx.HTTPStatusError(
-                "404", request=MagicMock(), response=mock_resp,
-            )),
+            raise_for_status=MagicMock(
+                side_effect=_httpx.HTTPStatusError(
+                    "404",
+                    request=MagicMock(),
+                    response=mock_resp,
+                )
+            ),
         )
         with pytest.raises(LookupError, match="not found"):
             fetch_anchor("DOI:10.9999/nope", api_key=None)
@@ -95,6 +110,7 @@ def test_fetch_anchor_404_raises_lookup_error():
 # ---------------------------------------------------------------------------
 # fetch_citation_graph
 # ---------------------------------------------------------------------------
+
 
 def _make_paper(pid: str, title: str, oa: bool = True) -> dict:
     return {
@@ -105,6 +121,7 @@ def _make_paper(pid: str, title: str, oa: bool = True) -> dict:
         "externalIds": {"DOI": f"10.0/{pid}"},
         "openAccessPdf": {"url": f"https://example.com/{pid}.pdf"} if oa else None,
     }
+
 
 _CITATIONS_RESPONSE = {
     "data": [
@@ -119,6 +136,7 @@ _REFERENCES_RESPONSE = {
     ]
 }
 
+
 def test_fetch_cited_by():
     with patch("docent.bundled_plugins.studio.citation_client.httpx.get") as mock_get:
         mock_get.return_value = MagicMock(
@@ -132,6 +150,7 @@ def test_fetch_cited_by():
     assert "Paper One" in titles
     assert "Paper Two" in titles
 
+
 def test_fetch_citing():
     with patch("docent.bundled_plugins.studio.citation_client.httpx.get") as mock_get:
         mock_get.return_value = MagicMock(
@@ -142,6 +161,7 @@ def test_fetch_citing():
         results = fetch_citation_graph("abc123", "citing", 50, api_key=None)
     assert len(results) == 1
     assert results[0]["title"] == "Paper Three"
+
 
 def test_fetch_both_deduplicates():
     # p1 appears in both citations and references — should appear once.
@@ -165,6 +185,7 @@ def test_fetch_both_deduplicates():
 # ---------------------------------------------------------------------------
 # Full action integration (via StudioTool)
 # ---------------------------------------------------------------------------
+
 
 def test_cite_graph_action_happy_path():
     from docent.bundled_plugins.studio import StudioTool
@@ -199,9 +220,11 @@ def test_cite_graph_action_happy_path():
     # OA paper should be first
     assert result.papers[0].oa_url is not None
 
+
 def test_cite_graph_action_not_found():
-    from docent.bundled_plugins.studio import StudioTool
     import httpx as _httpx
+
+    from docent.bundled_plugins.studio import StudioTool
 
     tool = StudioTool()
     ctx = MagicMock()
@@ -211,9 +234,13 @@ def test_cite_graph_action_not_found():
     with patch("docent.bundled_plugins.studio.citation_client.httpx.get") as mock_get:
         mock_get.return_value = MagicMock(
             status_code=404,
-            raise_for_status=MagicMock(side_effect=_httpx.HTTPStatusError(
-                "404", request=MagicMock(), response=mock_resp,
-            )),
+            raise_for_status=MagicMock(
+                side_effect=_httpx.HTTPStatusError(
+                    "404",
+                    request=MagicMock(),
+                    response=mock_resp,
+                )
+            ),
         )
         result = tool.cite_graph(CiteGraphInputs(doi="10.9999/nope"), ctx)
 

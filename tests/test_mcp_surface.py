@@ -14,6 +14,7 @@ What's enforced:
 What's deliberately NOT enforced: a subjective "quality" bar on wording. The
 floor here is presence + not-a-placeholder, not prose review.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -33,9 +34,9 @@ def _mcp_tools():
     restore it so this test neither sees nor causes pollution.
     """
     import docent.core.registry as registry
-    from docent.tools import discover_tools
     from docent.core import load_plugins
     from docent.mcp_server import build_mcp_tools
+    from docent.tools import discover_tools
 
     saved = dict(registry._REGISTRY)
     registry._REGISTRY.clear()

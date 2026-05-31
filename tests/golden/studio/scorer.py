@@ -3,6 +3,7 @@
 Each check contributes equally to the score. The final score is the fraction
 of checks that pass (0.0-1.0). A score >= 0.8 is the pass threshold.
 """
+
 from __future__ import annotations
 
 
@@ -19,13 +20,13 @@ def score_result(result: dict, expected: dict) -> tuple[float, list[str]]:
     sources = result.get("sources", [])
     review = result.get("review", "")
 
-    if (min_len := expected.get("min_draft_length")):
+    if min_len := expected.get("min_draft_length"):
         checks["draft_length"] = len(draft) >= min_len
 
     if expected.get("review_non_empty"):
         checks["review_non_empty"] = bool(review.strip())
 
-    if (min_src := expected.get("min_sources_count")):
+    if min_src := expected.get("min_sources_count"):
         checks["sources_count"] = len(sources) >= min_src
 
     if expected.get("sources_have_url"):
@@ -37,7 +38,7 @@ def score_result(result: dict, expected: dict) -> tuple[float, list[str]]:
     if expected.get("error_is_none"):
         checks["error_is_none"] = result.get("error") is None
 
-    if (rounds := expected.get("min_rounds")):
+    if rounds := expected.get("min_rounds"):
         checks["rounds"] = result.get("rounds", 0) >= rounds
 
     failures = [k for k, v in checks.items() if not v]

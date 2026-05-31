@@ -6,6 +6,7 @@ Every public error class carries a ``code`` class variable (e.g. "D002") and a
 The CLI catches ``DocentError`` in the action callback and renders it as a
 clean one-liner instead of a traceback.
 """
+
 from __future__ import annotations
 
 from typing import ClassVar
@@ -32,39 +33,47 @@ class DocentError(RuntimeError):
 
 class ConfigMissingError(DocentError):
     """Required configuration key not set."""
+
     code: ClassVar[str] = "D001"
 
 
 class ToolNotFoundError(DocentError):
     """External tool or binary not found on PATH."""
+
     code: ClassVar[str] = "D002"
 
 
 class AuthError(DocentError):
     """API key invalid or authentication failed."""
+
     code: ClassVar[str] = "D003"
 
 
 class UsageLimitError(DocentError):
     """Usage quota or budget exhausted."""
+
     code: ClassVar[str] = "D004"
 
 
 class SubprocessError(DocentError):
     """External command failed or timed out."""
+
     code: ClassVar[str] = "D005"
 
 
 class ResourceNotFoundError(DocentError):
     """Expected file or directory does not exist."""
+
     code: ClassVar[str] = "D006"
 
 
 class ServiceUnavailableError(DocentError):
     """External service not reachable."""
+
     code: ClassVar[str] = "D007"
 
 
 class NetworkError(DocentError):
     """Network connectivity failure — no internet or server unreachable."""
+
     code: ClassVar[str] = "D008"

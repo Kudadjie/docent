@@ -5,9 +5,11 @@ Backends are tried in order; the first one that returns results wins.
 ``scholarly`` (Google Scholar) is the primary but rate-limits frequently,
 so callers should not be surprised when Semantic Scholar or CrossRef answers.
 """
+
 from __future__ import annotations
 
 import warnings
+
 # scholarly._scholarly uses `re.search("cites=[\d+,]*", ...)` — invalid escape.
 warnings.filterwarnings("ignore", category=SyntaxWarning, module=r"scholarly")
 
@@ -39,9 +41,7 @@ def search_scholarly(
         pass
 
     try:
-        papers = _search_semantic_scholar(
-            query, max_results, api_key=semantic_scholar_api_key
-        )
+        papers = _search_semantic_scholar(query, max_results, api_key=semantic_scholar_api_key)
         if papers:
             return papers, "semantic_scholar"
     except Exception:
@@ -62,8 +62,10 @@ def search_scholarly(
 
 # ── Google Scholar ────────────────────────────────────────────────────────────
 
+
 def _search_google_scholar(query: str, max_results: int) -> list[dict[str, Any]]:
     import warnings
+
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=SyntaxWarning, module="scholarly")
         from scholarly import scholarly  # lazy: ~200 ms import, only when needed
@@ -84,19 +86,22 @@ def _search_google_scholar(query: str, max_results: int) -> list[dict[str, Any]]
         else:
             authors = []
         url = pub.get("pub_url") or pub.get("eprint_url") or ""
-        results.append({
-            "title": bib.get("title", ""),
-            "authors": authors[:5],
-            "year": str(bib.get("pub_year", "")),
-            "doi": "",
-            "url": url,
-            "abstract": bib.get("abstract", ""),
-            "source": "google_scholar",
-        })
+        results.append(
+            {
+                "title": bib.get("title", ""),
+                "authors": authors[:5],
+                "year": str(bib.get("pub_year", "")),
+                "doi": "",
+                "url": url,
+                "abstract": bib.get("abstract", ""),
+                "source": "google_scholar",
+            }
+        )
     return results
 
 
 # ── Semantic Scholar ──────────────────────────────────────────────────────────
+
 
 def _search_semantic_scholar(
     query: str,
@@ -124,19 +129,22 @@ def _search_semantic_scholar(
         doi = (p.get("externalIds") or {}).get("DOI", "")
         authors = [a["name"] for a in (p.get("authors") or [])[:5]]
         url = p.get("url") or (f"https://doi.org/{doi}" if doi else "")
-        results.append({
-            "title": p.get("title", ""),
-            "authors": authors,
-            "year": str(p.get("year", "")),
-            "doi": doi,
-            "url": url,
-            "abstract": (p.get("abstract") or ""),
-            "source": "semantic_scholar",
-        })
+        results.append(
+            {
+                "title": p.get("title", ""),
+                "authors": authors,
+                "year": str(p.get("year", "")),
+                "doi": doi,
+                "url": url,
+                "abstract": (p.get("abstract") or ""),
+                "source": "semantic_scholar",
+            }
+        )
     return results
 
 
 # ── CrossRef ─────────────────────────────────────────────────────────────────
+
 
 def _search_crossref(query: str, max_results: int) -> list[dict[str, Any]]:
     r = httpx.get(
@@ -158,20 +166,19 @@ def _search_crossref(query: str, max_results: int) -> list[dict[str, Any]]:
             f"{a.get('given', '')} {a.get('family', '')}".strip()
             for a in (item.get("author") or [])[:5]
         ]
-        date_parts = (
-            (item.get("published") or {})
-            .get("date-parts", [[None]])[0]
-        )
+        date_parts = (item.get("published") or {}).get("date-parts", [[None]])[0]
         year = str(date_parts[0]) if date_parts and date_parts[0] else ""
         doi = item.get("DOI", "")
         url = item.get("URL") or (f"https://doi.org/{doi}" if doi else "")
-        results.append({
-            "title": title,
-            "authors": authors,
-            "year": year,
-            "doi": doi,
-            "url": url,
-            "abstract": (item.get("abstract") or ""),
-            "source": "crossref",
-        })
+        results.append(
+            {
+                "title": title,
+                "authors": authors,
+                "year": year,
+                "doi": doi,
+                "url": url,
+                "abstract": (item.get("abstract") or ""),
+                "source": "crossref",
+            }
+        )
     return results

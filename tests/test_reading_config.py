@@ -1,15 +1,18 @@
 """Tests for reading config-show / config-set, including mendeley_mcp_command."""
+
 from __future__ import annotations
+
+from reading import ConfigSetInputs, ConfigShowInputs, ReadingQueue
 
 from docent.config import load_settings
 from docent.core.context import Context
 from docent.llm import LLMClient
-from reading import ConfigSetInputs, ConfigShowInputs, ReadingQueue
 
 
 class _StubExecutor:
     def run(self, args, *, timeout=None, cwd=None, env=None, check=True):
         from docent.execution.executor import ProcessResult
+
         return ProcessResult(args=list(args), returncode=0, stdout="", stderr="", duration=0.0)
 
 
@@ -19,6 +22,7 @@ def _ctx() -> Context:
 
 
 # ─── config-set: string keys ──────────────────────────────────────────────────
+
 
 def test_config_set_database_dir(tmp_docent_home):
     tool = ReadingQueue()
@@ -45,6 +49,7 @@ def test_config_set_unknown_key_rejected(tmp_docent_home):
 
 # ─── config-set: mendeley_mcp_command (list-typed) ────────────────────────────
 
+
 def test_config_set_mendeley_mcp_command_parses_to_list(tmp_docent_home):
     import tomllib
 
@@ -57,14 +62,16 @@ def test_config_set_mendeley_mcp_command_parses_to_list(tmp_docent_home):
 
     # The value must be stored as a TOML array, not a string.
     from docent.utils.paths import config_file
+
     raw = tomllib.loads(config_file().read_text(encoding="utf-8"))
     stored = raw.get("reading", {}).get("mendeley_mcp_command")
     assert stored == ["uvx", "mendeley-mcp", "--flag"]
 
 
 def test_config_set_mendeley_mcp_command_empty_clears(tmp_docent_home):
-    from docent.utils.paths import config_file
     import tomllib
+
+    from docent.utils.paths import config_file
 
     tool = ReadingQueue()
     # Set then clear.
@@ -78,6 +85,7 @@ def test_config_set_mendeley_mcp_command_empty_clears(tmp_docent_home):
 
 
 # ─── config-show: mendeley_mcp_command visible ────────────────────────────────
+
 
 def test_config_show_includes_mendeley_mcp_command_default(tmp_docent_home):
     tool = ReadingQueue()

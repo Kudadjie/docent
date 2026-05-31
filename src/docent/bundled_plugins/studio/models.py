@@ -1,4 +1,5 @@
 """Pydantic input/result models for all StudioTool actions."""
+
 from __future__ import annotations
 
 from typing import Literal
@@ -14,9 +15,12 @@ from docent.core.shapes import (
 )
 
 # Re-export notebook models so callers can import from .models
-from ._notebook import ToNotebookInputs as ToNotebookInputs, ToNotebookResult as ToNotebookResult  # noqa: F401
+from ._notebook import ToNotebookInputs as ToNotebookInputs  # noqa: F401
+from ._notebook import ToNotebookResult as ToNotebookResult
 
-_OUTPUT_CHOICES = "'local' (default), 'notebook' (push to NotebookLM), 'vault' (write to Obsidian vault)."
+_OUTPUT_CHOICES = (
+    "'local' (default), 'notebook' (push to NotebookLM), 'vault' (write to Obsidian vault)."
+)
 
 _GUIDE_FILES_FIELD = Field(
     default_factory=list,
@@ -55,6 +59,7 @@ def _reject_free_backend(v: str) -> str:
         raise ValueError(_AI_ONLY_FREE_ERROR)
     return v
 
+
 _BACKEND_DEEP_DESC = (
     "Research backend.\n\n"
     "MCP TIMEOUT WARNING: all AI backends run a multi-minute pipeline that WILL time out "
@@ -81,25 +86,30 @@ _TO_NOTEBOOK_FIELD = Field(
     ),
 )
 
+
 class DeepInputs(BaseModel):
     topic: str = Field(..., description="Research topic or question.")
-    backend: str = Field("feynman", description=_BACKEND_DEEP_DESC, json_schema_extra={"enum": _BACKEND_ENUM})
+    backend: str = Field(
+        "feynman", description=_BACKEND_DEEP_DESC, json_schema_extra={"enum": _BACKEND_ENUM}
+    )
 
-    @field_validator('topic')
+    @field_validator("topic")
     @classmethod
     def _topic_not_empty(cls, v: str) -> str:
         if not v.strip():
-            raise ValueError('Topic is required and cannot be empty.')
+            raise ValueError("Topic is required and cannot be empty.")
         return v.strip()
 
-    @field_validator('backend')
+    @field_validator("backend")
     @classmethod
     def _backend_valid(cls, v: str) -> str:
         if v not in _BACKEND_ENUM:
             raise ValueError(f"backend must be one of {_BACKEND_ENUM}; got {v!r}")
         return v
 
-    output: Literal["local", "notebook", "vault"] = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
+    output: Literal["local", "notebook", "vault"] = Field(
+        "local", description=f"Output destination: {_OUTPUT_CHOICES}"
+    )
     to_notebook: bool = _TO_NOTEBOOK_FIELD
     guide_files: list[str] = _GUIDE_FILES_FIELD
     confirmed: bool = Field(
@@ -122,23 +132,27 @@ class DeepInputs(BaseModel):
 
 class LitInputs(BaseModel):
     topic: str = Field(..., description="Research topic or question.")
-    backend: str = Field("feynman", description=_BACKEND_DEEP_DESC, json_schema_extra={"enum": _BACKEND_ENUM})
+    backend: str = Field(
+        "feynman", description=_BACKEND_DEEP_DESC, json_schema_extra={"enum": _BACKEND_ENUM}
+    )
 
-    @field_validator('topic')
+    @field_validator("topic")
     @classmethod
     def _topic_not_empty(cls, v: str) -> str:
         if not v.strip():
-            raise ValueError('Topic is required and cannot be empty.')
+            raise ValueError("Topic is required and cannot be empty.")
         return v.strip()
 
-    @field_validator('backend')
+    @field_validator("backend")
     @classmethod
     def _backend_valid(cls, v: str) -> str:
         if v not in _BACKEND_ENUM:
             raise ValueError(f"backend must be one of {_BACKEND_ENUM}; got {v!r}")
         return v
 
-    output: Literal["local", "notebook", "vault"] = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
+    output: Literal["local", "notebook", "vault"] = Field(
+        "local", description=f"Output destination: {_OUTPUT_CHOICES}"
+    )
     to_notebook: bool = _TO_NOTEBOOK_FIELD
     guide_files: list[str] = _GUIDE_FILES_FIELD
     confirmed: bool = Field(
@@ -161,11 +175,16 @@ class LitInputs(BaseModel):
 
 class ReviewInputs(BaseModel):
     artifact: str = Field(..., description="arXiv ID, local PDF path, or URL to review.")
-    backend: str = Field("feynman", description="Research backend — ask the user which to use. Options: 'feynman' (requires Feynman CLI; slow via MCP — suggest terminal instead), 'docent' (requires OpenCode server + API credits).")
-    output: Literal["local", "notebook", "vault"] = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
+    backend: str = Field(
+        "feynman",
+        description="Research backend — ask the user which to use. Options: 'feynman' (requires Feynman CLI; slow via MCP — suggest terminal instead), 'docent' (requires OpenCode server + API credits).",
+    )
+    output: Literal["local", "notebook", "vault"] = Field(
+        "local", description=f"Output destination: {_OUTPUT_CHOICES}"
+    )
     guide_files: list[str] = _GUIDE_FILES_FIELD
 
-    @field_validator('backend')
+    @field_validator("backend")
     @classmethod
     def _reject_free(cls, v: str) -> str:
         return _reject_free_backend(v)
@@ -238,18 +257,24 @@ class GetPaperInputs(BaseModel):
 
 
 class ScholarlySearchInputs(BaseModel):
-    query: str = Field(..., description="Search query for academic papers (Google Scholar / Semantic Scholar / CrossRef).")
+    query: str = Field(
+        ...,
+        description="Search query for academic papers (Google Scholar / Semantic Scholar / CrossRef).",
+    )
     max_results: int = Field(10, description="Maximum results to return (default 10).")
 
 
 class CompareInputs(BaseModel):
     artifact_a: str = Field(..., description="First artifact: arXiv ID, PDF path, or URL.")
     artifact_b: str = Field(..., description="Second artifact: arXiv ID, PDF path, or URL.")
-    backend: str = Field("feynman", description="Research backend — ask the user which to use. Options: 'feynman' (requires Feynman CLI; slow via MCP — suggest terminal instead), 'docent' (requires OpenCode server + API credits).")
+    backend: str = Field(
+        "feynman",
+        description="Research backend — ask the user which to use. Options: 'feynman' (requires Feynman CLI; slow via MCP — suggest terminal instead), 'docent' (requires OpenCode server + API credits).",
+    )
     output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
     guide_files: list[str] = _GUIDE_FILES_FIELD
 
-    @field_validator('backend')
+    @field_validator("backend")
     @classmethod
     def _reject_free(cls, v: str) -> str:
         return _reject_free_backend(v)
@@ -261,18 +286,21 @@ class CompareInputs(BaseModel):
 
 class DraftInputs(BaseModel):
     topic: str = Field(..., description="Topic or section title to draft.")
-    backend: str = Field("feynman", description="Research backend — ask the user which to use. Options: 'feynman' (requires Feynman CLI; slow via MCP — suggest terminal instead), 'docent' (requires OpenCode server + API credits).")
+    backend: str = Field(
+        "feynman",
+        description="Research backend — ask the user which to use. Options: 'feynman' (requires Feynman CLI; slow via MCP — suggest terminal instead), 'docent' (requires OpenCode server + API credits).",
+    )
     output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
     guide_files: list[str] = _GUIDE_FILES_FIELD
 
-    @field_validator('topic')
+    @field_validator("topic")
     @classmethod
     def _topic_not_empty(cls, v: str) -> str:
         if not v.strip():
-            raise ValueError('Topic is required and cannot be empty.')
+            raise ValueError("Topic is required and cannot be empty.")
         return v.strip()
 
-    @field_validator('backend')
+    @field_validator("backend")
     @classmethod
     def _reject_free(cls, v: str) -> str:
         return _reject_free_backend(v)
@@ -280,11 +308,14 @@ class DraftInputs(BaseModel):
 
 class ReplicateInputs(BaseModel):
     artifact: str = Field(..., description="arXiv ID, PDF path, or URL of the paper to replicate.")
-    backend: str = Field("feynman", description="Research backend — ask the user which to use. Options: 'feynman' (requires Feynman CLI; slow via MCP — suggest terminal instead), 'docent' (requires OpenCode server + API credits).")
+    backend: str = Field(
+        "feynman",
+        description="Research backend — ask the user which to use. Options: 'feynman' (requires Feynman CLI; slow via MCP — suggest terminal instead), 'docent' (requires OpenCode server + API credits).",
+    )
     output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
     guide_files: list[str] = _GUIDE_FILES_FIELD
 
-    @field_validator('backend')
+    @field_validator("backend")
     @classmethod
     def _reject_free(cls, v: str) -> str:
         return _reject_free_backend(v)
@@ -292,11 +323,14 @@ class ReplicateInputs(BaseModel):
 
 class AuditInputs(BaseModel):
     artifact: str = Field(..., description="arXiv ID, PDF path, or URL of the paper to audit.")
-    backend: str = Field("feynman", description="Research backend — ask the user which to use. Options: 'feynman' (requires Feynman CLI; slow via MCP — suggest terminal instead), 'docent' (requires OpenCode server + API credits).")
+    backend: str = Field(
+        "feynman",
+        description="Research backend — ask the user which to use. Options: 'feynman' (requires Feynman CLI; slow via MCP — suggest terminal instead), 'docent' (requires OpenCode server + API credits).",
+    )
     output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
     guide_files: list[str] = _GUIDE_FILES_FIELD
 
-    @field_validator('backend')
+    @field_validator("backend")
     @classmethod
     def _reject_free(cls, v: str) -> str:
         return _reject_free_backend(v)
@@ -305,6 +339,7 @@ class AuditInputs(BaseModel):
 # ---------------------------------------------------------------------------
 # Result models
 # ---------------------------------------------------------------------------
+
 
 class ResearchResult(BaseModel):
     ok: bool
@@ -392,11 +427,17 @@ class ConfigShowResult(BaseModel):
             MetricShape(label="oc_model_reviewer", value=self.oc_model_reviewer),
             MetricShape(label="oc_model_researcher", value=self.oc_model_researcher),
             MetricShape(label="tavily_api_key", value=_mask(self.tavily_api_key)),
-            MetricShape(label="tavily_research_timeout", value=f"{self.tavily_research_timeout:.0f}s"),
-            MetricShape(label="semantic_scholar_api_key", value=_mask(self.semantic_scholar_api_key)),
+            MetricShape(
+                label="tavily_research_timeout", value=f"{self.tavily_research_timeout:.0f}s"
+            ),
+            MetricShape(
+                label="semantic_scholar_api_key", value=_mask(self.semantic_scholar_api_key)
+            ),
             MetricShape(label="feynman_model", value=self.feynman_model or "(feynman default)"),
             MetricShape(label="feynman_timeout", value=f"{self.feynman_timeout:.0f}s"),
-            MetricShape(label="notebooklm_notebook_id", value=self.notebooklm_notebook_id or "(not set)"),
+            MetricShape(
+                label="notebooklm_notebook_id", value=self.notebooklm_notebook_id or "(not set)"
+            ),
             MetricShape(label="notebooklm_source_limit", value=str(self.notebooklm_source_limit)),
             MetricShape(label="obsidian_vault", value=self.obsidian_vault or "(not set)"),
             MetricShape(label="alphaxiv_api_key", value=_mask(self.alphaxiv_api_key)),
@@ -432,10 +473,12 @@ class SearchPapersResult(BaseModel):
             if len(p.get("authors", [])) > 3:
                 authors += " et al."
             year = (p.get("published") or "")[:4] or "?"
-            shapes.append(MetricShape(
-                label=f"{p['title']} ({year})",
-                value=authors or "Unknown authors",
-            ))
+            shapes.append(
+                MetricShape(
+                    label=f"{p['title']} ({year})",
+                    value=authors or "Unknown authors",
+                )
+            )
             if p.get("arxiv_url"):
                 shapes.append(LinkShape(url=p["arxiv_url"], label=p["arxiv_id"]))
         return shapes
@@ -455,10 +498,12 @@ class GetPaperResult(BaseModel):
         shapes: list[Shape] = [MessageShape(text=self.message, level="success")]
         if self.title:
             shapes.append(MetricShape(label="Title", value=self.title))
-        shapes.append(LinkShape(
-            url=f"https://arxiv.org/abs/{self.arxiv_id}",
-            label=self.arxiv_id,
-        ))
+        shapes.append(
+            LinkShape(
+                url=f"https://arxiv.org/abs/{self.arxiv_id}",
+                label=self.arxiv_id,
+            )
+        )
         body = self.overview or self.abstract
         if body:
             preview = body[:600] + ("…" if len(body) > 600 else "")
@@ -485,14 +530,18 @@ class TavilyUsageResult(BaseModel):
         shapes: list[Shape] = []
         if self.plan_usage is not None and self.plan_limit is not None:
             pct = f"{self.pct_used:.0f}%" if self.pct_used is not None else "?"
-            shapes.append(MetricShape(
-                label="Tavily credits used",
-                value=f"{self.plan_usage} / {self.plan_limit} ({pct})",
-            ))
+            shapes.append(
+                MetricShape(
+                    label="Tavily credits used",
+                    value=f"{self.plan_usage} / {self.plan_limit} ({pct})",
+                )
+            )
         if self.plan:
             shapes.append(MetricShape(label="Plan", value=self.plan))
         if self.key_search_usage is not None:
-            shapes.append(MetricShape(label="Search calls (this key)", value=str(self.key_search_usage)))
+            shapes.append(
+                MetricShape(label="Search calls (this key)", value=str(self.key_search_usage))
+            )
         return shapes
 
 
@@ -516,10 +565,12 @@ class ScholarlySearchResult(BaseModel):
             if len(p.get("authors", [])) > 3:
                 authors += " et al."
             year = p.get("year") or "?"
-            shapes.append(MetricShape(
-                label=f"{p['title']} ({year})",
-                value=authors or "Unknown authors",
-            ))
+            shapes.append(
+                MetricShape(
+                    label=f"{p['title']} ({year})",
+                    value=authors or "Unknown authors",
+                )
+            )
             url = p.get("url") or (f"https://doi.org/{p['doi']}" if p.get("doi") else None)
             if url:
                 label = p.get("doi") or url[:60]
@@ -530,6 +581,7 @@ class ScholarlySearchResult(BaseModel):
 # ---------------------------------------------------------------------------
 # cite-graph
 # ---------------------------------------------------------------------------
+
 
 class CiteGraphInputs(BaseModel):
     doi: str | None = Field(
@@ -558,7 +610,7 @@ class CiteGraphInputs(BaseModel):
     max_results: int = Field(25, description="Maximum number of papers to return. Default 25.")
 
     @model_validator(mode="after")
-    def _require_identifier(self) -> "CiteGraphInputs":
+    def _require_identifier(self) -> CiteGraphInputs:
         if not self.doi and not self.arxiv_id:
             raise ValueError("Provide either doi or arxiv_id.")
         if self.direction not in ("cited-by", "citing", "both"):
@@ -600,13 +652,13 @@ class CiteGraphResult(BaseModel):
         for p in self.papers:
             year = str(p.year) if p.year else "?"
             oa_tag = " [OA]" if p.oa_url else ""
-            shapes.append(MetricShape(
-                label=f"{p.title[:80]} ({year}){oa_tag}",
-                value=p.authors or "Unknown authors",
-            ))
+            shapes.append(
+                MetricShape(
+                    label=f"{p.title[:80]} ({year}){oa_tag}",
+                    value=p.authors or "Unknown authors",
+                )
+            )
             url = p.oa_url or (f"https://doi.org/{p.doi}" if p.doi else p.s2_url)
             if url:
                 shapes.append(LinkShape(url=url, label=p.doi or url[:60]))
         return shapes
-
-

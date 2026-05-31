@@ -8,6 +8,7 @@ Status is one of: "OK", "WARN", "FAIL", "SKIP"
 This module is intentionally side-effect-free so it can be imported cheaply
 and tested without the full CLI stack.
 """
+
 from __future__ import annotations
 
 import json
@@ -23,6 +24,7 @@ _STATUS_STYLE: dict[str, str] = {"OK": "green", "WARN": "yellow", "FAIL": "red",
 def _user_file() -> Path:
     """Return the path to the user profile JSON file."""
     from docent.utils.paths import root_dir
+
     return root_dir() / "user.json"
 
 
@@ -32,7 +34,12 @@ def _check_profile(user_file: Path | None = None) -> tuple[str, str, str, str]:
         data = json.loads(resolved.read_text(encoding="utf-8"))
         name = (data.get("name") or "").strip()
         if name and name != "You":
-            return "Profile", "OK", "-", f"{name} | {data.get('level', '?')} | {data.get('program', '?')}"
+            return (
+                "Profile",
+                "OK",
+                "-",
+                f"{name} | {data.get('level', '?')} | {data.get('program', '?')}",
+            )
     except Exception:
         pass
     return "Profile", "WARN", "-", "Not set up - run: docent setup"
@@ -57,6 +64,7 @@ def _check_cli_tool(
     import re
     import shutil
     import subprocess
+
     try:
         # Resolve the executable via shutil.which so that Windows .cmd/.bat
         # scripts (e.g. npm.cmd, node.cmd) are found and runnable without shell=True.
@@ -71,14 +79,14 @@ def _check_cli_tool(
         bare = m.group() if m else None
         if github_repo:
             from docent.utils.update_check import check_github_release
-            info = check_github_release(github_repo, current_version=bare,
-                                        upgrade_cmd=upgrade_cmd)
+
+            info = check_github_release(github_repo, current_version=bare, upgrade_cmd=upgrade_cmd)
             if info:
                 update_note = f"update: {info.latest} - {info.upgrade_cmd}"
         elif npm_package:
             from docent.utils.update_check import check_npm
-            info = check_npm(npm_package, current_version=bare,
-                             upgrade_cmd=upgrade_cmd)
+
+            info = check_npm(npm_package, current_version=bare, upgrade_cmd=upgrade_cmd)
             if info:
                 update_note = f"update: {info.latest} - {info.upgrade_cmd}"
         return label, "OK", version, update_note
@@ -103,21 +111,31 @@ def _dir_size_gb(path: Path) -> float | None:
                 return None
             if entry.is_file():
                 total += entry.stat().st_size
-        return total / (1024 ** 3)
+        return total / (1024**3)
     except Exception:
         return None
 
 
-def _check_feynman(settings: "Settings") -> tuple[str, str, str, str]:
+def _check_feynman(settings: Settings) -> tuple[str, str, str, str]:
     import os
     import re
-    from docent.bundled_plugins.studio import _find_feynman, FeynmanNotFoundError, _feynman_version_from_package_json
+
+    from docent.bundled_plugins.studio import (
+        FeynmanNotFoundError,
+        _feynman_version_from_package_json,
+        _find_feynman,
+    )
     from docent.utils.update_check import check_github_release
 
     try:
         cmd = _find_feynman(settings.research.feynman_command)
     except FeynmanNotFoundError:
-        return "Feynman CLI", "WARN", "-", "Not installed (~2 GB needed) - npm install -g @companion-ai/feynman"
+        return (
+            "Feynman CLI",
+            "WARN",
+            "-",
+            "Not installed (~2 GB needed) - npm install -g @companion-ai/feynman",
+        )
 
     # Read version from package.json — avoids spawning a Node.js subprocess
     # which can hang on Windows when capture_output+timeout is used.
@@ -126,8 +144,11 @@ def _check_feynman(settings: "Settings") -> tuple[str, str, str, str]:
     detail_parts: list[str] = []
     m = re.search(r"\d+\.\d+(?:\.\d+)?", version)
     bare = m.group() if m else None
-    update_info = check_github_release("companion-inc/feynman", current_version=bare,
-                                       upgrade_cmd="npm install -g @companion-ai/feynman@latest")
+    update_info = check_github_release(
+        "companion-inc/feynman",
+        current_version=bare,
+        upgrade_cmd="npm install -g @companion-ai/feynman@latest",
+    )
     if update_info:
         detail_parts.append(f"update: {update_info.latest}")
 
@@ -153,23 +174,31 @@ def _check_feynman(settings: "Settings") -> tuple[str, str, str, str]:
     return "Feynman CLI", status, version, "  ".join(detail_parts) or "-"
 
 
-def _check_mendeley_mcp(settings: "Settings") -> tuple[str, str, str, str]:
+def _check_mendeley_mcp(settings: Settings) -> tuple[str, str, str, str]:
     """Check Mendeley MCP prerequisites via PATH lookup — no subprocess spawn."""
     import shutil
+
     cmd = list(settings.reading.mendeley_mcp_command or ["uvx", "mendeley-mcp"])
     runner = cmd[0]
     if shutil.which(runner):
         return "Mendeley MCP", "OK", "-", f"{runner} found (test: {' '.join(cmd[:2])} --help)"
-    return "Mendeley MCP", "FAIL", "-", f"{runner} not found - install uv: https://docs.astral.sh/uv/"
+    return (
+        "Mendeley MCP",
+        "FAIL",
+        "-",
+        f"{runner} not found - install uv: https://docs.astral.sh/uv/",
+    )
 
 
-def _check_zotero(settings: "Settings") -> tuple[str, str, str, str]:
+def _check_zotero(settings: Settings) -> tuple[str, str, str, str]:
     """Check the Zotero backend — pyzotero installed + credentials configured.
 
     Uses importlib.metadata (dist name lookup) rather than find_spec so the
     check is consistent with how the backup status route detects packages.
     """
-    from importlib.metadata import Distribution, PackageNotFoundError as _PkgNF
+    from importlib.metadata import Distribution
+    from importlib.metadata import PackageNotFoundError as _PkgNF
+
     rs = settings.reading
     active = (rs.reference_manager or "mendeley").lower() == "zotero"
     try:
@@ -183,20 +212,35 @@ def _check_zotero(settings: "Settings") -> tuple[str, str, str, str]:
         avail = "pyzotero available" if has_lib else "pyzotero not installed"
         return "Zotero", "SKIP", "-", f"not active (reading.reference_manager=mendeley); {avail}"
     if not has_lib:
-        return "Zotero", "FAIL", "-", (
-            "pyzotero not found — run: uv sync  (or: pip install pyzotero)"
+        return (
+            "Zotero",
+            "FAIL",
+            "-",
+            ("pyzotero not found — run: uv sync  (or: pip install pyzotero)"),
         )
     if not configured:
-        return "Zotero", "WARN", "-", (
-            "set reading.zotero_api_key + reading.zotero_library_id "
-            "(get them at zotero.org/settings/keys)"
+        return (
+            "Zotero",
+            "WARN",
+            "-",
+            (
+                "set reading.zotero_api_key + reading.zotero_library_id "
+                "(get them at zotero.org/settings/keys)"
+            ),
         )
-    return "Zotero", "OK", "-", f"configured ({rs.zotero_library_type} library {rs.zotero_library_id})"
+    return (
+        "Zotero",
+        "OK",
+        "-",
+        f"configured ({rs.zotero_library_type} library {rs.zotero_library_id})",
+    )
 
 
 def _check_google_drive() -> tuple[str, str, str, str]:
     """Check Google Drive backup dependencies (importlib.metadata, no subprocess)."""
-    from importlib.metadata import Distribution, PackageNotFoundError as _PkgNF
+    from importlib.metadata import Distribution
+    from importlib.metadata import PackageNotFoundError as _PkgNF
+
     missing = []
     for dist in ["google-api-python-client", "google-auth-oauthlib", "google-auth-httplib2"]:
         try:
@@ -204,47 +248,70 @@ def _check_google_drive() -> tuple[str, str, str, str]:
         except _PkgNF:
             missing.append(dist)
     if missing:
-        return "Google Drive deps", "WARN", "-", (
-            "backup extra not installed — run: "
-            "pip install 'docent-cli[backup]'  "
-            "(or: uv tool install --with 'docent-cli[backup]' docent)"
+        return (
+            "Google Drive deps",
+            "WARN",
+            "-",
+            (
+                "backup extra not installed — run: "
+                "pip install 'docent-cli[backup]'  "
+                "(or: uv tool install --with 'docent-cli[backup]' docent)"
+            ),
         )
     return "Google Drive deps", "OK", "-", "backup libraries available"
 
 
-def _check_tavily(settings: "Settings") -> tuple[str, str, str, str]:
+def _check_tavily(settings: Settings) -> tuple[str, str, str, str]:
     key = settings.research.tavily_api_key
     if key:
         masked = (key[:4] + "..." + key[-4:]) if len(key) > 8 else "set"
-        return "Tavily key", "OK", "-", (
-            f"configured ({masked}) — free tier: web search (1k/month). "
-            "Paid plan adds Research API (deep AI synthesis with citations)."
+        return (
+            "Tavily key",
+            "OK",
+            "-",
+            (
+                f"configured ({masked}) — free tier: web search (1k/month). "
+                "Paid plan adds Research API (deep AI synthesis with citations)."
+            ),
         )
-    return "Tavily key", "WARN", "-", (
-        "Not set — web search falls back to DuckDuckGo. "
-        "Free key at app.tavily.com (no credit card). Run: docent setup"
+    return (
+        "Tavily key",
+        "WARN",
+        "-",
+        (
+            "Not set — web search falls back to DuckDuckGo. "
+            "Free key at app.tavily.com (no credit card). Run: docent setup"
+        ),
     )
 
 
-def _check_semantic_scholar(settings: "Settings") -> tuple[str, str, str, str]:
+def _check_semantic_scholar(settings: Settings) -> tuple[str, str, str, str]:
     if settings.research.semantic_scholar_api_key:
         return "Semantic Scholar", "OK", "-", "API key set"
     return "Semantic Scholar", "SKIP", "-", "No key (optional - raises rate limits)"
 
 
-def _check_alphaxiv(settings: "Settings") -> tuple[str, str, str, str]:
+def _check_alphaxiv(settings: Settings) -> tuple[str, str, str, str]:
     try:
         from alphaxiv import __version__ as ax_version
     except ImportError:
         return "alphaXiv", "FAIL", "-", "alphaxiv-py not installed (uv add alphaxiv-py)"
     from docent.utils.update_check import check_pypi
+
     update = check_pypi("alphaxiv-py", current_version=ax_version, upgrade_cmd="uv add alphaxiv-py")
-    update_hint = f"  (update available: {update.latest}  run: {update.upgrade_cmd})" if update else ""
+    update_hint = (
+        f"  (update available: {update.latest}  run: {update.upgrade_cmd})" if update else ""
+    )
     key = settings.research.alphaxiv_api_key
     if key:
         masked = (key[:4] + "..." + key[-4:]) if len(key) > 8 else "set"
         return "alphaXiv", "OK", ax_version, f"API key configured ({masked}){update_hint}"
-    return "alphaXiv", "SKIP", ax_version, f"No key (optional - get free key at alphaxiv.org/settings){update_hint}"
+    return (
+        "alphaXiv",
+        "SKIP",
+        ax_version,
+        f"No key (optional - get free key at alphaxiv.org/settings){update_hint}",
+    )
 
 
 def _check_notebooklm_py() -> tuple[str, str, str, str]:
@@ -256,8 +323,10 @@ def _check_notebooklm_py() -> tuple[str, str, str, str]:
         import contextlib as _cl2
         import io as _io2
         import sys as _sys2
+
         if "notebooklm" not in _sys2.modules:
             import os as _os2
+
             _os2.environ.setdefault("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "1")
             with _cl2.redirect_stderr(_io2.StringIO()):
                 import notebooklm as nlm_mod
@@ -286,18 +355,27 @@ def _check_notebooklm_py() -> tuple[str, str, str, str]:
     try:
         result = subprocess.run(
             [exe, "list", "--json"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         import json as _json
+
         data = _json.loads(result.stdout or "{}")
         auth_ok = result.returncode == 0 and not data.get("error")
     except Exception:
         auth_ok = False
 
     if not auth_ok:
-        return "NotebookLM", "WARN", nlm_version, "Not authenticated — run: docent setup  (or: notebooklm login)"
+        return (
+            "NotebookLM",
+            "WARN",
+            nlm_version,
+            "Not authenticated — run: docent setup  (or: notebooklm login)",
+        )
 
     from docent.utils.update_check import check_pypi
+
     update = check_pypi(
         "notebooklm-py",
         current_version=nlm_version if nlm_version != "-" else None,
@@ -307,9 +385,10 @@ def _check_notebooklm_py() -> tuple[str, str, str, str]:
     return "NotebookLM", "OK", nlm_version, f"authenticated{update_hint}"
 
 
-def _check_opencode(settings: "Settings") -> tuple[str, str, str, str]:
+def _check_opencode(settings: Settings) -> tuple[str, str, str, str]:
     """Check OpenCode server availability (fast — no model call)."""
     from docent.utils.model_health import check_opencode_server
+
     return check_opencode_server(
         provider=settings.research.oc_provider,
         model=settings.research.oc_model_planner,
@@ -321,6 +400,7 @@ def _check_litellm_provider(
 ) -> tuple[str, str, str, str]:
     """Generic check for a litellm provider API key."""
     import os
+
     resolved = key or os.environ.get(env_var, "")
     if not resolved:
         return label, "SKIP", "-", f"Not configured — set {env_var} or run: {setup_cmd}"
@@ -328,10 +408,15 @@ def _check_litellm_provider(
     return label, "OK", "-", f"Key present ({masked})"
 
 
-def _check_reading_db(settings: "Settings") -> tuple[str, str, str, str]:
+def _check_reading_db(settings: Settings) -> tuple[str, str, str, str]:
     db = settings.reading.database_dir
     if db is None:
-        return "Reading DB", "WARN", "-", "Not configured - run: docent reading config-set --key database_dir --value <path>"
+        return (
+            "Reading DB",
+            "WARN",
+            "-",
+            "Not configured - run: docent reading config-set --key database_dir --value <path>",
+        )
     expanded = Path(str(db)).expanduser()
     if not expanded.exists():
         return "Reading DB", "WARN", "-", f"{expanded} does not exist"

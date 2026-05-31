@@ -1,4 +1,5 @@
 """Path-traversal / absolute-path denial tests for studio.read_output and save_synthesis."""
+
 from __future__ import annotations
 
 import os

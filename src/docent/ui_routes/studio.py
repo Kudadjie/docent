@@ -1,12 +1,13 @@
 """Studio run SSE streaming endpoint + utility endpoints."""
+
 import asyncio
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from docent.ui_server import (
-    StudioRunBody,
     _STUDIO_ACTION_MAP,
+    StudioRunBody,
     _form_to_studio_args,
     _stream_studio_run,
 )
@@ -31,8 +32,8 @@ async def studio_run(body: StudioRunBody):
 async def get_tavily_usage() -> JSONResponse:
     """Return live Tavily credit usage for the configured API key."""
     try:
-        from docent.config import load_settings
         from docent.bundled_plugins.studio.tavily_usage import fetch_tavily_usage
+        from docent.config import load_settings
 
         settings = await asyncio.to_thread(load_settings)
         key = settings.research.tavily_api_key
@@ -51,13 +52,15 @@ async def get_tavily_usage() -> JSONResponse:
         if plan_usage is not None and plan_limit:
             pct = round(plan_usage / plan_limit * 100, 1)
 
-        return JSONResponse({
-            "ok": True,
-            "plan": plan,
-            "plan_usage": plan_usage,
-            "plan_limit": plan_limit,
-            "key_search_usage": key_search_usage,
-            "pct_used": pct,
-        })
+        return JSONResponse(
+            {
+                "ok": True,
+                "plan": plan,
+                "plan_usage": plan_usage,
+                "plan_limit": plan_limit,
+                "key_search_usage": key_search_usage,
+                "pct_used": pct,
+            }
+        )
     except Exception as exc:
         return JSONResponse({"ok": False, "message": str(exc)}, status_code=500)

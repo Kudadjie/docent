@@ -4,6 +4,7 @@ These tests pin the guard on the text-generating studio actions: they must
 reject backend='free' with a clear message (instead of silently falling through
 to the Feynman branch), while deep/lit keep their source-only free tier.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -53,14 +54,20 @@ def test_deep_and_lit_still_accept_free(model):
 # The UI subprocess emitter serializes result.to_ui() over the WebSocket to the
 # browser; raw API keys must never cross that boundary.
 
+
 def _config_result(**overrides):
     from docent.bundled_plugins.studio.models import ConfigShowResult
 
     base = dict(
-        config_path="/x/config.toml", output_dir="~/docent",
-        feynman_command=["feynman"], oc_provider="opencode-go",
-        oc_model_planner="m", oc_model_writer="m", oc_model_verifier="m",
-        oc_model_reviewer="m", oc_model_researcher="m",
+        config_path="/x/config.toml",
+        output_dir="~/docent",
+        feynman_command=["feynman"],
+        oc_provider="opencode-go",
+        oc_model_planner="m",
+        oc_model_writer="m",
+        oc_model_verifier="m",
+        oc_model_reviewer="m",
+        oc_model_researcher="m",
     )
     base.update(overrides)
     return ConfigShowResult(**base)

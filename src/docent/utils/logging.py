@@ -10,6 +10,7 @@ Usage:
     _log = get_logger(__name__)
     _log.debug("fetching %d sources", n)
 """
+
 from __future__ import annotations
 
 import logging

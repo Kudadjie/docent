@@ -8,8 +8,8 @@ These tests catch two failure modes:
 import pytest
 from fastapi.testclient import TestClient
 
-from docent.ui_server import app
 from docent.ui_routes.docs import _SLUG_MAP, _docs_root
+from docent.ui_server import app
 
 client = TestClient(app)
 
@@ -18,15 +18,16 @@ VALID_SLUGS = list(_SLUG_MAP)
 # Required H2 headings per doc — ensures the file wasn't accidentally gutted.
 # Update these if you intentionally rename a top-level section.
 REQUIRED_HEADINGS: dict[str, list[str]] = {
-    "reading":   ["## Prerequisites", "## The workflow", "## Syncing with your reference manager"],
-    "studio":    ["## "],          # at least one H2
-    "cli":       ["## 3. The Reading Queue", "## 4. Configuration"],
-    "ecosystem": ["## "],          # at least one H2
-    "plugins":   ["## "],          # at least one H2
+    "reading": ["## Prerequisites", "## The workflow", "## Syncing with your reference manager"],
+    "studio": ["## "],  # at least one H2
+    "cli": ["## 3. The Reading Queue", "## 4. Configuration"],
+    "ecosystem": ["## "],  # at least one H2
+    "plugins": ["## "],  # at least one H2
 }
 
 
 # ── Availability ──────────────────────────────────────────────────────────────
+
 
 @pytest.mark.parametrize("slug", VALID_SLUGS)
 def test_valid_slug_returns_200(slug: str):
@@ -49,6 +50,7 @@ def test_list_endpoint_returns_all_slugs():
 
 
 # ── Content validity ──────────────────────────────────────────────────────────
+
 
 @pytest.mark.parametrize("slug", VALID_SLUGS)
 def test_doc_is_non_empty(slug: str):
@@ -81,10 +83,11 @@ _BANNED_PHRASES: list[str] = [
     "syncs with Mendeley",
     "sync-from-mendeley\n",  # bare command (not the alias-mention line)
     "Mendeley is the source of truth",
-    "Mendeley Desktop\n",    # bare prereq line (OK inside "Mendeley Desktop (or…)")
-    "mendeley_id",           # old field name, replaced by reference_id
+    "Mendeley Desktop\n",  # bare prereq line (OK inside "Mendeley Desktop (or…)")
+    "mendeley_id",  # old field name, replaced by reference_id
     "SyncFromMendeleyResult",  # old result type name
 ]
+
 
 @pytest.mark.parametrize("slug", ["reading", "cli"])
 def test_doc_has_no_banned_mendeley_phrases(slug: str):

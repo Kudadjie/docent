@@ -12,6 +12,7 @@ result against expected structural properties.
 
 Score threshold: >= 0.8 to pass (80% of checks must pass).
 """
+
 from __future__ import annotations
 
 import inspect
@@ -32,6 +33,7 @@ PASS_THRESHOLD = 0.8
 
 # ─── helpers ──────────────────────────────────────────────────────────────────
 
+
 def _drain(gen: Any) -> Any:
     """Drive a generator to completion and return its StopIteration value."""
     if not inspect.isgenerator(gen):
@@ -49,6 +51,7 @@ def _load_fixtures() -> list[dict]:
 
 def _scorer():
     import importlib.util
+
     spec = importlib.util.spec_from_file_location("scorer", _SCORER)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -57,20 +60,23 @@ def _scorer():
 
 def _make_tavily_gen(mock_result: dict):
     """Return a generator-function that mocks tavily_research."""
+
     def _fake(topic, api_key, *, model="pro", timeout=600.0):
         yield ProgressEvent(phase="research", message="[mock] Tavily research complete.")
         return mock_result
+
     return _fake
 
 
 # ─── pipeline golden tests ─────────────────────────────────────────────────────
 
+
 @pytest.mark.eval
 @pytest.mark.parametrize("fixture", _load_fixtures(), ids=lambda f: f["id"])
 def test_pipeline_golden(fixture: dict) -> None:
     """Run the full pipeline with mocked API calls and score the result."""
-    from docent.bundled_plugins.studio.pipeline import run_deep, run_lit
     from docent.bundled_plugins.studio.oc_client import OcClient
+    from docent.bundled_plugins.studio.pipeline import run_deep, run_lit
 
     mock = fixture["mock"]
     tavily_mock_data = {
@@ -88,10 +94,14 @@ def test_pipeline_golden(fixture: dict) -> None:
     pipeline_fn = run_deep if action == "run_deep" else run_lit
 
     with (
-        patch("docent.bundled_plugins.studio.pipeline.tavily_research",
-              _make_tavily_gen(tavily_mock_data)),
-        patch("docent.bundled_plugins.studio.pipeline.academic_search_parallel",
-              return_value=academic_sources),
+        patch(
+            "docent.bundled_plugins.studio.pipeline.tavily_research",
+            _make_tavily_gen(tavily_mock_data),
+        ),
+        patch(
+            "docent.bundled_plugins.studio.pipeline.academic_search_parallel",
+            return_value=academic_sources,
+        ),
         patch.object(OcClient, "call", fake_oc_call),
     ):
         oc = OcClient()
@@ -109,8 +119,10 @@ def test_pipeline_golden(fixture: dict) -> None:
 
 # ─── pure-function unit tests (no mocks needed) ────────────────────────────────
 
+
 def test_build_references_section_basic() -> None:
     from docent.bundled_plugins.studio import _build_references_section
+
     sources = [
         {"title": "Paper A", "url": "https://a.com", "source_type": "web"},
         {"title": "Paper B", "url": "https://b.com", "source_type": "arxiv"},
@@ -124,6 +136,7 @@ def test_build_references_section_basic() -> None:
 
 def test_build_references_section_skips_no_url() -> None:
     from docent.bundled_plugins.studio import _build_references_section
+
     sources = [
         {"title": "No URL source", "url": "", "source_type": "web"},
         {"title": "Has URL", "url": "https://example.com", "source_type": "web"},
@@ -135,11 +148,13 @@ def test_build_references_section_skips_no_url() -> None:
 
 def test_build_references_section_empty_returns_empty() -> None:
     from docent.bundled_plugins.studio import _build_references_section
+
     assert _build_references_section([]) == ""
 
 
 def test_strip_references_section_removes_trailing_refs() -> None:
     from docent.bundled_plugins.studio import _strip_references_section
+
     draft = "Main content here.\n\n## References\n1. Source A\n2. Source B\n"
     stripped = _strip_references_section(draft)
     assert "## References" not in stripped
@@ -148,12 +163,14 @@ def test_strip_references_section_removes_trailing_refs() -> None:
 
 def test_strip_references_section_no_refs_unchanged() -> None:
     from docent.bundled_plugins.studio import _strip_references_section
+
     draft = "Content with no references section."
     assert _strip_references_section(draft) == draft
 
 
 def test_append_references_replaces_existing_section() -> None:
     from docent.bundled_plugins.studio import _append_references
+
     draft = "Content.\n\n## References\n1. Old ref [web]"
     sources = [{"title": "New Ref", "url": "https://new.com", "source_type": "web"}]
     result = _append_references(draft, sources)
@@ -164,6 +181,7 @@ def test_append_references_replaces_existing_section() -> None:
 
 def test_append_references_adds_section_when_none_exists() -> None:
     from docent.bundled_plugins.studio import _append_references
+
     draft = "Content without references."
     sources = [{"title": "Source", "url": "https://example.com", "source_type": "web"}]
     result = _append_references(draft, sources)
@@ -173,6 +191,7 @@ def test_append_references_adds_section_when_none_exists() -> None:
 
 def test_append_references_empty_sources_adds_nothing() -> None:
     from docent.bundled_plugins.studio import _append_references
+
     draft = "Content."
     result = _append_references(draft, [])
     assert "## References" not in result

@@ -20,20 +20,14 @@ def register_tool(cls: type[T]) -> type[T]:
     tool runs never share mutable state.
     """
     if not isinstance(cls, type) or not issubclass(cls, Tool):
-        raise TypeError(
-            f"@register_tool must decorate a Tool subclass; got {cls!r}"
-        )
+        raise TypeError(f"@register_tool must decorate a Tool subclass; got {cls!r}")
 
     for attr in ("name", "description"):
         if not hasattr(cls, attr):
-            raise TypeError(
-                f"Tool {cls.__name__} is missing required class attribute '{attr}'"
-            )
+            raise TypeError(f"Tool {cls.__name__} is missing required class attribute '{attr}'")
 
     if not isinstance(cls.name, str) or not cls.name:
-        raise TypeError(
-            f"Tool {cls.__name__}.name must be a non-empty string"
-        )
+        raise TypeError(f"Tool {cls.__name__}.name must be a non-empty string")
 
     if cls.name in _RESERVED_NAMES:
         raise ValueError(
@@ -52,22 +46,17 @@ def register_tool(cls: type[T]) -> type[T]:
 
     if not actions:
         if not has_run:
-            raise TypeError(
-                f"Tool {cls.__name__} must define run() or at least one @action method"
-            )
+            raise TypeError(f"Tool {cls.__name__} must define run() or at least one @action method")
         if not has_input_schema:
-            raise TypeError(
-                f"Tool {cls.__name__}.input_schema must be set for single-action tools"
-            )
+            raise TypeError(f"Tool {cls.__name__}.input_schema must be set for single-action tools")
         if not (isinstance(cls.input_schema, type) and issubclass(cls.input_schema, BaseModel)):
             raise TypeError(
                 f"Tool {cls.__name__}.input_schema must be a Pydantic BaseModel subclass"
             )
     else:
-        for cli_name, (method_name, meta) in actions.items():
+        for _cli_name, (method_name, meta) in actions.items():
             if not (
-                isinstance(meta.input_schema, type)
-                and issubclass(meta.input_schema, BaseModel)
+                isinstance(meta.input_schema, type) and issubclass(meta.input_schema, BaseModel)
             ):
                 raise TypeError(
                     f"Tool {cls.__name__}.{method_name}: @action input_schema must be a "
@@ -77,6 +66,7 @@ def register_tool(cls: type[T]) -> type[T]:
     if cls.name in _REGISTRY:
         existing = _REGISTRY[cls.name]
         import sys
+
         print(
             f"Warning: Tool name '{cls.name}' is already registered by "
             f"{existing.__module__}.{existing.__name__}; skipping duplicate "

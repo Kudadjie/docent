@@ -57,6 +57,18 @@ Or from the CLI:
 docent update
 ```
 
+## 🆕 What's New
+
+Release highlights live in **[CHANGELOG.md](CHANGELOG.md)** — the single source of
+truth that also feeds the GitHub release notes, the web UI, and the CLI.
+
+After you update, Docent shows a brief *What's New* banner for the first few runs.
+See the current version's highlights any time:
+
+```bash
+docent whatsnew
+```
+
 ## 🏗 Architecture
 
 See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full design. The short version:

@@ -17,6 +17,7 @@ Usage (tests)::
         page_content="full page text",
     )
 """
+
 from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
@@ -58,10 +59,12 @@ class DefaultSearchAdapter:
 
     def web_search(self, query: str, max_results: int = 8) -> list[dict[str, Any]]:
         from .search import web_search
+
         return web_search(query, max_results=max_results, api_key=self._api_key)
 
     def paper_search(self, query: str, max_results: int = 8) -> list[dict[str, Any]]:
         from .search import paper_search
+
         return paper_search(
             query,
             max_results=max_results,
@@ -70,6 +73,7 @@ class DefaultSearchAdapter:
 
     def academic_search_parallel(self, queries: list[str]) -> list[dict[str, Any]]:
         from .search import academic_search_parallel
+
         return academic_search_parallel(
             queries,
             semantic_scholar_api_key=self._ss_key,
@@ -78,6 +82,7 @@ class DefaultSearchAdapter:
 
     def fetch_page(self, url: str, max_chars: int = 3000) -> str:
         from .search import fetch_page
+
         return fetch_page(url, max_chars=max_chars)
 
 

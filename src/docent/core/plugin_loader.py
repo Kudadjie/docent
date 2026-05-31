@@ -31,8 +31,8 @@ import importlib
 import importlib.util
 import logging
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from docent.core.context import Context
 from docent.utils.paths import plugins_dir
@@ -68,9 +68,9 @@ def _load_plugin_module(
             _logger.warning("Could not create import spec for external plugin '%s'", file_path)
             return False
         try:
-            module = importlib.util.module_from_spec(spec)
-            sys.modules[module_name] = module
-            spec.loader.exec_module(module)  # type: ignore[union-attr]
+            mod = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = mod
+            spec.loader.exec_module(mod)  # type: ignore[union-attr]
         except (Exception, SystemExit) as exc:
             sys.modules.pop(module_name, None)
             _logger.warning("Failed to load plugin '%s': %s", module_name, exc)
@@ -86,20 +86,22 @@ def _load_plugin_module(
     module = sys.modules.get(module_name)
     has_hook = False
     if module is not None and hasattr(module, "on_startup"):
-        hook = getattr(module, "on_startup")
+        hook = module.on_startup
         if callable(hook):
             _STARTUP_HOOKS.append(hook)
             has_hook = True
 
-    module_path = str(file_path) if file_path else getattr(
-        sys.modules.get(module_name), "__file__", None
+    module_path = (
+        str(file_path) if file_path else getattr(sys.modules.get(module_name), "__file__", None)
     )
-    _LOADED_PLUGINS.append({
-        "name": module_name,
-        "source": source,
-        "module_path": module_path,
-        "has_hook": has_hook,
-    })
+    _LOADED_PLUGINS.append(
+        {
+            "name": module_name,
+            "source": source,
+            "module_path": module_path,
+            "has_hook": has_hook,
+        }
+    )
     return True
 
 

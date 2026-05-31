@@ -1,19 +1,20 @@
 """Tests for Tier-4 B fan-out primitive and expand-citations integration."""
+
 from __future__ import annotations
 
 import time
 from unittest.mock import patch
 
-from docent.bundled_plugins.studio.fanout import parallel_fetch
 from docent.bundled_plugins.studio._research import (
-    _extract_anchor_ids,
     _expand_citations,
+    _extract_anchor_ids,
 )
-
+from docent.bundled_plugins.studio.fanout import parallel_fetch
 
 # ---------------------------------------------------------------------------
 # parallel_fetch — primitive
 # ---------------------------------------------------------------------------
+
 
 def test_parallel_fetch_empty():
     assert parallel_fetch([]) == []
@@ -21,6 +22,7 @@ def test_parallel_fetch_empty():
 
 def test_parallel_fetch_returns_in_submission_order():
     """Results arrive in submission order even if tasks finish out of order."""
+
     def slow():
         time.sleep(0.05)
         return "slow"
@@ -41,7 +43,7 @@ def test_parallel_fetch_failed_task_returns_none():
 
     results = parallel_fetch([good, bad, good])
     assert results[0] == 42
-    assert results[1] is None   # failed task
+    assert results[1] is None  # failed task
     assert results[2] == 42
 
 
@@ -86,6 +88,7 @@ def test_parallel_fetch_max_workers_respected(monkeypatch):
 # _extract_anchor_ids
 # ---------------------------------------------------------------------------
 
+
 def test_extract_arxiv_from_url():
     sources = [{"url": "https://arxiv.org/abs/2301.12345", "source_type": "paper"}]
     anchors = _extract_anchor_ids(sources)
@@ -118,10 +121,7 @@ def test_extract_deduplicates():
 
 
 def test_extract_respects_max_anchors():
-    sources = [
-        {"url": f"https://arxiv.org/abs/230{i}.12345"}
-        for i in range(10)
-    ]
+    sources = [{"url": f"https://arxiv.org/abs/230{i}.12345"} for i in range(10)]
     anchors = _extract_anchor_ids(sources, max_anchors=2)
     assert len(anchors) == 2
 
@@ -154,6 +154,7 @@ def test_extract_prefers_doi_over_s2_id():
 # _expand_citations — integration with mocked S2
 # ---------------------------------------------------------------------------
 
+
 def _make_s2_paper(pid: str, title: str, oa: bool = True, arxiv_id: str = "") -> dict:
     # Use numeric arXiv IDs so _ARXIV_URL_RE ([\d.]+) can match them.
     _arxiv = arxiv_id or f"20{pid}.00001"
@@ -174,9 +175,21 @@ _PAPER_THREE_ARXIV = "2003.00001"
 
 _CITATIONS_RESP = {
     "data": [
-        {"citingPaper": _make_s2_paper("01", "Citing Paper One", oa=True, arxiv_id=_PAPER_ONE_ARXIV)},
-        {"citingPaper": _make_s2_paper("02", "Citing Paper Two (non-OA)", oa=False, arxiv_id=_PAPER_TWO_ARXIV)},
-        {"citingPaper": _make_s2_paper("03", "Citing Paper Three", oa=True, arxiv_id=_PAPER_THREE_ARXIV)},
+        {
+            "citingPaper": _make_s2_paper(
+                "01", "Citing Paper One", oa=True, arxiv_id=_PAPER_ONE_ARXIV
+            )
+        },
+        {
+            "citingPaper": _make_s2_paper(
+                "02", "Citing Paper Two (non-OA)", oa=False, arxiv_id=_PAPER_TWO_ARXIV
+            )
+        },
+        {
+            "citingPaper": _make_s2_paper(
+                "03", "Citing Paper Three", oa=True, arxiv_id=_PAPER_THREE_ARXIV
+            )
+        },
     ]
 }
 
@@ -275,20 +288,24 @@ def test_expand_citations_s2_failure_returns_empty():
 # DeepInputs / LitInputs schema — new field is present and defaults False
 # ---------------------------------------------------------------------------
 
+
 def test_deep_inputs_expand_citations_default():
     from docent.bundled_plugins.studio.models import DeepInputs
+
     inp = DeepInputs(topic="quantum computing", backend="docent")
     assert inp.expand_citations is False
 
 
 def test_lit_inputs_expand_citations_default():
     from docent.bundled_plugins.studio.models import LitInputs
+
     inp = LitInputs(topic="machine learning", backend="docent")
     assert inp.expand_citations is False
 
 
 def test_deep_inputs_expand_citations_settable():
     from docent.bundled_plugins.studio.models import DeepInputs
+
     inp = DeepInputs(topic="test topic", backend="docent", expand_citations=True)
     assert inp.expand_citations is True
 
@@ -297,9 +314,11 @@ def test_deep_inputs_expand_citations_settable():
 # Enrichment path — citation_enricher prompt + quality guard
 # ---------------------------------------------------------------------------
 
+
 def test_citation_enricher_prompt_registered():
     """citation_enricher must be in PROMPT_NAMES and its file must exist."""
     from docent.bundled_plugins.studio.prompts import PROMPT_NAMES, load_prompt
+
     assert "citation_enricher" in PROMPT_NAMES
     text = load_prompt("citation_enricher")
     assert "{draft}" in text
@@ -311,8 +330,6 @@ def test_expand_citations_enriches_draft_when_backend_succeeds():
     from unittest.mock import MagicMock, patch
 
     sources = [{"url": "https://arxiv.org/abs/1901.00001", "source_type": "paper"}]
-
-    enriched_draft = "ENRICHED DRAFT " * 100  # long enough to pass quality guard
 
     with patch("docent.bundled_plugins.studio.citation_client.httpx.get") as mock_get:
         mock_resp = MagicMock(status_code=200, raise_for_status=lambda: None)

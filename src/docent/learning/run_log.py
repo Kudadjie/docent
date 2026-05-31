@@ -7,6 +7,7 @@ cheap (read + split); rollover rewrites atomically when the cap is hit.
 Entries are free-form JSON dicts. A `timestamp` field is auto-added on append
 if the caller didn't supply one.
 """
+
 from __future__ import annotations
 
 import json
@@ -40,7 +41,7 @@ class RunLog:
         existing = self._read_lines()
 
         if len(existing) >= self.max_lines:
-            kept = existing[-(self.max_lines - 1):] if self.max_lines > 1 else []
+            kept = existing[-(self.max_lines - 1) :] if self.max_lines > 1 else []
             self._atomic_rewrite(kept + [line])
         else:
             with self.path.open("a", encoding="utf-8") as f:

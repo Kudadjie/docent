@@ -10,6 +10,7 @@ Canonical shapes the sync engine expects:
 - document: ``{"id", "title", "authors": [...], "year": int|None,
               "identifiers": {"doi": ...}, "type": str}``
 """
+
 from __future__ import annotations
 
 import re
@@ -59,18 +60,23 @@ class ZoteroBackend:
         if self._client is not None:
             return self._client
         if not self._api_key or not self._library_id:
-            return {"error": (
-                "auth: Zotero not configured — set reading.zotero_api_key and "
-                "reading.zotero_library_id (get them at zotero.org/settings/keys)."
-            )}
+            return {
+                "error": (
+                    "auth: Zotero not configured — set reading.zotero_api_key and "
+                    "reading.zotero_library_id (get them at zotero.org/settings/keys)."
+                )
+            }
         try:
             from .zotero_client import make_zotero
+
             self._client = make_zotero(self._api_key, self._library_id, self._library_type)
         except ImportError:
-            return {"error": (
-                "transport: pyzotero is not installed — run `pip install pyzotero` "
-                "or `uv tool install --with pyzotero docent-cli`."
-            )}
+            return {
+                "error": (
+                    "transport: pyzotero is not installed — run `pip install pyzotero` "
+                    "or `uv tool install --with pyzotero docent-cli`."
+                )
+            }
         except Exception as exc:  # noqa: BLE001
             return {"error": f"transport: could not init Zotero client: {exc}"}
         return self._client
@@ -82,6 +88,7 @@ class ZoteroBackend:
         if isinstance(zot, dict) and zot.get("error"):
             return {"items": [], "error": zot["error"], "maybe_truncated": False}
         from .zotero_client import list_collections
+
         resp = list_collections(zot)
         if resp.get("error"):
             return resp
@@ -96,6 +103,7 @@ class ZoteroBackend:
         if isinstance(zot, dict) and zot.get("error"):
             return {"items": [], "error": zot["error"], "maybe_truncated": False}
         from .zotero_client import list_items
+
         resp = list_items(zot, folder_id)
         if resp.get("error"):
             return resp

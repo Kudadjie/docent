@@ -4,6 +4,7 @@
 mid-generation the answer still lands in the conversation, so _nlm_ask polls
 `notebooklm history` to recover it instead of reporting "no response".
 """
+
 from __future__ import annotations
 
 import json
@@ -16,15 +17,17 @@ def test_normalize_question_collapses_whitespace():
 
 
 def test_history_parses_qa_pairs(monkeypatch):
-    payload = json.dumps({
-        "notebook_id": "nb1",
-        "conversation_id": "c1",
-        "count": 2,
-        "qa_pairs": [
-            {"turn": 1, "question": "Q1", "answer": "A1"},
-            {"turn": 2, "question": "Q2", "answer": "A2"},
-        ],
-    })
+    payload = json.dumps(
+        {
+            "notebook_id": "nb1",
+            "conversation_id": "c1",
+            "count": 2,
+            "qa_pairs": [
+                {"turn": 1, "question": "Q1", "answer": "A1"},
+                {"turn": 2, "question": "Q2", "answer": "A2"},
+            ],
+        }
+    )
     monkeypatch.setattr(nb, "_nlm_run", lambda *a, **k: (0, payload, ""))
     assert nb._nlm_history("nb1") == [("Q1", "A1"), ("Q2", "A2")]
 
@@ -58,9 +61,7 @@ def test_ask_returns_answer_on_success(monkeypatch):
 
 def test_ask_recovers_after_timeout(monkeypatch):
     monkeypatch.setattr(nb, "_nlm_run", lambda *a, **k: (-1, "", "Timeout after 180s"))
-    monkeypatch.setattr(
-        nb, "_recover_answer_from_history", lambda *a, **k: "RECOVERED"
-    )
+    monkeypatch.setattr(nb, "_recover_answer_from_history", lambda *a, **k: "RECOVERED")
     assert nb._nlm_ask("q", "nb1", timeout=1, recovery_timeout=10) == "RECOVERED"
 
 
@@ -68,7 +69,8 @@ def test_ask_no_recovery_on_non_timeout_failure(monkeypatch):
     called = {"recover": False}
     monkeypatch.setattr(nb, "_nlm_run", lambda *a, **k: (-1, "", "notebooklm not found on PATH"))
     monkeypatch.setattr(
-        nb, "_recover_answer_from_history",
+        nb,
+        "_recover_answer_from_history",
         lambda *a, **k: called.__setitem__("recover", True) or "X",
     )
     assert nb._nlm_ask("q", "nb1", recovery_timeout=10) is None
@@ -79,7 +81,8 @@ def test_ask_no_recovery_when_disabled(monkeypatch):
     called = {"recover": False}
     monkeypatch.setattr(nb, "_nlm_run", lambda *a, **k: (-1, "", "Timeout after 1s"))
     monkeypatch.setattr(
-        nb, "_recover_answer_from_history",
+        nb,
+        "_recover_answer_from_history",
         lambda *a, **k: called.__setitem__("recover", True) or "X",
     )
     assert nb._nlm_ask("q", "nb1", recovery_timeout=0) is None  # default: no recovery

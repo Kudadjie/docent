@@ -3,13 +3,15 @@
 Covers the post-Step-10.7 contract: the method returns
 `(path, None)` / `(None, None)` / `(None, error_message)` and never prints.
 """
+
 from __future__ import annotations
+
+from reading import ReadingQueue
 
 from docent.config import load_settings
 from docent.core.context import Context
 from docent.execution import Executor
 from docent.llm import LLMClient
-from reading import ReadingQueue
 from docent.utils.paths import config_file
 
 

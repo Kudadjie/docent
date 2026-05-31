@@ -1,4 +1,5 @@
 """Tavily API usage helper — fetch live credit consumption."""
+
 from __future__ import annotations
 
 

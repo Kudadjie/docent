@@ -41,6 +41,25 @@ docent list
 docent reading --help
 ```
 
+### Global commands
+
+| Command | What it does |
+|---------|--------------|
+| `docent list` | List all registered tools |
+| `docent info <tool>` | Show a tool's actions and arguments |
+| `docent whatsnew` | Show the current version's release highlights (from `CHANGELOG.md`) |
+| `docent update` | Upgrade the installed `docent-cli` package |
+| `docent doctor` | Check environment, tooling versions, and auth status |
+| `docent setup` | Interactive setup (profile, database folder, API keys) |
+| `docent ui` | Start the web UI on `localhost:7432` |
+| `docent serve` | Start the MCP server (stdio) for Claude Code |
+
+After an update, Docent shows a brief **What's New** banner for the first few
+interactive runs, then goes quiet until the next version bump. The content comes
+from the matching version entry in [`CHANGELOG.md`](../CHANGELOG.md), which is the
+single source of truth for release notes (also feeding the GitHub release body,
+the README, and the web UI's What's New toast).
+
 ---
 
 ## 3. The Reading Queue

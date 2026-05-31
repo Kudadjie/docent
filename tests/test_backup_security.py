@@ -1,4 +1,5 @@
 """Tests for backup archive creation and restoration, with focus on path traversal prevention."""
+
 from __future__ import annotations
 
 import zipfile
@@ -8,8 +9,8 @@ import pytest
 
 from docent.bundled_plugins.backup.manager import (
     create_archive,
-    restore_archive,
     read_manifest,
+    restore_archive,
 )
 
 
@@ -75,9 +76,7 @@ class TestPathTraversal:
 class TestDecompressionBomb:
     def test_oversized_entry_rejected(self, tmp_path, fake_home, monkeypatch):
         # Shrink the cap so we don't have to write 100 MB to trip the guard.
-        monkeypatch.setattr(
-            "docent.bundled_plugins.backup.manager.MAX_FILE_BYTES", 16
-        )
+        monkeypatch.setattr("docent.bundled_plugins.backup.manager.MAX_FILE_BYTES", 16)
         archive = tmp_path / "bomb.zip"
         with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
             zf.writestr("home/data/big.bin", b"x" * 1024)  # > 16-byte cap
@@ -86,9 +85,7 @@ class TestDecompressionBomb:
         assert not (fake_home / "data" / "big.bin").exists()
 
     def test_under_cap_entry_allowed(self, tmp_path, fake_home, monkeypatch):
-        monkeypatch.setattr(
-            "docent.bundled_plugins.backup.manager.MAX_FILE_BYTES", 1024
-        )
+        monkeypatch.setattr("docent.bundled_plugins.backup.manager.MAX_FILE_BYTES", 1024)
         archive = tmp_path / "ok.zip"
         with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
             zf.writestr("home/data/small.bin", b"x" * 8)
@@ -98,9 +95,7 @@ class TestDecompressionBomb:
 
 class TestRoundTrip:
     def test_create_and_restore(self, tmp_path, fake_home, monkeypatch):
-        monkeypatch.setattr(
-            "docent.bundled_plugins.backup.manager._docent_home", lambda: fake_home
-        )
+        monkeypatch.setattr("docent.bundled_plugins.backup.manager._docent_home", lambda: fake_home)
         monkeypatch.setattr(
             "docent.bundled_plugins.backup.manager._research_output_dir", lambda: None
         )
@@ -116,9 +111,7 @@ class TestRoundTrip:
         assert (dest / "data" / "reading" / "queue.json").read_text() == "[]"
 
     def test_manifest_readable(self, tmp_path, fake_home, monkeypatch):
-        monkeypatch.setattr(
-            "docent.bundled_plugins.backup.manager._docent_home", lambda: fake_home
-        )
+        monkeypatch.setattr("docent.bundled_plugins.backup.manager._docent_home", lambda: fake_home)
         monkeypatch.setattr(
             "docent.bundled_plugins.backup.manager._research_output_dir", lambda: None
         )

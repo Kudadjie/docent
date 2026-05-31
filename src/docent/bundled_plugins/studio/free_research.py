@@ -8,17 +8,18 @@ no key required).
 Web search fallback chain:
   Tavily (free account, 1k/month) → DuckDuckGo (no key, no quota) → skip
 """
+
 from __future__ import annotations
 
 import datetime
 import json
+from collections.abc import Generator
 from pathlib import Path
-from typing import Generator
 
 from docent.core import ProgressEvent
 
 try:
-    from tavily.errors import UsageLimitExceededError, InvalidAPIKeyError
+    from tavily.errors import InvalidAPIKeyError, UsageLimitExceededError
 except ImportError:
     UsageLimitExceededError = RuntimeError  # type: ignore[misc,assignment]
     InvalidAPIKeyError = RuntimeError  # type: ignore[misc,assignment]
@@ -84,7 +85,7 @@ _MCP_SYNTHESIS_PROMPT = (
     "(web search + academic papers, no AI synthesis yet). "
     "Would you like me to synthesise this into a structured research brief "
     "with an introduction, key findings, critical analysis, and conclusions? "
-    "I can do that right now using my own capabilities.\"*\n"
+    'I can do that right now using my own capabilities."*\n'
     "> \n"
     "> If the user says yes, use the sections below as your source material. "
     "Do not just summarise — produce a coherent, critically engaged research brief."
@@ -101,9 +102,11 @@ _DISCLAIMER_HEADER = (
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
+
 def _net_err_label(exc: Exception) -> str:
     """Return 'No internet connection' for network failures, otherwise str(exc)."""
     from docent.bundled_plugins.studio.helpers import _is_network_error
+
     return "No internet connection" if _is_network_error(exc) else str(exc)
 
 
@@ -116,11 +119,13 @@ def _web_search_ddg(query: str, max_results: int = 10) -> list[dict]:
     results = []
     with DDGS() as ddgs:
         for r in ddgs.text(query, max_results=max_results):
-            results.append({
-                "title": r.get("title", ""),
-                "url": r.get("href", ""),
-                "snippet": r.get("body", ""),
-            })
+            results.append(
+                {
+                    "title": r.get("title", ""),
+                    "url": r.get("href", ""),
+                    "snippet": r.get("body", ""),
+                }
+            )
     return results
 
 
@@ -179,6 +184,7 @@ def _format_web_result(r: dict, idx: int, source_label: str = "") -> str:
 
 # ── Public pipeline functions ─────────────────────────────────────────────────
 
+
 def run_free_deep(
     topic: str,
     guide_ctx: str,
@@ -193,8 +199,8 @@ def run_free_deep(
     Web search fallback: Tavily → DuckDuckGo → skip.
     Yields ProgressEvents. Returns a result dict: ok, output_file, sources_file.
     """
-    from .search import web_search, paper_search
     from .scholarly_client import search_scholarly
+    from .search import paper_search, web_search
 
     date_str = datetime.date.today().isoformat()
     search_query = topic
@@ -238,17 +244,26 @@ def run_free_deep(
                 yield ProgressEvent(
                     phase="web_search",
                     message=f"DuckDuckGo returned {len(web_results)} results. "
-                            "Note: results are broader and less curated than Tavily.",
+                    "Note: results are broader and less curated than Tavily.",
                 )
             except Exception as ddg_err:
-                yield ProgressEvent(phase="web_search", message=f"DuckDuckGo also failed: {_net_err_label(ddg_err)}. Skipping web search.")
+                yield ProgressEvent(
+                    phase="web_search",
+                    message=f"DuckDuckGo also failed: {_net_err_label(ddg_err)}. Skipping web search.",
+                )
         except Exception as e:
-            yield ProgressEvent(phase="web_search", message=f"Tavily search failed: {_net_err_label(e)}. Trying DuckDuckGo…")
+            yield ProgressEvent(
+                phase="web_search",
+                message=f"Tavily search failed: {_net_err_label(e)}. Trying DuckDuckGo…",
+            )
             try:
                 web_results = _web_search_ddg(search_query, max_results=10)
                 web_source = "DuckDuckGo (fallback — lower quality)"
             except Exception as ddg_err2:
-                yield ProgressEvent(phase="web_search", message=f"DuckDuckGo also failed: {_net_err_label(ddg_err2)}. Skipping web search.")
+                yield ProgressEvent(
+                    phase="web_search",
+                    message=f"DuckDuckGo also failed: {_net_err_label(ddg_err2)}. Skipping web search.",
+                )
     else:
         yield ProgressEvent(phase="web_search", message="No Tavily key — trying DuckDuckGo…")
         try:
@@ -257,19 +272,28 @@ def run_free_deep(
             yield ProgressEvent(
                 phase="web_search",
                 message=f"DuckDuckGo returned {len(web_results)} results "
-                        "(lower quality than Tavily — consider adding a free Tavily key).",
+                "(lower quality than Tavily — consider adding a free Tavily key).",
             )
         except Exception as e:
-            yield ProgressEvent(phase="web_search", message=f"DuckDuckGo failed: {_net_err_label(e)}. Skipping web search.")
+            yield ProgressEvent(
+                phase="web_search",
+                message=f"DuckDuckGo failed: {_net_err_label(e)}. Skipping web search.",
+            )
 
     # ── 2. Academic papers ────────────────────────────────────────────────────
     yield ProgressEvent(phase="paper_search", message="Searching academic papers…")
     papers: list[dict] = []
     try:
-        papers, backend_used = search_scholarly(topic, max_results=15, semantic_scholar_api_key=ss_key)
-        yield ProgressEvent(phase="paper_search", message=f"Found {len(papers)} papers via {backend_used}.")
+        papers, backend_used = search_scholarly(
+            topic, max_results=15, semantic_scholar_api_key=ss_key
+        )
+        yield ProgressEvent(
+            phase="paper_search", message=f"Found {len(papers)} papers via {backend_used}."
+        )
     except Exception as e:
-        yield ProgressEvent(phase="paper_search", message=f"Academic search failed: {_net_err_label(e)}.")
+        yield ProgressEvent(
+            phase="paper_search", message=f"Academic search failed: {_net_err_label(e)}."
+        )
 
     if len(papers) < 5:
         yield ProgressEvent(phase="paper_search", message="Supplementing with Semantic Scholar…")
@@ -281,12 +305,17 @@ def run_free_deep(
                     papers.append(p)
                     seen.add(p.get("title", "").lower())
         except Exception as e:
-            yield ProgressEvent(phase="paper_search", message=f"Semantic Scholar supplement failed: {_net_err_label(e)}.")
+            yield ProgressEvent(
+                phase="paper_search",
+                message=f"Semantic Scholar supplement failed: {_net_err_label(e)}.",
+            )
 
     # ── 3. Compile document ───────────────────────────────────────────────────
     yield ProgressEvent(phase="compile", message="Compiling output document…")
 
-    web_note = f"Web results: {len(web_results)} via {web_source}" if web_results else "Web results: none"
+    web_note = (
+        f"Web results: {len(web_results)} via {web_source}" if web_results else "Web results: none"
+    )
     sections: list[str] = [
         _DISCLAIMER_HEADER,
         f"# Deep Research (Free Tier): {topic}\n",
@@ -319,7 +348,12 @@ def run_free_deep(
         sections.append("## Academic Papers\n\n*No academic papers found.*\n")
 
     all_sources = [
-        {"title": r.get("title", ""), "url": r.get("url", ""), "source_type": "web", "web_backend": web_source}
+        {
+            "title": r.get("title", ""),
+            "url": r.get("url", ""),
+            "source_type": "web",
+            "web_backend": web_source,
+        }
         for r in web_results
     ] + [
         {
@@ -344,9 +378,7 @@ def run_free_deep(
     output_path.write_text(content, encoding="utf-8")
 
     sources_path = output_path.with_suffix(".sources.json")
-    sources_path.write_text(
-        json.dumps(all_sources, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
+    sources_path.write_text(json.dumps(all_sources, indent=2, ensure_ascii=False), encoding="utf-8")
 
     yield ProgressEvent(phase="done", message="Completed")
     return {"ok": True, "output_file": str(output_path), "sources_file": str(sources_path)}
@@ -364,18 +396,24 @@ def run_free_lit(
 
     Yields ProgressEvents. Returns a result dict: ok, output_file, sources_file.
     """
-    from .search import paper_search
     from .scholarly_client import search_scholarly
+    from .search import paper_search
 
     date_str = datetime.date.today().isoformat()
 
     yield ProgressEvent(phase="paper_search", message="Searching academic databases…")
     papers: list[dict] = []
     try:
-        papers, backend_used = search_scholarly(topic, max_results=20, semantic_scholar_api_key=ss_key)
-        yield ProgressEvent(phase="paper_search", message=f"Found {len(papers)} papers via {backend_used}.")
+        papers, backend_used = search_scholarly(
+            topic, max_results=20, semantic_scholar_api_key=ss_key
+        )
+        yield ProgressEvent(
+            phase="paper_search", message=f"Found {len(papers)} papers via {backend_used}."
+        )
     except Exception as e:
-        yield ProgressEvent(phase="paper_search", message=f"Primary search failed: {_net_err_label(e)}")
+        yield ProgressEvent(
+            phase="paper_search", message=f"Primary search failed: {_net_err_label(e)}"
+        )
 
     yield ProgressEvent(phase="paper_search", message="Supplementing with Semantic Scholar…")
     try:
@@ -388,9 +426,14 @@ def run_free_lit(
                 seen.add(p.get("title", "").lower())
                 added += 1
         if added:
-            yield ProgressEvent(phase="paper_search", message=f"Added {added} more papers from Semantic Scholar.")
+            yield ProgressEvent(
+                phase="paper_search", message=f"Added {added} more papers from Semantic Scholar."
+            )
     except Exception as e:
-        yield ProgressEvent(phase="paper_search", message=f"Semantic Scholar supplement failed: {_net_err_label(e)}.")
+        yield ProgressEvent(
+            phase="paper_search",
+            message=f"Semantic Scholar supplement failed: {_net_err_label(e)}.",
+        )
 
     yield ProgressEvent(phase="compile", message="Compiling literature review document…")
 
@@ -439,9 +482,7 @@ def run_free_lit(
     output_path.write_text(content, encoding="utf-8")
 
     sources_path = output_path.with_suffix(".sources.json")
-    sources_path.write_text(
-        json.dumps(all_sources, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
+    sources_path.write_text(json.dumps(all_sources, indent=2, ensure_ascii=False), encoding="utf-8")
 
     yield ProgressEvent(phase="done", message="Completed")
     return {"ok": True, "output_file": str(output_path), "sources_file": str(sources_path)}

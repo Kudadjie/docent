@@ -1,12 +1,13 @@
 """Citation graph action mixin: cite-graph."""
+
 from __future__ import annotations
 
-from docent.core import Context, action
 from docent.bundled_plugins.studio.models import (
+    CitedPaperItem,
     CiteGraphInputs,
     CiteGraphResult,
-    CitedPaperItem,
 )
+from docent.core import Context, action
 
 
 class CiteMixin:
@@ -29,9 +30,14 @@ class CiteMixin:
             s2_id = resolve_s2_id(inputs.doi, inputs.arxiv_id)
         except ValueError as e:
             return CiteGraphResult(
-                ok=False, anchor_title="", anchor_doi=None,
-                direction=inputs.direction, total_found=0, oa_count=0,
-                papers=[], message=str(e),
+                ok=False,
+                anchor_title="",
+                anchor_doi=None,
+                direction=inputs.direction,
+                total_found=0,
+                oa_count=0,
+                papers=[],
+                message=str(e),
             )
 
         api_key = context.settings.research.semantic_scholar_api_key
@@ -40,15 +46,25 @@ class CiteMixin:
             anchor = fetch_anchor(s2_id, api_key)
         except LookupError as e:
             return CiteGraphResult(
-                ok=False, anchor_title="", anchor_doi=None,
-                direction=inputs.direction, total_found=0, oa_count=0,
-                papers=[], message=str(e),
+                ok=False,
+                anchor_title="",
+                anchor_doi=None,
+                direction=inputs.direction,
+                total_found=0,
+                oa_count=0,
+                papers=[],
+                message=str(e),
             )
         except RuntimeError as e:
             return CiteGraphResult(
-                ok=False, anchor_title="", anchor_doi=None,
-                direction=inputs.direction, total_found=0, oa_count=0,
-                papers=[], message=str(e),
+                ok=False,
+                anchor_title="",
+                anchor_doi=None,
+                direction=inputs.direction,
+                total_found=0,
+                oa_count=0,
+                papers=[],
+                message=str(e),
             )
 
         # Fetch more than max_results so OA filtering has room to work.
@@ -58,14 +74,19 @@ class CiteMixin:
             all_papers = fetch_citation_graph(s2_id, inputs.direction, fetch_limit, api_key)
         except RuntimeError as e:
             return CiteGraphResult(
-                ok=False, anchor_title=anchor["title"], anchor_doi=anchor["doi"],
-                direction=inputs.direction, total_found=0, oa_count=0,
-                papers=[], message=str(e),
+                ok=False,
+                anchor_title=anchor["title"],
+                anchor_doi=anchor["doi"],
+                direction=inputs.direction,
+                total_found=0,
+                oa_count=0,
+                papers=[],
+                message=str(e),
             )
 
         oa = [p for p in all_papers if p["oa_url"]]
         non_oa = [p for p in all_papers if not p["oa_url"]]
-        selected = (oa + non_oa)[:inputs.max_results]
+        selected = (oa + non_oa)[: inputs.max_results]
 
         papers = [
             CitedPaperItem(

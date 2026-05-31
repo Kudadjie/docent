@@ -3,13 +3,12 @@
 Every time a new field is added to QueueEntry, add a corresponding assertion
 here to confirm the old fixture still loads and the new field gets its default.
 """
+
 from __future__ import annotations
 
 import json
 
-
 from reading.reading_store import ReadingQueueStore
-
 
 # Frozen v1 queue entry (uses old field names mendeley_id / not_in_mendeley).
 # Keep this fixture in old-format — it is the migration source.

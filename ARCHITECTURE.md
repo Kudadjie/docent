@@ -20,6 +20,7 @@ docent/
 │   └── docent/                 # The package itself
 │       ├── __init__.py
 │       ├── cli.py              # Typer app entry point + command routing
+│       ├── cli_setup.py        # Interactive first-run setup wizard (extracted from cli.py)
 │       ├── mcp_server.py       # MCP adapter — exposes registry as MCP tools (`docent serve`)
 │       ├── ui_server.py        # FastAPI app — serves UI on localhost:7432
 │       ├── ui_routes/          # FastAPI route modules (split from ui_server.py)
@@ -206,7 +207,7 @@ For workers like `feynman`:
 ## Layer 7: Config & State
 
 - **Config file**: `~/.docent/config.toml` — API keys, default model, tool-specific settings.
-- **Pydantic Settings** loads and validates it; env vars override file values.
+- **Pydantic Settings** loads and validates it; env vars override file values. `load_settings()` is memoized and self-invalidates on a config-file content hash + `DOCENT_*` env snapshot, so the UI server's per-request dispatch no longer re-parses TOML and re-validates the model on every call.
 - **Per-tool config** lives under a tool-named table. Pattern: `reading.database_dir`, `reading.queue_collection`, `reading.mendeley_mcp_command`. Keys are nested Pydantic models on `Settings`; `config.loader.write_setting` does TOML round-trips for `config-set` actions. Required-but-unset paths trigger a first-run prompt (`prompt_for_path`) with a `NO_INTERACTIVE` escape for CI.
 - **Cache directory**: `~/.docent/cache/` — for anything expensive to recompute.
 - **Tool data directory**: `~/.docent/data/<toolname>/` — per-tool persistent state (queues, indexes, counters). Tools must never reach into `~/.claude/skills/`.
@@ -298,9 +299,13 @@ That's the whole setup.
 - `/api/fs/open` is POST-only (not GET) so standard links can't trigger it.
 - Audit logging (`~/.docent/audit.log`) records sensitive operations: file open, config write, queue clear, OpenCode start/stop.
 - Bind address defaults to `127.0.0.1` — the server is never exposed beyond localhost without explicit configuration.
+- **SSRF guard on page fetching** (`studio/search.py::fetch_page` → `_url_is_fetchable`): page URLs come from search providers, so they are attacker-influenceable. Each URL — and each redirect hop, since redirects are followed manually — must use an http(s) scheme and resolve to a public IP; loopback / private / link-local / reserved targets (e.g. `169.254.169.254`, localhost services) are refused.
 
-**Studio action mapping** (`_parse_studio_body`):
-- Single source of truth for converting the UI form state into either `run_action` kwargs (in-process SSE) or CLI argv (subprocess WebSocket). Adding a new studio action requires editing only `_parse_studio_body` and `_args_to_cli`.
+**Non-interactive vs consent (Context flags):** `Context` carries three orthogonal flags instead of the old overloaded `via_mcp`: `via_mcp` (MCP agent — governs `mcp_notes` and AI-agent output framing), `non_interactive` (no TTY — preflights raise structured errors and skip spinners), and `auto_confirm` (skip human confirmation gates). MCP sets all three; the web UI sets `non_interactive` + `auto_confirm` only, so UI users get human-facing output and an explicit (not accidental) auto-confirm. `make_context(via_mcp=True)` still implies the other two unless overridden.
+
+**Studio action mapping** (`build_studio_request`):
+- **One** source of truth. `build_studio_request(body)` resolves a `StudioRunBody` into a `StudioRequest` holding BOTH the in-process `kwargs` (for `run_action` on the SSE path) and the CLI `argv` (for the subprocess WebSocket path), built side by side in the same per-action branch. The two thin renderers — `_parse_studio_body` (ui_server) and `_build_studio_cmd` (ui_routes/opencode) — both derive from it, so a new action or argument is added in exactly one place and the two surfaces cannot drift. (Historically these were two hand-synced mappings; `test_ui_server_tooling.py::test_both_builders_agree_on_confirmed_gate` guards against regression.)
+- The live frontend uses the WebSocket subprocess path; the SSE path remains wired and unit-tested.
 
 ---
 

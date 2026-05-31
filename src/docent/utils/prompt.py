@@ -6,6 +6,7 @@ Single function for now: `prompt_for_path`. The escape-hatch convention is the
 stdin. Tools that prompt should always have an env-var or flag-based path that
 bypasses the prompt entirely.
 """
+
 from __future__ import annotations
 
 import os
@@ -14,7 +15,6 @@ from pathlib import Path
 from rich.prompt import Prompt
 
 from docent.ui import get_console
-
 
 _NO_INTERACTIVE_ENV = "DOCENT_NO_INTERACTIVE"
 
@@ -38,7 +38,9 @@ def _no_interactive() -> bool:
     return val not in ("", "0", "false", "no")
 
 
-def prompt_for_path(message: str, *, allow_create: bool = True, default: str | None = None) -> Path | None:
+def prompt_for_path(
+    message: str, *, allow_create: bool = True, default: str | None = None
+) -> Path | None:
     """Ask the user for a directory path, with `~` expansion.
 
     Returns the resolved Path on success, or None if the user types 'cancel'.

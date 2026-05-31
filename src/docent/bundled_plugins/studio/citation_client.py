@@ -4,6 +4,7 @@ Fetches the papers that cite (or are cited by) an anchor paper and returns
 normalized dicts ready for CiteGraphResult. No PDF downloading — metadata
 is the reference manager's job.
 """
+
 from __future__ import annotations
 
 import logging
@@ -23,7 +24,7 @@ def resolve_s2_id(doi: str | None, arxiv_id: str | None) -> str:
         doi = doi.strip()
         for prefix in ("https://doi.org/", "http://doi.org/", "doi.org/"):
             if doi.startswith(prefix):
-                doi = doi[len(prefix):]
+                doi = doi[len(prefix) :]
                 break
         return f"DOI:{doi}"
     if arxiv_id:
@@ -52,7 +53,9 @@ def _s2_get(path: str, params: dict, api_key: str | None) -> dict:
     last_exc: Exception | None = None
     for attempt, delay in enumerate([0] + _RETRY_DELAYS):
         if delay:
-            logger.warning("Semantic Scholar rate-limited, retrying in %ds (attempt %d)", delay, attempt)
+            logger.warning(
+                "Semantic Scholar rate-limited, retrying in %ds (attempt %d)", delay, attempt
+            )
             time.sleep(delay)
         try:
             resp = httpx.get(f"{_S2_BASE}{path}", params=params, headers=headers, timeout=20)
