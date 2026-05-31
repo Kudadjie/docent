@@ -574,6 +574,102 @@ function PerspectiveSection({ title, color, body }: { title: string; color: stri
   );
 }
 
+type CiteGraphPaper = {
+  title: string; authors: string; year: number | null;
+  doi: string | null; arxiv_id: string | null;
+  oa_url: string | null; s2_url: string; abstract: string;
+};
+
+function CiteGraphPaperCard({ paper, index }: { paper: CiteGraphPaper; index: number }) {
+  const [open, setOpen] = useState(false);
+  const href = paper.oa_url || (paper.doi ? `https://doi.org/${paper.doi}` : paper.s2_url) || '';
+  const doiLabel = paper.arxiv_id ? `arXiv:${paper.arxiv_id}` : paper.doi ?? '';
+  return (
+    <div style={{ borderBottom: '1px solid var(--border)', padding: '12px 0' }}>
+      {/* Title row */}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--fg4)', paddingTop: 3, minWidth: 20, textAlign: 'right', flexShrink: 0 }}>{index + 1}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 3 }}>
+            {paper.oa_url && (
+              <span style={{ flexShrink: 0, marginTop: 2, fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: '#0fa76e', background: 'rgba(24,226,153,0.12)', padding: '1px 6px', borderRadius: 4 }}>OA</span>
+            )}
+            <div style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500, color: 'var(--fg1)', lineHeight: 1.4 }}>
+              {href ? (
+                <a href={href} target="_blank" rel="noreferrer" style={{ color: 'var(--fg1)', textDecoration: 'none' }}>
+                  {paper.title || 'Untitled'}
+                  <ExternalLink size={11} strokeWidth={1.5} style={{ marginLeft: 5, opacity: 0.4, verticalAlign: 'middle' }} />
+                </a>
+              ) : (paper.title || 'Untitled')}
+            </div>
+          </div>
+          {/* Meta row */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            {paper.authors && <span style={{ fontFamily: 'var(--sans)', fontSize: 11.5, color: 'var(--fg3)' }}>{paper.authors}</span>}
+            {paper.year && <span style={{ fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--fg4)' }}>{paper.year}</span>}
+            {doiLabel && <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--fg4)' }}>{doiLabel}</span>}
+            {paper.abstract && (
+              <button onClick={() => setOpen(o => !o)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'var(--sans)', fontSize: 11.5, color: BRAND_DEEP, padding: 0, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                {open ? <ChevronDown size={12} strokeWidth={2} /> : <ChevronRight size={12} strokeWidth={2} />}
+                Abstract
+              </button>
+            )}
+          </div>
+          {/* Abstract */}
+          {open && paper.abstract && (
+            <div style={{ marginTop: 8, fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg3)', lineHeight: 1.6, background: 'var(--bg-subtle)', borderRadius: 6, padding: '8px 10px', borderLeft: '2px solid var(--border-md)' }}>
+              {paper.abstract}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ResultCiteGraph({ data }: { data: Record<string, unknown> | null }) {
+  const anchorTitle = typeof data?.anchor_title === 'string' ? data.anchor_title : '';
+  const direction   = typeof data?.direction === 'string' ? data.direction : '';
+  const totalFound  = typeof data?.total_found === 'number' ? data.total_found : 0;
+  const oaCount     = typeof data?.oa_count === 'number' ? data.oa_count : 0;
+  const message     = typeof data?.message === 'string' ? data.message : '';
+  const papers      = Array.isArray(data?.papers) ? (data!.papers as CiteGraphPaper[]) : [];
+
+  if (papers.length === 0) {
+    return <div style={{ fontFamily: 'var(--sans)', fontSize: 12.5, color: 'var(--fg3)' }}>{message || 'No papers found.'}</div>;
+  }
+
+  const dirLabel = direction === 'cited-by' ? 'citing this paper'
+    : direction === 'citing' ? 'cited by this paper'
+    : 'in the citation graph';
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+      {/* Header */}
+      <div style={{ marginBottom: 14 }}>
+        {anchorTitle && (
+          <div style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg4)', marginBottom: 4 }}>
+            Anchor · <span style={{ color: 'var(--fg2)', fontStyle: 'italic' }}>{anchorTitle}</span>
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ fontFamily: 'var(--sans)', fontSize: 12.5, color: 'var(--fg3)' }}>
+            {totalFound} papers {dirLabel}
+          </span>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: '#0fa76e', background: 'rgba(24,226,153,0.1)', padding: '2px 8px', borderRadius: 9999 }}>
+            {oaCount} open access
+          </span>
+          <span style={{ fontFamily: 'var(--sans)', fontSize: 11.5, color: 'var(--fg4)' }}>· showing {papers.length}</span>
+        </div>
+      </div>
+      {/* Paper list */}
+      <div>
+        {papers.map((p, i) => <CiteGraphPaperCard key={i} paper={p} index={i} />)}
+      </div>
+    </div>
+  );
+}
+
 function ResultNotebook({ data, doneData }: { data: Record<string, unknown> | null; doneData?: Record<string, unknown> | null }) {
   const num = (k: string): number => (typeof data?.[k] === 'number' ? (data[k] as number) : 0);
   const notebookId = (typeof data?.notebook_id === 'string' && data.notebook_id)
@@ -790,6 +886,7 @@ export function OutputPanel({ action, state, status, logs, sources, currentPhase
       case 'search':
       case 'scholarly':  return <ResultSearch query={state.query} data={data} />;
       case 'getpaper':   return <ResultGetPaper data={data} />;
+      case 'citegraph':  return <ResultCiteGraph data={data} />;
       case 'notebook':   return <ResultNotebook data={data} doneData={doneData} />;
       case 'cfgshow':    return <ResultConfigShow data={data} />;
       case 'cfgset':     return <ResultConfigSet cfgKey={state.cfgKey} data={data} />;

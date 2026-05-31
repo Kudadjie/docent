@@ -12,7 +12,7 @@ import time
 import httpx
 
 _S2_BASE = "https://api.semanticscholar.org/graph/v1"
-_PAPER_FIELDS = "title,authors,year,externalIds,openAccessPdf"
+_PAPER_FIELDS = "title,abstract,authors,year,externalIds,openAccessPdf"
 
 logger = logging.getLogger(__name__)
 
@@ -82,8 +82,10 @@ def _parse_paper(raw: dict) -> dict:
     ext = raw.get("externalIds") or {}
     oa = raw.get("openAccessPdf") or {}
     s2_id = raw.get("paperId", "")
+    abstract = raw.get("abstract") or ""
     return {
         "title": raw.get("title") or "",
+        "abstract": abstract[:600] if abstract else "",  # cap at 600 chars
         "authors": _parse_authors(raw.get("authors") or []),
         "year": raw.get("year"),
         "doi": ext.get("DOI"),

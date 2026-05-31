@@ -76,6 +76,7 @@ class CiteMixin:
                 arxiv_id=p["arxiv_id"],
                 oa_url=p["oa_url"],
                 s2_url=p["s2_url"],
+                abstract=p.get("abstract", ""),
             )
             for p in selected
         ]

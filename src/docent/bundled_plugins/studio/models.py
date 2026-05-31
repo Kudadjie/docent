@@ -558,6 +558,7 @@ class CitedPaperItem(BaseModel):
     arxiv_id: str | None = None
     oa_url: str | None = None
     s2_url: str = ""
+    abstract: str = ""
 
 
 class CiteGraphResult(BaseModel):
