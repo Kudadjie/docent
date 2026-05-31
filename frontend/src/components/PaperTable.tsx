@@ -158,9 +158,9 @@ function PaperRow({
           </div>
 
           {/* Status badges row */}
-          {(entry.not_in_mendeley || entry.manually_kept || entry.not_in_parent_collection) && (
+          {(entry.not_in_library || entry.manually_kept || entry.not_in_parent_collection) && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-              {entry.not_in_mendeley && (
+              {entry.not_in_library && (
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                   <AlertTriangle size={11} strokeWidth={2} color="#C37D0D" />
                   <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: '#C37D0D', letterSpacing: '0.3px', textTransform: 'uppercase', fontWeight: 600 }}>

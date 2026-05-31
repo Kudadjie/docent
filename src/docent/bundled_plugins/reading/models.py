@@ -25,24 +25,24 @@ _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 class QueueEntry(BaseModel):
     id: str
-    title: str = ""        # Mendeley-owned snapshot; overlay refreshes on read.
-    authors: str = ""      # Mendeley-owned snapshot; overlay refreshes on read.
+    title: str = ""        # Reference manager snapshot; overlay refreshes on read (Mendeley only).
+    authors: str = ""      # Reference manager snapshot; overlay refreshes on read (Mendeley only).
     year: int | None = None
     doi: str | None = None
     type: EntryType = "paper"
     added: str             # ISO date
     status: EntryStatus = "queued"
     order: int = 0         # 1-based position in the reading queue; 0 = unordered.
-    category: str | None = None   # Mendeley sub-collection path, e.g. "CES701" or "CES701/Topic"; None = root.
+    category: str | None = None   # Sub-collection path, e.g. "CES701" or "CES701/Topic"; None = root.
     deadline: str | None = None   # ISO date (YYYY-MM-DD), user-settable.
     tags: list[str] = Field(default_factory=list)
     notes: str = ""
-    mendeley_id: str | None = None
+    reference_id: str | None = None
     started: str | None = None    # ISO timestamp when status -> reading.
     finished: str | None = None   # ISO timestamp when status -> done.
-    not_in_mendeley: bool = False          # Flagged absent from all collections; cleared when it returns.
+    not_in_library: bool = False          # Flagged absent from all collections; cleared when it returns.
     not_in_parent_collection: bool = False # In a sub-collection only (removed from the root); cleared when re-added to parent.
-    manually_kept: bool = False            # User chose to keep this entry after it was flagged as not_in_mendeley.
+    manually_kept: bool = False            # User chose to keep this entry after it was flagged as not_in_library.
     manually_kept_at: str | None = None    # ISO timestamp of that decision.
 
     @field_validator("deadline", mode="before")
@@ -55,9 +55,9 @@ class QueueEntry(BaseModel):
 
     @model_validator(mode="after")
     def _require_identifier(self) -> "QueueEntry":
-        if not self.doi and not self.mendeley_id:
+        if not self.doi and not self.reference_id:
             raise ValueError(
-                "QueueEntry requires doi or mendeley_id — identifier-free entries are not allowed."
+                "QueueEntry requires doi or reference_id — identifier-free entries are not allowed."
             )
         return self
 
@@ -308,18 +308,21 @@ class SyncStatusInputs(BaseModel):
     pass
 
 
-class SyncFromMendeleyInputs(BaseModel):
+class SyncFromLibraryInputs(BaseModel):
     dry_run: bool = Field(False, description="Resolve the collection and report what would change without writing the queue.")
 
+# Back-compat alias — external code may import the old name.
+SyncFromMendeleyInputs = SyncFromLibraryInputs
 
-class SyncFromMendeleyResult(BaseModel):
-    """Per-doc buckets after running sync-from-mendeley.
 
-    `added`: {id, mendeley_id, title}; `unchanged`: entry ids;
-    `flagged`: entry ids newly marked not_in_mendeley (pending user decision);
+class SyncFromLibraryResult(BaseModel):
+    """Per-doc buckets after running sync-from-library.
+
+    `added`: {id, reference_id, title}; `unchanged`: entry ids;
+    `flagged`: entry ids newly marked not_in_library (pending user decision);
     `removed`: entry ids with status='removed' (set by user action, not sync);
-    `cleared`: entry ids whose not_in_mendeley flag was cleared (back in collection);
-    `failed`: {mendeley_id, error};
+    `cleared`: entry ids whose not_in_library flag was cleared (back in collection);
+    `failed`: {reference_id, error};
     dry-run variants populate only when dry_run=True.
     `message` carries early-exit reasons (collection missing, MCP transport error).
     """
@@ -327,8 +330,8 @@ class SyncFromMendeleyResult(BaseModel):
     folder_id: str | None
     added: list[dict[str, str]]
     unchanged: list[str]
-    flagged: list[str] = []            # newly flagged as not_in_mendeley (absent from all collections)
-    cleared: list[str] = []            # not_in_mendeley / manually_kept cleared (returned to collection)
+    flagged: list[str] = []            # newly flagged as not_in_library (absent from all collections)
+    cleared: list[str] = []            # not_in_library / manually_kept cleared (returned to collection)
     not_in_parent: list[str] = []      # newly flagged as not_in_parent_collection (in sub only)
     cleared_parent: list[str] = []     # not_in_parent_collection cleared (re-added to root)
     removed: list[str] = []            # kept for dry-run compat; always empty from live sync
@@ -367,11 +370,14 @@ class SyncFromMendeleyResult(BaseModel):
             ))
         if self.failed:
             shapes.append(DataTableShape(
-                columns=["mendeley_id", "error"],
-                rows=[[item.get("mendeley_id", "")[:12], item.get("error", "")] for item in self.failed],
+                columns=["reference_id", "error"],
+                rows=[[item.get("reference_id", "")[:12], item.get("error", "")] for item in self.failed],
             ))
         return shapes
 
+
+# Back-compat alias — external code may import the old name.
+SyncFromMendeleyResult = SyncFromLibraryResult
 
 
 class SyncStatusResult(BaseModel):

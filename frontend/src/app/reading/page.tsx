@@ -52,7 +52,7 @@ function applyQuickFilter(entries: QueueEntry[], quick: Set<QuickFilter>): Queue
   return entries.filter(e => {
     if (quick.has('has-deadline') && !e.deadline) return false;
     if (quick.has('past-due') && (!e.deadline || new Date(e.deadline).getTime() >= Date.now())) return false;
-    if (quick.has('not-in-library') && !e.not_in_mendeley && !e.manually_kept && !e.not_in_parent_collection) return false;
+    if (quick.has('not-in-library') && !e.not_in_library && !e.manually_kept && !e.not_in_parent_collection) return false;
     return true;
   });
 }
@@ -630,7 +630,7 @@ ${sectionsHtml}
 
   const entries: QueueEntry[] = data?.entries ?? [];
   const banner: BannerCounts = data?.banner ?? { queued: 0, reading: 0, done: 0 };
-  const flaggedEntries = entries.filter(e => e.not_in_mendeley && e.status !== 'removed');
+  const flaggedEntries = entries.filter(e => e.not_in_library && e.status !== 'removed');
   const parentFlaggedEntries = entries.filter(e => e.not_in_parent_collection && e.status !== 'removed');
 
   // Debounce search so filter runs at most every 150 ms while the user types.

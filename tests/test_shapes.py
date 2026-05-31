@@ -26,7 +26,7 @@ from reading import (
     QueueClearResult,
     SearchResult,
     StatsResult,
-    SyncFromMendeleyResult,
+    SyncFromLibraryResult,
     SyncStatusResult,
     QueueEntry,
 )
@@ -124,7 +124,7 @@ def test_add_result_to_shapes():
 
 
 def test_mutation_result_ok_to_shapes():
-    entry = QueueEntry(id="smith-2024-foo", mendeley_id="abc123", added="2024-01-01")
+    entry = QueueEntry(id="smith-2024-foo", reference_id="abc123", added="2024-01-01")
     r = MutationResult(
         ok=True, id="smith-2024-foo", entry=entry,
         queue_size=3, banner=BannerCounts(), message="Updated.",
@@ -150,7 +150,7 @@ def test_search_result_no_matches_to_shapes():
 
 
 def test_search_result_with_matches_to_shapes():
-    entry = QueueEntry(id="smith-2024-foo", mendeley_id="abc123", added="2024-01-01")
+    entry = QueueEntry(id="smith-2024-foo", reference_id="abc123", added="2024-01-01")
     r = SearchResult(query="foo", matches=[entry], total=1, queue_size=1)
     shapes = r.to_shapes()
     assert _shape_types(shapes) == ["message", "data_table"]
@@ -209,7 +209,7 @@ def test_config_set_result_fail_to_shapes():
 
 
 def test_sync_from_mendeley_result_with_message_to_shapes():
-    r = SyncFromMendeleyResult(
+    r = SyncFromLibraryResult(
         queue_collection="Q", folder_id=None,
         added=[], unchanged=[], removed=[], failed=[],
         dry_run_added=[], dry_run_removed=[], summary="",
@@ -221,9 +221,9 @@ def test_sync_from_mendeley_result_with_message_to_shapes():
 
 
 def test_sync_from_mendeley_result_normal_to_shapes():
-    r = SyncFromMendeleyResult(
+    r = SyncFromLibraryResult(
         queue_collection="Q", folder_id="f1",
-        added=[{"id": "a", "mendeley_id": "m1", "title": "T"}],
+        added=[{"id": "a", "reference_id": "m1", "title": "T"}],
         unchanged=["b"], removed=[], failed=[],
         dry_run_added=[], dry_run_removed=[], summary="1 added.",
     )

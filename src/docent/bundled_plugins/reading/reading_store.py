@@ -48,28 +48,43 @@ def cleanup_legacy_paper_dirs() -> None:
 # Rule: additive field additions do NOT require a version bump (Pydantic handles
 # them via defaults).  Only renames, removals, or type changes need a bump + a
 # corresponding _migrate_vN_to_vM() function below.
-_QUEUE_SCHEMA_VERSION = 1
+_QUEUE_SCHEMA_VERSION = 2
 
 
 def _infer_schema_version(entries: list[dict[str, Any]]) -> int:
-    """Guess the schema version from the first entry's keys.
+    """Detect schema version from the first entry's keys.
 
-    Keep this logic cheap and conservative — when in doubt return the lowest
-    plausible version so the migration guard runs.
+    Conservative: when in doubt return the lowest plausible version so the
+    migration guard always runs rather than silently skipping it.
 
-    Currently a stub that always reports v1, so the migration path in
-    load_queue() is dormant. The first real migration MUST replace this with
-    actual key-based detection, or the guard will never fire.
+    v1 → v2 marker: renamed mendeley_id → reference_id and
+                     not_in_mendeley → not_in_library.
     """
-    return 1  # only one version exists today; extend as migrations are added
+    if not entries:
+        return 1  # empty queue — run migrations (no-op on empty list)
+    first = entries[0]
+    if "mendeley_id" in first or "not_in_mendeley" in first:
+        return 1
+    return 2
+
+
+def _migrate_v1_to_v2(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Rename mendeley_id → reference_id and not_in_mendeley → not_in_library."""
+    out = []
+    for e in entries:
+        e = dict(e)
+        if "mendeley_id" in e:
+            e["reference_id"] = e.pop("mendeley_id")
+        if "not_in_mendeley" in e:
+            e["not_in_library"] = e.pop("not_in_mendeley")
+        out.append(e)
+    return out
 
 
 def _run_migrations(entries: list[dict[str, Any]], from_version: int) -> list[dict[str, Any]]:
     """Apply all pending migrations in order from *from_version* to _QUEUE_SCHEMA_VERSION."""
-    # Example shape for future use:
-    #   if from_version < 2:
-    #       entries = _migrate_v1_to_v2(entries)
-    # Nothing to do yet — v1 is current.
+    if from_version < 2:
+        entries = _migrate_v1_to_v2(entries)
     return entries
 
 

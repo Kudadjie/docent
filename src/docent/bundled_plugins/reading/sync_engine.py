@@ -14,7 +14,7 @@ from typing import Any, Callable, Generator
 from docent.core import ProgressEvent
 from .mendeley_cache import MendeleyCache
 from .ref_manager import ReferenceManagerBackend
-from .models import QueueEntry, SyncFromMendeleyResult
+from .models import QueueEntry, SyncFromLibraryResult
 
 
 def compute_category_path(folder_id: str, root_id: str, folder_map: dict[str, dict]) -> str | None:
@@ -134,7 +134,7 @@ def build_entry_from_mendeley(
         added=datetime.now().date().isoformat(),
         order=order,
         category=category,
-        mendeley_id=mendeley_id,
+        reference_id=mendeley_id,
     )
 
 
@@ -145,8 +145,8 @@ def sync_from_mendeley_run(
     dry_run: bool,
     mendeley_cache: MendeleyCache,
     log_event: Callable[..., None],
-) -> Generator[ProgressEvent, None, SyncFromMendeleyResult]:
-    empty = SyncFromMendeleyResult(
+) -> Generator[ProgressEvent, None, SyncFromLibraryResult]:
+    empty = SyncFromLibraryResult(
         queue_collection=collection_name, folder_id=None,
         added=[], unchanged=[], flagged=[], cleared=[], removed=[], failed=[],
         dry_run_added=[], dry_run_removed=[], summary="",
@@ -262,8 +262,8 @@ def sync_from_mendeley_run(
 
     added: list[dict[str, str]] = []
     unchanged: list[str] = []
-    flagged: list[str] = []            # newly flagged as not_in_mendeley (absent from all collections)
-    cleared: list[str] = []            # not_in_mendeley / manually_kept cleared (returned to any collection)
+    flagged: list[str] = []            # newly flagged as not_in_library (absent from all collections)
+    cleared: list[str] = []            # not_in_library / manually_kept cleared (returned to any collection)
     not_in_parent: list[str] = []      # newly flagged as not_in_parent_collection (in sub only)
     cleared_parent: list[str] = []     # not_in_parent_collection cleared (back in root)
     _removed: list[str] = []           # dry-run compat only (unused but kept for shape symmetry)
@@ -273,8 +273,8 @@ def sync_from_mendeley_run(
     category_updates: dict[str, str | None] = {}  # entry_id -> new category
 
     queue = store.load_queue()
-    by_mendeley_id: dict[str, dict[str, Any]] = {
-        e["mendeley_id"]: e for e in queue if e.get("mendeley_id")
+    by_reference_id: dict[str, dict[str, Any]] = {
+        e["reference_id"]: e for e in queue if e.get("reference_id")
     }
     existing_ids: set[str] = {e.get("id") for e in queue if e.get("id")}
     reserved_ids: set[str] = set()
@@ -286,13 +286,13 @@ def sync_from_mendeley_run(
         in_collection.add(mid)
         yield ProgressEvent(phase="reconcile", current=i, total=len(docs_to_process), item=doc.get("title", mid)[:60])
 
-        if mid in by_mendeley_id:
-            existing_entry = by_mendeley_id[mid]
+        if mid in by_reference_id:
+            existing_entry = by_reference_id[mid]
             eid = existing_entry.get("id") or mid
             if existing_entry.get("category") != category:
                 category_updates[eid] = category
-            # Clear not_in_mendeley / manually_kept — entry is back in some collection.
-            if existing_entry.get("not_in_mendeley") or existing_entry.get("manually_kept"):
+            # Clear not_in_library / manually_kept — entry is back in some collection.
+            if existing_entry.get("not_in_library") or existing_entry.get("manually_kept"):
                 cleared.append(eid)
             # Track parent-collection membership changes.
             in_parent = mid in in_root_collection
@@ -301,7 +301,7 @@ def sync_from_mendeley_run(
             elif (
                 not in_parent
                 and not existing_entry.get("not_in_parent_collection")
-                and not existing_entry.get("not_in_mendeley")
+                and not existing_entry.get("not_in_library")
                 and not existing_entry.get("manually_kept")
             ):
                 not_in_parent.append(eid)    # newly in sub-collection only
@@ -312,24 +312,24 @@ def sync_from_mendeley_run(
             max_order += 1
             entry = build_entry_from_mendeley(doc, mid, existing_ids | reserved_ids, max_order, category=category)
         except Exception as e:  # noqa: BLE001
-            failed.append({"mendeley_id": mid, "error": str(e)})
+            failed.append({"reference_id": mid, "error": str(e)})
             yield ProgressEvent(phase="reconcile", level="error", message=f"{mid[:8]}: {e}")
             continue
 
         reserved_ids.add(entry.id)
         if dry_run:
-            dry_run_added.append({"id": entry.id, "mendeley_id": mid, "title": entry.title})
+            dry_run_added.append({"id": entry.id, "reference_id": mid, "title": entry.title})
         else:
             new_entries.append(entry.model_dump())
-            added.append({"id": entry.id, "mendeley_id": mid, "title": entry.title})
+            added.append({"id": entry.id, "reference_id": mid, "title": entry.title})
 
     if not _maybe_truncated:
         for e in queue:
-            mid = e.get("mendeley_id")
+            mid = e.get("reference_id")
             if not mid or mid in in_collection:
                 continue
             # Skip entries already handled: removed, already flagged, or manually kept by the user.
-            if e.get("status") == "removed" or e.get("not_in_mendeley") or e.get("manually_kept"):
+            if e.get("status") == "removed" or e.get("not_in_library") or e.get("manually_kept"):
                 continue
             if dry_run:
                 dry_run_removed.append(e.get("id", mid))
@@ -350,9 +350,9 @@ def sync_from_mendeley_run(
             for e in queue:
                 eid = e.get("id")
                 if eid in flagged_set:
-                    e["not_in_mendeley"] = True
+                    e["not_in_library"] = True
                 if eid in cleared_set:
-                    e["not_in_mendeley"] = False
+                    e["not_in_library"] = False
                     e["manually_kept"] = False
                     e["manually_kept_at"] = None
                 if eid in not_in_parent_set:
@@ -402,7 +402,7 @@ def sync_from_mendeley_run(
         else:
             summary += f" Auth failure detected — check your {backend_name} credentials and retry."
 
-    return SyncFromMendeleyResult(
+    return SyncFromLibraryResult(
         queue_collection=collection_name,
         folder_id=folder_id,
         added=added,

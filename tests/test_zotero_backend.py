@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from reading.zotero_backend import ZoteroBackend
-from reading.mendeley_sync import build_entry_from_mendeley, extract_mendeley_id
+from reading.sync_engine import build_entry_from_mendeley, extract_mendeley_id
 
 
 class FakeZot:
@@ -175,7 +175,7 @@ def test_mapped_doc_builds_valid_queue_entry():
     assert entry.year == 2018
     assert entry.type == "book"
     assert entry.doi == "10.5/xyz"
-    assert entry.mendeley_id == "ZK99"  # external ref id stored here regardless of source
+    assert entry.reference_id == "ZK99"  # external ref id stored here regardless of source
 
 
 # ── client construction (arg order) ───────────────────────────────────────────

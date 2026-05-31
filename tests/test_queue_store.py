@@ -8,7 +8,7 @@ from reading.reading_store import BannerCounts, ReadingQueueStore
 def _entry(eid: str, status: str = "queued", order: int = 1) -> dict:
     return {
         "id": eid, "title": f"t-{eid}", "authors": "a", "status": status,
-        "order": order, "mendeley_id": f"m-{eid}",
+        "order": order, "reference_id": f"m-{eid}",
     }
 
 

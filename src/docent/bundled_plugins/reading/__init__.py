@@ -34,12 +34,14 @@ from .models import (
     SetDeadlineInputs,
     StatsInputs,
     StatsResult,
-    SyncFromMendeleyInputs,
+    SyncFromLibraryInputs,
+    SyncFromLibraryResult as SyncFromLibraryResult,
+    SyncFromMendeleyInputs as SyncFromMendeleyInputs,
     SyncFromMendeleyResult as SyncFromMendeleyResult,
     SyncStatusInputs,
     SyncStatusResult,
 )
-from .mendeley_sync import (
+from .sync_engine import (
     normalize_mendeley_authors,
     sync_from_mendeley_run,
 )
@@ -472,10 +474,10 @@ class ReadingQueue(Tool):
 
     @action(
         description="Reconcile the local reading queue with the configured reference manager collection (default 'Docent-Queue').",
-        input_schema=SyncFromMendeleyInputs,
+        input_schema=SyncFromLibraryInputs,
         name="sync-from-mendeley",
     )
-    def sync_from_mendeley(self, inputs: SyncFromMendeleyInputs, context: Context):
+    def sync_from_mendeley(self, inputs: SyncFromLibraryInputs, context: Context):
         collection_name = context.settings.reading.queue_collection
         backend = self._select_backend(context)
         return sync_from_mendeley_run(
@@ -489,10 +491,10 @@ class ReadingQueue(Tool):
 
     @action(
         description="Reconcile the local reading queue with the configured reference manager collection. Canonical name; sync-from-mendeley is the back-compat alias.",
-        input_schema=SyncFromMendeleyInputs,
+        input_schema=SyncFromLibraryInputs,
         name="sync-from-library",
     )
-    def sync_from_library(self, inputs: SyncFromMendeleyInputs, context: Context):
+    def sync_from_library(self, inputs: SyncFromLibraryInputs, context: Context):
         return self.sync_from_mendeley(inputs, context)
 
     @action(
@@ -507,7 +509,7 @@ class ReadingQueue(Tool):
             entry = self._find_entry(queue, inputs.id)
             if not entry:
                 return self._not_found(inputs.id, queue)
-            entry["not_in_mendeley"] = False
+            entry["not_in_library"] = False
             entry["manually_kept"] = True
             entry["manually_kept_at"] = datetime.now(timezone.utc).isoformat()
             self._store.save_queue(queue)
@@ -629,7 +631,7 @@ class ReadingQueue(Tool):
             return queue
         out: list[dict[str, Any]] = []
         for e in queue:
-            mid = e.get("mendeley_id")
+            mid = e.get("reference_id")
             if mid and mid in overlay:
                 out.append(self._overlay_entry(e, overlay[mid]))
             else:

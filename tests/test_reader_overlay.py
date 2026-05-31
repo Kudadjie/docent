@@ -62,7 +62,7 @@ def _stale_entry(**overrides) -> dict:
         "deadline": None,
         "tags": [],
         "notes": "",
-        "mendeley_id": "MID-1",
+        "reference_id": "MID-1",
     }
     base.update(overrides)
     return base
@@ -131,13 +131,13 @@ def test_next_falls_back_when_collection_missing(tmp_docent_home, monkeypatch):
     assert result.entry.title == "STALE TITLE"
 
 
-def test_next_passes_through_entries_without_mendeley_id(tmp_docent_home, monkeypatch):
-    """A legacy entry (no mendeley_id) plus a Mendeley-keyed entry: only
+def test_next_passes_through_entries_without_reference_id(tmp_docent_home, monkeypatch):
+    """A legacy entry (no reference_id) plus a Mendeley-keyed entry: only
     the latter is overlaid; the former is untouched."""
     tool = ReadingQueue()
     _seed_queue(tool, [
-        _stale_entry(id="legacy-1", mendeley_id=None, doi="10.9999/legacy", order=1),
-        _stale_entry(id="mid-1", mendeley_id="MID-1", order=2),
+        _stale_entry(id="legacy-1", reference_id=None, doi="10.9999/legacy", order=1),
+        _stale_entry(id="mid-1", reference_id="MID-1", order=2),
     ])
 
     _patch(
@@ -146,7 +146,7 @@ def test_next_passes_through_entries_without_mendeley_id(tmp_docent_home, monkey
         documents={"items": [{"id": "MID-1", "title": "Fresh", "authors": ["A"], "year": 2024}], "error": None},
     )
 
-    # legacy-1 has lower order so it comes next; its title is untouched (no mendeley_id).
+    # legacy-1 has lower order so it comes next; its title is untouched (no reference_id).
     result = tool.next(NextInputs(), _ctx())
     assert result.entry.id == "legacy-1"
     assert result.entry.title == "STALE TITLE"  # untouched

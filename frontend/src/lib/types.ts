@@ -15,10 +15,10 @@ export interface QueueEntry {
   deadline: string | null;
   tags: string[];
   notes: string;
-  mendeley_id: string | null;
+  reference_id: string | null;
   started: string | null;
   finished: string | null;
-  not_in_mendeley?: boolean;
+  not_in_library?: boolean;
   not_in_parent_collection?: boolean;
   manually_kept?: boolean;
   manually_kept_at?: string | null;
