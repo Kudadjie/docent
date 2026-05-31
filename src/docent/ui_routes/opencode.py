@@ -12,30 +12,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 
 router = APIRouter()
-from pydantic import BaseModel  # noqa: E402
-
-
-
-class StudioRunBody(BaseModel):
-    action_id: str
-    topic: str = ""
-    backend: str = "free"
-    dest: str = "local"
-    guides: list[str] = []
-    artifact: str = ""
-    artifact_a: str = ""
-    artifact_b: str = ""
-    query: str = ""
-    max_results: int = 10
-    arxiv_id: str = ""
-    out_path: str = ""
-    src_path: str = ""
-    max_sources: int = 20
-    nlm: bool = True
-    gate: bool = True
-    persp: bool = True
-    cfg_key: str = ""
-    cfg_val: str = ""
+from docent.ui_server import StudioRunBody  # noqa: E402
 
 
 _opencode_proc: Optional[subprocess.Popen] = None
