@@ -1,18 +1,18 @@
 # CONTEXT - resume hint for next session
 
-**Current Task:** Docs single-source-of-truth + reference manager onboarding card shipped.
+**Current Task:** Citation scavenger + UX polish shipped. PR dev → main still pending.
 
 **Key Decisions:**
-- `/api/docs/{slug}` route serves 5 user-facing markdown files; `docs/page.tsx` now fetches
-  and renders via react-markdown + remark-gfm — edit a doc, reload the UI, done.
-- New users (empty queue, localStorage flag not set) see a Mendeley/Zotero choice card
-  instead of an empty table; existing users are silently marked chosen on load.
-- All three docs files (reading-user-guide, reading-ui-spec, cli.md) de-Mendeley'd:
-  sync-from-library, reference_id, SyncFromLibraryResult throughout.
+- cite-graph is a pure discovery list (no downloads, no RM writes) — S2 citation
+  graph + OA filter + abstract preview; user adds interesting papers to their RM.
+- Zotero ingestion friction is a known arch limitation (no watch folder); tip added
+  to HowToAddModal: select collection in Zotero desktop before clicking connector.
+- Browser extension idea explored and dropped — doesn't remove steps, can't touch
+  paywalled PDFs, real fix is aiming the connector at Docent-Queue collection.
 
 **Next Steps:**
-- PR `dev` → `main` (WSL green: 657 passed).
-- Citation scavenger (#42) — anchor paper → Semantic Scholar/Crossref citation tree →
-  OA filter → download + queue. First consumer for Tier-4 B fan-out primitive.
-- Settings page: after user picks reference manager from setup card, deep-link them
-  to the correct Settings section (Mendeley vs Zotero) to complete connection setup.
+- PR dev → main (672 passed on Windows; run WSL before merging).
+- Tier-4 B fan-out primitive — two consumers identified: parallel cite-graph calls
+  in deep-research --expand-citations, + parallel Tavily search plan queries.
+- deep-research --expand-citations flag: after S2 keyword search, run cite-graph
+  on top 2–3 anchor DOIs concurrently, add OA abstracts to source pool.
