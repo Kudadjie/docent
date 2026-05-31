@@ -208,14 +208,14 @@ export default function HowToAddModal({ onClose, collectionName = 'Docent-Queue'
         >
           <p
             style={{
-              fontFamily: 'var(--mono)',
-              fontSize: 10,
+              fontFamily: 'var(--sans)',
+              fontSize: 12,
               color: 'var(--fg4)',
-              letterSpacing: '0.4px',
-              textTransform: 'uppercase',
+              lineHeight: 1.6,
             }}
           >
-            {refManager} is the source of truth for metadata. Docent adds workflow on top.
+            Docent has no "Add paper" button by design — {refManager} owns your library,
+            metadata, and PDFs. Docent only manages what you read and when.
           </p>
         </div>
       </div>
