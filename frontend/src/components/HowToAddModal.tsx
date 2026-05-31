@@ -6,26 +6,27 @@ import { X, FolderOpen, RefreshCw, BookOpen } from 'lucide-react';
 interface Props {
   onClose: () => void;
   collectionName?: string;
+  refManager?: string;
 }
 
-export default function HowToAddModal({ onClose, collectionName = 'Docent-Queue' }: Props) {
+export default function HowToAddModal({ onClose, collectionName = 'Docent-Queue', refManager = 'Mendeley' }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   const STEPS = [
     {
       icon: <FolderOpen size={15} strokeWidth={1.5} />,
       label: 'Drop the document',
-      detail: 'Place the document (preferably PDF) into your database folder (your Mendeley auto-import folder).',
+      detail: 'Place the document (preferably PDF) into your database folder.',
     },
     {
       icon: <BookOpen size={15} strokeWidth={1.5} />,
-      label: 'Add to Mendeley',
-      detail: `In Mendeley Desktop, drag the document into your "${collectionName}" collection.`,
+      label: `Add to ${refManager}`,
+      detail: `In ${refManager}, drag the document into your "${collectionName}" collection.`,
     },
     {
       icon: <RefreshCw size={15} strokeWidth={1.5} />,
       label: 'Sync',
-      detail: 'Click "Sync Mendeley" in the toolbar — Docent will pull the new entry into your queue.',
+      detail: `Click "Sync" in the toolbar — Docent will pull the new entry into your queue.`,
     },
   ];
 
@@ -111,7 +112,7 @@ export default function HowToAddModal({ onClose, collectionName = 'Docent-Queue'
                 marginTop: 2,
               }}
             >
-              Documents enter via Mendeley — not manually.
+              Documents enter via {refManager} — not manually.
             </div>
           </div>
           <button
@@ -196,7 +197,7 @@ export default function HowToAddModal({ onClose, collectionName = 'Docent-Queue'
               textTransform: 'uppercase',
             }}
           >
-            Mendeley is the source of truth for metadata. Docent adds workflow on top.
+            {refManager} is the source of truth for metadata. Docent adds workflow on top.
           </p>
         </div>
       </div>

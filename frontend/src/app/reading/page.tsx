@@ -1159,7 +1159,7 @@ ${sectionsHtml}
       </main>
 
       {/* Info modal */}
-      {showInfo && <HowToAddModal onClose={() => setShowInfo(false)} collectionName={queueCollection} />}
+      {showInfo && <HowToAddModal onClose={() => setShowInfo(false)} collectionName={queueCollection} refManager={refManagerName} />}
 
       {/* Edit modal */}
       {editEntry && (
@@ -1321,7 +1321,7 @@ ${sectionsHtml}
                     Option A — Add back to parent
                   </div>
                   <div style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg3)', lineHeight: 1.55 }}>
-                    In Mendeley, drag the entry into the <strong style={{ color: 'var(--fg2)' }}>{queueCollection}</strong> collection directly (not just a sub-collection). Re-sync when done.
+                    In {refManagerName}, drag the entry into the <strong style={{ color: 'var(--fg2)' }}>{queueCollection}</strong> collection directly (not just a sub-collection). Re-sync when done.
                   </div>
                 </div>
                 <div style={{ padding: '12px 14px', borderRadius: 8, border: '1px solid rgba(212,86,86,0.2)', background: 'rgba(212,86,86,0.04)' }}>
@@ -1329,7 +1329,7 @@ ${sectionsHtml}
                     Option B — Remove entirely
                   </div>
                   <div style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg3)', lineHeight: 1.55 }}>
-                    In Mendeley, right-click the entry and choose <em>Remove from collection</em> for each sub-collection it belongs to. Re-sync when done.
+                    In {refManagerName}, right-click the entry and choose <em>Remove from collection</em> for each sub-collection it belongs to. Re-sync when done.
                   </div>
                 </div>
               </div>

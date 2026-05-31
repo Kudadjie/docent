@@ -60,33 +60,43 @@ _KNOWN_READING_KEYS = {
 
 @register_tool
 class ReadingQueue(Tool):
-    """Reading queue + Mendeley sync."""
+    """Reading queue + reference manager sync."""
 
     name = "reading"
-    description = "Reading queue management and Mendeley sync."
+    description = "Reading queue management and reference manager sync (Mendeley or Zotero)."
     category = "reading"
 
     def __init__(self) -> None:
         self._store = ReadingQueueStore(data_dir() / "reading")
 
     @action(
-        description="Show how to add papers to your reading queue via Mendeley.",
+        description="Show how to add papers to your reading queue via your configured reference manager.",
         input_schema=AddInputs,
     )
     def add(self, inputs: AddInputs, context: Context) -> AddResult:
         collection = context.settings.reading.queue_collection
+        rm = (context.settings.reading.reference_manager or "mendeley").lower()
+        if rm == "zotero":
+            how = (
+                f"Add the paper to your '{collection}' collection (or a sub-collection) in Zotero, "
+                "then run `docent reading sync-from-library`. "
+            )
+        else:
+            how = (
+                "Drop the PDF in your reading.database_dir (Mendeley auto-imports it), "
+                f"drag it into the '{collection}' collection (or a sub-collection) in Mendeley, "
+                "then run `docent reading sync-from-library`. "
+            )
         return AddResult(
             added=False,
             queue_size=len(self._store.load_index()),
             banner=self._store.banner_counts(),
             message=(
-                "Drop the PDF in your reading.database_dir (Mendeley auto-imports it), "
-                f"drag it into the '{collection}' collection (or a sub-collection) in Mendeley, "
-                "then run `docent reading sync-from-mendeley`. "
-                "Category is auto-detected from sub-collections: "
-                f"'{collection}/CES701' -> category='CES701', "
-                f"'{collection}/CES701/Topic' -> category='CES701/Topic'. "
-                "Papers in the root collection get no category."
+                how
+                + "Category is auto-detected from sub-collections: "
+                + f"'{collection}/CES701' -> category='CES701', "
+                + f"'{collection}/CES701/Topic' -> category='CES701/Topic'. "
+                + "Papers in the root collection get no category."
             ),
         )
 
@@ -183,7 +193,7 @@ class ReadingQueue(Tool):
                 message=f"Removed {inputs.id!r}.",
             )
 
-    @action(description="Edit user-settable fields on an existing entry (Mendeley-owned fields: title/authors/year/doi are not editable here).", input_schema=EditInputs)
+    @action(description="Edit user-settable fields on an existing entry (reference manager fields — title/authors/year/doi — are not editable here).", input_schema=EditInputs)
     def edit(self, inputs: EditInputs, context: Context) -> MutationResult:
         with self._store.lock():
             queue = self._store.load_queue()
@@ -275,7 +285,7 @@ class ReadingQueue(Tool):
     def start(self, inputs: IdOnlyInputs, context: Context) -> MutationResult:
         return self._set_status(inputs.id, "reading")
 
-    @action(description="Export the queue (or a filtered subset), applying fresh Mendeley metadata.", input_schema=ExportInputs)
+    @action(description="Export the queue (or a filtered subset), applying fresh reference manager metadata.", input_schema=ExportInputs)
     def export(self, inputs: ExportInputs, context: Context) -> ExportResult:
         queue = self._store.load_queue()
         queue = self._apply_overlay(queue, self._load_mendeley_overlay(context))
@@ -476,6 +486,14 @@ class ReadingQueue(Tool):
             self._mendeley_cache(),
             self._log_event,
         )
+
+    @action(
+        description="Reconcile the local reading queue with the configured reference manager collection. Canonical name; sync-from-mendeley is the back-compat alias.",
+        input_schema=SyncFromMendeleyInputs,
+        name="sync-from-library",
+    )
+    def sync_from_library(self, inputs: SyncFromMendeleyInputs, context: Context):
+        return self.sync_from_mendeley(inputs, context)
 
     @action(
         description="Keep an entry in the reading queue despite it being absent from the reference manager collection. Records that the user made this choice.",

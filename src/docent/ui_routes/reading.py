@@ -29,7 +29,7 @@ _ACTION_MAP: dict[str, tuple[str, str]] = {
     "remove": ("reading", "remove"),
     "move-up": ("reading", "move-up"),
     "move-down": ("reading", "move-down"),
-    "sync": ("reading", "sync-from-mendeley"),
+    "sync": ("reading", "sync-from-library"),
     "queue-clear": ("reading", "queue-clear"),
     "clear-library-flag": ("reading", "clear-library-flag"),
 }
