@@ -4,7 +4,7 @@
 export type Status = 'idle' | 'queued' | 'running' | 'success' | 'failure' | 'stopped';
 export type ActionId =
   | 'deep' | 'lit' | 'peer' | 'compare' | 'draft' | 'replicate' | 'audit'
-  | 'search' | 'getpaper' | 'scholarly' | 'notebook'
+  | 'search' | 'getpaper' | 'scholarly' | 'citegraph' | 'notebook'
   | 'cfgshow' | 'cfgset';
 
 export interface ActionMeta {
@@ -25,6 +25,7 @@ export interface FormState {
   outPath: string; srcPath: string; maxSources: number;
   nlm: boolean; gate: boolean; persp: boolean;
   cfgKey: string; cfgVal: string;
+  citeIdentifier: string; citeDirection: string; citeMax: number;
 }
 
 export interface Preset {
@@ -68,10 +69,11 @@ const ACTION_GROUPS: { key: string; label: string; items: Omit<ActionMeta, 'grou
   {
     key: 'utilities', label: 'Utilities',
     items: [
-      { id: 'search',    label: 'Search papers',      form: 'search',   desc: 'Search arXiv' },
-      { id: 'getpaper',  label: 'Get paper',          form: 'getpaper', desc: 'Look up arXiv paper details' },
-      { id: 'scholarly', label: 'Scholarly search',   form: 'search',   desc: 'Search Semantic Scholar' },
-      { id: 'notebook',  label: 'To notebook',        form: 'notebook', desc: 'Build notebook from sources' },
+      { id: 'search',     label: 'Search papers',      form: 'search',    desc: 'Search arXiv' },
+      { id: 'getpaper',   label: 'Get paper',          form: 'getpaper',  desc: 'Look up arXiv paper details' },
+      { id: 'scholarly',  label: 'Scholarly search',   form: 'search',    desc: 'Search Semantic Scholar' },
+      { id: 'citegraph',  label: 'Citation graph',     form: 'citegraph', desc: 'Explore papers citing (or cited by) an anchor paper' },
+      { id: 'notebook',   label: 'To notebook',        form: 'notebook',  desc: 'Build notebook from sources' },
     ],
   },
   {
@@ -140,6 +142,7 @@ const SUBCMD: Record<string, string> = {
   deep: 'deep-research', lit: 'lit', peer: 'review',
   compare: 'compare', draft: 'draft', replicate: 'replicate', audit: 'audit',
   search: 'search-papers', scholarly: 'scholarly-search', getpaper: 'get-paper',
+  citegraph: 'cite-graph',
   notebook: 'to-notebook', cfgshow: 'config-show', cfgset: 'config-set',
 };
 
@@ -177,6 +180,14 @@ export function commandFor(actionId: ActionId, s: FormState): string {
     case 'getpaper':
       parts.push('--arxiv-id', quoteIfNeeded(s.arxivId));
       break;
+    case 'citegraph': {
+      const ident = (s.citeIdentifier ?? '').trim();
+      const isArxiv = /^\d{4}\.\d{4,5}/.test(ident) || ident.toLowerCase().includes('arxiv');
+      parts.push(isArxiv ? '--arxiv-id' : '--doi', quoteIfNeeded(ident));
+      parts.push('--direction', s.citeDirection ?? 'cited-by');
+      parts.push('--max-results', String(s.citeMax ?? 25));
+      break;
+    }
     case 'notebook':
       if (s.outPath) parts.push('--output-file', quoteIfNeeded(s.outPath));
       if (s.srcPath) parts.push('--sources-file', quoteIfNeeded(s.srcPath));
@@ -194,7 +205,7 @@ export function commandFor(actionId: ActionId, s: FormState): string {
 
 // ── API credit indicator ───────────────────────────────────────────────────────
 // Actions that involve no AI synthesis and never touch an API credit budget.
-const _NO_CREDIT_ACTIONS = new Set<ActionId>(['search', 'scholarly', 'getpaper', 'cfgshow', 'cfgset']);
+const _NO_CREDIT_ACTIONS = new Set<ActionId>(['search', 'scholarly', 'getpaper', 'citegraph', 'cfgshow', 'cfgset']);
 
 /** Returns true when the chosen backend may consume API credits for this action. */
 export function usesApiCredits(actionId: ActionId, backend: string): boolean {
@@ -206,6 +217,7 @@ export function usesApiCredits(actionId: ActionId, backend: string): boolean {
 
 export function runLabel(action: ActionMeta): string {
   if (action.id === 'search' || action.id === 'scholarly') return 'Search';
+  if (action.id === 'citegraph') return 'Explore citations';
   if (action.id === 'getpaper') return 'Look up';
   if (action.id === 'cfgshow')  return 'Show config';
   if (action.id === 'cfgset')   return 'Save';
@@ -220,6 +232,7 @@ export function actionSummary(action: ActionMeta, s: FormState): string {
     case 'compare': return `${s.artifactA} vs ${s.artifactB}`;
     case 'search': case 'scholarly': return s.query;
     case 'getpaper': return s.arxivId;
+    case 'citegraph': return s.citeIdentifier;
     case 'cfgset': return s.cfgKey;
     case 'notebook': return 'notebook build';
     default: return '';

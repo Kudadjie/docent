@@ -268,8 +268,11 @@ export function StudioRunProvider({ children }: { children: ReactNode }) {
         nlm:         form.nlm,
         gate:        form.gate,
         persp:       form.persp,
-        cfg_key:     form.cfgKey,
-        cfg_val:     form.cfgVal,
+        cfg_key:         form.cfgKey,
+        cfg_val:         form.cfgVal,
+        cite_identifier: form.citeIdentifier,
+        cite_direction:  form.citeDirection,
+        cite_max:        form.citeMax,
       }));
     };
 

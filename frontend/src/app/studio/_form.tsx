@@ -525,6 +525,36 @@ function FormNotebook({ state, set }: { state: FormState; set: SetFn }) {
   </>;
 }
 
+function FormCiteGraph({ state, set }: { state: FormState; set: SetFn }) {
+  return <>
+    <Field label="DOI or arXiv ID" hint="one or the other">
+      <StudioInput
+        value={state.citeIdentifier}
+        onChange={v => set('citeIdentifier', v)}
+        placeholder="10.1234/example  or  2301.12345"
+        mono
+      />
+    </Field>
+    <Field label="Direction">
+      <Segmented
+        value={state.citeDirection ?? 'cited-by'}
+        onChange={v => set('citeDirection', v)}
+        options={['cited-by', 'citing', 'both']}
+      />
+      <Note>
+        {(state.citeDirection ?? 'cited-by') === 'cited-by'
+          ? 'Papers that cite this one — who built on it.'
+          : (state.citeDirection ?? 'cited-by') === 'citing'
+          ? "Papers this one cites — its bibliography."
+          : 'Both directions merged and deduplicated.'}
+      </Note>
+    </Field>
+    <Field label="Max results">
+      <Stepper value={state.citeMax ?? 25} onChange={v => set('citeMax', v)} min={1} max={100} />
+    </Field>
+  </>;
+}
+
 function FormCfgShow() {
   return <div style={{ fontFamily: 'var(--sans)', fontSize: 12.5, color: 'var(--fg3)', lineHeight: 1.5 }}>Display current configuration values. API keys are masked.</div>;
 }
@@ -583,8 +613,8 @@ function FormCfgSet({ state, set }: { state: FormState; set: SetFn }) {
 
 const FORM_MAP: Record<string, React.ComponentType<{ state: FormState; set: SetFn; actionId: ActionId }>> = {
   topic: FormTopic, artifact: FormArtifact, compare: FormCompare,
-  search: FormSearch, getpaper: FormGetPaper, notebook: FormNotebook,
-  cfgshow: FormCfgShow, cfgset: FormCfgSet,
+  search: FormSearch, getpaper: FormGetPaper, citegraph: FormCiteGraph,
+  notebook: FormNotebook, cfgshow: FormCfgShow, cfgset: FormCfgSet,
 };
 
 // ── Command preview + API credit notice ────────────────────────────────────────
@@ -701,8 +731,9 @@ export function LeftColumn({ actionId, setActionId, state, set, onRun, gating, s
     if (action.form === 'topic')    return !state.topic.trim();
     if (action.form === 'artifact') return !state.artifact.trim();
     if (action.form === 'compare')  return !state.artifactA.trim() || !state.artifactB.trim();
-    if (action.form === 'search')   return !state.query.trim();
-    if (action.form === 'getpaper') return !state.arxivId.trim();
+    if (action.form === 'search')    return !state.query.trim();
+    if (action.form === 'getpaper')  return !state.arxivId.trim();
+    if (action.form === 'citegraph') return !state.citeIdentifier?.trim();
     return false;
   })();
 
@@ -710,8 +741,9 @@ export function LeftColumn({ actionId, setActionId, state, set, onRun, gating, s
     if (action.form === 'topic' && !state.topic.trim())         return 'Enter a topic to run';
     if (action.form === 'artifact' && !state.artifact.trim())   return 'Enter an artifact to run';
     if (action.form === 'compare' && (!state.artifactA.trim() || !state.artifactB.trim())) return 'Enter both artifacts to run';
-    if (action.form === 'search' && !state.query.trim())        return 'Enter a query to run';
-    if (action.form === 'getpaper' && !state.arxivId.trim())    return 'Enter an arXiv ID to run';
+    if (action.form === 'search' && !state.query.trim())                  return 'Enter a query to run';
+    if (action.form === 'getpaper' && !state.arxivId.trim())              return 'Enter an arXiv ID to run';
+    if (action.form === 'citegraph' && !state.citeIdentifier?.trim())     return 'Enter a DOI or arXiv ID to run';
     return undefined;
   })();
 

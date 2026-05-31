@@ -90,6 +90,17 @@ def _build_studio_cmd(body: StudioRunBody) -> list[str] | None:
         cmd += ["--query", body.query, "--max-results", str(body.max_results)]
     elif action == "get-paper":
         cmd += ["--arxiv-id", body.arxiv_id]
+    elif action == "cite-graph":
+        ident = body.cite_identifier.strip()
+        is_arxiv = bool(
+            "arxiv" in ident.lower()
+            or re.match(r"^\d{4}\.\d{4,5}", ident)
+        )
+        if is_arxiv:
+            cmd += ["--arxiv-id", ident]
+        else:
+            cmd += ["--doi", ident]
+        cmd += ["--direction", body.cite_direction, "--max-results", str(body.cite_max)]
     elif action == "to-notebook":
         if body.src_path:
             cmd += ["--sources-file", body.src_path]

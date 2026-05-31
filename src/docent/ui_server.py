@@ -419,6 +419,7 @@ _STUDIO_ACTION_MAP: dict[str, str] = {
     'search':    'search-papers',
     'scholarly': 'scholarly-search',
     'getpaper':  'get-paper',
+    'citegraph': 'cite-graph',
     'notebook':  'to-notebook',
     'cfgshow':   'config-show',
     'cfgset':    'config-set',
@@ -451,6 +452,9 @@ class StudioRunBody(BaseModel):
     persp: bool = True
     cfg_key: str = ""
     cfg_val: str = ""
+    cite_identifier: str = ""
+    cite_direction: str = "cited-by"
+    cite_max: int = 25
 
 
 def _parse_studio_body(body: StudioRunBody) -> tuple[str, dict[str, Any]] | None:
@@ -493,6 +497,19 @@ def _parse_studio_body(body: StudioRunBody) -> tuple[str, dict[str, Any]] | None
         args = {'query': body.query, 'max_results': body.max_results}
     elif studio_action == 'get-paper':
         args = {'arxiv_id': body.arxiv_id}
+    elif studio_action == 'cite-graph':
+        import re as _re
+        ident = body.cite_identifier.strip()
+        is_arxiv = bool(
+            'arxiv' in ident.lower()
+            or _re.match(r'^\d{4}\.\d{4,5}', ident)
+        )
+        args = {
+            'doi': None if is_arxiv else ident,
+            'arxiv_id': ident if is_arxiv else None,
+            'direction': body.cite_direction,
+            'max_results': body.cite_max,
+        }
     elif studio_action == 'to-notebook':
         args = {
             'output_file': body.out_path or None,

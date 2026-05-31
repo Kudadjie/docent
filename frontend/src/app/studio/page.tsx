@@ -23,6 +23,7 @@ const DEFAULT_FORM: FormState = {
   outPath: '', srcPath: '', maxSources: 20,
   nlm: true, gate: true, persp: true,
   cfgKey: '', cfgVal: '',
+  citeIdentifier: '', citeDirection: 'cited-by', citeMax: 25,
 };
 
 // ── Page ──────────────────────────────────────────────────────────────────────
