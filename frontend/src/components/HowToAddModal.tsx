@@ -6,26 +6,45 @@ import { X, FolderOpen, RefreshCw, BookOpen } from 'lucide-react';
 interface Props {
   onClose: () => void;
   collectionName?: string;
+  refManager?: string;
 }
 
-export default function HowToAddModal({ onClose, collectionName = 'Docent-Queue' }: Props) {
+export default function HowToAddModal({ onClose, collectionName = 'Docent-Queue', refManager = 'Mendeley' }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const STEPS = [
-    {
-      icon: <FolderOpen size={15} strokeWidth={1.5} />,
-      label: 'Drop the document',
-      detail: 'Place the document (preferably PDF) into your database folder (your Mendeley auto-import folder).',
-    },
+  const isZotero = refManager.toLowerCase() === 'zotero';
+
+  const STEPS = isZotero ? [
     {
       icon: <BookOpen size={15} strokeWidth={1.5} />,
-      label: 'Add to Mendeley',
-      detail: `In Mendeley Desktop, drag the document into your "${collectionName}" collection.`,
+      label: 'Select the collection first',
+      detail: `In the Zotero desktop app, click your "${collectionName}" collection (or a sub-collection) to make it active.`,
+    },
+    {
+      icon: <FolderOpen size={15} strokeWidth={1.5} />,
+      label: 'Save via the Zotero connector',
+      detail: `Click the Zotero browser connector on the paper page. It saves directly into the active collection — no dragging needed.`,
     },
     {
       icon: <RefreshCw size={15} strokeWidth={1.5} />,
       label: 'Sync',
-      detail: 'Click "Sync Mendeley" in the toolbar — Docent will pull the new entry into your queue.',
+      detail: `Click "Sync" in the toolbar — Docent will pull the new entry into your queue.`,
+    },
+  ] : [
+    {
+      icon: <FolderOpen size={15} strokeWidth={1.5} />,
+      label: 'Get the paper into Mendeley',
+      detail: `Use the Mendeley Web Importer (browser extension) and save directly to "${collectionName}", or drop the PDF into your watch folder and drag it to the collection in Mendeley.`,
+    },
+    {
+      icon: <BookOpen size={15} strokeWidth={1.5} />,
+      label: 'Tip: target the collection',
+      detail: `In the Web Importer popup, choose "${collectionName}" as the destination — skips the manual drag entirely.`,
+    },
+    {
+      icon: <RefreshCw size={15} strokeWidth={1.5} />,
+      label: 'Sync',
+      detail: `Click "Sync" in the toolbar — Docent will pull the new entry into your queue.`,
     },
   ];
 
@@ -111,7 +130,7 @@ export default function HowToAddModal({ onClose, collectionName = 'Docent-Queue'
                 marginTop: 2,
               }}
             >
-              Documents enter via Mendeley — not manually.
+              Documents enter via {refManager} — not manually.
             </div>
           </div>
           <button
@@ -189,14 +208,14 @@ export default function HowToAddModal({ onClose, collectionName = 'Docent-Queue'
         >
           <p
             style={{
-              fontFamily: 'var(--mono)',
-              fontSize: 10,
+              fontFamily: 'var(--sans)',
+              fontSize: 12,
               color: 'var(--fg4)',
-              letterSpacing: '0.4px',
-              textTransform: 'uppercase',
+              lineHeight: 1.6,
             }}
           >
-            Mendeley is the source of truth for metadata. Docent adds workflow on top.
+            Docent has no "Add paper" button by design — {refManager} owns your library,
+            metadata, and PDFs. Docent only manages what you read and when.
           </p>
         </div>
       </div>

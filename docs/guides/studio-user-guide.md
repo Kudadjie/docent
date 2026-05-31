@@ -26,7 +26,7 @@ docent studio to-notebook
 
 | Backend | Cost | Requirements | Best for |
 |---------|------|-------------|----------|
-| `free` | Free | None (Tavily optional) | Quick sweeps, no API key |
+| `free` | Free | None (Tavily optional) | Quick sweeps, no API key (deep-research & lit only) |
 | `feynman` | AI credits | Feynman CLI (`npm install -g @companion-ai/feynman@latest`) | Comprehensive long-form research |
 | `docent` | AI credits | `opencode serve --port 4096` | Structured 6-stage pipeline |
 | `groq` | Free tier available | `GROQ_API_KEY` | Fast, cheap AI |
@@ -35,9 +35,34 @@ docent studio to-notebook
 | `openai` | Paid | `OPENAI_API_KEY` | GPT models |
 | `ollama` / `lm_studio` | Free | Local server running | Private, offline |
 
-Switch backend at any time with `--backend <name>`.
+Switch backend at any time with `--backend <name>`. The `free` backend only
+aggregates sources, so it is available **only for `deep-research` and `lit`**.
+The text-generating actions (`draft`, `review`, `compare`, `replicate`, `audit`)
+require an AI backend and will reject `--backend free`.
 
 **Important if you use Docent via Claude Desktop (MCP):** Only the `free` backend works reliably through MCP — AI backends run for several minutes and time out. For AI backends, run the `docent studio` command in your terminal directly.
+
+---
+
+## Running several actions at once (UI)
+
+In the web UI you can launch multiple Studio actions in one tab and watch them
+stream side by side — fire off a deep research, a lit review, and a draft, then
+switch between them with the run tabs at the top of the output panel. Each run
+has its own **Stop**; starting a new run never cancels the others.
+
+Two guardrails keep concurrent runs safe:
+
+- **NotebookLM is single-session.** Notebook-bound runs (a `to-notebook`, or a
+  deep-research/lit run sent to NotebookLM) still **research concurrently** — only
+  the actual NotebookLM moments are serialized: sign-in and the push to NotebookLM.
+  When a run reaches one of those while another holds the session, it briefly shows
+  **"Waiting: NotebookLM busy"** in its activity log, then proceeds automatically.
+  This holds across the UI *and* the CLI, and covers the sign-in step so two runs
+  can't both pop a login browser. (The shared Chromium profile — not the notebook —
+  is what forces this, so even pushes to *different* notebooks take turns.)
+- **Parallel cap.** At most `max_parallel_studio_runs` (default 3) runs stream at
+  once; extras queue and auto-start as slots free up.
 
 ---
 
@@ -101,17 +126,25 @@ Artifact can be an arXiv ID, a local PDF path, or a URL. Output: `{slug}-review.
 docent studio compare --artifact-a "2401.12345" --artifact-b "2312.67890" --backend feynman
 ```
 
-Side-by-side comparison. Output: `{a-slug}-vs-{b-slug}-compare.md` + review file.
+Side-by-side comparison. Output: `{a-slug}-vs-{b-slug}-compare.md` + review file. No free backend.
 
 ---
 
 ## Draft a document
 
 ```bash
-docent studio draft --topic "Introduction to storm surge modelling" --backend feynman
+docent studio draft --topic "Introduction to storm surge modelling" --backend docent
+docent studio draft --topic "Methods section" --backend docent \
+  --guide-files outline.md --guide-files style-sample.pdf
 ```
 
-Writes a paper section or document on the given topic. Output: `{slug}-draft.md`.
+A writing starter: give it a topic plus optional `--guide-files` (a style sample,
+context notes, an outline, or an existing rough draft) and it produces a structured
+first draft to build on. Guide-file content is treated as a brief the draft must
+align with. The output uses `[CITE: …]` placeholders where references are needed
+(it never fabricates citations) and `[EXPAND: …]` markers where you should go
+deeper. Output: `{slug}-draft.md`. No free backend — drafting needs an AI backend
+(`docent`, `feynman`, or `groq`).
 
 ---
 
@@ -121,7 +154,7 @@ Writes a paper section or document on the given topic. Output: `{slug}-draft.md`
 docent studio replicate --artifact "2401.12345" --backend feynman
 ```
 
-Produces a step-by-step guide to replicate a paper's experiments. Output: `{slug}-replicate.md`.
+Produces a step-by-step guide to replicate a paper's experiments. Output: `{slug}-replicate.md`. No free backend.
 
 ---
 
@@ -131,7 +164,7 @@ Produces a step-by-step guide to replicate a paper's experiments. Output: `{slug
 docent studio audit --artifact "2401.12345" --backend feynman
 ```
 
-Audits a paper for methodology issues, claim validity, and reproducibility. Output: `{slug}-audit.md`.
+Audits a paper for methodology issues, claim validity, and reproducibility. Output: `{slug}-audit.md`. No free backend.
 
 ---
 
@@ -299,6 +332,9 @@ Settings are stored in `~/.docent/config.toml` under `[research]`.
 | `tavily_research_timeout` | `600` | Tavily research timeout in seconds |
 | `semantic_scholar_api_key` | _(not set)_ | Semantic Scholar key (optional) |
 | `notebooklm_notebook_id` | _(not set)_ | Default NotebookLM notebook ID |
+| `notebooklm_ask_timeout` | `300` | Seconds to wait for a NotebookLM chat answer (quality gate / perspectives) |
+| `notebooklm_lock_timeout` | `1800` | Seconds a queued `to-notebook` run waits for the shared NotebookLM session before aborting. Two `to-notebook` runs (UI or CLI) can never touch NotebookLM at once — the second waits, showing "Waiting: NotebookLM busy", then auto-starts. |
+| `max_parallel_studio_runs` | `3` | Max Studio runs the UI streams at once in one tab. Beyond this, a new run is queued and auto-starts when a slot frees up. |
 | `obsidian_vault` | _(not set)_ | Obsidian vault path |
 | `alphaxiv_api_key` | _(not set)_ | alphaXiv API key for paper search |
 

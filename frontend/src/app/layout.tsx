@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import ScreenSizeGate from '@/components/ScreenSizeGate';
 import TabGuard from '@/components/TabGuard';
+import WhatsNewToast from '@/components/WhatsNewToast';
 import { NotificationProvider } from '@/lib/notifications';
 import { AppRunProvider } from '@/lib/app-run-context';
 import { StudioRunProvider } from '@/lib/studio-run-context';
@@ -62,6 +63,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <AppRunProvider>
           <NotificationProvider>
             <StudioRunProvider>{children}</StudioRunProvider>
+            <WhatsNewToast />
           </NotificationProvider>
         </AppRunProvider>
       </body>

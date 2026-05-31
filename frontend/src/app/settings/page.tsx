@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Settings, Trash2, Pencil, Check, X, BookOpen, RefreshCw, Activity, Key, EyeOff, Zap, HardDriveDownload, CloudUpload, RotateCcw, AlertTriangle, FlaskConical } from 'lucide-react';
+import { Settings, Trash2, BookOpen, RefreshCw, Activity, Key, Zap, FlaskConical, RotateCcw } from 'lucide-react';
 import Sidebar from '@/components/Sidebar';
 import StatusBanner, { type DotState } from '@/components/StatusBanner';
 import Toast, { type ToastData } from '@/components/Toast';
@@ -10,10 +10,21 @@ import { useNotifications } from '@/lib/notifications';
 import { useTour } from '@/hooks/useTour';
 import { TOUR_KEYS, TOUR_LABELS, tourHasSeen, tourReset, tourResetAll } from '@/lib/tour';
 import { extractMessage } from '@/lib/toast-utils';
+import ConfigRow from '@/components/settings/ConfigRow';
+import SecretKeyRow from '@/components/settings/SecretKeyRow';
+import TavilyUsageWidget from '@/components/settings/TavilyUsageWidget';
+import { DoctorStatusBadge, SectionCard, KeyGroup, type DoctorCheck } from '@/components/settings/SettingsPrimitives';
+import OpenCodeSection from '@/components/settings/OpenCodeSection';
+import NotebookLMSection from '@/components/settings/NotebookLMSection';
+import BackupRestoreSection from '@/components/settings/BackupRestoreSection';
 
 interface ReadingConfig {
   database_dir: string | null;
   queue_collection: string;
+  reference_manager: string;
+  zotero_api_key: string | null;
+  zotero_library_id: string | null;
+  zotero_library_type: string;
   output_dir: string | null;
 }
 
@@ -23,48 +34,12 @@ interface ResearchConfig {
   alphaxiv_api_key: string | null;
   groq_api_key: string | null;
   feynman_model: string | null;
-  // Archived: gemini_api_key, openrouter_api_key, mistral_api_key, cerebras_api_key
 }
 
 interface ConfigData {
   reading: ReadingConfig;
   research: ResearchConfig;
 }
-
-interface DoctorCheck {
-  label: string;
-  status: 'OK' | 'WARN' | 'FAIL' | 'SKIP';
-  version: string;
-  detail: string;
-}
-
-// ── Config row (for non-secret values) ───────────────────────────────────────
-
-const READING_FIELDS: {
-  key: keyof ReadingConfig;
-  label: string;
-  description: string;
-  placeholder: string;
-}[] = [
-  {
-    key: 'database_dir',
-    label: 'Database directory',
-    description: 'Local folder where your PDFs are stored. Docent counts PDFs here and uses this path for paper scanning.',
-    placeholder: '~/Documents/Papers',
-  },
-  {
-    key: 'queue_collection',
-    label: 'Mendeley collection',
-    description: 'Name of the Mendeley collection to sync from. Must exactly match the collection name in the Mendeley desktop app.',
-    placeholder: 'Docent-Queue',
-  },
-  {
-    key: 'output_dir',
-    label: 'Research output directory',
-    description: 'Folder where Studio research outputs are saved. Defaults to ~/docent/research/ if not set.',
-    placeholder: '~/docent/research',
-  },
-];
 
 const RESEARCH_KEY_FIELDS: {
   key: keyof ResearchConfig;
@@ -96,513 +71,7 @@ const RESEARCH_KEY_FIELDS: {
     description: 'Fast AI backend for the Groq backend option. Free tier at console.groq.com.',
     placeholder: 'gsk_...',
   },
-  // Archived: gemini_api_key, openrouter_api_key, mistral_api_key, cerebras_api_key
 ];
-
-function ConfigRow({
-  label,
-  description,
-  value,
-  placeholder,
-  onSave,
-}: {
-  label: string;
-  description: string;
-  value: string | null;
-  placeholder: string;
-  onSave: (v: string) => Promise<void>;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  function startEdit() {
-    setDraft(value ?? '');
-    setEditing(true);
-  }
-
-  async function save() {
-    setSaving(true);
-    await onSave(draft.trim());
-    setSaving(false);
-    setEditing(false);
-  }
-
-  function cancel() {
-    setEditing(false);
-    setDraft('');
-  }
-
-  return (
-    <div style={{
-      padding: '16px 0',
-      borderBottom: '1px solid var(--border)',
-      display: 'grid',
-      gridTemplateColumns: '1fr auto',
-      gap: '12px 24px',
-      alignItems: 'start',
-    }}>
-      <div>
-        <div style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500, color: 'var(--fg1)', marginBottom: 3 }}>
-          {label}
-        </div>
-        <div style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg4)', lineHeight: 1.5 }}>
-          {description}
-        </div>
-        <div style={{ marginTop: 8 }}>
-          {editing ? (
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              <input
-                autoFocus
-                value={draft}
-                onChange={e => setDraft(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') cancel(); }}
-                placeholder={placeholder}
-                style={{
-                  fontFamily: 'var(--mono)', fontSize: 12,
-                  padding: '5px 10px', borderRadius: 6,
-                  border: '1px solid #18E299',
-                  background: 'var(--bg-card)', color: 'var(--fg1)',
-                  outline: 'none', width: 320,
-                }}
-              />
-              <button
-                onClick={save}
-                disabled={saving}
-                aria-label="Save"
-                style={{
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                  width: 28, height: 28, borderRadius: 6, border: 'none',
-                  background: 'rgba(24,226,153,0.15)', color: '#0fa76e',
-                  cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.6 : 1,
-                }}
-              >
-                <Check size={14} strokeWidth={2} />
-              </button>
-              <button
-                onClick={cancel}
-                aria-label="Cancel"
-                style={{
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                  width: 28, height: 28, borderRadius: 6, border: 'none',
-                  background: 'var(--gray100)', color: 'var(--fg3)',
-                  cursor: 'pointer',
-                }}
-              >
-                <X size={14} strokeWidth={2} />
-              </button>
-            </div>
-          ) : (
-            <span style={{
-              fontFamily: 'var(--mono)', fontSize: 12,
-              color: value ? 'var(--fg2)' : 'var(--fg4)',
-              fontStyle: value ? 'normal' : 'italic',
-            }}>
-              {value ?? 'not set'}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {!editing && (
-        <button
-          onClick={startEdit}
-          aria-label={`Edit ${label}`}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 5,
-            padding: '5px 10px', borderRadius: 6,
-            border: '1px solid var(--border-md)',
-            background: 'transparent', color: 'var(--fg3)',
-            fontFamily: 'var(--sans)', fontSize: 12,
-            cursor: 'pointer', whiteSpace: 'nowrap', marginTop: 2,
-          }}
-        >
-          <Pencil size={12} strokeWidth={1.5} />
-          Edit
-        </button>
-      )}
-    </div>
-  );
-}
-
-// ── Secret key row (always starts empty on edit, never shows raw value) ──────
-
-function SecretKeyRow({
-  label,
-  description,
-  masked,
-  placeholder,
-  onSave,
-}: {
-  label: string;
-  description: string;
-  masked: string | null;
-  placeholder: string;
-  onSave: (v: string) => Promise<void>;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  async function save() {
-    setSaving(true);
-    await onSave(draft.trim());
-    setSaving(false);
-    setEditing(false);
-    setDraft('');
-  }
-
-  function cancel() {
-    setEditing(false);
-    setDraft('');
-  }
-
-  const isSet = !!masked;
-
-  return (
-    <div style={{
-      padding: '14px 0',
-      borderBottom: '1px solid var(--border)',
-      display: 'grid',
-      gridTemplateColumns: '1fr auto',
-      gap: '8px 24px',
-      alignItems: 'start',
-    }}>
-      <div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-          <span style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500, color: 'var(--fg1)' }}>
-            {label}
-          </span>
-          {isSet && (
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', gap: 3,
-              fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 500,
-              padding: '1px 6px', borderRadius: 9999,
-              background: 'rgba(24,226,153,0.15)', color: '#0fa76e',
-              textTransform: 'uppercase', letterSpacing: '0.3px',
-            }}>
-              set
-            </span>
-          )}
-        </div>
-        <div style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg4)', lineHeight: 1.5 }}>
-          {description}
-        </div>
-        <div style={{ marginTop: 6 }}>
-          {editing ? (
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              <input
-                autoFocus
-                type="password"
-                value={draft}
-                onChange={e => setDraft(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') cancel(); }}
-                placeholder={isSet ? 'Enter new key to replace…' : placeholder}
-                style={{
-                  fontFamily: 'var(--mono)', fontSize: 12,
-                  padding: '5px 10px', borderRadius: 6,
-                  border: '1px solid #18E299',
-                  background: 'var(--bg-card)', color: 'var(--fg1)',
-                  outline: 'none', width: 320,
-                }}
-              />
-              <button
-                onClick={save}
-                disabled={saving || !draft.trim()}
-                aria-label="Save"
-                style={{
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                  width: 28, height: 28, borderRadius: 6, border: 'none',
-                  background: 'rgba(24,226,153,0.15)', color: '#0fa76e',
-                  cursor: saving || !draft.trim() ? 'default' : 'pointer',
-                  opacity: saving || !draft.trim() ? 0.5 : 1,
-                }}
-              >
-                <Check size={14} strokeWidth={2} />
-              </button>
-              <button
-                onClick={cancel}
-                aria-label="Cancel"
-                style={{
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                  width: 28, height: 28, borderRadius: 6, border: 'none',
-                  background: 'var(--gray100)', color: 'var(--fg3)',
-                  cursor: 'pointer',
-                }}
-              >
-                <X size={14} strokeWidth={2} />
-              </button>
-            </div>
-          ) : (
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', gap: 5,
-              fontFamily: 'var(--mono)', fontSize: 12,
-              color: isSet ? 'var(--fg2)' : 'var(--fg4)',
-              fontStyle: isSet ? 'normal' : 'italic',
-            }}>
-              {isSet ? (
-                <>
-                  <EyeOff size={11} strokeWidth={1.5} style={{ color: 'var(--fg4)' }} />
-                  {masked}
-                </>
-              ) : 'not set'}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {!editing && (
-        <button
-          onClick={() => setEditing(true)}
-          aria-label={`${isSet ? 'Replace' : 'Set'} ${label} key`}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 5,
-            padding: '5px 10px', borderRadius: 6,
-            border: '1px solid var(--border-md)',
-            background: 'transparent', color: 'var(--fg3)',
-            fontFamily: 'var(--sans)', fontSize: 12,
-            cursor: 'pointer', whiteSpace: 'nowrap', marginTop: 2,
-          }}
-        >
-          <Key size={11} strokeWidth={1.5} />
-          {isSet ? 'Replace' : 'Set key'}
-        </button>
-      )}
-    </div>
-  );
-}
-
-// ── Doctor status badge ───────────────────────────────────────────────────────
-
-const STATUS_COLOR: Record<DoctorCheck['status'], string> = {
-  OK: '#0fa76e',
-  WARN: '#C97B00',
-  FAIL: '#D45656',
-  SKIP: 'var(--fg4)',
-};
-
-const STATUS_BG: Record<DoctorCheck['status'], string> = {
-  OK: 'rgba(24,226,153,0.12)',
-  WARN: 'rgba(201,123,0,0.1)',
-  FAIL: 'rgba(212,86,86,0.1)',
-  SKIP: 'var(--gray100)',
-};
-
-function StatusBadge({ status }: { status: DoctorCheck['status'] }) {
-  return (
-    <span style={{
-      fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 600,
-      padding: '2px 7px', borderRadius: 9999,
-      background: STATUS_BG[status],
-      color: STATUS_COLOR[status],
-      textTransform: 'uppercase', letterSpacing: '0.4px',
-      flexShrink: 0,
-    }}>
-      {status}
-    </span>
-  );
-}
-
-// ── Section card ─────────────────────────────────────────────────────────────
-
-function SectionCard({ icon, title, description, children }: {
-  icon: React.ReactNode;
-  title: string;
-  description: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
-      <div style={{ padding: '16px 20px 14px', borderBottom: '1px solid var(--border)', background: 'linear-gradient(135deg, #18E29920 0%, transparent 60%)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-          {icon}
-          <h2 style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600, color: 'var(--fg1)', margin: 0 }}>
-            {title}
-          </h2>
-        </div>
-        <p style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg4)', lineHeight: 1.5, margin: 0 }}>
-          {description}
-        </p>
-      </div>
-      <div style={{ padding: '0 20px' }}>{children}</div>
-    </div>
-  );
-}
-
-function KeyGroup({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <div style={{
-        padding: '12px 0 2px',
-        fontFamily: 'var(--mono)', fontSize: 9.5, fontWeight: 600,
-        color: 'var(--fg4)', letterSpacing: '0.7px', textTransform: 'uppercase',
-      }}>
-        {label}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-// ── OpenCode section ──────────────────────────────────────────────────────────
-
-function OpenCodeSection() {
-  const [running, setRunning] = useState<boolean | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
-
-  useEffect(() => {
-    fetch('/api/opencode/status')
-      .then(r => r.json())
-      .then((j: { running: boolean }) => setRunning(j.running))
-      .catch(() => setRunning(false));
-  }, []);
-
-  async function toggle() {
-    setBusy(true); setMsg(null);
-    try {
-      const url = running ? '/api/opencode/stop' : '/api/opencode/start';
-      const r = await fetch(url, { method: 'POST' });
-      const j = await r.json() as { ok?: boolean; status?: string; error?: string };
-      if (!j.ok && j.error) { setMsg(j.error); return; }
-      setRunning(j.status !== 'stopped');
-      setMsg(j.status === 'already_running' ? 'Already running.' : j.status === 'started' ? 'Server started on :4096.' : 'Server stopped.');
-    } catch (e) {
-      setMsg(String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const dotColor = running === true ? '#18E299' : running === false ? '#D45656' : '#999';
-
-  return (
-    <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-        <Zap size={13} strokeWidth={1.5} color="#6366f1" />
-        <h2 style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600, color: 'var(--fg1)', margin: 0 }}>OpenCode server</h2>
-      </div>
-      <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 16 }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: dotColor, flexShrink: 0, animation: running === true ? 'logo-dot-blink 2s step-end infinite' : 'none' }} />
-            <span style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500, color: 'var(--fg1)' }}>
-              {running === null ? 'Checking…' : running ? 'Running on :4096' : 'Stopped'}
-            </span>
-          </div>
-          <div style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg3)', lineHeight: 1.55 }}>
-            Required for the Docent research backend. Uses your configured LLM API key.
-          </div>
-          {msg && <div style={{ marginTop: 6, fontFamily: 'var(--sans)', fontSize: 11.5, color: 'var(--fg4)' }}>{msg}</div>}
-        </div>
-        <button onClick={toggle} disabled={busy || running === null}
-          style={{ padding: '7px 16px', borderRadius: 8, border: '1px solid var(--border-md)', background: running ? 'rgba(212,86,86,0.08)' : 'rgba(99,102,241,0.08)', color: running ? '#D45656' : '#6366f1', fontFamily: 'var(--sans)', fontSize: 12.5, fontWeight: 600, cursor: busy ? 'wait' : 'pointer', opacity: (busy || running === null) ? 0.6 : 1 }}>
-          {busy ? 'Working…' : running ? 'Stop server' : 'Start server'}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ── NotebookLM auth section ───────────────────────────────────────────────────
-
-interface NlmStatus {
-  installed: boolean;
-  playwright_ok: boolean;
-  authenticated: boolean;
-  fix?: string;
-}
-
-function NotebookLMSection() {
-  const [nlmStatus, setNlmStatus] = useState<NlmStatus | null>(null);
-  const [nlmChecking, setNlmChecking] = useState(false);
-
-  async function checkNlmStatus() {
-    setNlmChecking(true);
-    try {
-      const r = await fetch('/api/notebooklm/auth-status');
-      const j = await r.json() as NlmStatus;
-      setNlmStatus(j);
-    } catch {
-      setNlmStatus({ installed: false, playwright_ok: false, authenticated: false });
-    } finally {
-      setNlmChecking(false);
-    }
-  }
-
-  useEffect(() => { checkNlmStatus(); }, []); // eslint-disable-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
-
-  const nlmDot = nlmStatus === null ? '#999'
-    : !nlmStatus.installed ? '#C97B00'
-    : !nlmStatus.playwright_ok ? '#C97B00'
-    : nlmStatus.authenticated ? '#18E299' : '#D45656';
-
-  const nlmLabel = nlmStatus === null ? 'Checking…'
-    : !nlmStatus.installed ? 'Not installed'
-    : !nlmStatus.playwright_ok ? 'Playwright browser missing'
-    : nlmStatus.authenticated ? 'Authenticated' : 'Not authenticated';
-
-  return (
-    <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-        <BookOpen size={13} strokeWidth={1.5} color="#0ea5e9" />
-        <h2 style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600, color: 'var(--fg1)', margin: 0 }}>NotebookLM</h2>
-      </div>
-      <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 16 }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: nlmDot, flexShrink: 0 }} />
-            <span style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500, color: 'var(--fg1)' }}>
-              {nlmLabel}
-            </span>
-          </div>
-          <div style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg3)', lineHeight: 1.55 }}>
-            {!nlmStatus?.installed ? (
-              <>Not installed. Install with: <code style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--fg2)' }}>pip install notebooklm</code></>
-            ) : !nlmStatus.playwright_ok ? (
-              <>
-                Playwright&apos;s Chromium browser is not downloaded — required for the login flow.
-                Run:{' '}
-                <code style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--fg2)' }}>
-                  {nlmStatus.fix ?? 'playwright install chromium'}
-                </code>
-                {' '}then click <strong style={{ color: 'var(--fg2)', fontWeight: 500 }}>Refresh status</strong>.
-                This may need repeating after <code style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>notebooklm</code> updates.
-              </>
-            ) : (
-              <>
-                Required for the <em>to-notebook</em> action. When your session expires, a browser
-                window opens automatically during the run so you can re-authenticate without stopping
-                anything.
-              </>
-            )}
-          </div>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end', flexShrink: 0 }}>
-          <button
-            onClick={checkNlmStatus}
-            disabled={nlmChecking}
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-              padding: '5px 12px', borderRadius: 7,
-              border: '1px solid var(--border-md)',
-              background: 'transparent', color: 'var(--fg3)',
-              fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500,
-              cursor: nlmChecking ? 'default' : 'pointer',
-              opacity: nlmChecking ? 0.6 : 1,
-              whiteSpace: 'nowrap',
-            }}
-          >
-            <RefreshCw size={12} strokeWidth={1.5} style={{ animation: nlmChecking ? 'spin 1s linear infinite' : 'none' }} />
-            {nlmChecking ? 'Checking…' : 'Refresh status'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
   const { dark, toggleDark } = useDarkMode();
@@ -618,7 +87,7 @@ export default function SettingsPage() {
     {
       popover: {
         title: 'Reading configuration',
-        description: 'Set your Mendeley collection name and local PDF folder. These tell Docent where your papers live and which collection to sync from.',
+        description: 'Choose your reference manager (Mendeley or Zotero), set the collection name to sync from, and point Docent at your local PDF folder. Your library is read-only — Docent never modifies it.',
       },
     },
     {
@@ -663,26 +132,6 @@ export default function SettingsPage() {
   const [loadingDoctor, setLoadingDoctor] = useState(false);
   const [dotState, setDotState] = useState<DotState>('idle');
 
-  // ── Backup state ───────────────────────────────────────────────────────────
-  interface BackupStatus { credentials_configured: boolean; deps_installed: boolean; token_exists: boolean; install_cmd: string | null }
-  interface DriveBackup { id: string; name: string; size_mb: number; created: string }
-  function fmtSize(mb: number): string {
-    if (mb >= 1) return `${mb.toFixed(1)} MB`;
-    const kb = Math.round(mb * 1024);
-    return kb > 0 ? `${kb} KB` : '< 1 KB';
-  }
-  const [backupStatus, setBackupStatus] = useState<BackupStatus | null>(null);
-  const [driveBackups, setDriveBackups] = useState<DriveBackup[] | null>(null);
-  const [loadingBackups, setLoadingBackups] = useState(false);
-  const [backingUp, setBackingUp] = useState(false);
-  const [downloading, setDownloading] = useState(false);
-  const [restoringId, setRestoringId] = useState<string | null>(null);
-  const [confirmRestoreId, setConfirmRestoreId] = useState<string | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [showSetup, setShowSetup] = useState(false);
-  const [credentialsText, setCredentialsText] = useState('');
-  const [savingCreds, setSavingCreds] = useState(false);
-  const [installingDeps, setInstallingDeps] = useState(false);
   const dotResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function signalDot(state: DotState) {
@@ -719,131 +168,27 @@ export default function SettingsPage() {
   }
 
   /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
-  // runDoctor is stable (function declaration, not recreated per render)
   useEffect(() => {
     fetch('/api/config')
       .then(r => r.json())
       .then((d: ConfigData) => setConfig(d))
       .catch(() => {});
-
     runDoctor();
   }, []);
   /* eslint-enable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 
-  // ── Backup handlers ─────────────────────────────────────────────────────────
+  const [readingHighlight, setReadingHighlight] = useState(false);
   useEffect(() => {
-    fetch('/api/backup/status').then(r => r.json()).then(setBackupStatus).catch(() => {});
-  }, []);
-
-  async function loadDriveBackups() {
-    setLoadingBackups(true);
-    try {
-      const res = await fetch('/api/backup/list');
-      const data = await res.json() as { ok: boolean; backups?: DriveBackup[]; error?: string };
-      if (data.ok) setDriveBackups(data.backups ?? []);
-      else setToast({ type: 'error', message: data.error ?? 'Failed to list backups' });
-    } catch { setToast({ type: 'error', message: 'Could not reach backup service' }); }
-    finally { setLoadingBackups(false); }
-  }
-
-  async function handleBackupToDrive() {
-    setBackingUp(true); signalDot('working');
-    try {
-      const res = await fetch('/api/backup/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ local_only: false }) });
-      const data = await res.json() as { ok: boolean; archive_name?: string; size_mb?: number; files_excluded?: number; error?: string };
-      if (data.ok) {
-        const excWarn = (data.files_excluded ?? 0) > 0 ? ` (${data.files_excluded} file(s) >100 MB excluded)` : '';
-        setToast({ type: 'success', message: `Backed up to Google Drive — ${fmtSize(data.size_mb ?? 0)}${excWarn}` });
-        signalDot('done');
-        setDriveBackups(null); // force refresh on next open
-      } else {
-        setToast({ type: 'error', message: data.error ?? 'Backup failed' });
-        signalDot('error');
-      }
-    } catch { setToast({ type: 'error', message: 'Backup request failed' }); signalDot('error'); }
-    finally { setBackingUp(false); }
-  }
-
-  function handleDownloadZip() {
-    setDownloading(true);
-    const a = document.createElement('a');
-    a.href = '/api/backup/download';
-    a.click();
-    setTimeout(() => setDownloading(false), 3000);
-  }
-
-  async function handleRestoreFromDrive(backupId: string, name: string) {
-    setRestoringId(backupId); setConfirmRestoreId(null); signalDot('working');
-    try {
-      const res = await fetch('/api/backup/restore', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ backup_id: backupId }) });
-      const data = await res.json() as { ok: boolean; restored_from?: string; error?: string };
-      if (data.ok) {
-        setToast({ type: 'success', message: `Restored from ${data.restored_from}. Restart docent ui to apply.` });
-        signalDot('done');
-      } else {
-        setToast({ type: 'error', message: data.error ?? 'Restore failed' });
-        signalDot('error');
-      }
-    } catch { setToast({ type: 'error', message: 'Restore request failed' }); signalDot('error'); }
-    finally { setRestoringId(null); }
-  }
-
-  async function handleInstallDeps() {
-    setInstallingDeps(true); signalDot('working');
-    try {
-      const res = await fetch('/api/backup/install-deps', { method: 'POST' });
-      const data = await res.json() as { ok: boolean; error?: string };
-      if (data.ok) {
-        setToast({ type: 'success', message: 'Dependencies installed.' });
-        signalDot('done');
-        fetch('/api/backup/status').then(r => r.json()).then(setBackupStatus).catch(() => {});
-      } else {
-        setToast({ type: 'error', message: data.error ?? 'Installation failed' });
-        signalDot('error');
-      }
-    } catch { setToast({ type: 'error', message: 'Install request failed' }); signalDot('error'); }
-    finally { setInstallingDeps(false); }
-  }
-
-  async function handleDeleteBackup(backupId: string) {
-    setDeletingId(backupId);
-    try {
-      const res = await fetch('/api/backup/delete', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ backup_id: backupId }),
-      });
-      const data = await res.json() as { ok: boolean; error?: string };
-      if (data.ok) {
-        setDriveBackups(prev => prev ? prev.filter(b => b.id !== backupId) : null);
-        setToast({ type: 'success', message: 'Backup deleted from Google Drive.' });
-      } else {
-        setToast({ type: 'error', message: data.error ?? 'Delete failed' });
-      }
-    } catch { setToast({ type: 'error', message: 'Delete request failed' }); }
-    finally { setDeletingId(null); }
-  }
-
-  async function handleSaveCredentials() {
-    if (!credentialsText.trim()) return;
-    setSavingCreds(true);
-    try {
-      const res = await fetch('/api/backup/setup', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ credentials_json: credentialsText.trim() }),
-      });
-      const data = await res.json() as { ok: boolean; error?: string };
-      if (data.ok) {
-        setToast({ type: 'success', message: 'Credentials saved. Run a backup to authenticate with Google.' });
-        setShowSetup(false);
-        setCredentialsText('');
-        // Refresh status
-        fetch('/api/backup/status').then(r => r.json()).then(setBackupStatus).catch(() => {});
-      } else {
-        setToast({ type: 'error', message: data.error ?? 'Could not save credentials' });
-      }
-    } catch { setToast({ type: 'error', message: 'Request failed' }); }
-    finally { setSavingCreds(false); }
-  }
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('from') !== 'rm-setup') return;
+    window.history.replaceState(null, '', window.location.pathname);
+    const timer = setTimeout(() => {
+      document.getElementById('section-reading')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setReadingHighlight(true);
+      setTimeout(() => setReadingHighlight(false), 1800);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleSaveReading(key: keyof ReadingConfig, value: string) {
     signalDot('working');
@@ -860,7 +205,7 @@ export default function SettingsPage() {
         signalDot('error');
       } else {
         if (body.reading) setConfig(c => c ? { ...c, reading: body.reading! } : c);
-        setToast({ type: 'success', message: `Saved reading.${key}.` });
+        setToast({ type: 'success', message: key === 'zotero_api_key' ? 'Saved Zotero API key.' : `Saved reading.${key}.` });
         signalDot('done');
       }
     } catch {
@@ -956,25 +301,131 @@ export default function SettingsPage() {
 
             {/* Left column: Reading config + System health */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-              <SectionCard
-                icon={<BookOpen size={14} strokeWidth={1.5} color="#0fa76e" />}
-                title="Reading"
-                description="Controls how Docent syncs your reading queue with Mendeley and your local paper database."
+              <section
+                id="section-reading"
+                style={{
+                  borderRadius: 12,
+                  outline: readingHighlight ? '2px solid #14B8A6' : '2px solid transparent',
+                  outlineOffset: 3,
+                  transition: 'outline-color 0.3s ease',
+                }}
               >
-                {READING_FIELDS.map(f => (
+              <SectionCard
+                accentColor="#14B8A6"
+                icon={<BookOpen size={14} strokeWidth={1.5} color="#14B8A6" />}
+                title="Reading"
+                description="Controls how Docent syncs your reading queue with your reference manager and local paper database."
+              >
+                {/* Reference manager toggle */}
+                <div style={{ padding: '16px 0', borderBottom: '1px solid var(--border)' }}>
+                  <div style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500, color: 'var(--fg1)', marginBottom: 3 }}>
+                    Reference manager
+                  </div>
+                  <div style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg4)', lineHeight: 1.5, marginBottom: 10 }}>
+                    Docent reads from your library to build the queue. Your data is never modified.
+                  </div>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    {(['mendeley', 'zotero'] as const).map(rm => {
+                      const active = (rc?.reference_manager ?? 'mendeley') === rm;
+                      return (
+                        <button
+                          key={rm}
+                          onClick={() => { void handleSaveReading('reference_manager', rm); }}
+                          style={{
+                            padding: '5px 14px', borderRadius: 6,
+                            border: active ? 'none' : '1px solid var(--border-md)',
+                            background: active ? '#14B8A6' : 'transparent',
+                            color: active ? '#fff' : 'var(--fg3)',
+                            fontFamily: 'var(--sans)', fontSize: 12, fontWeight: active ? 600 : 400,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {rm === 'mendeley' ? 'Mendeley' : 'Zotero'}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {(rc?.reference_manager ?? 'mendeley') !== 'zotero' && (
                   <ConfigRow
-                    key={f.key}
-                    label={f.label}
-                    description={f.description}
-                    value={rc ? (rc[f.key] as string | null) : null}
-                    placeholder={f.placeholder}
-                    onSave={v => handleSaveReading(f.key, v)}
+                    label="Watch folder"
+                    description="Mendeley watch folder — PDFs dropped here are auto-imported into your library. Set this to the same folder Mendeley monitors."
+                    value={rc?.database_dir ?? null}
+                    placeholder="~/Documents/Papers"
+                    onSave={v => handleSaveReading('database_dir', v)}
                   />
-                ))}
+                )}
+                <ConfigRow
+                  label="Queue collection"
+                  description="Name of the collection to sync from. Must exactly match the collection name in your reference manager."
+                  value={rc?.queue_collection ?? null}
+                  placeholder="Docent-Queue"
+                  onSave={v => handleSaveReading('queue_collection', v)}
+                />
+
+                {/* Zotero credentials — shown only when Zotero is the active backend */}
+                {rc?.reference_manager === 'zotero' && (
+                  <>
+                    <SecretKeyRow
+                      label="Zotero API key"
+                      description="From zotero.org/settings/keys — create a key with read access to your personal library. No OAuth, no browser login."
+                      masked={rc.zotero_api_key ?? null}
+                      placeholder="your-zotero-key"
+                      onSave={v => handleSaveReading('zotero_api_key', v)}
+                    />
+                    <ConfigRow
+                      label="Library ID"
+                      description="Your numeric Zotero user ID — visible in the URL at zotero.org/settings/keys (e.g. 1234567)."
+                      value={rc.zotero_library_id ?? null}
+                      placeholder="1234567"
+                      onSave={v => handleSaveReading('zotero_library_id', v)}
+                    />
+                    <div style={{ padding: '14px 0', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500, color: 'var(--fg1)', marginBottom: 3 }}>
+                        Library type
+                      </div>
+                      <div style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg4)', lineHeight: 1.5, marginBottom: 8 }}>
+                        Use <em>User</em> for your personal Zotero library; <em>Group</em> for a shared group library.
+                      </div>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        {(['user', 'group'] as const).map(lt => {
+                          const active = (rc.zotero_library_type ?? 'user') === lt;
+                          return (
+                            <button
+                              key={lt}
+                              onClick={() => { void handleSaveReading('zotero_library_type', lt); }}
+                              style={{
+                                padding: '5px 14px', borderRadius: 6,
+                                border: active ? 'none' : '1px solid var(--border-md)',
+                                background: active ? '#14B8A6' : 'transparent',
+                                color: active ? '#fff' : 'var(--fg3)',
+                                fontFamily: 'var(--sans)', fontSize: 12, fontWeight: active ? 600 : 400,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              {lt.charAt(0).toUpperCase() + lt.slice(1)}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                <ConfigRow
+                  label="Research output directory"
+                  description="Folder where Studio research outputs are saved. Defaults to ~/docent/research/ if not set."
+                  value={rc?.output_dir ?? null}
+                  placeholder="~/docent/research"
+                  onSave={v => handleSaveReading('output_dir', v)}
+                />
               </SectionCard>
+              </section>
 
               {/* Studio settings */}
               <SectionCard
+                accentColor="#8B5CF6"
                 icon={<FlaskConical size={14} strokeWidth={1.5} color="#8B5CF6" />}
                 title="Studio"
                 description="Controls which AI model Feynman uses when running deep research and literature review tasks."
@@ -988,111 +439,117 @@ export default function SettingsPage() {
                 />
               </SectionCard>
 
-            {/* System health — directly under Reading in left column */}
-            <section>
-              <div style={{
-                background: 'var(--bg-card)', border: '1px solid var(--border)',
-                borderRadius: 12, overflow: 'hidden',
-              }}>
+              {/* System health */}
+              <section>
                 <div style={{
-                  padding: '16px 20px 14px', borderBottom: '1px solid var(--border)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  background: 'linear-gradient(135deg, #18E29920 0%, transparent 60%)',
+                  background: 'var(--bg-card)', border: '1px solid var(--border)',
+                  borderRadius: 12, overflow: 'hidden',
                 }}>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-                      <Activity size={14} strokeWidth={1.5} color="#0fa76e" />
-                      <h2 style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600, color: 'var(--fg1)', margin: 0 }}>
-                        System health
-                      </h2>
-                    </div>
-                    <p style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg4)', margin: 0, lineHeight: 1.5 }}>
-                      Checks that Docent&apos;s core dependencies are installed and reachable.
-                    </p>
-                  </div>
-                  <button
-                    onClick={runDoctor} disabled={loadingDoctor}
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 6,
-                      padding: '5px 12px', borderRadius: 7,
-                      border: '1px solid var(--border-md)',
-                      background: 'transparent', color: 'var(--fg3)',
-                      fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500,
-                      cursor: loadingDoctor ? 'default' : 'pointer', opacity: loadingDoctor ? 0.6 : 1,
-                    }}
-                  >
-                    <RefreshCw size={12} strokeWidth={1.5} style={{ animation: loadingDoctor ? 'spin 1s linear infinite' : 'none' }} />
-                    {loadingDoctor ? 'Checking…' : 'Refresh'}
-                  </button>
-                </div>
-
-                {doctorChecks === null ? (
-                  <div style={{ padding: '28px 20px', textAlign: 'center', fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--fg4)' }}>
-                    Checking your environment…
-                  </div>
-                ) : doctorChecks.length === 0 ? (
-                  <div style={{ padding: '16px 20px', fontFamily: 'var(--sans)', fontSize: 13, color: '#D45656' }}>
-                    Could not run health checks.
-                  </div>
-                ) : (
-                  <>
-                    {doctorChecks.map((check, i) => (
-                      <div key={check.label} style={{
-                        display: 'grid',
-                        gridTemplateColumns: '150px 52px 90px 1fr',
-                        gap: '0 12px', alignItems: 'start',
-                        padding: '11px 20px',
-                        borderBottom: i < doctorChecks.length - 1 ? '1px solid var(--border)' : 'none',
-                        background: check.status === 'FAIL' ? 'rgba(212,86,86,0.03)'
-                          : check.status === 'WARN' ? 'rgba(201,123,0,0.02)' : 'transparent',
-                      }}>
-                        <span style={{ fontFamily: 'var(--sans)', fontSize: 12.5, fontWeight: 500, color: 'var(--fg1)', paddingTop: 1 }}>
-                          {check.label}
-                        </span>
-                        <div style={{ paddingTop: 2 }}><StatusBadge status={check.status} /></div>
-                        <span style={{ fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--fg4)', paddingTop: 2, wordBreak: 'break-all' }}>
-                          {check.version !== '-' ? check.version : ''}
-                        </span>
-                        <span style={{
-                          fontFamily: 'var(--sans)', fontSize: 11.5, lineHeight: 1.5,
-                          color: check.status === 'FAIL' ? '#D45656'
-                            : check.status === 'WARN' ? '#C97B00' : 'var(--fg4)',
-                        }}>
-                          {check.detail !== '-' ? check.detail : ''}
-                        </span>
+                  <div style={{
+                    padding: '16px 20px 14px', borderBottom: '1px solid var(--border)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    background: '#3B82F618',
+                  }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                        <Activity size={14} strokeWidth={1.5} color="#3B82F6" />
+                        <h2 style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600, color: 'var(--fg1)', margin: 0 }}>
+                          System health
+                        </h2>
                       </div>
-                    ))}
-                    {(() => {
-                      const issues = doctorChecks.filter(c => c.status === 'FAIL' || c.status === 'WARN').length;
-                      const ok = doctorChecks.filter(c => c.status === 'OK').length;
-                      return (
-                        <div style={{
-                          padding: '9px 20px', borderTop: '1px solid var(--border)',
-                          background: 'var(--bg-subtle)',
-                          fontFamily: 'var(--sans)', fontSize: 11.5,
-                          color: issues === 0 ? '#0fa76e' : '#C97B00',
+                      <p style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg4)', margin: 0, lineHeight: 1.5 }}>
+                        Checks that Docent&apos;s core dependencies are installed and reachable.
+                      </p>
+                    </div>
+                    <button
+                      onClick={runDoctor} disabled={loadingDoctor}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                        padding: '5px 12px', borderRadius: 7,
+                        border: '1px solid var(--border-md)',
+                        background: 'transparent', color: 'var(--fg3)',
+                        fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500,
+                        cursor: loadingDoctor ? 'default' : 'pointer', opacity: loadingDoctor ? 0.6 : 1,
+                      }}
+                    >
+                      <RefreshCw size={12} strokeWidth={1.5} style={{ animation: loadingDoctor ? 'spin 1s linear infinite' : 'none' }} />
+                      {loadingDoctor ? 'Checking…' : 'Refresh'}
+                    </button>
+                  </div>
+
+                  {doctorChecks === null ? (
+                    <div style={{ padding: '28px 20px', textAlign: 'center', fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--fg4)' }}>
+                      Checking your environment…
+                    </div>
+                  ) : doctorChecks.length === 0 ? (
+                    <div style={{ padding: '16px 20px', fontFamily: 'var(--sans)', fontSize: 13, color: '#D45656' }}>
+                      Could not run health checks.
+                    </div>
+                  ) : (
+                    <>
+                      {doctorChecks.map((check, i) => (
+                        <div key={check.label} style={{
+                          display: 'grid',
+                          gridTemplateColumns: '150px 52px 90px 1fr',
+                          gap: '0 12px', alignItems: 'start',
+                          padding: '11px 20px',
+                          borderBottom: i < doctorChecks.length - 1 ? '1px solid var(--border)' : 'none',
+                          background: check.status === 'FAIL' ? 'rgba(212,86,86,0.03)'
+                            : check.status === 'WARN' ? 'rgba(201,123,0,0.02)' : 'transparent',
                         }}>
-                          {issues === 0 ? `All ${ok} checks passed` : `${issues} ${issues === 1 ? 'issue' : 'issues'} found`}
+                          <span style={{ fontFamily: 'var(--sans)', fontSize: 12.5, fontWeight: 500, color: 'var(--fg1)', paddingTop: 1 }}>
+                            {check.label}
+                          </span>
+                          <div style={{ paddingTop: 2 }}><DoctorStatusBadge status={check.status} /></div>
+                          <span style={{ fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--fg4)', paddingTop: 2, wordBreak: 'break-all' }}>
+                            {check.version !== '-' ? check.version : ''}
+                          </span>
+                          <span style={{
+                            fontFamily: 'var(--sans)', fontSize: 11.5, lineHeight: 1.5,
+                            color: check.status === 'FAIL' ? '#D45656'
+                              : check.status === 'WARN' ? '#C97B00' : 'var(--fg4)',
+                          }}>
+                            {check.detail !== '-' ? check.detail : ''}
+                          </span>
                         </div>
-                      );
-                    })()}
-                  </>
-                )}
-              </div>
-            </section>
+                      ))}
+                      {(() => {
+                        const issues = doctorChecks.filter(c => c.status === 'FAIL' || c.status === 'WARN').length;
+                        const ok = doctorChecks.filter(c => c.status === 'OK').length;
+                        return (
+                          <div style={{
+                            padding: '9px 20px', borderTop: '1px solid var(--border)',
+                            background: 'var(--bg-subtle)',
+                            fontFamily: 'var(--sans)', fontSize: 11.5,
+                            color: issues === 0 ? '#0fa76e' : '#C97B00',
+                          }}>
+                            {issues === 0 ? `All ${ok} checks passed` : `${issues} ${issues === 1 ? 'issue' : 'issues'} found`}
+                          </div>
+                        );
+                      })()}
+                    </>
+                  )}
+                </div>
+              </section>
             </div> {/* end left column */}
 
             {/* Right column: API keys */}
             <SectionCard
-              icon={<Key size={14} strokeWidth={1.5} color="#0fa76e" />}
+              accentColor="#F59E0B"
+              icon={<Key size={14} strokeWidth={1.5} color="#F59E0B" />}
               title="API keys"
               description={<>Keys for research backends and paper search. Stored in <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>~/.docent/config.toml</span> — never sent anywhere except the respective provider.</>}
             >
               <KeyGroup label="Search & discovery">
                 {RESEARCH_KEY_FIELDS.filter(f => ['tavily_api_key','alphaxiv_api_key','semantic_scholar_api_key'].includes(f.key)).map(f => (
-                  <SecretKeyRow key={f.key} label={f.label} description={f.description}
-                    masked={res ? (res[f.key] ?? null) : null} placeholder={f.placeholder}
-                    onSave={v => handleSaveResearch(f.key, v)} />
+                  <div key={f.key}>
+                    <SecretKeyRow label={f.label} description={f.description}
+                      masked={res ? (res[f.key] ?? null) : null} placeholder={f.placeholder}
+                      onSave={v => handleSaveResearch(f.key, v)} />
+                    {f.key === 'tavily_api_key' && (
+                      <TavilyUsageWidget keyIsSet={!!(res?.tavily_api_key)} />
+                    )}
+                  </div>
                 ))}
               </KeyGroup>
               <KeyGroup label="AI backends">
@@ -1114,288 +571,14 @@ export default function SettingsPage() {
               <NotebookLMSection />
             </section>
 
-            {/* Backup & Restore — full width */}
-            <section style={{ gridColumn: '1 / -1' }}>
-              <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
-                {/* Header */}
-                <div style={{ padding: '16px 20px 14px', borderBottom: '1px solid var(--border)', background: 'linear-gradient(135deg, #3B82F620 0%, transparent 60%)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-                      <HardDriveDownload size={14} strokeWidth={1.5} color="#3B82F6" />
-                      <h2 style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600, color: 'var(--fg1)', margin: 0 }}>Backup & Restore</h2>
-                    </div>
-                    <p style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg4)', margin: 0 }}>
-                      Snapshot your queue, config, and research outputs. Files over 100 MB are excluded.
-                    </p>
-                  </div>
-                </div>
+            {/* Backup & Restore */}
+            <BackupRestoreSection onSignalDot={signalDot} onToast={setToast} />
 
-                <div style={{ padding: '20px' }}>
-                  {/* Status row */}
-                  {backupStatus && (
-                    <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 8, background: 'var(--bg-subtle)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                      {backupStatus.credentials_configured && backupStatus.deps_installed ? (
-                        <>
-                          <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#18E299', flexShrink: 0 }} />
-                          <span style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg2)' }}>
-                            Google Drive configured{backupStatus.token_exists ? ' · authenticated' : ' · will authenticate on first run'}
-                          </span>
-                        </>
-                      ) : backupStatus.credentials_configured && !backupStatus.deps_installed ? (
-                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <AlertTriangle size={13} strokeWidth={2} color="#C37D0D" style={{ flexShrink: 0 }} />
-                            <span style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg2)', flex: 1 }}>
-                              Credentials found but dependencies missing.
-                            </span>
-                            <button
-                              onClick={handleInstallDeps}
-                              disabled={installingDeps}
-                              style={{
-                                display: 'inline-flex', alignItems: 'center', gap: 6,
-                                fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500,
-                                color: '#fff', background: '#C37D0D',
-                                border: 'none', borderRadius: 6,
-                                padding: '4px 12px', cursor: installingDeps ? 'wait' : 'pointer',
-                                whiteSpace: 'nowrap', flexShrink: 0,
-                              }}
-                            >
-                              <RefreshCw size={11} strokeWidth={2} style={{ animation: installingDeps ? 'spin 1s linear infinite' : 'none' }} />
-                              {installingDeps ? 'Installing…' : 'Install now'}
-                            </button>
-                          </div>
-                          {/* Terminal command for techy users */}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <code style={{
-                              flex: 1, fontFamily: 'var(--mono)', fontSize: 11,
-                              color: 'var(--fg3)', background: 'var(--gray100)',
-                              border: '1px solid var(--border)', borderRadius: 5,
-                              padding: '4px 10px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                            }}>
-                              pip install google-api-python-client google-auth-oauthlib google-auth-httplib2
-                            </code>
-                            <button
-                              onClick={() => navigator.clipboard.writeText('pip install google-api-python-client google-auth-oauthlib google-auth-httplib2').then(() => setToast({ type: 'success', message: 'Copied!' }))}
-                              title="Copy to clipboard"
-                              style={{ background: 'var(--gray100)', border: '1px solid var(--border)', borderRadius: 5, padding: '4px 8px', cursor: 'pointer', color: 'var(--fg4)', display: 'flex', flexShrink: 0 }}
-                            >
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <>
-                          <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--fg4)', flexShrink: 0 }} />
-                          <span style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg3)', flex: 1 }}>
-                            Google Drive not configured.
-                          </span>
-                          <button
-                            onClick={() => setShowSetup(s => !s)}
-                            style={{ fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500, color: '#3B82F6', background: 'transparent', border: '1px solid rgba(59,130,246,0.3)', borderRadius: 6, padding: '3px 10px', cursor: 'pointer', whiteSpace: 'nowrap' }}
-                          >
-                            {showSetup ? 'Hide setup' : 'Set up Google Drive'}
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Setup panel */}
-                  {showSetup && (
-                    <div style={{ marginBottom: 16, border: '1px solid rgba(59,130,246,0.25)', borderRadius: 10, overflow: 'hidden' }}>
-                      {/* Steps */}
-                      <div style={{ padding: '14px 18px', background: 'rgba(59,130,246,0.04)', borderBottom: '1px solid rgba(59,130,246,0.15)' }}>
-                        <div style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600, color: 'var(--fg1)', marginBottom: 10 }}>
-                          Google Drive — four steps
-                        </div>
-                        {[
-                          { n: '1', text: <>Go to <a href="https://console.cloud.google.com" target="_blank" rel="noreferrer" style={{ color: '#3B82F6', textDecoration: 'none', fontWeight: 500 }}>console.cloud.google.com</a> → create or select a project → enable the <strong style={{ color: 'var(--fg1)' }}>Google Drive API</strong>.</> },
-                          { n: '2', text: <>Credentials → Create Credentials → <strong style={{ color: 'var(--fg1)' }}>OAuth client ID</strong> → Application type: <strong style={{ color: 'var(--fg1)' }}>Desktop app</strong> → Download JSON.</> },
-                          { n: '3', text: <><strong style={{ color: 'var(--fg1)' }}>OAuth consent screen</strong> → fill in <strong style={{ color: 'var(--fg1)' }}>App name</strong>, <strong style={{ color: 'var(--fg1)' }}>User support email</strong>, and <strong style={{ color: 'var(--fg1)' }}>Developer contact email</strong> (required — missing any of these causes a Google 500 error). Then under <strong style={{ color: 'var(--fg1)' }}>Audience</strong> click <strong style={{ color: 'var(--fg1)' }}>Publish app</strong>. On first sign-in Google shows an &ldquo;unverified app&rdquo; warning — click <em>Advanced → Go to app</em> to proceed.</> },
-                          { n: '4', text: <>Paste the downloaded credentials JSON below and click <strong style={{ color: 'var(--fg1)' }}>Save</strong>. A browser window will open for sign-in on the first backup run.</> },
-                        ].map(({ n, text }) => (
-                          <div key={n} style={{ display: 'flex', gap: 12, marginBottom: 8, alignItems: 'flex-start' }}>
-                            <span style={{ fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 700, color: '#3B82F6', background: 'rgba(59,130,246,0.12)', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>{n}</span>
-                            <span style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg3)', lineHeight: 1.55 }}>{text}</span>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Paste / upload area */}
-                      <div style={{ padding: '14px 18px' }}>
-                        <div style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg3)', marginBottom: 8 }}>
-                          Paste credentials JSON
-                          <span style={{ color: 'var(--fg4)', marginLeft: 8 }}>— or —</span>
-                          <label style={{ marginLeft: 8, color: '#3B82F6', cursor: 'pointer', fontSize: 12 }}>
-                            choose file
-                            <input
-                              type="file" accept=".json" style={{ display: 'none' }}
-                              onChange={e => {
-                                const f = e.target.files?.[0];
-                                if (!f) return;
-                                const reader = new FileReader();
-                                reader.onload = ev => setCredentialsText(ev.target?.result as string ?? '');
-                                reader.readAsText(f);
-                              }}
-                            />
-                          </label>
-                        </div>
-                        <textarea
-                          value={credentialsText}
-                          onChange={e => setCredentialsText(e.target.value)}
-                          placeholder='{"installed":{"client_id":"...","client_secret":"...",...}}'
-                          rows={5}
-                          style={{
-                            width: '100%', boxSizing: 'border-box',
-                            fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--fg2)',
-                            background: 'var(--bg-subtle)', border: '1px solid var(--border-md)',
-                            borderRadius: 7, padding: '10px 12px', resize: 'vertical', outline: 'none',
-                          }}
-                        />
-                        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                          <button
-                            onClick={handleSaveCredentials}
-                            disabled={savingCreds || !credentialsText.trim()}
-                            style={{
-                              padding: '6px 16px', borderRadius: 7,
-                              border: 'none', background: '#3B82F6', color: '#fff',
-                              fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500,
-                              cursor: (savingCreds || !credentialsText.trim()) ? 'not-allowed' : 'pointer',
-                              opacity: !credentialsText.trim() ? 0.5 : 1,
-                            }}
-                          >
-                            {savingCreds ? 'Saving…' : 'Save credentials'}
-                          </button>
-                          <button
-                            onClick={() => { setShowSetup(false); setCredentialsText(''); }}
-                            style={{ padding: '6px 14px', borderRadius: 7, border: '1px solid var(--border-md)', background: 'transparent', color: 'var(--fg3)', fontFamily: 'var(--sans)', fontSize: 13, cursor: 'pointer' }}
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Action buttons */}
-                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 20 }}>
-                    {/* Drive backup */}
-                    <button
-                      onClick={handleBackupToDrive}
-                      disabled={backingUp || !backupStatus?.credentials_configured || !backupStatus?.deps_installed}
-                      style={{
-                        display: 'inline-flex', alignItems: 'center', gap: 7,
-                        padding: '7px 16px', borderRadius: 8,
-                        border: '1px solid rgba(59,130,246,0.4)',
-                        background: 'rgba(59,130,246,0.08)', color: '#3B82F6',
-                        fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500,
-                        cursor: (backingUp || !backupStatus?.credentials_configured || !backupStatus?.deps_installed) ? 'not-allowed' : 'pointer',
-                        opacity: (!backupStatus?.credentials_configured || !backupStatus?.deps_installed) ? 0.5 : 1,
-                      }}
-                    >
-                      <CloudUpload size={14} strokeWidth={1.5} style={{ animation: backingUp ? 'spin 1s linear infinite' : 'none' }} />
-                      {backingUp ? 'Backing up…' : 'Backup to Drive'}
-                    </button>
-
-                    {/* Local zip download */}
-                    <button
-                      onClick={handleDownloadZip}
-                      disabled={downloading}
-                      style={{
-                        display: 'inline-flex', alignItems: 'center', gap: 7,
-                        padding: '7px 16px', borderRadius: 8,
-                        border: '1px solid var(--border-md)',
-                        background: 'transparent', color: 'var(--fg2)',
-                        fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500,
-                        cursor: downloading ? 'wait' : 'pointer',
-                      }}
-                    >
-                      <HardDriveDownload size={14} strokeWidth={1.5} />
-                      {downloading ? 'Preparing…' : 'Download local zip'}
-                    </button>
-
-                    {/* List Drive backups */}
-                    {backupStatus?.credentials_configured && backupStatus?.deps_installed && (
-                      <button
-                        onClick={() => { if (driveBackups === null) loadDriveBackups(); else setDriveBackups(null); }}
-                        disabled={loadingBackups}
-                        style={{
-                          display: 'inline-flex', alignItems: 'center', gap: 7,
-                          padding: '7px 16px', borderRadius: 8,
-                          border: '1px solid var(--border-md)',
-                          background: 'transparent', color: 'var(--fg3)',
-                          fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 400,
-                          cursor: loadingBackups ? 'wait' : 'pointer',
-                        }}
-                      >
-                        <RefreshCw size={13} strokeWidth={1.5} style={{ animation: loadingBackups ? 'spin 1s linear infinite' : 'none' }} />
-                        {driveBackups !== null ? 'Hide Drive backups' : 'Show Drive backups'}
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Drive backup list */}
-                  {driveBackups !== null && (
-                    <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
-                      {driveBackups.length === 0 ? (
-                        <div style={{ padding: '20px', textAlign: 'center', fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--fg4)' }}>
-                          No backups found in Google Drive.
-                        </div>
-                      ) : (
-                        <>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: 0, background: 'var(--bg-subtle)', borderBottom: '1px solid var(--border)', padding: '7px 16px' }}>
-                            {['Name', 'Size', 'Date', ''].map((h, i) => (
-                              <span key={i} style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--fg4)', letterSpacing: '0.5px', textTransform: 'uppercase', textAlign: i > 1 ? 'right' : 'left', paddingRight: i < 3 ? 16 : 0 }}>{h}</span>
-                            ))}
-                          </div>
-                          {driveBackups.map(b => (
-                            <div key={b.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: 0, padding: '10px 16px', borderBottom: '1px solid var(--border)', alignItems: 'center' }}>
-                              <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--fg2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: 16 }}>{b.name}</span>
-                              <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--fg4)', paddingRight: 16, textAlign: 'right' }}>{fmtSize(b.size_mb)}</span>
-                              <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--fg4)', paddingRight: 16, textAlign: 'right' }}>{b.created}</span>
-                              <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                                {confirmRestoreId === b.id ? (
-                                  <>
-                                    <button onClick={() => handleRestoreFromDrive(b.id, b.name)} disabled={restoringId === b.id} style={{ fontFamily: 'var(--sans)', fontSize: 11, fontWeight: 600, color: '#fff', background: '#D45656', border: 'none', borderRadius: 5, padding: '3px 10px', cursor: 'pointer' }}>
-                                      {restoringId === b.id ? 'Restoring…' : 'Confirm'}
-                                    </button>
-                                    <button onClick={() => setConfirmRestoreId(null)} style={{ fontFamily: 'var(--sans)', fontSize: 11, color: 'var(--fg3)', background: 'transparent', border: '1px solid var(--border-md)', borderRadius: 5, padding: '3px 10px', cursor: 'pointer' }}>
-                                      Cancel
-                                    </button>
-                                  </>
-                                ) : (
-                                  <>
-                                    <button onClick={() => setConfirmRestoreId(b.id)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: 'var(--sans)', fontSize: 11, color: 'var(--fg3)', background: 'transparent', border: '1px solid var(--border-md)', borderRadius: 5, padding: '3px 10px', cursor: 'pointer' }}>
-                                      <RotateCcw size={11} strokeWidth={1.5} />
-                                      Restore
-                                    </button>
-                                    <button
-                                      onClick={() => handleDeleteBackup(b.id)}
-                                      disabled={deletingId === b.id}
-                                      title="Delete from Google Drive"
-                                      style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, borderRadius: 5, border: '1px solid var(--border-md)', background: 'transparent', color: deletingId === b.id ? 'var(--fg4)' : '#D45656', cursor: deletingId === b.id ? 'wait' : 'pointer' }}
-                                    >
-                                      {deletingId === b.id
-                                        ? <RefreshCw size={11} strokeWidth={1.5} style={{ animation: 'spin 1s linear infinite' }} />
-                                        : <Trash2 size={11} strokeWidth={1.5} />}
-                                    </button>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </section>
-
-            {/* Walkthrough — full width */}
+            {/* Walkthrough tours — full width */}
             <section style={{ gridColumn: '1 / -1' }}>
               <SectionCard
-                icon={<Zap size={14} strokeWidth={1.5} color="#8B5CF6" />}
+                accentColor="#06B6D4"
+                icon={<Zap size={14} strokeWidth={1.5} color="#06B6D4" />}
                 title="Walkthrough tours"
                 description="Each page has a guided walkthrough that runs the first time you visit it. Reset individual tours below or restart all of them at once."
               >
@@ -1475,19 +658,12 @@ export default function SettingsPage() {
               }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 24 }}>
                   <div>
-                    <div style={{
-                      fontFamily: 'var(--sans)', fontSize: 14, fontWeight: 500,
-                      color: 'var(--fg1)', marginBottom: 4,
-                    }}>
+                    <div style={{ fontFamily: 'var(--sans)', fontSize: 14, fontWeight: 500, color: 'var(--fg1)', marginBottom: 4 }}>
                       Clear reading queue
                     </div>
                     <div style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg3)', lineHeight: 1.5 }}>
-                      Removes all entries from the local queue. Your Mendeley library is not affected —
-                      you can restore the queue by running{' '}
-                      <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--fg2)' }}>
-                        Sync Mendeley
-                      </span>{' '}
-                      on the Reading page.
+                      Removes all entries from the local queue. Your reference manager library is not affected —
+                      you can restore the queue by syncing again on the Reading page.
                     </div>
                   </div>
 

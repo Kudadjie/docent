@@ -7,22 +7,20 @@ We patch both wrapper functions at the import site in `docent.tools.paper`
 — no real subprocess, no real MCP traffic. We also patch the cache to a
 tmp file so test runs don't touch each other.
 """
+
 from __future__ import annotations
 
-from typing import Any
-
-import pytest
-
-from docent.config import load_settings
-from docent.core.context import Context
-from docent.execution import Executor
-from docent.llm import LLMClient
 from reading import (
     IdOnlyInputs,
     NextInputs,
     ReadingQueue,
     SearchInputs,
 )
+
+from docent.config import load_settings
+from docent.core.context import Context
+from docent.execution import Executor
+from docent.llm import LLMClient
 
 
 def _ctx(queue_collection: str = "Docent-Queue") -> Context:
@@ -64,7 +62,7 @@ def _stale_entry(**overrides) -> dict:
         "deadline": None,
         "tags": [],
         "notes": "",
-        "mendeley_id": "MID-1",
+        "reference_id": "MID-1",
     }
     base.update(overrides)
     return base
@@ -83,13 +81,15 @@ def test_next_overlays_fresh_mendeley_metadata(tmp_docent_home, monkeypatch):
         monkeypatch,
         folders={"items": [{"id": "F1", "name": "Docent-Queue"}], "error": None},
         documents={
-            "items": [{
-                "id": "MID-1",
-                "title": "Fresh Title From Mendeley",
-                "authors": ["Smith, Jane", "Doe, John"],
-                "year": 2024,
-                "identifiers": {"doi": "10.1234/fresh"},
-            }],
+            "items": [
+                {
+                    "id": "MID-1",
+                    "title": "Fresh Title From Mendeley",
+                    "authors": ["Smith, Jane", "Doe, John"],
+                    "year": 2024,
+                    "identifiers": {"doi": "10.1234/fresh"},
+                }
+            ],
             "error": None,
         },
     )
@@ -133,22 +133,28 @@ def test_next_falls_back_when_collection_missing(tmp_docent_home, monkeypatch):
     assert result.entry.title == "STALE TITLE"
 
 
-def test_next_passes_through_entries_without_mendeley_id(tmp_docent_home, monkeypatch):
-    """A legacy entry (no mendeley_id) plus a Mendeley-keyed entry: only
+def test_next_passes_through_entries_without_reference_id(tmp_docent_home, monkeypatch):
+    """A legacy entry (no reference_id) plus a Mendeley-keyed entry: only
     the latter is overlaid; the former is untouched."""
     tool = ReadingQueue()
-    _seed_queue(tool, [
-        _stale_entry(id="legacy-1", mendeley_id=None, doi="10.9999/legacy", order=1),
-        _stale_entry(id="mid-1", mendeley_id="MID-1", order=2),
-    ])
+    _seed_queue(
+        tool,
+        [
+            _stale_entry(id="legacy-1", reference_id=None, doi="10.9999/legacy", order=1),
+            _stale_entry(id="mid-1", reference_id="MID-1", order=2),
+        ],
+    )
 
     _patch(
         monkeypatch,
         folders={"items": [{"id": "F1", "name": "Docent-Queue"}], "error": None},
-        documents={"items": [{"id": "MID-1", "title": "Fresh", "authors": ["A"], "year": 2024}], "error": None},
+        documents={
+            "items": [{"id": "MID-1", "title": "Fresh", "authors": ["A"], "year": 2024}],
+            "error": None,
+        },
     )
 
-    # legacy-1 has lower order so it comes next; its title is untouched (no mendeley_id).
+    # legacy-1 has lower order so it comes next; its title is untouched (no reference_id).
     result = tool.next(NextInputs(), _ctx())
     assert result.entry.id == "legacy-1"
     assert result.entry.title == "STALE TITLE"  # untouched
@@ -166,7 +172,10 @@ def test_show_overlays_fresh_metadata(tmp_docent_home, monkeypatch):
     _patch(
         monkeypatch,
         folders={"items": [{"id": "F1", "name": "Docent-Queue"}], "error": None},
-        documents={"items": [{"id": "MID-1", "title": "Fresh", "authors": ["X"], "year": 2025}], "error": None},
+        documents={
+            "items": [{"id": "MID-1", "title": "Fresh", "authors": ["X"], "year": 2025}],
+            "error": None,
+        },
     )
 
     result = tool.show(IdOnlyInputs(id="smith-2020-stale"), _ctx())
@@ -188,7 +197,9 @@ def test_search_matches_against_overlaid_title(tmp_docent_home, monkeypatch):
         monkeypatch,
         folders={"items": [{"id": "F1", "name": "Docent-Queue"}], "error": None},
         documents={
-            "items": [{"id": "MID-1", "title": "Wave hindcasting in shallow water", "authors": ["A"]}],
+            "items": [
+                {"id": "MID-1", "title": "Wave hindcasting in shallow water", "authors": ["A"]}
+            ],
             "error": None,
         },
     )
@@ -232,7 +243,10 @@ def test_second_reader_call_hits_cache_not_mcp(tmp_docent_home, monkeypatch):
     def fake_documents(folder_id=None, launch_command=None, limit=200, sort_by="last_modified"):
         nonlocal doc_calls
         doc_calls += 1
-        return {"items": [{"id": "MID-1", "title": "Fresh", "authors": ["A"], "year": 2024}], "error": None}
+        return {
+            "items": [{"id": "MID-1", "title": "Fresh", "authors": ["A"], "year": 2024}],
+            "error": None,
+        }
 
     monkeypatch.setattr("reading.mendeley_list_folders", fake_folders)
     monkeypatch.setattr("reading.mendeley_list_documents", fake_documents)

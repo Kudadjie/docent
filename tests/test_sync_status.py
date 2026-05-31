@@ -5,15 +5,17 @@ sitting in database_dir. Mendeley owns whether those PDFs are indexed; docent
 no longer tracks pdf_path. Each test sets up a tmp database_dir, points the
 PaperSettings at it, and asserts on the result.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
+
+from reading import ReadingQueue, SyncStatusInputs
 
 from docent.config import load_settings
 from docent.core.context import Context
 from docent.execution import Executor
 from docent.llm import LLMClient
-from reading import ReadingQueue, SyncStatusInputs
 
 
 def _ctx(database_dir: Path | None = None) -> Context:
@@ -33,6 +35,7 @@ def test_no_database_configured(tmp_docent_home):
     """Without a configured database and no interactive prompt allowed,
     sync-status returns a populated `message` and empty buckets."""
     import os
+
     os.environ["DOCENT_NO_INTERACTIVE"] = "1"
     try:
         ctx = _ctx(database_dir=None)

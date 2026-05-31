@@ -1,16 +1,32 @@
 """Research tool: run deep research, literature reviews, and peer reviews via Feynman."""
+
 from __future__ import annotations
 
+from docent.bundled_plugins.studio._cite_actions import CiteMixin
+from docent.bundled_plugins.studio._config_actions import ConfigMixin
+from docent.bundled_plugins.studio._init_helpers import _path_under  # noqa: F401
+from docent.bundled_plugins.studio._notebook_actions import NotebookMixin
+
+# ── Mixin action families ─────────────────────────────────────────────────────
+from docent.bundled_plugins.studio._research import ResearchMixin
+from docent.bundled_plugins.studio._search_actions import SearchMixin
+from docent.bundled_plugins.studio._studio_shared import _KNOWN_RESEARCH_KEYS  # noqa: F401
 from docent.core import Tool, register_tool
 
 # ── Re-exports kept for backward compatibility ────────────────────────────────
 # Tests and external callers import these directly from the studio package.
-from ._notebook import _nlm_push, _rank_sources, _find_sources_path, ToNotebookInputs, ToNotebookResult  # noqa: F401
+from ._notebook import (  # noqa: F401
+    ToNotebookInputs,
+    ToNotebookResult,
+    _find_sources_path,
+    _nlm_push,
+    _rank_sources,
+)
 from .feynman import (
     FeynmanNotFoundError,
     _extract_feynman_cost,  # noqa: F401 — re-exported for tests
-    _find_feynman,
     _feynman_version_from_package_json,
+    _find_feynman,
     _run_feynman,  # noqa: F401 — re-exported (tests may patch studio._run_feynman)
     _summarize_feynman_error,  # noqa: F401 — re-exported for tests
 )
@@ -24,6 +40,9 @@ from .helpers import (
 )
 from .models import (  # noqa: F401
     AuditInputs,
+    CitedPaperItem,
+    CiteGraphInputs,
+    CiteGraphResult,
     CompareInputs,
     ConfigSetInputs,
     ConfigSetResult,
@@ -36,15 +55,17 @@ from .models import (  # noqa: F401
     LitInputs,
     ReadOutputInputs,
     ReadOutputResult,
-    SaveSynthesisInputs,
-    SaveSynthesisResult,
     ReplicateInputs,
     ResearchResult,
     ReviewInputs,
+    SaveSynthesisInputs,
+    SaveSynthesisResult,
     ScholarlySearchInputs,
     ScholarlySearchResult,
     SearchPapersInputs,
     SearchPapersResult,
+    TavilyUsageInputs,
+    TavilyUsageResult,
 )
 from .preflights import (  # noqa: F401
     _preflight_docent,
@@ -55,29 +76,24 @@ from .preflights import (  # noqa: F401
     _write_to_vault,
 )
 
-# ── Mixin action families ─────────────────────────────────────────────────────
-from docent.bundled_plugins.studio._research import ResearchMixin
-from docent.bundled_plugins.studio._notebook_actions import NotebookMixin
-from docent.bundled_plugins.studio._search_actions import SearchMixin
-from docent.bundled_plugins.studio._config_actions import ConfigMixin
-from docent.bundled_plugins.studio._studio_shared import _KNOWN_RESEARCH_KEYS  # noqa: F401
-from docent.bundled_plugins.studio._init_helpers import _path_under  # noqa: F401
-
 
 @register_tool
-class StudioTool(ResearchMixin, NotebookMixin, SearchMixin, ConfigMixin, Tool):
+class StudioTool(ResearchMixin, NotebookMixin, SearchMixin, ConfigMixin, CiteMixin, Tool):
     """Run research workflows (deep research, literature review, peer review) via Feynman."""
 
     name = "studio"
-    description = "Run research workflows (deep research, literature review, peer review) via Feynman."
+    description = (
+        "Run research workflows (deep research, literature review, peer review) via Feynman."
+    )
     category = "studio"
 
 
 def on_startup(context) -> None:  # noqa: ARG001
     """Check for Feynman updates once per day and notify the user."""
     import re
-    from docent.utils.update_check import check_github_release
+
     from docent.ui import get_console
+    from docent.utils.update_check import check_github_release
 
     try:
         cmd = _find_feynman(context.settings.research.feynman_command)

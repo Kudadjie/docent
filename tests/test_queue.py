@@ -1,11 +1,13 @@
 """Tests for `reading add` action — guidance-only after sidecar removal."""
+
 from __future__ import annotations
+
+from reading import AddInputs, ReadingQueue
 
 from docent.config import load_settings
 from docent.core.context import Context
 from docent.execution.executor import ProcessResult
 from docent.llm import LLMClient
-from reading import AddInputs, ReadingQueue
 
 
 class _StubExecutor:
@@ -23,6 +25,6 @@ def test_add_returns_guidance(tmp_docent_home):
     result = tool.add(AddInputs(), _ctx())
 
     assert result.added is False
-    assert "sync-from-mendeley" in result.message
+    assert "sync-from-library" in result.message
     assert "Docent-Queue" in result.message
     assert tool._store.load_queue() == []

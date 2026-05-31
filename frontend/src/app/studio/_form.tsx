@@ -2,12 +2,12 @@
 
 import { useState, useEffect, useRef } from 'react';
 import {
-  FlaskConical, Play, Square, AlertTriangle, CheckCircle,
+  FlaskConical, Play, AlertTriangle, CheckCircle,
   Copy, Plus, ChevronDown, File, X, Search,
   Info, Bookmark, Trash, Upload, Sparkles, Layers, Pin,
 } from 'lucide-react';
 import {
-  ACTIONS, ALL_ACTIONS, findAction, BACKENDS,
+  ACTIONS, ALL_ACTIONS, findAction, BACKENDS, DEFAULT_AI_BACKEND, supportsFreeBackend,
   commandFor, usesApiCredits, runLabel,
   type ActionId, type ActionMeta, type FormState, type Preset,
 } from './_shared';
@@ -431,17 +431,21 @@ const DEST_NOTES: Record<string, string> = {
   Notebook:   'Uploaded to NotebookLM after the run.',
 };
 
-function FormTopic({ state, set }: { state: FormState; set: SetFn }) {
-  const backendNote = BACKEND_NOTES[state.backend] ?? 'Runs 3–30 min. May time out over MCP.';
+function FormTopic({ state, set, actionId }: { state: FormState; set: SetFn; actionId: ActionId }) {
+  // draft is topic-based but, unlike deep/lit, has no source-only free tier.
+  const freeOk = supportsFreeBackend(actionId);
+  const backend = !freeOk && state.backend === 'Free' ? DEFAULT_AI_BACKEND : state.backend;
+  const backendNote = BACKEND_NOTES[backend] ?? 'Runs 3–30 min. May time out over MCP.';
   const destNote    = DEST_NOTES[state.dest] ?? '';
+  const showExpandCitations = (actionId === 'deep' || actionId === 'lit');
+  const expandEnabled = backend === 'Docent';
   return <>
     <Field label="Topic">
       <StudioInput value={state.topic} onChange={v => set('topic', v)} placeholder="e.g. storm surge inundation under climate change" />
     </Field>
     <Field label="Backend">
-      <BackendSelector value={state.backend} onChange={v => set('backend', v)} />
-      <Note icon={state.backend === 'Free' ? <Sparkles size={12} strokeWidth={1.4} /> : undefined}
-        tone={state.backend !== 'Free' && state.backend !== 'Docent' ? undefined : undefined}>
+      <BackendSelector value={backend} onChange={v => set('backend', v)} freeDisabled={!freeOk} />
+      <Note icon={freeOk && backend === 'Free' ? <Sparkles size={12} strokeWidth={1.4} /> : undefined}>
         {backendNote}
       </Note>
     </Field>
@@ -450,11 +454,25 @@ function FormTopic({ state, set }: { state: FormState; set: SetFn }) {
       {destNote && <Note>{destNote}</Note>}
     </Field>
     <GuideFiles files={state.guides} setFiles={v => set('guides', v)} />
+    {showExpandCitations && (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', opacity: expandEnabled ? 1 : 0.45 }}>
+        <div>
+          <span style={{ fontFamily: 'var(--sans)', fontSize: 12.5, color: 'var(--fg2)', fontWeight: 500 }}>Expand citations</span>
+          <span style={{ fontFamily: 'var(--sans)', fontSize: 11, color: 'var(--fg4)', marginLeft: 8 }}>
+            {expandEnabled ? 'Find OA papers citing your sources (S2)' : 'Docent backend only'}
+          </span>
+        </div>
+        <Toggle
+          checked={expandEnabled && state.expandCitations}
+          onChange={v => expandEnabled && set('expandCitations', v)}
+        />
+      </div>
+    )}
   </>;
 }
 
 function FormArtifact({ state, set }: { state: FormState; set: SetFn }) {
-  const backend = state.backend === 'Free' ? 'Anthropic' : state.backend;
+  const backend = state.backend === 'Free' ? DEFAULT_AI_BACKEND : state.backend;
   return <>
     <Field label="Artifact" hint="arXiv ID, PDF path, or URL">
       <StudioInput value={state.artifact} onChange={v => set('artifact', v)} placeholder="2401.12345 / paper.pdf / https://…" mono />
@@ -468,7 +486,7 @@ function FormArtifact({ state, set }: { state: FormState; set: SetFn }) {
 }
 
 function FormCompare({ state, set }: { state: FormState; set: SetFn }) {
-  const backend = state.backend === 'Free' ? 'Anthropic' : state.backend;
+  const backend = state.backend === 'Free' ? DEFAULT_AI_BACKEND : state.backend;
   return <>
     <Field label="Artifact A" hint="arXiv / PDF / URL">
       <StudioInput value={state.artifactA} onChange={v => set('artifactA', v)} placeholder="2401.12345" mono />
@@ -520,6 +538,36 @@ function FormNotebook({ state, set }: { state: FormState; set: SetFn }) {
         </div>
       ))}
     </div>
+  </>;
+}
+
+function FormCiteGraph({ state, set }: { state: FormState; set: SetFn }) {
+  return <>
+    <Field label="DOI or arXiv ID" hint="one or the other">
+      <StudioInput
+        value={state.citeIdentifier}
+        onChange={v => set('citeIdentifier', v)}
+        placeholder="10.1234/example  or  2301.12345"
+        mono
+      />
+    </Field>
+    <Field label="Direction">
+      <Segmented
+        value={state.citeDirection ?? 'cited-by'}
+        onChange={v => set('citeDirection', v)}
+        options={['cited-by', 'citing', 'both']}
+      />
+      <Note>
+        {(state.citeDirection ?? 'cited-by') === 'cited-by'
+          ? 'Papers that cite this one — who built on it.'
+          : (state.citeDirection ?? 'cited-by') === 'citing'
+          ? "Papers this one cites — its bibliography."
+          : 'Both directions merged and deduplicated.'}
+      </Note>
+    </Field>
+    <Field label="Max results">
+      <Stepper value={state.citeMax ?? 25} onChange={v => set('citeMax', v)} min={1} max={100} />
+    </Field>
   </>;
 }
 
@@ -579,10 +627,10 @@ function FormCfgSet({ state, set }: { state: FormState; set: SetFn }) {
   </>;
 }
 
-const FORM_MAP: Record<string, React.ComponentType<{ state: FormState; set: SetFn }>> = {
+const FORM_MAP: Record<string, React.ComponentType<{ state: FormState; set: SetFn; actionId: ActionId }>> = {
   topic: FormTopic, artifact: FormArtifact, compare: FormCompare,
-  search: FormSearch, getpaper: FormGetPaper, notebook: FormNotebook,
-  cfgshow: FormCfgShow, cfgset: FormCfgSet,
+  search: FormSearch, getpaper: FormGetPaper, citegraph: FormCiteGraph,
+  notebook: FormNotebook, cfgshow: FormCfgShow, cfgset: FormCfgSet,
 };
 
 // ── Command preview + API credit notice ────────────────────────────────────────
@@ -606,6 +654,35 @@ function CostNotice({ actionId, backend }: { actionId: ActionId; backend: string
     <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 10px', background: 'var(--gray100)', borderRadius: 6, border: '1px solid var(--border)' }}>
       <span style={{ display: 'flex', color: 'var(--fg4)' }}><Info size={11} strokeWidth={1.5} /></span>
       <span style={{ fontFamily: 'var(--sans)', fontSize: 11.5, color: 'var(--fg4)' }}>API credits may apply</span>
+    </div>
+  );
+}
+
+function TavilyUsageNotice({ backend }: { backend: string }) {
+  const [pct, setPct] = useState<number | null>(null);
+  const [used, setUsed] = useState<number | null>(null);
+  const [limit, setLimit] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (backend !== 'Docent') return;
+    fetch('/api/studio/tavily-usage')
+      .then(r => r.json())
+      .then((d: { ok: boolean; pct_used?: number | null; plan_usage?: number | null; plan_limit?: number | null }) => {
+        if (d.ok) { setPct(d.pct_used ?? null); setUsed(d.plan_usage ?? null); setLimit(d.plan_limit ?? null); }
+      })
+      .catch(() => {});
+  }, [backend]);
+
+  if (backend !== 'Docent' || pct === null || pct < 70) return null;
+
+  const color = pct >= 90 ? '#D45656' : '#C97B00';
+  const bg    = pct >= 90 ? 'rgba(212,86,86,0.08)' : 'rgba(201,123,0,0.08)';
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 10px', background: bg, borderRadius: 6, border: `1px solid ${color}40` }}>
+      <span style={{ display: 'flex', color }}><AlertTriangle size={11} strokeWidth={2} /></span>
+      <span style={{ fontFamily: 'var(--sans)', fontSize: 11.5, color }}>
+        Tavily quota: {used}/{limit} credits used ({pct.toFixed(0)}%)
+      </span>
     </div>
   );
 }
@@ -646,12 +723,12 @@ function FreeTierGate({ onCancel, onProceed }: { onCancel: () => void; onProceed
 // ── Left column ────────────────────────────────────────────────────────────────
 
 export function LeftColumn({ actionId, setActionId, state, set, onRun, gating, setGating,
-  presets, onDeletePreset, onSelectPreset, onOpenCmdK, isRunning, onStop, activePresetId, width }: {
+  presets, onDeletePreset, onSelectPreset, onOpenCmdK, activePresetId, width }: {
   actionId: ActionId; setActionId: (id: ActionId) => void;
   state: FormState; set: SetFn;
   onRun: () => void; gating: boolean; setGating: (v: boolean) => void;
   presets: Preset[]; onDeletePreset: (id: string) => void; onSelectPreset: (p: Preset) => void;
-  onOpenCmdK: () => void; isRunning: boolean; onStop: () => void;
+  onOpenCmdK: () => void;
   activePresetId?: string | null; width?: number;
 }) {
   const action = findAction(actionId);
@@ -659,12 +736,20 @@ export function LeftColumn({ actionId, setActionId, state, set, onRun, gating, s
   const [dragHover, setDragHover] = useState(false);
   const supportsGuides = ['topic', 'artifact', 'compare'].includes(action.form);
 
+  // AI-only actions have no source-only free tier. Persisted state may still hold
+  // 'Free' (the global default), so normalise it to an AI backend — otherwise the
+  // submitted run would send `--backend free`, which the CLI rejects.
+  useEffect(() => {
+    if (!supportsFreeBackend(actionId) && state.backend === 'Free') set('backend', DEFAULT_AI_BACKEND);
+  }, [actionId, state.backend, set]);
+
   const runDisabled = (() => {
     if (action.form === 'topic')    return !state.topic.trim();
     if (action.form === 'artifact') return !state.artifact.trim();
     if (action.form === 'compare')  return !state.artifactA.trim() || !state.artifactB.trim();
-    if (action.form === 'search')   return !state.query.trim();
-    if (action.form === 'getpaper') return !state.arxivId.trim();
+    if (action.form === 'search')    return !state.query.trim();
+    if (action.form === 'getpaper')  return !state.arxivId.trim();
+    if (action.form === 'citegraph') return !state.citeIdentifier?.trim();
     return false;
   })();
 
@@ -672,14 +757,15 @@ export function LeftColumn({ actionId, setActionId, state, set, onRun, gating, s
     if (action.form === 'topic' && !state.topic.trim())         return 'Enter a topic to run';
     if (action.form === 'artifact' && !state.artifact.trim())   return 'Enter an artifact to run';
     if (action.form === 'compare' && (!state.artifactA.trim() || !state.artifactB.trim())) return 'Enter both artifacts to run';
-    if (action.form === 'search' && !state.query.trim())        return 'Enter a query to run';
-    if (action.form === 'getpaper' && !state.arxivId.trim())    return 'Enter an arXiv ID to run';
+    if (action.form === 'search' && !state.query.trim())                  return 'Enter a query to run';
+    if (action.form === 'getpaper' && !state.arxivId.trim())              return 'Enter an arXiv ID to run';
+    if (action.form === 'citegraph' && !state.citeIdentifier?.trim())     return 'Enter a DOI or arXiv ID to run';
     return undefined;
   })();
 
   function handleRunClick() {
     if (runDisabled) return;
-    const usesFree = action.form === 'topic' && state.backend === 'Free';
+    const usesFree = supportsFreeBackend(actionId) && state.backend === 'Free';
     if (usesFree) setGating(true); else onRun();
   }
   function onDragOver(e: React.DragEvent) {
@@ -728,7 +814,7 @@ export function LeftColumn({ actionId, setActionId, state, set, onRun, gating, s
           <span style={{ flex: 1, height: 1, background: 'var(--border)' }} />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14, paddingBottom: 14 }}>
-          <Form state={state} set={set} />
+          <Form state={state} set={set} actionId={actionId} />
           {!['cfgshow', 'cfgset'].includes(action.id) && (
             <CommandPreview actionId={actionId} state={state} />
           )}
@@ -736,14 +822,13 @@ export function LeftColumn({ actionId, setActionId, state, set, onRun, gating, s
       </div>
 
       <div style={{ padding: '12px 22px 18px', borderTop: '1px solid var(--border)', background: 'transparent', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 10, boxShadow: '0 -4px 16px rgba(0,0,0,0.04)' }}>
-        {!gating && !isRunning && <CostNotice actionId={actionId} backend={state.backend} />}
+        {!gating && <CostNotice actionId={actionId} backend={state.backend} />}
+        {!gating && <TavilyUsageNotice backend={state.backend} />}
         {gating ? (
           <FreeTierGate onCancel={() => setGating(false)} onProceed={() => { setGating(false); onRun(); }} />
-        ) : isRunning ? (
-          <button onClick={onStop} style={{ width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '9px 18px', borderRadius: 9999, background: 'transparent', border: '1px solid var(--border-md)', color: RED, fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-            <Square size={12} strokeWidth={2} /> Stop run
-          </button>
         ) : (
+          // Always "Run" — runs are concurrent now, so the form starts a new run
+          // alongside any in flight. Stopping a run lives in the output panel.
           <span title={runDisabledTitle} style={{ display: 'block' }}>
             <PrimaryBtn full icon={<Play size={13} strokeWidth={2} />} onClick={handleRunClick} disabled={runDisabled}>
               {runLabel(action)}

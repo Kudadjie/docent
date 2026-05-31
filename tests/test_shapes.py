@@ -1,10 +1,26 @@
 """Tests for docent.core.shapes, docent.ui.renderers, and result.to_shapes()."""
+
 from __future__ import annotations
 
 import io
 
 import pytest
 from pydantic import TypeAdapter
+from reading import (
+    AddResult,
+    ConfigSetResult,
+    ConfigShowResult,
+    ExportResult,
+    MutationResult,
+    QueueClearResult,
+    QueueEntry,
+    SearchResult,
+    StatsResult,
+    SyncFromLibraryResult,
+    SyncStatusResult,
+)
+from reading.reading_store import BannerCounts
+from rich.console import Console
 
 from docent.core.shapes import (
     DataTableShape,
@@ -17,27 +33,11 @@ from docent.core.shapes import (
     Shape,
 )
 from docent.ui.renderers import render_shapes
-from reading import (
-    AddResult,
-    ConfigSetResult,
-    ConfigShowResult,
-    ExportResult,
-    MutationResult,
-    QueueClearResult,
-    SearchResult,
-    StatsResult,
-    SyncFromMendeleyResult,
-    SyncStatusResult,
-    QueueEntry,
-)
-from reading.reading_store import BannerCounts
-
-from rich.console import Console
-
 
 # ---------------------------------------------------------------------------
 # 1. Shape construction
 # ---------------------------------------------------------------------------
+
 
 def test_markdown_shape():
     s = MarkdownShape(content="hello")
@@ -111,6 +111,7 @@ def test_shape_union_round_trip(shape):
 # 3. to_shapes() on result types
 # ---------------------------------------------------------------------------
 
+
 def _shape_types(shapes: list[Shape]) -> list[str]:
     return [s.type for s in shapes]
 
@@ -124,10 +125,14 @@ def test_add_result_to_shapes():
 
 
 def test_mutation_result_ok_to_shapes():
-    entry = QueueEntry(id="smith-2024-foo", mendeley_id="abc123", added="2024-01-01")
+    entry = QueueEntry(id="smith-2024-foo", reference_id="abc123", added="2024-01-01")
     r = MutationResult(
-        ok=True, id="smith-2024-foo", entry=entry,
-        queue_size=3, banner=BannerCounts(), message="Updated.",
+        ok=True,
+        id="smith-2024-foo",
+        entry=entry,
+        queue_size=3,
+        banner=BannerCounts(),
+        message="Updated.",
     )
     shapes = r.to_shapes()
     assert len(shapes) >= 1
@@ -136,8 +141,12 @@ def test_mutation_result_ok_to_shapes():
 
 def test_mutation_result_fail_to_shapes():
     r = MutationResult(
-        ok=False, id="x", entry=None,
-        queue_size=0, banner=BannerCounts(), message="Not found.",
+        ok=False,
+        id="x",
+        entry=None,
+        queue_size=0,
+        banner=BannerCounts(),
+        message="Not found.",
     )
     shapes = r.to_shapes()
     assert _shape_types(shapes) == ["error"]
@@ -150,7 +159,7 @@ def test_search_result_no_matches_to_shapes():
 
 
 def test_search_result_with_matches_to_shapes():
-    entry = QueueEntry(id="smith-2024-foo", mendeley_id="abc123", added="2024-01-01")
+    entry = QueueEntry(id="smith-2024-foo", reference_id="abc123", added="2024-01-01")
     r = SearchResult(query="foo", matches=[entry], total=1, queue_size=1)
     shapes = r.to_shapes()
     assert _shape_types(shapes) == ["message", "data_table"]
@@ -158,8 +167,10 @@ def test_search_result_with_matches_to_shapes():
 
 def test_stats_result_to_shapes():
     r = StatsResult(
-        total=10, by_status={"queued": 6, "done": 4},
-        by_category={"CES701": 5, "(root)": 5}, banner=BannerCounts(),
+        total=10,
+        by_status={"queued": 6, "done": 4},
+        by_category={"CES701": 5, "(root)": 5},
+        banner=BannerCounts(),
     )
     shapes = r.to_shapes()
     assert _shape_types(shapes) == ["metric", "data_table", "data_table"]
@@ -172,46 +183,67 @@ def test_export_result_to_shapes():
 
 
 def test_queue_clear_result_cleared_to_shapes():
-    r = QueueClearResult(cleared=True, removed_count=5, queue_size=0, banner=BannerCounts(), message="Cleared 5 entries.")
+    r = QueueClearResult(
+        cleared=True,
+        removed_count=5,
+        queue_size=0,
+        banner=BannerCounts(),
+        message="Cleared 5 entries.",
+    )
     shapes = r.to_shapes()
     assert _shape_types(shapes) == ["message"]
     assert shapes[0].level == "success"
 
 
 def test_queue_clear_result_not_cleared_to_shapes():
-    r = QueueClearResult(cleared=False, removed_count=0, queue_size=5, banner=BannerCounts(), message="5 entries.")
+    r = QueueClearResult(
+        cleared=False, removed_count=0, queue_size=5, banner=BannerCounts(), message="5 entries."
+    )
     shapes = r.to_shapes()
     assert _shape_types(shapes) == ["message"]
     assert shapes[0].level == "warning"
 
 
 def test_config_show_result_to_shapes():
-    r = ConfigShowResult(config_path="/tmp/config.toml", database_dir="/papers", queue_collection="Docent-Queue")
+    r = ConfigShowResult(
+        config_path="/tmp/config.toml", database_dir="/papers", queue_collection="Docent-Queue"
+    )
     shapes = r.to_shapes()
-    assert _shape_types(shapes) == ["metric", "metric", "metric", "metric"]
+    assert _shape_types(shapes) == ["metric", "metric", "metric", "metric", "metric"]
     labels = [s.label for s in shapes]
     assert "mendeley_mcp_command" in labels
+    assert "reference_manager" in labels
 
 
 def test_config_set_result_ok_to_shapes():
-    r = ConfigSetResult(ok=True, key="database_dir", value="/papers", config_path="/tmp/config.toml", message="Set.")
+    r = ConfigSetResult(
+        ok=True, key="database_dir", value="/papers", config_path="/tmp/config.toml", message="Set."
+    )
     shapes = r.to_shapes()
     assert _shape_types(shapes) == ["message"]
     assert shapes[0].level == "success"
 
 
 def test_config_set_result_fail_to_shapes():
-    r = ConfigSetResult(ok=False, key="bad_key", value="x", config_path="/tmp/config.toml", message="Unknown key.")
+    r = ConfigSetResult(
+        ok=False, key="bad_key", value="x", config_path="/tmp/config.toml", message="Unknown key."
+    )
     shapes = r.to_shapes()
     assert _shape_types(shapes) == ["message"]
     assert shapes[0].level == "error"
 
 
 def test_sync_from_mendeley_result_with_message_to_shapes():
-    r = SyncFromMendeleyResult(
-        queue_collection="Q", folder_id=None,
-        added=[], unchanged=[], removed=[], failed=[],
-        dry_run_added=[], dry_run_removed=[], summary="",
+    r = SyncFromLibraryResult(
+        queue_collection="Q",
+        folder_id=None,
+        added=[],
+        unchanged=[],
+        removed=[],
+        failed=[],
+        dry_run_added=[],
+        dry_run_removed=[],
+        summary="",
         message="Collection not found.",
     )
     shapes = r.to_shapes()
@@ -220,11 +252,16 @@ def test_sync_from_mendeley_result_with_message_to_shapes():
 
 
 def test_sync_from_mendeley_result_normal_to_shapes():
-    r = SyncFromMendeleyResult(
-        queue_collection="Q", folder_id="f1",
-        added=[{"id": "a", "mendeley_id": "m1", "title": "T"}],
-        unchanged=["b"], removed=[], failed=[],
-        dry_run_added=[], dry_run_removed=[], summary="1 added.",
+    r = SyncFromLibraryResult(
+        queue_collection="Q",
+        folder_id="f1",
+        added=[{"id": "a", "reference_id": "m1", "title": "T"}],
+        unchanged=["b"],
+        removed=[],
+        failed=[],
+        dry_run_added=[],
+        dry_run_removed=[],
+        summary="1 added.",
     )
     shapes = r.to_shapes()
     assert len(shapes) > 0
@@ -233,8 +270,10 @@ def test_sync_from_mendeley_result_normal_to_shapes():
 
 def test_sync_status_result_without_message_to_shapes():
     r = SyncStatusResult(
-        database_dir="/papers", queue_size=5,
-        database_pdfs=["a.pdf"], summary="5 entries.",
+        database_dir="/papers",
+        queue_size=5,
+        database_pdfs=["a.pdf"],
+        summary="5 entries.",
     )
     shapes = r.to_shapes()
     assert _shape_types(shapes) == ["metric", "metric", "metric"]
@@ -242,8 +281,10 @@ def test_sync_status_result_without_message_to_shapes():
 
 def test_sync_status_result_with_message_to_shapes():
     r = SyncStatusResult(
-        database_dir=None, queue_size=0,
-        database_pdfs=[], summary="",
+        database_dir=None,
+        queue_size=0,
+        database_pdfs=[],
+        summary="",
         message="Not configured.",
     )
     shapes = r.to_shapes()
@@ -253,6 +294,7 @@ def test_sync_status_result_with_message_to_shapes():
 # ---------------------------------------------------------------------------
 # 4. render_shapes smoke test
 # ---------------------------------------------------------------------------
+
 
 def test_render_shapes_smoke():
     buf = io.StringIO()

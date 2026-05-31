@@ -8,13 +8,15 @@ other manager) can be plugged in without touching this file.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable, Generator
 from datetime import datetime
-from typing import Any, Callable, Generator
+from typing import Any
 
 from docent.core import ProgressEvent
+
 from .mendeley_cache import MendeleyCache
+from .models import QueueEntry, SyncFromLibraryResult
 from .ref_manager import ReferenceManagerBackend
-from .models import QueueEntry, SyncFromMendeleyResult
 
 
 def compute_category_path(folder_id: str, root_id: str, folder_map: dict[str, dict]) -> str | None:
@@ -46,7 +48,9 @@ def normalize_mendeley_authors(authors: Any) -> str:
             if isinstance(a, str) and a.strip():
                 parts.append(a.strip())
             elif isinstance(a, dict):
-                name = " ".join(filter(None, [a.get("first_name", ""), a.get("last_name", "")])).strip()
+                name = " ".join(
+                    filter(None, [a.get("first_name", ""), a.get("last_name", "")])
+                ).strip()
                 if name:
                     parts.append(name)
         if parts:
@@ -63,7 +67,8 @@ def candidate_summary(item: dict[str, Any]) -> dict[str, str]:
     if isinstance(authors, list):
         authors = ", ".join(
             " ".join(filter(None, [a.get("first_name", ""), a.get("last_name", "")])).strip()
-            if isinstance(a, dict) else str(a)
+            if isinstance(a, dict)
+            else str(a)
             for a in authors[:3]
         )
     return {
@@ -74,11 +79,14 @@ def candidate_summary(item: dict[str, Any]) -> dict[str, str]:
     }
 
 
-def mendeley_failure_hint(error: str) -> str:
-    if error.startswith("auth:"):
-        return f"{error} (run `mendeley-auth login` to refresh tokens)"
-    if "launch command not found" in error:
-        return f"{error} (install with `uv tool install mendeley-mcp` or set reading.mendeley_mcp_command)"
+def mendeley_failure_hint(error: str, backend_name: str = "Mendeley") -> str:
+    # Mendeley errors get MCP-specific remediation; other backends (Zotero)
+    # already return self-describing errors, so leave them as-is.
+    if backend_name == "Mendeley":
+        if error.startswith("auth:"):
+            return f"{error} (run `mendeley-auth login` to refresh tokens)"
+        if "launch command not found" in error:
+            return f"{error} (install with `uv tool install mendeley-mcp` or set reading.mendeley_mcp_command)"
     return error
 
 
@@ -131,7 +139,7 @@ def build_entry_from_mendeley(
         added=datetime.now().date().isoformat(),
         order=order,
         category=category,
-        mendeley_id=mendeley_id,
+        reference_id=mendeley_id,
     )
 
 
@@ -142,45 +150,73 @@ def sync_from_mendeley_run(
     dry_run: bool,
     mendeley_cache: MendeleyCache,
     log_event: Callable[..., None],
-) -> Generator[ProgressEvent, None, SyncFromMendeleyResult]:
-    empty = SyncFromMendeleyResult(
-        queue_collection=collection_name, folder_id=None,
-        added=[], unchanged=[], flagged=[], cleared=[], removed=[], failed=[],
-        dry_run_added=[], dry_run_removed=[], summary="",
+) -> Generator[ProgressEvent, None, SyncFromLibraryResult]:
+    empty = SyncFromLibraryResult(
+        queue_collection=collection_name,
+        folder_id=None,
+        added=[],
+        unchanged=[],
+        flagged=[],
+        cleared=[],
+        removed=[],
+        failed=[],
+        dry_run_added=[],
+        dry_run_removed=[],
+        summary="",
     )
     backend_name = backend.get_name()
 
-    yield ProgressEvent(phase="discover", message=f"Listing {backend_name} folders to resolve {collection_name!r}.")
+    yield ProgressEvent(
+        phase="discover", message=f"Listing {backend_name} folders to resolve {collection_name!r}."
+    )
     folders_resp = backend.list_folders()
     if folders_resp.get("error"):
         err = folders_resp["error"]
-        return empty.model_copy(update={"message": (
-            f"Could not list {backend_name} folders: {mendeley_failure_hint(err)}"
-        )})
+        return empty.model_copy(
+            update={
+                "message": (
+                    f"Could not list {backend_name} folders: {mendeley_failure_hint(err, backend_name)}"
+                )
+            }
+        )
     folders = folders_resp.get("items") or []
     matches = [f for f in folders if isinstance(f, dict) and f.get("name") == collection_name]
     if not matches:
-        return empty.model_copy(update={"message": (
-            f"{backend_name} collection {collection_name!r} not found. "
-            f"Create a collection named {collection_name!r} in {backend_name}, "
-            f"add the papers you want to read to it, then re-run. "
-            f"(Or change the configured name with "
-            f"`docent reading config-set queue_collection <name>`.)"
-        )})
+        return empty.model_copy(
+            update={
+                "message": (
+                    f"{backend_name} collection {collection_name!r} not found. "
+                    f"Create a collection named {collection_name!r} in {backend_name}, "
+                    f"add the papers you want to read to it, then re-run. "
+                    f"(Or change the configured name with "
+                    f"`docent reading config-set queue_collection <name>`.)"
+                )
+            }
+        )
     if len(matches) > 1:
-        return empty.model_copy(update={"message": (
-            f"Found {len(matches)} {backend_name} collections named {collection_name!r}. "
-            f"Rename one in {backend_name}, or change `reading.queue_collection` to a unique name."
-        )})
+        return empty.model_copy(
+            update={
+                "message": (
+                    f"Found {len(matches)} {backend_name} collections named {collection_name!r}. "
+                    f"Rename one in {backend_name}, or change `reading.queue_collection` to a unique name."
+                )
+            }
+        )
     folder_id = matches[0].get("id")
     if not isinstance(folder_id, str) or not folder_id:
-        return empty.model_copy(update={"message": (
-            f"Mendeley collection {collection_name!r} has no usable id; "
-            f"try toggling its name in Mendeley to refresh."
-        )})
+        return empty.model_copy(
+            update={
+                "message": (
+                    f"Mendeley collection {collection_name!r} has no usable id; "
+                    f"try toggling its name in Mendeley to refresh."
+                )
+            }
+        )
 
     # Build folder map + discover sub-collection hierarchy.
-    folder_map: dict[str, dict] = {f["id"]: f for f in folders if isinstance(f, dict) and f.get("id")}
+    folder_map: dict[str, dict] = {
+        f["id"]: f for f in folders if isinstance(f, dict) and f.get("id")
+    }
     children: dict[str, list[str]] = {}
     for f in folders:
         if isinstance(f, dict):
@@ -197,18 +233,22 @@ def sync_from_mendeley_run(
         bfs.extend(children.get(fid, []))
 
     # Fetch docs from root (fatal if fails), then each sub-folder (non-fatal).
-    yield ProgressEvent(phase="discover", message=f"Reading collection {collection_name!r} ({folder_id[:8]}…).")
+    yield ProgressEvent(
+        phase="discover", message=f"Reading collection {collection_name!r} ({folder_id[:8]}…)."
+    )
     docs_resp = backend.list_documents(folder_id)
     if docs_resp.get("error"):
         err = docs_resp["error"]
-        return empty.model_copy(update={
-            "folder_id": folder_id,
-            "message": f"Could not list documents in {collection_name!r}: {mendeley_failure_hint(err)}",
-        })
+        return empty.model_copy(
+            update={
+                "folder_id": folder_id,
+                "message": f"Could not list documents in {collection_name!r}: {mendeley_failure_hint(err, backend_name)}",
+            }
+        )
 
     # doc_with_category: {mendeley_id: (doc, category_path)} — deepest path wins.
     doc_with_category: dict[str, tuple[dict, str | None]] = {}
-    in_root_collection: set[str] = set()   # mids found directly in the parent/root folder
+    in_root_collection: set[str] = set()  # mids found directly in the parent/root folder
     _no_id_failed: list[dict[str, str]] = []
     _maybe_truncated = bool(docs_resp.get("maybe_truncated"))
 
@@ -226,8 +266,11 @@ def sync_from_mendeley_run(
         yield ProgressEvent(phase="discover", message=f"Reading sub-collection {sf_name!r}…")
         sf_resp = backend.list_documents(sfid)
         if sf_resp.get("error"):
-            yield ProgressEvent(phase="discover", level="warn",
-                                message=f"Could not read '{sf_name}': {sf_resp['error']}")
+            yield ProgressEvent(
+                phase="discover",
+                level="warn",
+                message=f"Could not read '{sf_name}': {sf_resp['error']}",
+            )
             continue
         if sf_resp.get("maybe_truncated"):
             _maybe_truncated = True
@@ -249,7 +292,8 @@ def sync_from_mendeley_run(
     yield ProgressEvent(phase="discover", message=f"Found {len(docs_to_process)} doc(s) total.")
     if _maybe_truncated:
         yield ProgressEvent(
-            phase="discover", level="warn",
+            phase="discover",
+            level="warn",
             message=(
                 "Mendeley returned the maximum number of documents — collection may be larger "
                 "than the fetch limit. Removal pass skipped to avoid falsely marking entries "
@@ -259,19 +303,19 @@ def sync_from_mendeley_run(
 
     added: list[dict[str, str]] = []
     unchanged: list[str] = []
-    flagged: list[str] = []            # newly flagged as not_in_mendeley (absent from all collections)
-    cleared: list[str] = []            # not_in_mendeley / manually_kept cleared (returned to any collection)
-    not_in_parent: list[str] = []      # newly flagged as not_in_parent_collection (in sub only)
-    cleared_parent: list[str] = []     # not_in_parent_collection cleared (back in root)
-    _removed: list[str] = []           # dry-run compat only (unused but kept for shape symmetry)
+    flagged: list[str] = []  # newly flagged as not_in_library (absent from all collections)
+    cleared: list[str] = []  # not_in_library / manually_kept cleared (returned to any collection)
+    not_in_parent: list[str] = []  # newly flagged as not_in_parent_collection (in sub only)
+    cleared_parent: list[str] = []  # not_in_parent_collection cleared (back in root)
+    _removed: list[str] = []  # dry-run compat only (unused but kept for shape symmetry)
     failed: list[dict[str, str]] = list(_no_id_failed)
     dry_run_added: list[dict[str, str]] = []
     dry_run_removed: list[str] = []
     category_updates: dict[str, str | None] = {}  # entry_id -> new category
 
     queue = store.load_queue()
-    by_mendeley_id: dict[str, dict[str, Any]] = {
-        e["mendeley_id"]: e for e in queue if e.get("mendeley_id")
+    by_reference_id: dict[str, dict[str, Any]] = {
+        e["reference_id"]: e for e in queue if e.get("reference_id")
     }
     existing_ids: set[str] = {e.get("id") for e in queue if e.get("id")}
     reserved_ids: set[str] = set()
@@ -281,59 +325,68 @@ def sync_from_mendeley_run(
 
     for i, (mid, (doc, category)) in enumerate(docs_to_process, 1):
         in_collection.add(mid)
-        yield ProgressEvent(phase="reconcile", current=i, total=len(docs_to_process), item=doc.get("title", mid)[:60])
+        yield ProgressEvent(
+            phase="reconcile",
+            current=i,
+            total=len(docs_to_process),
+            item=doc.get("title", mid)[:60],
+        )
 
-        if mid in by_mendeley_id:
-            existing_entry = by_mendeley_id[mid]
+        if mid in by_reference_id:
+            existing_entry = by_reference_id[mid]
             eid = existing_entry.get("id") or mid
             if existing_entry.get("category") != category:
                 category_updates[eid] = category
-            # Clear not_in_mendeley / manually_kept — entry is back in some collection.
-            if existing_entry.get("not_in_mendeley") or existing_entry.get("manually_kept"):
+            # Clear not_in_library / manually_kept — entry is back in some collection.
+            if existing_entry.get("not_in_library") or existing_entry.get("manually_kept"):
                 cleared.append(eid)
             # Track parent-collection membership changes.
             in_parent = mid in in_root_collection
             if in_parent and existing_entry.get("not_in_parent_collection"):
-                cleared_parent.append(eid)   # returned to the root collection
+                cleared_parent.append(eid)  # returned to the root collection
             elif (
                 not in_parent
                 and not existing_entry.get("not_in_parent_collection")
-                and not existing_entry.get("not_in_mendeley")
+                and not existing_entry.get("not_in_library")
                 and not existing_entry.get("manually_kept")
             ):
-                not_in_parent.append(eid)    # newly in sub-collection only
+                not_in_parent.append(eid)  # newly in sub-collection only
             unchanged.append(eid)
             continue
 
         try:
             max_order += 1
-            entry = build_entry_from_mendeley(doc, mid, existing_ids | reserved_ids, max_order, category=category)
+            entry = build_entry_from_mendeley(
+                doc, mid, existing_ids | reserved_ids, max_order, category=category
+            )
         except Exception as e:  # noqa: BLE001
-            failed.append({"mendeley_id": mid, "error": str(e)})
+            failed.append({"reference_id": mid, "error": str(e)})
             yield ProgressEvent(phase="reconcile", level="error", message=f"{mid[:8]}: {e}")
             continue
 
         reserved_ids.add(entry.id)
         if dry_run:
-            dry_run_added.append({"id": entry.id, "mendeley_id": mid, "title": entry.title})
+            dry_run_added.append({"id": entry.id, "reference_id": mid, "title": entry.title})
         else:
             new_entries.append(entry.model_dump())
-            added.append({"id": entry.id, "mendeley_id": mid, "title": entry.title})
+            added.append({"id": entry.id, "reference_id": mid, "title": entry.title})
 
     if not _maybe_truncated:
         for e in queue:
-            mid = e.get("mendeley_id")
+            mid = e.get("reference_id")
             if not mid or mid in in_collection:
                 continue
             # Skip entries already handled: removed, already flagged, or manually kept by the user.
-            if e.get("status") == "removed" or e.get("not_in_mendeley") or e.get("manually_kept"):
+            if e.get("status") == "removed" or e.get("not_in_library") or e.get("manually_kept"):
                 continue
             if dry_run:
                 dry_run_removed.append(e.get("id", mid))
             else:
                 flagged.append(e.get("id", mid))
 
-    if not dry_run and (new_entries or flagged or cleared or not_in_parent or cleared_parent or category_updates):
+    if not dry_run and (
+        new_entries or flagged or cleared or not_in_parent or cleared_parent or category_updates
+    ):
         flagged_set = set(flagged)
         cleared_set = set(cleared)
         not_in_parent_set = set(not_in_parent)
@@ -347,9 +400,9 @@ def sync_from_mendeley_run(
             for e in queue:
                 eid = e.get("id")
                 if eid in flagged_set:
-                    e["not_in_mendeley"] = True
+                    e["not_in_library"] = True
                 if eid in cleared_set:
-                    e["not_in_mendeley"] = False
+                    e["not_in_library"] = False
                     e["manually_kept"] = False
                     e["manually_kept_at"] = None
                 if eid in not_in_parent_set:
@@ -384,19 +437,26 @@ def sync_from_mendeley_run(
     if flagged:
         summary_parts.append(f"{len(flagged)} flagged (not in collection — review in the UI)")
     if not_in_parent:
-        summary_parts.append(f"{len(not_in_parent)} flagged (sub-collection only — review in the UI)")
+        summary_parts.append(
+            f"{len(not_in_parent)} flagged (sub-collection only — review in the UI)"
+        )
     if cleared:
         summary_parts.append(f"{len(cleared)} cleared (returned to collection)")
     if cleared_parent:
         summary_parts.append(f"{len(cleared_parent)} cleared (returned to parent)")
     if dry_run:
-        summary_parts.append(f"{len(dry_run_added)} would-add, {len(dry_run_removed)} would-flag (dry-run)")
+        summary_parts.append(
+            f"{len(dry_run_added)} would-add, {len(dry_run_removed)} would-flag (dry-run)"
+        )
     summary_parts.append(f"{len(failed)} failed")
     summary = ", ".join(summary_parts) + "."
     if any("auth:" in f.get("error", "") for f in failed):
-        summary += " Auth failure detected — run `mendeley-auth login` and retry."
+        if backend_name == "Mendeley":
+            summary += " Auth failure detected — run `mendeley-auth login` and retry."
+        else:
+            summary += f" Auth failure detected — check your {backend_name} credentials and retry."
 
-    return SyncFromMendeleyResult(
+    return SyncFromLibraryResult(
         queue_collection=collection_name,
         folder_id=folder_id,
         added=added,

@@ -85,7 +85,7 @@ All research actions accept a `backend` field from this set:
 ### Flow 3 — Research → NotebookLM
 1. After Flow 1 or 2 completes, user runs `to-notebook`
 2. If `output_file` omitted, auto-detects most recent `.md` in `output_dir`
-3. Preflight checks NotebookLM auth; if expired, triggers interactive `notebooklm login`
+3. NotebookLM auth is checked **up front in the preflight** for any run that will push to NotebookLM (`output=notebook`, `--to-notebook`, or the `to-notebook` action), so a stale session fails fast *before* an expensive research run rather than after. `_nlm_push` Phase 0 re-checks as a fallback (in case auth lapses mid-run). In both places, recovery depends on context: a real terminal (CLI) runs `notebooklm login` inline; a no-TTY caller (UI subprocess or any `via_mcp` caller) opens a visible login terminal and polls auth for up to 2 min while the user signs in, then continues
 4. Sources ranked and deduplicated (max 20 by default, capped at 1 per domain)
 5. Local package written: `{stem}-notebook/` with `sources_urls.txt` + copy of `.md`
 6. Pipeline phases stream in order:
@@ -207,6 +207,7 @@ Used by: `deep-research`, `lit`, `review`, `compare`, `draft`, `replicate`, `aud
 | `feynman_timeout` | `float` | Default 900s |
 | `notebooklm_notebook_id` | `str\|null` | Default notebook |
 | `notebooklm_source_limit` | `int` | Default 50 |
+| `notebooklm_ask_timeout` | `float` | Default 300s (quality gate / perspectives chat wait) |
 | `obsidian_vault` | `str\|null` | Vault path |
 | `alphaxiv_api_key` | `str\|null` | Masked if set |
 
@@ -335,7 +336,7 @@ The `output` field (default `local`) and shorthand `to_notebook: bool` control w
 - **No output file in output_dir** → `ToNotebookResult(ok=False, message="No research output found in {dir}. Run docent studio deep-research or docent studio lit first.")`
 - **No sources file** → Pipeline continues without Feynman sources; NLM research arm still runs if enabled.
 - **NLM unavailable** → Falls back to opening `https://notebooklm.google.com` in browser. Returns `ok=True` with local package path.
-- **NLM auth expired** → Triggers interactive `notebooklm login` (browser opens); if login fails, falls back to browser-open.
+- **NLM auth expired** → CLI: runs `notebooklm login` inline (browser opens). UI subprocess: opens a visible login terminal and polls auth for up to 2 min; on timeout returns `ok=False` with a message to authenticate (Settings → NotebookLM) and re-run.
 
 ### Config errors
 - **Unknown key** → `ConfigSetResult(ok=False, message="Unknown key 'foo'. Known: [sorted list]")`
@@ -378,4 +379,7 @@ alphaxiv_api_key          feynman_command
 - **to-notebook self-learning writes on every run.** Run log goes to `~/.local/share/docent/notebook-learning/run-log.jsonl`; domain compat to `source-compat.json`. Both accumulate across runs. The UI must not overwrite them.
 - **to-notebook active-overrides.json applies globally.** If `~/.local/share/docent/notebook-learning/active-overrides.json` exists, it suppresses steps (e.g. `skip_gap_analysis`). The UI should surface when an override is active.
 - **Notebook ID save hint.** When `to-notebook` creates a new notebook (ID differs from configured value), the result `message` includes `Save with: docent studio config-set --key notebooklm_notebook_id --value {id}`. Surface this prominently.
+- **Quality gate / perspectives recover slow answers via history.** `notebooklm ask` blocks until Gemini finishes; if it exceeds `notebooklm_ask_timeout` (default 300s) the subprocess is killed but the answer still completes server-side. Docent then polls `notebooklm history --json` for up to another `notebooklm_ask_timeout` to recover the answer before reporting the gate as skipped. The UI may see a longer silent wait during recovery.
+- **Remembered notebooks are verified before reuse.** Docent remembers a notebook per output file (`.notebook-map.json`) and via `notebooklm_notebook_id`. Before reusing one it checks the notebook still exists (`source list` exit code) — if the user deleted it, Docent forgets the stale id (clearing the map entry, and the config pointer if that was the source) and creates a fresh notebook instead of failing every source-add against a dead id.
+- **to-notebook aborts when no source can be added.** If the synthesis doc and all other sources fail to add (e.g. a deleted/inaccessible notebook), the run returns `ok=False` with the underlying CLI error rather than running stabilise/quality-gate/perspectives on an empty notebook. Source-add failures now surface the real error (the `notebooklm --json` CLI reports it on stdout, not stderr).
 - **`review`, `compare`, `replicate`, `audit` have no `free` backend.** They require OpenCode or Feynman.

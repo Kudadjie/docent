@@ -29,6 +29,7 @@
 - **`MendeleyCache`** — read-through file-backed cache (5-min TTL) for fresh metadata on every `next / show / search`. Degrades gracefully to queue snapshot on auth failure.
 - **Plugin system** — drop a `.py` file into `~/.docent/plugins/` and Docent auto-discovers it on next run.
 - **`docent ui`** — starts a local web dashboard at `http://localhost:7432`. Browse and manage your reading queue, sync with Mendeley, edit settings, and check for updates — all from the browser. The UI is bundled inside the package; no separate install needed.
+- **Tools page (`/tools` in the UI)** — a schema-driven runner that lists every registered tool action and auto-generates its form from the action's input schema. New plugins appear here with a working form and no frontend code. Backed by `GET /api/tools` (catalogue + JSON schemas) and `POST /api/tools/invoke` (run an action).
 
 ## 📦 Install
 
@@ -56,6 +57,18 @@ Or from the CLI:
 docent update
 ```
 
+## 🆕 What's New
+
+Release highlights live in **[CHANGELOG.md](CHANGELOG.md)** — the single source of
+truth that also feeds the GitHub release notes, the web UI, and the CLI.
+
+After you update, Docent shows a brief *What's New* banner for the first few runs.
+See the current version's highlights any time:
+
+```bash
+docent whatsnew
+```
+
 ## 🏗 Architecture
 
 See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full design. The short version:
@@ -69,9 +82,9 @@ See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full design. The short version:
 
 ### `reading` — Reading Queue
 
-Manages your academic reading queue and syncs with Mendeley.
+Manages your academic reading queue and syncs with your reference manager — **Mendeley or Zotero** (pick one via `reading.reference_manager`; see [docs/cli.md §4](docs/cli.md)).
 
-**Workflow:** Drop a PDF in your `database_dir` → Mendeley auto-imports it → drag it into your `Docent-Queue` collection → run `docent reading sync-from-mendeley`. Category is automatically detected from Mendeley sub-collections.
+**Workflow:** Drop a PDF in your `database_dir` → your reference manager imports it → add it to your `Docent-Queue` collection → run `docent reading sync-from-mendeley`. Category is automatically detected from sub-collections. (Zotero uses a Web API key — no browser login; Mendeley uses the `mendeley-mcp` server.)
 
 **Queue management**
 
@@ -111,11 +124,11 @@ Manages your academic reading queue and syncs with Mendeley.
 
 **Entry types:** Automatically detected from Mendeley document type on sync. Override with `edit --type book_chapter`.
 
-**Mendeley sync**
+**Sync**
 
 | Command | Description |
 |---|---|
-| `docent reading sync-from-mendeley` | Pull from your Mendeley Docent-Queue collection |
+| `docent reading sync-from-mendeley` | Pull from your Docent-Queue collection (Mendeley or Zotero) |
 | `docent reading sync-from-mendeley --dry-run` | Preview changes without writing |
 | `docent reading sync-status` | Report queue size and PDFs in database_dir |
 
@@ -123,9 +136,10 @@ Manages your academic reading queue and syncs with Mendeley.
 
 | Command | Description |
 |---|---|
-| `docent reading config-show` | Show current reading settings |
+| `docent reading config-show` | Show current reading settings (incl. Zotero credentials if active) |
 | `docent reading config-set --key database_dir --value ~/path/to/Papers` | Set the PDF database folder |
-| `docent reading config-set --key queue_collection --value "Docent-Queue"` | Set the Mendeley collection name |
+| `docent reading config-set --key queue_collection --value "Docent-Queue"` | Set the collection name to sync from |
+| `docent reading config-set --key reference_manager --value zotero` | Switch to Zotero (or `mendeley`) |
 
 **Other**
 
@@ -247,8 +261,11 @@ The `docent studio` tool runs AI-powered deep research, literature reviews, and 
 | Action | Description |
 |--------|-------------|
 | `docent studio deep-research "topic"` | Full 6-stage research pipeline |
+| `docent studio deep-research "topic" --expand-citations` | Pipeline + parallel citation graph expansion on anchor papers |
 | `docent studio lit "topic"` | Literature-focused review (80% paper bias) |
+| `docent studio lit "topic" --expand-citations` | Literature review + citation discovery (OA papers via S2) |
 | `docent studio review "paper"` | Peer review of an artifact |
+| `docent studio cite-graph --doi "10.x/y"` | Explore the S2 citation graph around a paper |
 | `docent studio search-papers "query"` | Search alphaXiv for academic papers |
 | `docent studio get-paper "arxiv-id"` | AI-generated overview for a paper |
 | `docent studio usage` | Today's Feynman/OpenCode spend + Tavily requests |

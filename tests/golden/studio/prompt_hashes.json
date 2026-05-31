@@ -1,0 +1,18 @@
+{
+  "audit_researcher": "d658eea1ddb94cfdf5f910855b6b3f4a028dd68d9aa5b4ddf97dbff3ae1b660d",
+  "citation_enricher": "638c74b62eeac6aac65a2becee191c0b172b8e9b11e3fa7dee6b555a20fd2812",
+  "compare_researcher": "9bfe40d0bb70f7076f55b79a188a123b8e5cc63b4a4e75018f754e09651cee79",
+  "draft_writer": "c8d16ca9662b1d18c7532ee52770b00d8b5cc452b8b489771c295190483c7e0e",
+  "gap_evaluator": "f69809424569256d7a2db7f7cc9f9a956a1436146dd6f4809196197f61d51eb6",
+  "lit_planner": "fd587d34e2abfaee9659888f0f3bdeaee11ec8c1ed87b5897814c0c75d10f4be",
+  "lit_writer": "668823608888266f4694bfb2effa9f8ece3e105d90587fff56d033d0635c8ef9",
+  "perspectives": "073cb46c72424e279c0fcb03126a3e49360d36627ff9873bb49c55fbf6b7eb97",
+  "quality_gate": "f7f73de28d4c1a76b3dad5208d7fc0e43983eb1fcffa936ee94e27a43a4afd37",
+  "refiner": "f7a434cffa722dd2dcf18fcf0acc2c7523ae7578741b1c45c485482a38da9359",
+  "replicate_researcher": "e73c0d59824582203071d9f6d618e5eba2875c1ec6ee723fe021a02867bcbe94",
+  "review_researcher": "5f3b87566be9a32b5f6247e7d763cd2aa9f8094f7262f1e44eb7078985cb56f2",
+  "reviewer": "0e870425b6ea4c3d818fac7ece4d9f5817ecba2ee979f0bb494b7d0ab689f8ba",
+  "search_planner": "f846829f9881271bd9c12a457431c3917567a106c81736bc08fcd676c21aba9b",
+  "verifier": "3e2e97171dbbabb6bc8bdc2687b7db5c36dfe1916cc2671bbc938163a5fbd1bd",
+  "writer": "31cbe0c67e40b5b05aa054accd18cd9bd82df66bdb776583ac8522d264698735"
+}

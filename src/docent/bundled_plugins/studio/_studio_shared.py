@@ -1,6 +1,6 @@
 """Constants shared across Studio action mixin modules."""
-from __future__ import annotations
 
+from __future__ import annotations
 
 _KNOWN_RESEARCH_KEYS = {
     "output_dir",
@@ -35,7 +35,7 @@ _KNOWN_RESEARCH_KEYS = {
     "semantic_scholar_api_key",
     "notebooklm_notebook_id",
     "notebooklm_source_limit",
+    "notebooklm_ask_timeout",
     "obsidian_vault",
     "alphaxiv_api_key",
 }
-

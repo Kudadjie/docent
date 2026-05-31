@@ -1,25 +1,25 @@
 """Unit tests for the platform-agnostic studio backend (backend.py)."""
+
 from __future__ import annotations
 
-import os
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from docent.bundled_plugins.studio.backend import (
+    _PROVIDER_SPECS,
     DOCENT_BACKEND_NAMES,
     LiteLLMBackend,
     OcBackend,
-    _PROVIDER_SPECS,
     get_backend,
 )
 from docent.config.settings import ResearchSettings, Settings
 from docent.errors import AuthError, ServiceUnavailableError, UsageLimitError
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _settings(**research_kwargs) -> Settings:
     rs = ResearchSettings(**research_kwargs)
@@ -38,6 +38,7 @@ def _mock_litellm_response(text: str) -> MagicMock:
 # DOCENT_BACKEND_NAMES completeness
 # ---------------------------------------------------------------------------
 
+
 class TestBackendNames:
     def test_all_provider_specs_in_names(self):
         assert set(_PROVIDER_SPECS).issubset(DOCENT_BACKEND_NAMES)
@@ -55,6 +56,7 @@ class TestBackendNames:
 # ---------------------------------------------------------------------------
 # get_backend factory routing
 # ---------------------------------------------------------------------------
+
 
 class TestGetBackendRouting:
     def test_no_override_opencode_default(self):
@@ -134,6 +136,7 @@ class TestGetBackendRouting:
 # Model resolution
 # ---------------------------------------------------------------------------
 
+
 class TestModelResolution:
     def test_groq_model_gets_prefix(self):
         s = _settings(groq_api_key="key", groq_model="llama-3.3-70b-versatile")
@@ -161,6 +164,7 @@ class TestModelResolution:
 # Local backends (no key required)
 # ---------------------------------------------------------------------------
 
+
 class TestLocalBackends:
     """Local backends (ollama, lm_studio, local) were archived in commit 286607e.
     These tests verify that they raise ValueError until they are restored.
@@ -186,6 +190,7 @@ class TestLocalBackends:
 # ---------------------------------------------------------------------------
 # LiteLLMBackend.call
 # ---------------------------------------------------------------------------
+
 
 class TestLiteLLMBackendCall:
     def test_call_returns_content(self):
@@ -284,6 +289,7 @@ class TestLiteLLMBackendCall:
 # OcBackend role mapping
 # ---------------------------------------------------------------------------
 
+
 class TestOcBackendRoleMapping:
     @pytest.fixture
     def mock_oc(self, monkeypatch):
@@ -291,12 +297,12 @@ class TestOcBackendRoleMapping:
         mock.call.return_value = "response"
         mock.is_available.return_value = True
         import docent.bundled_plugins.studio.backend as bmod
+
         monkeypatch.setattr(
             bmod,
             "OcBackend.__init__",
             lambda self, settings: (
-                setattr(self, "_oc", mock) or
-                setattr(self, "_research", settings.research)
+                setattr(self, "_oc", mock) or setattr(self, "_research", settings.research)
             ),
         )
         return mock
@@ -367,4 +373,6 @@ class TestOcBackendRoleMapping:
         b._research = s.research
 
         b.call("prompt", timeout=600)
-        mock_oc.call.assert_called_once_with("prompt", model=s.research.oc_model_planner, timeout=600)
+        mock_oc.call.assert_called_once_with(
+            "prompt", model=s.research.oc_model_planner, timeout=600
+        )

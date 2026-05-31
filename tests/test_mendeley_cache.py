@@ -4,11 +4,10 @@ File-backed read-through cache wrapping `mendeley_list_documents`. The
 `list_documents` callable is injected so these tests never touch the real
 MCP subprocess.
 """
+
 from __future__ import annotations
 
 import json
-
-import pytest
 
 from reading.mendeley_cache import MendeleyCache
 
@@ -146,11 +145,13 @@ def test_corrupt_cache_file_treated_as_empty(tmp_path):
 
 def test_docs_without_id_are_skipped(tmp_path):
     def fake_list(folder_id, launch_command=None):
-        return _ok([
-            {"id": "m1", "title": "ok"},
-            {"title": "no id"},
-            {"id": "m2", "title": "ok2"},
-        ])
+        return _ok(
+            [
+                {"id": "m1", "title": "ok"},
+                {"title": "no id"},
+                {"id": "m2", "title": "ok2"},
+            ]
+        )
 
     cache = MendeleyCache(tmp_path / "c.json", list_documents=fake_list)
     docs = cache.get_collection("F1")
@@ -203,11 +204,13 @@ def test_get_folder_id_missing_collection_returns_none(tmp_path):
 
 def test_get_folder_id_ambiguous_collection_returns_none(tmp_path):
     def fake_folders(launch_command=None):
-        return _ok_folders([
-            {"id": "F1", "name": "Dup"},
-            {"id": "F2", "name": "Dup"},
-            {"id": "F3", "name": "Unique"},
-        ])
+        return _ok_folders(
+            [
+                {"id": "F1", "name": "Dup"},
+                {"id": "F2", "name": "Dup"},
+                {"id": "F3", "name": "Unique"},
+            ]
+        )
 
     cache = MendeleyCache(tmp_path / "c.json", list_folders=fake_folders)
     assert cache.get_folder_id("Dup") is None

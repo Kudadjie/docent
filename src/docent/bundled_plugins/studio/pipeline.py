@@ -8,19 +8,24 @@ Integrity gates and citation verification pattern inspired by
 Academic Research Skills (Cheng-I Wu, CC-BY-NC 4.0):
   https://github.com/Imbad0202/academic-research-skills
 """
+
 from __future__ import annotations
 
 import json
 import logging
 import re
+from collections.abc import Generator
 from pathlib import Path
-from typing import Generator
 
 from docent.core import ProgressEvent
 
 from .backend import StudioBackend
-from .search import fetch_page, tavily_research  # kept for direct callers
-from .search import academic_search_parallel  # kept for direct callers
+from .prompts import load_prompt as _load_prompt
+from .search import (  # kept for direct callers
+    academic_search_parallel,  # kept for direct callers
+    fetch_page,
+    tavily_research,
+)
 from .search_adapter import DefaultSearchAdapter, SearchAdapter
 
 try:
@@ -28,13 +33,7 @@ try:
 except ImportError:
     UsageLimitExceededError = RuntimeError  # type: ignore[misc,assignment]
 
-_AGENTS_DIR = Path(__file__).parent / "agents"
-
 logger = logging.getLogger(__name__)
-
-
-def _load_prompt(name: str) -> str:
-    return (_AGENTS_DIR / f"{name}.md").read_text(encoding="utf-8")
 
 
 def _parse_json(text: str) -> dict:
@@ -42,9 +41,7 @@ def _parse_json(text: str) -> dict:
     text = text.strip()
     if text.startswith("```"):
         lines = text.splitlines()
-        text = "\n".join(
-            lines[1:-1] if lines[-1].strip() == "```" else lines[1:]
-        )
+        text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
     return json.loads(text)
 
 
@@ -65,6 +62,7 @@ def _fetch_artifact(artifact: str) -> str:
 # ---------------------------------------------------------------------------
 # Tavily Research pipeline (primary path when API key is available)
 # ---------------------------------------------------------------------------
+
 
 def _run_tavily_pipeline(
     topic: str,
@@ -89,7 +87,9 @@ def _run_tavily_pipeline(
     research_input = f"{research_prefix}{topic}" if research_prefix else topic
     try:
         research_result = yield from tavily_research(
-            research_input, tavily_api_key, model=tavily_model,
+            research_input,
+            tavily_api_key,
+            model=tavily_model,
             timeout=tavily_research_timeout,
         )
     except UsageLimitExceededError:
@@ -132,7 +132,9 @@ def _run_tavily_pipeline(
         }
 
     # Augment: scholarly + arXiv in parallel alongside Tavily's web sources
-    yield ProgressEvent(phase="fetch", message="Augmenting with academic sources (scholarly + arXiv)...")
+    yield ProgressEvent(
+        phase="fetch", message="Augmenting with academic sources (scholarly + arXiv)..."
+    )
     academic = academic_search_parallel(
         [topic],
         semantic_scholar_api_key=semantic_scholar_api_key,
@@ -159,9 +161,7 @@ def _run_tavily_pipeline(
     if review and not review.startswith("(Reviewer unavailable"):
         yield ProgressEvent(phase="refine", message="Refining draft based on review...")
         refiner_prompt = (
-            _load_prompt("refiner")
-            .replace("{draft}", content)
-            .replace("{review}", review)
+            _load_prompt("refiner").replace("{draft}", content).replace("{review}", review)
         )
         try:
             refined_result = backend.call(refiner_prompt, role="reviewer", timeout=600)
@@ -170,7 +170,8 @@ def _run_tavily_pipeline(
                 logger.warning(
                     "Refiner output (%d chars) is less than 50%% of original "
                     "(%d chars) — likely returned only edits. Keeping original.",
-                    len(refined_result), len(content),
+                    len(refined_result),
+                    len(content),
                 )
             else:
                 refined_draft = refined_result
@@ -178,9 +179,12 @@ def _run_tavily_pipeline(
             logger.warning("Refiner call failed: %s: %s, keeping original", type(e).__name__, e)
 
     # Citation verification on final Tavily output
-    yield ProgressEvent(phase="verify_citations", message="Verifying citations against public APIs…")
+    yield ProgressEvent(
+        phase="verify_citations", message="Verifying citations against public APIs…"
+    )
     try:
         from .citation_verifier import verify_citations as _verify_cites
+
         _cite_report = _verify_cites(refined_draft, ss_key=semantic_scholar_api_key)
         if _cite_report.verified or _cite_report.unverified:
             yield ProgressEvent(
@@ -209,6 +213,7 @@ def _run_tavily_pipeline(
 # Manual pipeline (fallback when no Tavily key or Tavily research fails)
 # ---------------------------------------------------------------------------
 
+
 def _run_pipeline(
     topic: str,
     backend: StudioBackend,
@@ -225,11 +230,11 @@ def _run_pipeline(
     Yields ProgressEvent items during execution, returns the result dict.
     """
     from docent.bundled_plugins.studio.helpers import _check_connectivity
+
     if not _check_connectivity():
         from docent.errors import NetworkError
-        raise NetworkError(
-            "No internet connection detected. Check your connection and retry."
-        )
+
+        raise NetworkError("No internet connection detected. Check your connection and retry.")
 
     _adapter = adapter or DefaultSearchAdapter(
         api_key=tavily_api_key,
@@ -262,7 +267,9 @@ def _run_pipeline(
     all_queries = web_queries + plan.get("domain_queries", [])
 
     # Stage 2: Fetch
-    def _fetch_round(web_qs: list[str], paper_qs: list[str]) -> Generator[ProgressEvent, None, None]:
+    def _fetch_round(
+        web_qs: list[str], paper_qs: list[str]
+    ) -> Generator[ProgressEvent, None, None]:
         nonlocal sources
         total = len(web_qs) + len(paper_qs)
         yield ProgressEvent(
@@ -294,7 +301,8 @@ def _run_pipeline(
                 total=total,
             )
             # Semantic Scholar direct (existing path) + scholarly/arXiv (new) — all parallel
-            from concurrent.futures import ThreadPoolExecutor, as_completed as _as_completed
+            from concurrent.futures import ThreadPoolExecutor
+            from concurrent.futures import as_completed as _as_completed
 
             def _ss_query(q: str) -> list[dict]:
                 results = _adapter.paper_search(q, max_results=4)
@@ -309,13 +317,17 @@ def _run_pipeline(
                 for q in paper_qs:
                     ss_futures_map[pool.submit(_ss_query, q)] = q
                 academic_future = pool.submit(
-                    _adapter.academic_search_parallel, paper_qs,
+                    _adapter.academic_search_parallel,
+                    paper_qs,
                 )
                 for f in _as_completed(list(ss_futures_map) + [academic_future]):
                     try:
                         sources.extend(f.result())
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        # Best-effort fetch — one failed query shouldn't abort the
+                        # round, but log it so a systematically broken key/source
+                        # (e.g. bad Semantic Scholar key) isn't silently invisible.
+                        logger.debug("Paper search query failed: %s: %s", type(exc).__name__, exc)
             idx += len(paper_qs)
         # Fetch full text for top web results (first 5 unique URLs not yet fetched).
         seen_urls: set[str] = set()
@@ -345,8 +357,7 @@ def _run_pipeline(
     # Early-abort guard: if 0 sources after first round, warn and try one more
     if not sources:
         logger.warning(
-            "Pipeline collected 0 sources after round 1. "
-            "Web search may be failing silently."
+            "Pipeline collected 0 sources after round 1. Web search may be failing silently."
         )
 
     # Stage 3: Gap evaluator (max 2 rounds)
@@ -472,9 +483,7 @@ def _run_pipeline(
     # Stage 5: Verifier
     yield ProgressEvent(phase="verify", message="Anchoring citations...")
     verifier_prompt = (
-        _load_prompt("verifier")
-        .replace("{draft}", draft)
-        .replace("{sources}", sources_text)
+        _load_prompt("verifier").replace("{draft}", draft).replace("{sources}", sources_text)
     )
     try:
         verified_draft = backend.call(verifier_prompt, role="verifier", timeout=600)
@@ -490,14 +499,19 @@ def _run_pipeline(
             "Verifier output (%d chars) is less than %d%% of the original draft "
             "(%d chars) — likely returned correction notes instead of the full "
             "draft. Falling back to original draft.",
-            len(verified_draft), int(MINIMUM_RATIO * 100), len(draft),
+            len(verified_draft),
+            int(MINIMUM_RATIO * 100),
+            len(draft),
         )
         verified_draft = draft
 
     # Stage 5.5: Citation API verification
-    yield ProgressEvent(phase="verify_citations", message="Verifying citations against public APIs…")
+    yield ProgressEvent(
+        phase="verify_citations", message="Verifying citations against public APIs…"
+    )
     try:
         from .citation_verifier import verify_citations as _verify_cites
+
         _cite_report = _verify_cites(verified_draft, ss_key=semantic_scholar_api_key)
         if _cite_report.verified or _cite_report.unverified:
             yield ProgressEvent(
@@ -523,9 +537,7 @@ def _run_pipeline(
     if review and review != "(Reviewer unavailable)":
         yield ProgressEvent(phase="refine", message="Refining draft based on review...")
         refiner_prompt = (
-            _load_prompt("refiner")
-            .replace("{draft}", verified_draft)
-            .replace("{review}", review)
+            _load_prompt("refiner").replace("{draft}", verified_draft).replace("{review}", review)
         )
         try:
             refined_draft = backend.call(refiner_prompt, role="writer", timeout=600)
@@ -535,7 +547,8 @@ def _run_pipeline(
                     "Refiner output (%d chars) is less than 50%% of verified draft "
                     "(%d chars) — likely returned only edits, not full draft. "
                     "Keeping verified draft.",
-                    len(refined_draft), len(verified_draft),
+                    len(refined_draft),
+                    len(verified_draft),
                 )
                 refined_draft = verified_draft
         except Exception:
@@ -558,6 +571,7 @@ def _run_pipeline(
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def _run_with_tavily_fallback(
     topic: str,
@@ -583,7 +597,8 @@ def _run_with_tavily_fallback(
     """
     if tavily_api_key:
         result = yield from _run_tavily_pipeline(
-            topic, backend,
+            topic,
+            backend,
             tavily_api_key=tavily_api_key,
             tavily_model="pro",
             research_prefix=research_prefix,
@@ -608,7 +623,10 @@ def _run_with_tavily_fallback(
                 ),
             )
             result = yield from _run_pipeline(
-                topic, backend, planner_name, writer_name,
+                topic,
+                backend,
+                planner_name,
+                writer_name,
                 tavily_api_key=None,
                 semantic_scholar_api_key=semantic_scholar_api_key,
                 alphaxiv_api_key=alphaxiv_api_key,
@@ -646,7 +664,10 @@ def _run_with_tavily_fallback(
                 )
             # Pass None so web_search skips Tavily — the key is known bad.
             result = yield from _run_pipeline(
-                topic, backend, planner_name, writer_name,
+                topic,
+                backend,
+                planner_name,
+                writer_name,
                 tavily_api_key=None,
                 semantic_scholar_api_key=semantic_scholar_api_key,
                 alphaxiv_api_key=alphaxiv_api_key,
@@ -656,7 +677,10 @@ def _run_with_tavily_fallback(
 
     # Fallback: manual pipeline (no Tavily key)
     result = yield from _run_pipeline(
-        topic, backend, planner_name, writer_name,
+        topic,
+        backend,
+        planner_name,
+        writer_name,
         tavily_api_key=tavily_api_key,
         semantic_scholar_api_key=semantic_scholar_api_key,
         alphaxiv_api_key=alphaxiv_api_key,
@@ -676,16 +700,20 @@ def run_deep(
     adapter: SearchAdapter | None = None,
 ) -> Generator[ProgressEvent, None, dict]:
     """Run the full deep research pipeline. Yields ProgressEvent, returns result dict."""
-    return (yield from _run_with_tavily_fallback(
-        topic, backend,
-        planner_name="search_planner", writer_name="writer",
-        research_prefix="Deep research: ",
-        tavily_api_key=tavily_api_key,
-        semantic_scholar_api_key=semantic_scholar_api_key,
-        alphaxiv_api_key=alphaxiv_api_key,
-        tavily_research_timeout=tavily_research_timeout,
-        adapter=adapter,
-    ))
+    return (
+        yield from _run_with_tavily_fallback(
+            topic,
+            backend,
+            planner_name="search_planner",
+            writer_name="writer",
+            research_prefix="Deep research: ",
+            tavily_api_key=tavily_api_key,
+            semantic_scholar_api_key=semantic_scholar_api_key,
+            alphaxiv_api_key=alphaxiv_api_key,
+            tavily_research_timeout=tavily_research_timeout,
+            adapter=adapter,
+        )
+    )
 
 
 def run_lit(
@@ -699,16 +727,20 @@ def run_lit(
     adapter: SearchAdapter | None = None,
 ) -> Generator[ProgressEvent, None, dict]:
     """Run the literature review pipeline. Yields ProgressEvent, returns result dict."""
-    return (yield from _run_with_tavily_fallback(
-        topic, backend,
-        planner_name="lit_planner", writer_name="lit_writer",
-        research_prefix="Literature review: ",
-        tavily_api_key=tavily_api_key,
-        semantic_scholar_api_key=semantic_scholar_api_key,
-        alphaxiv_api_key=alphaxiv_api_key,
-        tavily_research_timeout=tavily_research_timeout,
-        adapter=adapter,
-    ))
+    return (
+        yield from _run_with_tavily_fallback(
+            topic,
+            backend,
+            planner_name="lit_planner",
+            writer_name="lit_writer",
+            research_prefix="Literature review: ",
+            tavily_api_key=tavily_api_key,
+            semantic_scholar_api_key=semantic_scholar_api_key,
+            alphaxiv_api_key=alphaxiv_api_key,
+            tavily_research_timeout=tavily_research_timeout,
+            adapter=adapter,
+        )
+    )
 
 
 def run_compare(
@@ -784,7 +816,12 @@ def run_replicate(
     try:
         guide = backend.call(replicate_prompt, role="researcher", timeout=600)
     except Exception as e:
-        return {"ok": False, "error": f"Replication analysis failed: {e}", "guide": "", "review": ""}
+        return {
+            "ok": False,
+            "error": f"Replication analysis failed: {e}",
+            "guide": "",
+            "review": "",
+        }
 
     yield ProgressEvent(phase="review", message="Reviewing replication guide...")
     reviewer_prompt = _load_prompt("reviewer").replace("{draft}", guide)

@@ -7,6 +7,7 @@ Phases:
   3  Quality gate          (validation + contradictions + gap-fill)
   4  Perspectives          (practitioner / skeptic / beginner)
 """
+
 from __future__ import annotations
 
 import json
@@ -14,15 +15,19 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
+from collections.abc import Iterator
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qsl, urlencode, urlparse
 
 from pydantic import BaseModel, Field
 
 from docent.core import ProgressEvent
 from docent.core.shapes import ErrorShape, LinkShape, MessageShape, MetricShape, Shape
+
+from .prompts import load_prompt
 
 if TYPE_CHECKING:
     from docent.core import Context
@@ -32,6 +37,7 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 from docent.utils.paths import data_dir as _docent_data_dir
+
 _LEARN_DIR = _docent_data_dir() / "notebook-learning"
 _SKILL_COMPAT_PATH = _LEARN_DIR / "source-compat.json"
 _SKILL_RUN_LOG_PATH = _LEARN_DIR / "run-log.jsonl"
@@ -40,6 +46,25 @@ _SKILL_OVERRIDES_PATH = _LEARN_DIR / "active-overrides.json"
 _BUNDLED_COMPAT_PATH = Path(__file__).parent / "data" / "source-compat-defaults.json"
 
 _NOTEBOOK_MAP_FILENAME = ".notebook-map.json"
+
+# Machine-level NotebookLM session mutex.
+# The NotebookLM Playwright session is a single shared resource, global to the
+# machine — two `to-notebook` runs touching it at once corrupt each other. The
+# CLI, the UI subprocess, and MCP all execute the same `to_notebook` action, so a
+# cross-process file lock acquired in the action protects every caller. A lock
+# living only in the UI WebSocket handler would be bypassed by a CLI run.
+_NOTEBOOKLM_LOCK_PATH = _docent_data_dir() / "notebooklm-session.lock"
+
+
+def notebooklm_session_lock(timeout: float):
+    """Return a cross-process FileLock guarding the shared NotebookLM session.
+
+    ``timeout`` is the default acquire timeout; callers may override per-acquire.
+    """
+    from filelock import FileLock
+
+    _NOTEBOOKLM_LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+    return FileLock(str(_NOTEBOOKLM_LOCK_PATH), timeout=timeout)
 
 
 def _find_sources_path(out_path: Path) -> Path | None:
@@ -57,33 +82,11 @@ def _find_sources_path(out_path: Path) -> Path | None:
         return dot_form
     return None
 
-_QUALITY_GATE_PROMPT = (
-    "Analyze this notebook and answer in THREE clearly-headed sections.\n\n"
-    "### VALIDATION\n"
-    "Compare the synthesis document against the other sources. Flag any claims in the synthesis "
-    "that are NOT supported by the sources, or that misrepresent them. Quote the problematic "
-    "claim and explain the discrepancy. If clean, say so explicitly.\n\n"
-    "### CONTRADICTIONS\n"
-    "List source-vs-source contradictions. For each, cite the specific claims and the sources "
-    "that disagree. If none, say so.\n\n"
-    "### GAPS\n"
-    "List the most important subtopics or perspectives a researcher studying {topic} would "
-    "expect but that the current sources do NOT cover. Be specific about what is absent."
-)
-
-_PERSPECTIVES_PROMPT = (
-    "Produce THREE summaries with clear headers.\n\n"
-    "### PRACTITIONER\n"
-    "Key findings as a practitioner who needs to apply this work. Actionable takeaways.\n\n"
-    "### SKEPTIC\n"
-    "Key findings as a skeptical peer reviewer. Main weaknesses and what you would push back on.\n\n"
-    "### BEGINNER\n"
-    "Plain-language overview for someone with no background in this field."
-)
 
 # ---------------------------------------------------------------------------
 # Low-level helpers
 # ---------------------------------------------------------------------------
+
 
 def _nlm_exe() -> str | None:
     """Return the notebooklm executable path, or None if not on PATH."""
@@ -131,6 +134,100 @@ def _nlm_login(timeout: float = 120) -> tuple[bool, str]:
         return False, str(e)
 
 
+def _open_login_terminal() -> tuple[bool, str]:
+    """Open `notebooklm login` in a visible OS terminal for interactive auth.
+
+    Returns (launched, error). Shared by the UI auth endpoint
+    (ui_routes/opencode.py) and by in-run auth recovery when to-notebook runs
+    as a UI subprocess (no TTY) — the inline `notebooklm login` can't prompt
+    there, so we hand the user a real console with a browser-capable session.
+    """
+    exe = _nlm_exe()
+    if not exe:
+        return False, "notebooklm not found on PATH"
+    try:
+        if sys.platform == "win32":
+            # Detached, visible Command Prompt that stays open after login.
+            # exe is shutil.which-resolved (not user input), so shell=True here
+            # is not an injection surface. The exe path is double-quoted because
+            # cmd /k strips the outer quote pair — without it a spaced path
+            # (e.g. C:\Users\First Last\...) splits on the space and never runs.
+            subprocess.Popen(f'start "NotebookLM Auth" cmd /k ""{exe}" login"', shell=True)
+        elif sys.platform == "darwin":
+            # Quote exe inside the AppleScript string so a spaced path survives
+            # `do script` (which runs via the shell).
+            subprocess.Popen(
+                ["osascript", "-e", f'tell app "Terminal" to do script "\\"{exe}\\" login"']
+            )
+        else:
+            for term, args in [
+                ("gnome-terminal", ["--", exe, "login"]),
+                ("xfce4-terminal", ["-e", f'"{exe}" login']),
+                ("konsole", ["-e", exe, "login"]),
+                ("xterm", ["-e", exe, "login"]),
+            ]:
+                if shutil.which(term):
+                    subprocess.Popen([term] + args)
+                    break
+            else:
+                return False, ("No terminal emulator found. Run `notebooklm login` manually.")
+        return True, ""
+    except Exception as exc:  # noqa: BLE001 — surface any spawn failure to the caller
+        return False, str(exc)
+
+
+def _nlm_login_and_wait_ui(
+    poll_timeout: float = 120.0, poll_interval: float = 3.0
+) -> Iterator[ProgressEvent]:
+    """UI-subprocess auth recovery: open a login terminal, then poll until the
+    user authenticates or we time out.
+
+    Yields ProgressEvents; returns True (authenticated) or False (gave up) via
+    StopIteration.value — call with ``ok = yield from _nlm_login_and_wait_ui()``.
+    """
+    launched, err = _open_login_terminal()
+    if not launched:
+        yield ProgressEvent(
+            phase="nlm-login",
+            level="error",
+            message=(
+                f"Could not open a login terminal: {err}. "
+                "Authenticate via Settings → NotebookLM, then retry."
+            ),
+        )
+        return False
+
+    yield ProgressEvent(
+        phase="nlm-login",
+        message=(
+            "A terminal opened for `notebooklm login` — complete the Google "
+            "sign-in there. Waiting up to 2 min…"
+        ),
+    )
+    deadline = time.monotonic() + poll_timeout
+    while time.monotonic() < deadline:
+        time.sleep(poll_interval)
+        if _nlm_auth_ok(retries=1, retry_delay=1.0):
+            return True
+        remaining = max(0, int(deadline - time.monotonic()))
+        yield ProgressEvent(
+            phase="nlm-login",
+            message=f"Waiting for NotebookLM login… ({remaining}s left)",
+        )
+    return False
+
+
+def _login_terminal_mode(context: Context) -> bool:
+    """True when inline interactive `notebooklm login` is impossible because there
+    is no usable TTY: a UI subprocess (DOCENT_UI_SUBPROCESS) or any non-interactive
+    caller (in-process UI/SSE, MCP stdio server). Such callers must open a detached
+    terminal and poll instead of inheriting a dead stdin (which crashes with EPIPE).
+    """
+    return bool(os.environ.get("DOCENT_UI_SUBPROCESS")) or getattr(
+        context, "non_interactive", False
+    )
+
+
 def _nlm_auth_ok(retries: int = 2, retry_delay: float = 2.0) -> bool:
     """Return True if notebooklm is installed and authenticated.
 
@@ -163,21 +260,39 @@ def _nlm_create_notebook(title: str) -> str | None:
     try:
         data = json.loads(stdout)
         # CLI returns {"notebook": {"id": "..."}}; also accept flat {"id": ...}
-        return (
-            data.get("notebook", {}).get("id")
-            or data.get("id")
-            or data.get("notebook_id")
-        )
+        return data.get("notebook", {}).get("id") or data.get("id") or data.get("notebook_id")
     except (json.JSONDecodeError, ValueError):
         return None
 
 
+def _extract_cli_error(stdout: str, stderr: str) -> str:
+    """Best-effort error message from a failed `notebooklm ... --json` call.
+
+    The CLI reports failures as JSON on *stdout* (e.g. {"error": "..."}), so
+    reading stderr alone yields a blank message. Falls back to raw text.
+    """
+    for blob in (stdout, stderr):
+        if not blob:
+            continue
+        try:
+            data = json.loads(blob)
+            if isinstance(data, dict):
+                msg = data.get("error") or data.get("message")
+                if msg:
+                    return str(msg)
+        except (json.JSONDecodeError, ValueError):
+            pass
+    return (stderr or stdout or "").strip() or "unknown error"
+
+
 def _nlm_add_source(source: str, notebook_id: str) -> tuple[int, str]:
     """Add one source (URL or file path). Returns (returncode, error_message)."""
-    rc, _, stderr = _nlm_run(
+    rc, stdout, stderr = _nlm_run(
         ["source", "add", source, "-n", notebook_id, "--json"], timeout=60
     )
-    return rc, stderr
+    if rc == 0:
+        return rc, ""
+    return rc, _extract_cli_error(stdout, stderr)
 
 
 def _nlm_source_list(notebook_id: str) -> list[dict]:
@@ -192,15 +307,24 @@ def _nlm_source_list(notebook_id: str) -> list[dict]:
         return []
 
 
+def _nlm_notebook_exists(notebook_id: str) -> bool:
+    """True if the notebook still exists server-side.
+
+    `source list` exits 0 for an existing notebook (even with zero sources) and
+    non-zero when it's gone — unlike _nlm_source_list, which collapses both to an
+    empty list and so can't tell "empty" from "deleted".
+    """
+    rc, _, _ = _nlm_run(["source", "list", "-n", notebook_id, "--json"], timeout=30)
+    return rc == 0
+
+
 def _nlm_source_delete(source_id: str, notebook_id: str) -> bool:
     """Delete a single source. Returns True on success."""
     rc, _, _ = _nlm_run(["source", "delete", source_id, "-n", notebook_id, "-y"], timeout=30)
     return rc == 0
 
 
-def _nlm_wait_stable(
-    notebook_id: str, max_wait: float = 90, interval: float = 5
-) -> dict[str, Any]:
+def _nlm_wait_stable(notebook_id: str, max_wait: float = 90, interval: float = 5) -> dict[str, Any]:
     """Poll source list until no sources are in 'preparing' state.
 
     Returns {stable, waited_s, error_ids, counts, total}.
@@ -240,9 +364,7 @@ def _nlm_poll_research(notebook_id: str, poll_timeout: float = 300) -> list[str]
     """Poll research status until complete. Returns list of found source URLs."""
     deadline = time.monotonic() + poll_timeout
     while time.monotonic() < deadline:
-        rc, stdout, _ = _nlm_run(
-            ["research", "status", "-n", notebook_id, "--json"], timeout=30
-        )
+        rc, stdout, _ = _nlm_run(["research", "status", "-n", notebook_id, "--json"], timeout=30)
         if rc == 0:
             try:
                 data = json.loads(stdout)
@@ -285,9 +407,7 @@ def _poll_research_gen(
     start = time.monotonic()
     prefix = f"{label}: " if label else ""
     while time.monotonic() < deadline:
-        rc, stdout, _ = _nlm_run(
-            ["research", "status", "-n", notebook_id, "--json"], timeout=30
-        )
+        rc, stdout, _ = _nlm_run(["research", "status", "-n", notebook_id, "--json"], timeout=30)
         if rc == 0:
             try:
                 data = json.loads(stdout)
@@ -315,22 +435,88 @@ def _poll_research_gen(
     return []
 
 
-def _nlm_ask(question: str, notebook_id: str, timeout: float = 180) -> str | None:
-    """Ask the notebook a question. Returns answer text or None on failure."""
-    rc, stdout, _ = _nlm_run(["ask", question, "-n", notebook_id, "--json"], timeout=timeout)
+def _normalize_question(text: str) -> str:
+    """Collapse whitespace so a sent prompt matches its stored-in-history form."""
+    return " ".join(text.split())
+
+
+def _nlm_history(notebook_id: str) -> list[tuple[str, str]]:
+    """Return [(question, answer), ...] for the notebook's most recent conversation.
+
+    `notebooklm history --json` returns full answers (the truncation only affects
+    console rendering), so this is a reliable way to read back a completed answer.
+    """
+    rc, stdout, _ = _nlm_run(["history", "-n", notebook_id, "--json"], timeout=30)
     if rc != 0:
-        return None
+        return []
     try:
         data = json.loads(stdout)
-        return data.get("answer")
+        return [(p.get("question", ""), p.get("answer", "")) for p in data.get("qa_pairs", [])]
     except (json.JSONDecodeError, ValueError):
-        # Rich may emit non-JSON; try raw stdout
-        return stdout.strip() or None
+        return []
+
+
+def _recover_answer_from_history(
+    question: str,
+    notebook_id: str,
+    recovery_timeout: float,
+    poll_interval: float = 15.0,
+) -> str | None:
+    """Poll conversation history until the answer to *question* appears, or timeout.
+
+    Used when an `ask` subprocess was killed by our timeout while NotebookLM was
+    still generating: the answer completes server-side and lands in the
+    conversation, so we read it back instead of giving up.
+    """
+    target = _normalize_question(question)[:60]
+    if not target:
+        return None
+    deadline = time.monotonic() + recovery_timeout
+    while time.monotonic() < deadline:
+        time.sleep(poll_interval)
+        for q, a in reversed(_nlm_history(notebook_id)):
+            if a and a.strip() and target in _normalize_question(q):
+                return a.strip()
+    return None
+
+
+def _nlm_ask(
+    question: str,
+    notebook_id: str,
+    timeout: float = 180,
+    recovery_timeout: float = 0.0,
+    poll_interval: float = 15.0,
+) -> str | None:
+    """Ask the notebook a question. Returns answer text or None on failure.
+
+    `ask` blocks until NotebookLM finishes generating. If our subprocess timeout
+    fires first the process is killed, but the answer still completes server-side
+    and lands in the conversation. When recovery_timeout > 0, on such a timeout we
+    poll `notebooklm history` for up to recovery_timeout seconds to recover that
+    answer rather than reporting "no response".
+    """
+    rc, stdout, stderr = _nlm_run(["ask", question, "-n", notebook_id, "--json"], timeout=timeout)
+    if rc == 0:
+        try:
+            data = json.loads(stdout)
+            answer = data.get("answer")
+        except (json.JSONDecodeError, ValueError):
+            # Rich may emit non-JSON; try raw stdout
+            answer = stdout.strip() or None
+        if answer:
+            return answer
+        return None
+    # rc != 0: recover only from a *timeout* (answer may still be generating) —
+    # not from "not found on PATH" or other hard failures.
+    if recovery_timeout > 0 and "Timeout" in (stderr or ""):
+        return _recover_answer_from_history(question, notebook_id, recovery_timeout, poll_interval)
+    return None
 
 
 # ---------------------------------------------------------------------------
 # URL utilities
 # ---------------------------------------------------------------------------
+
 
 def _strip_utm(url: str) -> str:
     """Strip utm_* tracking parameters from a URL."""
@@ -344,6 +530,7 @@ def _strip_utm(url: str) -> str:
 
 def _load_merged_compat() -> dict:
     """Merge bundled defaults with user-learned data. User data wins on conflicts."""
+
     def _read(p: Path) -> dict:
         try:
             return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
@@ -385,7 +572,11 @@ def _update_compat(outcomes: list[tuple[str, bool]]) -> None:
         return
     try:
         _LEARN_DIR.mkdir(parents=True, exist_ok=True)
-        compat = json.loads(_SKILL_COMPAT_PATH.read_text(encoding="utf-8")) if _SKILL_COMPAT_PATH.exists() else {}
+        compat = (
+            json.loads(_SKILL_COMPAT_PATH.read_text(encoding="utf-8"))
+            if _SKILL_COMPAT_PATH.exists()
+            else {}
+        )
     except (json.JSONDecodeError, OSError):
         compat = {}
     domains_data = compat.setdefault("domains", {})
@@ -400,6 +591,7 @@ def _update_compat(outcomes: list[tuple[str, bool]]) -> None:
         total = entry["success"] + entry["fail"]
         entry["rate"] = round(entry["success"] / total, 2) if total else -1
     import datetime
+
     compat["last_updated"] = datetime.date.today().isoformat()
     try:
         _SKILL_COMPAT_PATH.write_text(
@@ -473,7 +665,8 @@ def _extract_section(answer: str, section_name: str, max_chars: int = 500) -> st
     """Extract the body of a ### SECTION_NAME block, truncated to max_chars."""
     m = re.search(
         rf"###\s*{re.escape(section_name)}\s*\n(.*?)(?=###|\Z)",
-        answer, re.DOTALL | re.IGNORECASE,
+        answer,
+        re.DOTALL | re.IGNORECASE,
     )
     if not m:
         return ""
@@ -512,7 +705,9 @@ def _parse_quality_gate(answer: str) -> dict[str, Any]:
     )
     if con_m:
         t = con_m.group(1).strip()
-        if not re.search(r"\bnone\b|\bno contradictions\b|\bno source.?vs.?source\b", t, re.IGNORECASE):
+        if not re.search(
+            r"\bnone\b|\bno contradictions\b|\bno source.?vs.?source\b", t, re.IGNORECASE
+        ):
             numbered = re.findall(r"(?m)^\d+\.", t)
             contradictions = len(numbered) if numbered else 1
 
@@ -529,9 +724,7 @@ def _parse_perspectives(answer: str) -> dict[str, str]:
     answer = _strip_followup(answer)
     out: dict[str, str] = {}
     for key in ("PRACTITIONER", "SKEPTIC", "BEGINNER"):
-        m = re.search(
-            rf"###\s*{key}\s*\n(.*?)(?=###|\Z)", answer, re.DOTALL | re.IGNORECASE
-        )
+        m = re.search(rf"###\s*{key}\s*\n(.*?)(?=###|\Z)", answer, re.DOTALL | re.IGNORECASE)
         out[key.lower()] = m.group(1).strip() if m else ""
     return out
 
@@ -541,7 +734,18 @@ def _parse_perspectives(answer: str) -> dict[str, str]:
 # ---------------------------------------------------------------------------
 
 _BACKEND_SUFFIXES = ("-free", "-feynman", "-docent")
-_WORKFLOW_SUFFIXES = ("-deep", "-lit", "-review", "-compare", "-replicate", "-audit", "-draft", "-update", "-verify", "-analysis")
+_WORKFLOW_SUFFIXES = (
+    "-deep",
+    "-lit",
+    "-review",
+    "-compare",
+    "-replicate",
+    "-audit",
+    "-draft",
+    "-update",
+    "-verify",
+    "-analysis",
+)
 
 
 def _derive_topic(out_path: Path) -> str:
@@ -593,30 +797,77 @@ def _derive_topic(out_path: Path) -> str:
 # Score 1.0 = top tier (intergovernmental, peer-reviewed journals, major health agencies).
 # Score 0.6 = reputable tier (established journalism, policy think-tanks).
 # Anything else defaults to 0.3.
-_AUTHORITY_TOP = frozenset({
-    # Health / science agencies
-    "who.int", "cdc.gov", "nih.gov", "ncbi.nlm.nih.gov", "pubmed.ncbi.nlm.nih.gov",
-    "emro.who.int", "afro.who.int", "euro.who.int",
-    # Intergovernmental
-    "un.org", "undp.org", "unep.org", "worldbank.org", "imf.org", "oecd.org",
-    "ipcc.ch", "iea.org", "fao.org", "ifad.org", "wfp.org",
-    # Peer-reviewed journals
-    "nature.com", "science.org", "thelancet.com", "nejm.org", "cell.com",
-    "bmj.com", "jamanetwork.com", "plos.org", "plosone.org",
-    "mdpi.com", "frontiersin.org", "wiley.com", "springer.com", "elsevier.com",
-    "oxfordjournals.org", "cambridge.org", "tandfonline.com",
-    # Preprint / open access
-    "arxiv.org", "biorxiv.org", "medrxiv.org", "ssrn.com",
-    "researchgate.net", "semanticscholar.org",
-})
+_AUTHORITY_TOP = frozenset(
+    {
+        # Health / science agencies
+        "who.int",
+        "cdc.gov",
+        "nih.gov",
+        "ncbi.nlm.nih.gov",
+        "pubmed.ncbi.nlm.nih.gov",
+        "emro.who.int",
+        "afro.who.int",
+        "euro.who.int",
+        # Intergovernmental
+        "un.org",
+        "undp.org",
+        "unep.org",
+        "worldbank.org",
+        "imf.org",
+        "oecd.org",
+        "ipcc.ch",
+        "iea.org",
+        "fao.org",
+        "ifad.org",
+        "wfp.org",
+        # Peer-reviewed journals
+        "nature.com",
+        "science.org",
+        "thelancet.com",
+        "nejm.org",
+        "cell.com",
+        "bmj.com",
+        "jamanetwork.com",
+        "plos.org",
+        "plosone.org",
+        "mdpi.com",
+        "frontiersin.org",
+        "wiley.com",
+        "springer.com",
+        "elsevier.com",
+        "oxfordjournals.org",
+        "cambridge.org",
+        "tandfonline.com",
+        # Preprint / open access
+        "arxiv.org",
+        "biorxiv.org",
+        "medrxiv.org",
+        "ssrn.com",
+        "researchgate.net",
+        "semanticscholar.org",
+    }
+)
 
-_AUTHORITY_REPUTABLE = frozenset({
-    "reuters.com", "apnews.com", "bbc.com", "bbc.co.uk",
-    "theguardian.com", "ft.com", "economist.com",
-    "nytimes.com", "washingtonpost.com", "theatlantic.com",
-    "brookings.edu", "cfr.org", "rand.org", "chathamhouse.org",
-    "pewresearch.org", "statista.com",
-})
+_AUTHORITY_REPUTABLE = frozenset(
+    {
+        "reuters.com",
+        "apnews.com",
+        "bbc.com",
+        "bbc.co.uk",
+        "theguardian.com",
+        "ft.com",
+        "economist.com",
+        "nytimes.com",
+        "washingtonpost.com",
+        "theatlantic.com",
+        "brookings.edu",
+        "cfr.org",
+        "rand.org",
+        "chathamhouse.org",
+        "pewresearch.org",
+        "statista.com",
+    }
+)
 
 _CURRENT_YEAR = 2026
 _MAX_PER_DOMAIN = 3  # never allocate more than this many slots to one domain
@@ -705,7 +956,8 @@ def _rank_sources(sources: list[dict], max_sources: int) -> list[dict]:
 
     # Compute year range across all papers in this batch for relative recency
     paper_years = [
-        y for s in unique
+        y
+        for s in unique
         if s.get("source_type") == "paper"
         for y in [_parse_year(s.get("year"))]
         if y is not None
@@ -735,6 +987,7 @@ def _rank_sources(sources: list[dict], max_sources: int) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Models
 # ---------------------------------------------------------------------------
+
 
 class ToNotebookInputs(BaseModel):
     output_file: str | None = Field(
@@ -826,6 +1079,7 @@ class ToNotebookResult(BaseModel):
 
     def to_shapes(self) -> list[Shape]:
         from docent.core.shapes import MarkdownShape
+
         if not self.ok:
             return [ErrorShape(reason=self.message)]
         shapes: list[Shape] = [MessageShape(text=self.message, level="success")]
@@ -871,7 +1125,9 @@ class ToNotebookResult(BaseModel):
             # Gaps list
             if gaps:
                 bullets = "\n".join(f"- {g[:120]}" for g in gaps)
-                filled_note = f" ({gaps_filled} filled by follow-up research)" if gaps_filled else ""
+                filled_note = (
+                    f" ({gaps_filled} filled by follow-up research)" if gaps_filled else ""
+                )
                 md.append(f"**Gaps identified{filled_note}:**\n\n{bullets}")
 
             if md:
@@ -904,10 +1160,14 @@ class ToNotebookResult(BaseModel):
 # ---------------------------------------------------------------------------
 
 _EMPTY_PIPELINE_RESULT: dict[str, Any] = {
-    "ok": False, "notebook_id": None,
-    "sources_added": 0, "sources_failed": 0,
-    "sources_from_feynman": 0, "sources_from_nlm": 0,
-    "quality_gate": None, "perspectives": None,
+    "ok": False,
+    "notebook_id": None,
+    "sources_added": 0,
+    "sources_failed": 0,
+    "sources_from_feynman": 0,
+    "sources_from_nlm": 0,
+    "quality_gate": None,
+    "perspectives": None,
     "message": "",
 }
 
@@ -944,10 +1204,33 @@ def _save_notebook_map(output_dir: Path, stem: str, notebook_id: str) -> None:
         pass
 
 
+def _forget_notebook(output_dir: Path, stem: str, notebook_id: str, *, from_config: bool) -> None:
+    """Drop a stale notebook_id so the next run recreates instead of reusing it.
+
+    Removes the stem→id entry from the per-output map and, if the id came from
+    the saved config pointer, clears that too.
+    """
+    p = output_dir / _NOTEBOOK_MAP_FILENAME
+    nmap = _read_notebook_map(output_dir)
+    if nmap.get(stem) == notebook_id:
+        nmap.pop(stem, None)
+        try:
+            p.write_text(json.dumps(nmap, indent=2, ensure_ascii=False), encoding="utf-8")
+        except OSError:
+            pass
+    if from_config:
+        try:
+            from docent.config import write_setting
+
+            write_setting("research.notebooklm_notebook_id", "")
+        except Exception:
+            pass
+
+
 def _nlm_push(
     out_path: Path,
     sources_path: Path | None,
-    context: "Context",
+    context: Context,
     max_sources: int = 20,
     topic: str | None = None,
     guide_files: list[Path] | None = None,
@@ -964,20 +1247,38 @@ def _nlm_push(
     # ── Phase 0: Auth ──────────────────────────────────────────────────────
     yield ProgressEvent(phase="nlm-check", message="Checking NotebookLM auth...")
     if not _nlm_auth_ok():
-        yield ProgressEvent(phase="nlm-login", message="Auth expired -- running notebooklm login...")
-        login_ok, login_err = _nlm_login()
-        # Always re-check auth after login regardless of exit code — a code-1
-        # exit can mean "already authenticated" (Playwright redirect case).
-        if not _nlm_auth_ok(retries=1, retry_delay=1.0):
-            detail = f": {login_err}" if login_err else ""
-            return {
-                **_EMPTY_PIPELINE_RESULT,
-                "message": (
-                    f"NotebookLM auth expired{detail}. "
-                    "Run `notebooklm login` manually then retry."
-                ),
-            }
-        yield ProgressEvent(phase="nlm-login", message="Login successful.")
+        if _login_terminal_mode(context):
+            # No usable TTY — the inline `notebooklm login` would run
+            # non-interactively and fail (EPIPE). Open a visible terminal for the
+            # browser sign-in and poll until the user completes it (or we time out).
+            authed = yield from _nlm_login_and_wait_ui()
+            if not authed:
+                return {
+                    **_EMPTY_PIPELINE_RESULT,
+                    "message": (
+                        "NotebookLM auth required — sign in via the login terminal "
+                        "(or Settings → NotebookLM → Authenticate), then re-run the "
+                        "to-notebook action. See the log above for details."
+                    ),
+                }
+            yield ProgressEvent(phase="nlm-login", message="Login successful.")
+        else:
+            yield ProgressEvent(
+                phase="nlm-login", message="Auth expired -- running notebooklm login..."
+            )
+            login_ok, login_err = _nlm_login()
+            # Always re-check auth after login regardless of exit code — a code-1
+            # exit can mean "already authenticated" (Playwright redirect case).
+            if not _nlm_auth_ok(retries=1, retry_delay=1.0):
+                detail = f": {login_err}" if login_err else ""
+                return {
+                    **_EMPTY_PIPELINE_RESULT,
+                    "message": (
+                        f"NotebookLM auth expired{detail}. "
+                        "Run `notebooklm login` manually then retry."
+                    ),
+                }
+            yield ProgressEvent(phase="nlm-login", message="Login successful.")
 
     # ── Resolve topic early (needed for notebook title + quality-gate) ───────
     effective_topic = topic or _derive_topic(out_path)
@@ -986,16 +1287,32 @@ def _nlm_push(
     notebook_id = context.settings.research.notebooklm_notebook_id
     _stem = out_path.stem
     _output_dir = out_path.parent
+    _id_from_config = bool(notebook_id)
 
     if not notebook_id:
         # Check per-file map before creating a new notebook
         _nmap = _read_notebook_map(_output_dir)
         notebook_id = _nmap.get(_stem)
-        if notebook_id:
-            yield ProgressEvent(
-                phase="nlm-notebook",
-                message=f"Reusing existing notebook '{effective_topic}': {notebook_id}",
-            )
+
+    # Verify a remembered notebook still exists — the user may have deleted it.
+    # A stale id makes every source-add fail silently, so drop it and recreate.
+    if notebook_id and not _nlm_notebook_exists(notebook_id):
+        yield ProgressEvent(
+            phase="nlm-notebook",
+            level="warn",
+            message=(
+                f"Remembered notebook {notebook_id} no longer exists "
+                "(deleted?) — creating a fresh one."
+            ),
+        )
+        _forget_notebook(_output_dir, _stem, notebook_id, from_config=_id_from_config)
+        notebook_id = None
+
+    if notebook_id:
+        yield ProgressEvent(
+            phase="nlm-notebook",
+            message=f"Reusing existing notebook '{effective_topic}': {notebook_id}",
+        )
 
     if not notebook_id:
         title = f"Docent Studio: {effective_topic}"
@@ -1019,8 +1336,8 @@ def _nlm_push(
     if _remaining == 0:
         tier_hint = (
             "If you're on NotebookLM Plus (100 sources), run `docent setup` to update your plan."
-            if _source_limit == 50 else
-            f"Notebook is at the {_source_limit}-source limit for your plan."
+            if _source_limit == 50
+            else f"Notebook is at the {_source_limit}-source limit for your plan."
         )
         return {
             **_EMPTY_PIPELINE_RESULT,
@@ -1047,6 +1364,7 @@ def _nlm_push(
 
     # ── Run tracking ──────────────────────────────────────────────────────
     import datetime as _dt
+
     _run_start = time.monotonic()
     _url_outcomes: list[tuple[str, bool]] = []  # (domain, success)
     _errors: list[str] = []
@@ -1054,7 +1372,7 @@ def _nlm_push(
 
     # ── Resolve guide files ───────────────────────────────────────────────
     _guide_paths: list[Path] = []
-    for _gf in (guide_files or []):
+    for _gf in guide_files or []:
         _gp = Path(_gf).expanduser()
         if _gp.exists():
             _guide_paths.append(_gp)
@@ -1069,9 +1387,9 @@ def _nlm_push(
     if _guide_paths:
         try:
             from docent.bundled_plugins.studio.helpers import _decode_text_file
+
             guide_snippet = " ".join(
-                _decode_text_file(gp)[:300].replace("\n", " ")
-                for gp in _guide_paths
+                _decode_text_file(gp)[:300].replace("\n", " ") for gp in _guide_paths
             )
             research_query = f"{effective_topic} -- {guide_snippet}"
         except OSError:
@@ -1094,6 +1412,7 @@ def _nlm_push(
     added = 0
     failed = 0
     feynman_added = 0
+    _synthesis_err = ""
 
     if _remaining > 0:
         yield ProgressEvent(phase="nlm-push", message="Adding synthesis document...")
@@ -1104,27 +1423,34 @@ def _nlm_push(
             _remaining -= 1
         else:
             failed += 1
+            _synthesis_err = err
             yield ProgressEvent(
-                phase="nlm-push", message=f"Warning: synthesis doc failed: {err[:80]}"
+                phase="nlm-push",
+                level="warn",
+                message=f"Warning: synthesis doc failed: {err[:120]}",
             )
         time.sleep(1)
 
     # ── Extra synthesis docs (from multi-file picker) ─────────────────────
-    for _extra in (extra_synthesis_docs or []):
+    for _extra in extra_synthesis_docs or []:
         if _remaining <= 0:
             yield ProgressEvent(
                 phase="nlm-push",
                 message=f"Source limit reached ({_source_limit}) — skipping {_extra.name}.",
             )
             break
-        yield ProgressEvent(phase="nlm-push", message=f"Adding synthesis document: {_extra.name}...")
+        yield ProgressEvent(
+            phase="nlm-push", message=f"Adding synthesis document: {_extra.name}..."
+        )
         rc, err = _nlm_add_source(str(_extra), notebook_id)
         if rc == 0:
             added += 1
             feynman_added += 1
             _remaining -= 1
         else:
-            yield ProgressEvent(phase="nlm-push", message=f"Warning: {_extra.name} failed: {err[:80]}")
+            yield ProgressEvent(
+                phase="nlm-push", message=f"Warning: {_extra.name} failed: {err[:80]}"
+            )
         time.sleep(1)
 
     # ── Guide files as sources ────────────────────────────────────────────
@@ -1175,6 +1501,24 @@ def _nlm_push(
             else:
                 failed += 1
             time.sleep(1)
+
+    # ── Abort if nothing landed ───────────────────────────────────────────
+    # Every source-add failed AND the notebook was empty to begin with → it's
+    # broken (commonly a deleted/invalid notebook, or auth lapsed mid-run). Don't
+    # run stabilise/quality-gate on an empty notebook — surface a clear error.
+    # (A re-run of an already-populated notebook where everything dedupes has
+    # added==0 but _current_count>0; that's fine, so we don't bail there.)
+    if added == 0 and _current_count == 0:
+        detail = f" Error: {_synthesis_err}." if _synthesis_err else ""
+        return {
+            **_EMPTY_PIPELINE_RESULT,
+            "notebook_id": notebook_id,
+            "message": (
+                "No sources could be added to the notebook — it may have been "
+                f"deleted or become inaccessible.{detail} Re-run to create a "
+                "fresh notebook."
+            ),
+        }
 
     # ── Phase 1 completion: poll NLM research, add found URLs ─────────────
     nlm_added = 0
@@ -1250,10 +1594,29 @@ def _nlm_push(
     quality_gate: dict | None = None
     gaps_filled = 0
 
+    # NotebookLM's Gemini can take several minutes to analyse a heavy multi-source
+    # notebook. The `ask` subprocess blocks until the answer is ready, so too short
+    # a timeout kills it mid-generation (the answer still lands in the notebook
+    # afterward). Configurable via research.notebooklm_ask_timeout (default 300s).
+    ask_timeout = context.settings.research.notebooklm_ask_timeout
+
     if run_quality_gate:
-        yield ProgressEvent(phase="nlm-quality", message="Running quality gate (validation + contradictions + gaps)...")
-        gate_prompt = _QUALITY_GATE_PROMPT.format(topic=effective_topic)
-        gate_answer = _nlm_ask(gate_prompt, notebook_id, timeout=180)
+        yield ProgressEvent(
+            phase="nlm-quality",
+            message="Running quality gate (validation + contradictions + gaps)...",
+        )
+        yield ProgressEvent(
+            phase="nlm-quality",
+            message=(
+                f"Asking NotebookLM to analyse the notebook — this can take a few "
+                f"minutes (up to {int(ask_timeout)}s; if it overruns I'll keep "
+                "watching the notebook for the answer)..."
+            ),
+        )
+        gate_prompt = load_prompt("quality_gate").replace("{topic}", effective_topic)
+        gate_answer = _nlm_ask(
+            gate_prompt, notebook_id, timeout=ask_timeout, recovery_timeout=ask_timeout
+        )
 
         if gate_answer:
             quality_gate = _parse_quality_gate(gate_answer)
@@ -1271,7 +1634,9 @@ def _nlm_push(
 
             # Fill each gap (unless override says skip)
             if overrides.get("skip_gap_analysis") and gaps:
-                yield ProgressEvent(phase="nlm-quality", message="Gap analysis skipped (active-overrides).")
+                yield ProgressEvent(
+                    phase="nlm-quality", message="Gap analysis skipped (active-overrides)."
+                )
                 gaps = []
 
             total_gaps = len(gaps)
@@ -1292,7 +1657,7 @@ def _nlm_push(
                     )
                     gap_urls = _nlm_compat_filter(gap_urls)
                     gap_urls = _nlm_deduplicate(gap_urls, notebook_id)
-                    for url in gap_urls[:min(5, _remaining)]:  # cap per-gap and respect limit
+                    for url in gap_urls[: min(5, _remaining)]:  # cap per-gap and respect limit
                         rc, _ = _nlm_add_source(url, notebook_id)
                         ok = rc == 0
                         _url_outcomes.append((_domain_from_url(url), ok))
@@ -1318,7 +1683,14 @@ def _nlm_push(
             quality_gate["gaps_filled"] = gaps_filled
         else:
             yield ProgressEvent(
-                phase="nlm-quality", message="Quality gate failed (no response from notebook)."
+                phase="nlm-quality",
+                level="warn",
+                message=(
+                    f"Quality gate skipped — no answer after {int(ask_timeout)}s "
+                    "of waiting plus history polling. The notebook may still be "
+                    "generating; increase the wait with: docent studio config-set "
+                    "--key notebooklm_ask_timeout --value 600"
+                ),
             )
 
     # ── Phase 4: Perspectives ─────────────────────────────────────────────
@@ -1335,7 +1707,12 @@ def _nlm_push(
         _PERSP_RETRY_DELAY = 30.0  # seconds between attempts
         persp_answer = None
         for _attempt in range(1, _PERSP_RETRIES + 1):
-            persp_answer = _nlm_ask(_PERSPECTIVES_PROMPT, notebook_id, timeout=180)
+            persp_answer = _nlm_ask(
+                load_prompt("perspectives"),
+                notebook_id,
+                timeout=ask_timeout,
+                recovery_timeout=ask_timeout,
+            )
             if persp_answer:
                 break
             if _attempt < _PERSP_RETRIES:
@@ -1351,9 +1728,7 @@ def _nlm_push(
 
         if persp_answer:
             perspectives = _parse_perspectives(persp_answer)
-            yield ProgressEvent(
-                phase="nlm-perspectives", message="Perspectives generated."
-            )
+            yield ProgressEvent(phase="nlm-perspectives", message="Perspectives generated.")
         else:
             yield ProgressEvent(
                 phase="nlm-perspectives",
@@ -1385,34 +1760,41 @@ def _nlm_push(
 
     _nlm_hit_rate = (
         round(sum(1 for _, ok in _url_outcomes if ok) / len(_url_outcomes), 2)
-        if _url_outcomes else 0.0
+        if _url_outcomes
+        else 0.0
     )
-    _append_run_log({
-        "timestamp": _dt.datetime.now().isoformat(),
-        "mode": "research",
-        "topic": effective_topic[:120],
-        "notebook_id": notebook_id,
-        "duration_min": round((time.monotonic() - _run_start) / 60, 1),
-        "sources_final": added,
-        "sources_added_manual": feynman_added,
-        "sources_from_nlm_research": nlm_added,
-        "sources_errors_deleted": _errors_deleted,
-        "nlm_research_mode": "fast",
-        "nlm_sources_found": nlm_sources_found,
-        "nlm_source_hit_rate": _nlm_hit_rate,
-        "stabilization_wait_s": snap.get("waited_s", 0),
-        "quality_gate": {
-            "combined_ask_used": True,
-            "validation": quality_gate.get("validation", "skipped") if quality_gate else "skipped",
-            "contradictions": quality_gate.get("contradictions", 0) if quality_gate else 0,
-            "gaps_filled": gaps_filled,
-            "multi_perspective_combined": perspectives is not None,
-        },
-        "auth_expired_mid_run": False,
-        "errors": _errors,
-        "auto_tune_overrides": [k for k, v in overrides.items() if v and k != "wait_stable_max"],
-        "guide_files": [str(gp) for gp in _guide_paths],
-    })
+    _append_run_log(
+        {
+            "timestamp": _dt.datetime.now().isoformat(),
+            "mode": "research",
+            "topic": effective_topic[:120],
+            "notebook_id": notebook_id,
+            "duration_min": round((time.monotonic() - _run_start) / 60, 1),
+            "sources_final": added,
+            "sources_added_manual": feynman_added,
+            "sources_from_nlm_research": nlm_added,
+            "sources_errors_deleted": _errors_deleted,
+            "nlm_research_mode": "fast",
+            "nlm_sources_found": nlm_sources_found,
+            "nlm_source_hit_rate": _nlm_hit_rate,
+            "stabilization_wait_s": snap.get("waited_s", 0),
+            "quality_gate": {
+                "combined_ask_used": True,
+                "validation": quality_gate.get("validation", "skipped")
+                if quality_gate
+                else "skipped",
+                "contradictions": quality_gate.get("contradictions", 0) if quality_gate else 0,
+                "gaps_filled": gaps_filled,
+                "multi_perspective_combined": perspectives is not None,
+            },
+            "auth_expired_mid_run": False,
+            "errors": _errors,
+            "auto_tune_overrides": [
+                k for k, v in overrides.items() if v and k != "wait_stable_max"
+            ],
+            "guide_files": [str(gp) for gp in _guide_paths],
+        }
+    )
 
     return {
         "ok": True,

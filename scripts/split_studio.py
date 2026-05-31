@@ -23,10 +23,10 @@ lines = content.splitlines(keepends=True)
 # or end of the class, whichever comes first).
 
 # Line-numbers where @action appears (1-based in the original file):
-action_lines = [i for i, l in enumerate(lines) if l.strip().startswith("@action(")]
+action_lines = [i for i, ln in enumerate(lines) if ln.strip().startswith("@action(")]
 # Also locate the class declaration and on_startup
-class_line = next(i for i, l in enumerate(lines) if "class StudioTool" in l)
-on_startup_line = next(i for i, l in enumerate(lines) if l.startswith("def on_startup"))
+class_line = next(i for i, ln in enumerate(lines) if "class StudioTool" in ln)
+on_startup_line = next(i for i, ln in enumerate(lines) if ln.startswith("def on_startup"))
 
 # Build blocks: (start_line, method_name)
 blocks: list[tuple[int, int, str]] = []  # (start, end, method_name)
@@ -57,10 +57,14 @@ SEARCH_METHODS = {
 CONFIG_METHODS = {"config_show", "config_set"}
 
 def get_group(name: str) -> str:
-    if name in RESEARCH_METHODS: return "research"
-    if name in NOTEBOOK_METHODS: return "notebook"
-    if name in SEARCH_METHODS: return "search"
-    if name in CONFIG_METHODS: return "config"
+    if name in RESEARCH_METHODS:
+        return "research"
+    if name in NOTEBOOK_METHODS:
+        return "notebook"
+    if name in SEARCH_METHODS:
+        return "search"
+    if name in CONFIG_METHODS:
+        return "config"
     raise ValueError(f"Unknown action: {name}")
 
 grouped: dict[str, list[tuple[int, int, str]]] = {
@@ -84,9 +88,9 @@ class_attrs = "".join(lines[class_line:class_header_end]).rstrip()
 # Step 4: Build the _studio_shared.py file
 # ---------------------------------------------------------------------------
 # Extract _PRICING_NOTE and _KNOWN_RESEARCH_KEYS from the header region
-pricing_start = next(i for i, l in enumerate(lines) if "_PRICING_NOTE = " in l)
+pricing_start = next(i for i, ln in enumerate(lines) if "_PRICING_NOTE = " in ln)
 pricing_end = next(i for i in range(pricing_start + 1, pricing_start + 10) if lines[i].strip() == ")")
-known_start = next(i for i, l in enumerate(lines) if "_KNOWN_RESEARCH_KEYS = {" in l)
+known_start = next(i for i, ln in enumerate(lines) if "_KNOWN_RESEARCH_KEYS = {" in ln)
 known_end = next(i for i in range(known_start + 1, known_start + 50) if lines[i].strip() == "}")
 
 shared_content = "".join([
@@ -217,7 +221,7 @@ def _path_under(path: Path, root: Path) -> bool:
         return False
 """
 (STUDIO / "_init_helpers.py").write_text(helpers_content, encoding="utf-8")
-print(f"\nWrote _init_helpers.py")
+print("\nWrote _init_helpers.py")
 
 # ---------------------------------------------------------------------------
 # Step 7: Rewrite __init__.py (thin class shell + mixin imports)

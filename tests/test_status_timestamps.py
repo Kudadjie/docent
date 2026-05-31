@@ -3,13 +3,15 @@
 `start` stamps `started` on first transition; `done` stamps `finished`.
 Re-setting the same status doesn't overwrite an existing timestamp.
 """
+
 from __future__ import annotations
+
+from reading import EditInputs, IdOnlyInputs, ReadingQueue
 
 from docent.config import load_settings
 from docent.core.context import Context
 from docent.execution import Executor
 from docent.llm import LLMClient
-from reading import EditInputs, IdOnlyInputs, ReadingQueue
 
 
 def _ctx() -> Context:

@@ -7,7 +7,6 @@ from unittest.mock import MagicMock
 import pytest
 
 from docent.core import all_tools, load_plugins, register_tool, run_startup_hooks
-from docent.core.registry import _REGISTRY
 from docent.core.tool import Tool
 
 
@@ -153,6 +152,7 @@ class TestPluginLoader:
 
     def test_broken_plugin_skipped_others_load(self, plugin_dirs, caplog, capsys):
         import logging
+
         _write_flat_plugin(plugin_dirs["user"], "broken", BROKEN_PLUGIN)
         _write_flat_plugin(plugin_dirs["user"], "good", VALID_FLAT_PLUGIN)
         caplog.set_level(logging.WARNING, logger="docent.plugins")
@@ -215,7 +215,10 @@ class TestPluginLoader:
         dir_a = plugin_dirs["user"].parent / "plugins_a"
         dir_b = plugin_dirs["user"].parent / "plugins_b"
 
-        _write_flat_plugin(dir_a, "tools", """
+        _write_flat_plugin(
+            dir_a,
+            "tools",
+            """
 from docent.core import Tool, register_tool
 from pydantic import BaseModel
 class I(BaseModel): pass
@@ -223,8 +226,12 @@ class I(BaseModel): pass
 class ToolA(Tool):
     name = "tool-from-dir-a"; description = "a"; input_schema = I
     def run(self, inputs, context): return None
-""")
-        _write_flat_plugin(dir_b, "tools", """
+""",
+        )
+        _write_flat_plugin(
+            dir_b,
+            "tools",
+            """
 from docent.core import Tool, register_tool
 from pydantic import BaseModel
 class I(BaseModel): pass
@@ -232,7 +239,8 @@ class I(BaseModel): pass
 class ToolB(Tool):
     name = "tool-from-dir-b"; description = "b"; input_schema = I
     def run(self, inputs, context): return None
-""")
+""",
+        )
 
         pl._STARTUP_HOOKS.clear()
         pl._LOADED_PLUGINS.clear()
@@ -246,6 +254,7 @@ class ToolB(Tool):
     def test_malicious_plugin_os_exit_isolated(self, plugin_dirs, caplog):
         """A plugin that calls sys.exit() raises SystemExit which the loader catches."""
         import logging
+
         _write_flat_plugin(plugin_dirs["user"], "malicious", "import sys; sys.exit(42)")
         _write_flat_plugin(plugin_dirs["user"], "good", VALID_FLAT_PLUGIN)
 
@@ -259,6 +268,7 @@ class ToolB(Tool):
     def test_provenance_metadata_recorded(self, plugin_dirs):
         """Every loaded plugin has name, source, module_path, has_hook entries."""
         from docent.core.plugin_loader import list_plugins
+
         _write_flat_plugin(plugin_dirs["user"], "prov_tool", VALID_FLAT_PLUGIN)
         load_plugins()
         plugins = list_plugins()
@@ -273,6 +283,7 @@ class ToolB(Tool):
     def test_no_sys_path_contamination(self, plugin_dirs):
         """Loading external plugins does not add their directory to sys.path."""
         import sys as _sys
+
         path_before = list(_sys.path)
         _write_flat_plugin(plugin_dirs["user"], "plain", VALID_FLAT_PLUGIN)
         load_plugins()

@@ -35,15 +35,19 @@ def _render_one(shape: Shape, console: Console) -> None:
             value_str = f"{shape.value}"
             if shape.unit:
                 value_str = f"{shape.value} {shape.unit}"
-            console.print(Text.assemble(
-                (shape.label + ": ", "bold"),
-                (value_str, "cyan"),
-            ))
+            console.print(
+                Text.assemble(
+                    (shape.label + ": ", "bold"),
+                    (value_str, "cyan"),
+                )
+            )
         case "link":
-            console.print(Text.assemble(
-                (shape.label + ": ", "dim"),
-                (shape.url, "blue underline"),
-            ))
+            console.print(
+                Text.assemble(
+                    (shape.label + ": ", "dim"),
+                    (shape.url, "blue underline"),
+                )
+            )
         case "message":
             style = _LEVEL_STYLE.get(shape.level, "")
             console.print(Text(shape.text, style=style))
@@ -66,5 +70,5 @@ def _render_table(shape: DataTableShape, console: Console) -> None:
         table.add_column(col)
     for row in shape.rows:
         padded = row + [""] * max(0, len(shape.columns) - len(row))
-        table.add_row(*padded[:len(shape.columns)])
+        table.add_row(*padded[: len(shape.columns)])
     console.print(table)

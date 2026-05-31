@@ -1,8 +1,6 @@
 # Docent CLI v1.2
 
-Docent is a personal CLI control center for grad-school workflows. It manages an academic reading queue and syncs with a Mendeley library. All tools are also exposed as MCP (Model Context Protocol) tools so Claude Code can call them directly.
-
-> **Mendeley setup:** Docent connects to your Mendeley library via [mendeley-mcp](https://github.com/pallaprolus/mendeley-mcp). You'll need to register a Mendeley API client (Client ID + Secret) and run through the OAuth flow once before `sync-from-mendeley` works. Full instructions at the link above.
+Docent is a personal CLI control center for grad-school workflows. It manages an academic reading queue and syncs with your reference manager (Mendeley or Zotero). All tools are also exposed as MCP (Model Context Protocol) tools so Claude Code can call them directly.
 
 ---
 
@@ -43,6 +41,25 @@ docent list
 docent reading --help
 ```
 
+### Global commands
+
+| Command | What it does |
+|---------|--------------|
+| `docent list` | List all registered tools |
+| `docent info <tool>` | Show a tool's actions and arguments |
+| `docent whatsnew` | Show the current version's release highlights (from `CHANGELOG.md`) |
+| `docent update` | Upgrade the installed `docent-cli` package |
+| `docent doctor` | Check environment, tooling versions, and auth status |
+| `docent setup` | Interactive setup (profile, database folder, API keys) |
+| `docent ui` | Start the web UI on `localhost:7432` |
+| `docent serve` | Start the MCP server (stdio) for Claude Code |
+
+After an update, Docent shows a brief **What's New** banner for the first few
+interactive runs, then goes quiet until the next version bump. The content comes
+from the matching version entry in [`CHANGELOG.md`](../CHANGELOG.md), which is the
+single source of truth for release notes (also feeding the GitHub release body,
+the README, and the web UI's What's New toast).
+
 ---
 
 ## 3. The Reading Queue
@@ -51,8 +68,8 @@ The reading queue tracks academic papers with status, category, course, and dead
 
 **Workflow:**
 
-1. Papers live in Mendeley under a collection called `Docent-Queue`
-2. `docent reading sync-from-mendeley` pulls them into the local queue
+1. Papers live in your reference manager under a collection called `Docent-Queue`
+2. `docent reading sync-from-library` pulls them into the local queue
 3. Use `next`, `search`, `stats` to navigate
 4. Use `done`, `start`, `edit` to update status
 5. Use `set-deadline` to set reading deadlines
@@ -61,12 +78,12 @@ The reading queue tracks academic papers with status, category, course, and dead
 
 | Command | What it does |
 |---------|-------------|
-| `docent reading add` | Guidance-only; explains the add-via-Mendeley workflow |
+| `docent reading add` | Guidance-only; explains the add-via-reference-manager workflow |
 | `docent reading next [--category <name>]` | Show the next entry to read (lowest order, optionally filtered by category prefix) |
 | `docent reading show --id <id>` | Show one entry's full details |
 | `docent reading search --query <q>` | Search title, authors, notes, and tags |
 | `docent reading stats` | Queue statistics by category and status |
-| `docent reading edit --id <id> [--order N] [--status <s>] [--category <c>] [--deadline <d>] [--notes <text>] [--tags <t>] [--type <t>]` | Edit user-settable fields. Mendeley-owned fields (title, authors) are read-only. |
+| `docent reading edit --id <id> [--order N] [--status <s>] [--category <c>] [--deadline <d>] [--notes <text>] [--tags <t>] [--type <t>]` | Edit user-settable fields. Reference-manager-owned fields (title, authors) are read-only. |
 | `docent reading set-deadline --id <id> --deadline YYYY-MM-DD` | Set a deadline. Pass `--deadline ""` to clear. |
 | `docent reading done --id <id>` | Mark as done |
 | `docent reading start --id <id>` | Mark as currently reading |
@@ -74,8 +91,8 @@ The reading queue tracks academic papers with status, category, course, and dead
 | `docent reading move-up --id <id>` | Move one position earlier in reading order |
 | `docent reading move-down --id <id>` | Move one position later |
 | `docent reading move-to --id <id> --position N` | Move to a specific position |
-| `docent reading export [--format json|markdown] [--status <s>] [--category <c>]` | Export queue with fresh Mendeley metadata |
-| `docent reading sync-from-mendeley [--dry-run]` | Pull entries from the configured Mendeley collection |
+| `docent reading export [--format json|markdown] [--status <s>] [--category <c>]` | Export queue with fresh reference manager metadata |
+| `docent reading sync-from-library [--dry-run]` | Pull entries from the configured reference manager collection |
 | `docent reading sync-status` | Show queue vs database stats |
 | `docent reading config-show` | Show current reading settings |
 | `docent reading config-set --key <k> --value <v>` | Set `database_dir` or `queue_collection` |
@@ -92,8 +109,12 @@ Key settings under `[reading]`:
 | Key | Description | Default |
 |-----|-------------|---------|
 | `database_dir` | Path to your PDF database folder | prompted on first use |
-| `queue_collection` | Mendeley collection name to sync from | `"Docent-Queue"` |
+| `queue_collection` | Reference-manager collection name to sync from | `"Docent-Queue"` |
+| `reference_manager` | Active backend: `mendeley` or `zotero` | `"mendeley"` |
 | `mendeley_mcp_command` | Command to launch the Mendeley MCP server | `["uvx", "mendeley-mcp"]` |
+| `zotero_api_key` | Zotero API key (used when `reference_manager = zotero`) | — |
+| `zotero_library_id` | Zotero numeric user/group id | — |
+| `zotero_library_type` | `user` or `group` | `"user"` |
 
 Set them with:
 
@@ -101,6 +122,45 @@ Set them with:
 docent reading config-set --key database_dir --value ~/Documents/Papers
 docent reading config-set --key queue_collection --value "Docent-Queue"
 ```
+
+### Reference manager: Mendeley or Zotero
+
+Docent syncs your reading queue from a named collection in your reference manager.
+Pick one with `reference_manager` (you can switch anytime — one active at a time):
+
+- **Mendeley** (default) — uses the `mendeley-mcp` server (`uvx mendeley-mcp`), which
+  owns the OAuth login. You'll need to register a Mendeley API client (Client ID + Secret)
+  and run through the OAuth flow once; see [mendeley-mcp](https://github.com/pallaprolus/mendeley-mcp)
+  for full instructions. Put papers in a collection named `Docent-Queue`, then
+  `docent reading sync-from-library`.
+- **Zotero** — uses the Zotero Web API via an API key (no browser login, no OAuth).
+
+  #### Getting your Zotero API key and Library ID
+
+  1. Go to [zotero.org/settings/keys](https://www.zotero.org/settings/keys) (sign in if prompted).
+  2. Click **Create new private key**.
+  3. Give it a name (e.g. "Docent").
+  4. Under **Personal Library**, tick **Allow library access** and set it to **Read Only**.  
+     Read Only is all Docent needs — it never writes back to your Zotero library.
+  5. Click **Save Key**. Copy the key shown — it is displayed only once.
+  6. Your **Library ID** (numeric user ID) is shown on the same settings page, below  
+     your display name. It is a 7–8 digit number (e.g. `1234567`).
+
+  Then configure Docent:
+
+  ```bash
+  docent reading config-set --key reference_manager --value zotero
+  docent reading config-set --key zotero_api_key --value <your-key>
+  docent reading config-set --key zotero_library_id --value <your-numeric-id>
+  # group library? also set: --key zotero_library_type --value group
+  docent reading sync-from-library   # pulls from the Zotero collection
+  ```
+
+  Or do it in the UI: **Settings → Reading → Zotero** (reference manager toggle).
+
+  Create a Zotero collection named `Docent-Queue` (or whatever `queue_collection` is set
+  to), add the papers you want to read, then sync. Sub-collections become categories,
+  same as with Mendeley.
 
 ---
 
@@ -117,7 +177,7 @@ MCP tool names follow the pattern `{tool}__{action}`, with hyphens replaced by u
 | `reading next` | `reading__next` |
 | `reading stats` | `reading__stats` |
 | `reading search` | `reading__search` |
-| `reading sync-from-mendeley` | `reading__sync_from_mendeley` |
+| `reading sync-from-library` | `reading__sync_from_library` |
 | `reading set-deadline` | `reading__set_deadline` |
 | `reading move-up` | `reading__move_up` |
 
@@ -184,10 +244,10 @@ Claude calls `reading__search` with the relevant query and returns matching entr
 
 ---
 
-**Sync your Mendeley library into the queue:**
-> "Pull in any new papers from my Mendeley Docent-Queue collection."
+**Sync your reference manager library into the queue:**
+> "Pull in any new papers from my Docent-Queue collection."
 
-Claude calls `reading__sync_from_mendeley` and reports what was added, unchanged, or removed.
+Claude calls `reading__sync_from_library` and reports what was added, unchanged, or removed.
 
 ---
 
@@ -211,8 +271,8 @@ Studio runs deep research, literature reviews, and peer reviews, backed by Feynm
 
 | Command | Notes |
 |---------|-------|
-| `docent studio deep-research --topic "..." [--backend <b>] [--output local\|notebook\|vault] [--to-notebook] [--guide-files <path>]` | Full research pipeline |
-| `docent studio lit --topic "..." [--backend <b>] [--output local\|notebook\|vault] [--to-notebook] [--guide-files <path>]` | Literature review (Tavily + scholarly + arXiv) |
+| `docent studio deep-research --topic "..." [--backend <b>] [--output local\|notebook\|vault] [--to-notebook] [--guide-files <path>] [--expand-citations]` | Full research pipeline |
+| `docent studio lit --topic "..." [--backend <b>] [--output local\|notebook\|vault] [--to-notebook] [--guide-files <path>] [--expand-citations]` | Literature review (Tavily + scholarly + arXiv) |
 | `docent studio review --artifact "..." [--backend feynman\|docent] [--output local\|notebook\|vault]` | Peer review of arXiv ID, PDF, or URL |
 | `docent studio compare --artifact-a "..." --artifact-b "..." [--backend feynman\|docent]` | Side-by-side comparison of two artifacts |
 | `docent studio draft --topic "..." [--backend feynman\|docent]` | Draft a paper section or document |
@@ -255,6 +315,24 @@ Every DOI and arXiv ID found in the draft is checked against CrossRef and Semant
 Identifiers that cannot be resolved are flagged — they may be hallucinated, misprinted,
 or not yet indexed, and should be checked before citing.
 
+### Citation discovery (`--expand-citations`)
+
+Add `--expand-citations` to `deep-research` or `lit` (with `--backend docent` only) to run
+a Semantic Scholar citation graph expansion after the pipeline completes:
+
+```bash
+docent studio deep-research --topic "transformer attention" --backend docent --expand-citations
+docent studio lit --topic "graph neural networks" --backend docent --expand-citations
+```
+
+Docent finds the top anchor papers from the research sources, fetches papers that cite each
+of them in parallel, and appends a **## Related Papers (Citation Discovery)** section listing
+open-access papers. The extra papers are also added to the `*-sources.json` file.
+
+- Only open-access papers are included (downloadable via the OA link).
+- Only active for `--backend docent`; silently skipped for `--backend feynman` and `--backend free`.
+- Requires a Semantic Scholar API key for best results (rate limits apply without one).
+
 ### Output destinations (`--output`)
 
 | Value | Behaviour |
@@ -281,6 +359,7 @@ or not yet indexed, and should be checked before citing.
 | `local_base_url` / `local_model` / `local_api_key` | — | Generic OAI-compatible local backend |
 | `tavily_api_key` | — | [Free at tavily.com](https://tavily.com) |
 | `notebooklm_notebook_id` | — | NotebookLM notebook ID from URL |
+| `notebooklm_ask_timeout` | `300` | Seconds to wait for a NotebookLM chat answer (quality gate / perspectives); raise for heavy notebooks |
 | `obsidian_vault` | — | Absolute path to Obsidian vault root |
 | `alphaxiv_api_key` | — | [Free at alphaxiv.org/settings](https://alphaxiv.org/settings) |
 
@@ -323,6 +402,7 @@ docent list   # your tool appears immediately
 - CLI sub-commands: `docent <toolname> <action>`
 - MCP tools via `docent serve`: `<toolname>__<action>`
 - `--help` output from action descriptions and field names
+- A web form on the **Tools page** (`docent ui` → Tools), auto-generated from each action's input schema — no frontend code
 
 For the full plugin contract (Tool ABC, `@action`, `to_shapes()`, `on_startup`), see [`docs/plugin-guide.md`](plugin-guide.md).
 
@@ -332,7 +412,7 @@ For the full plugin contract (Tool ABC, `@action`, `to_shapes()`, `on_startup`),
 
 ### `docent doctor`
 
-Check environment health: Python version, Docent version, external tools (feynman, mendeley-mcp), API key presence, and GitHub update availability.
+Check environment health: Python version, Docent version, external tools (feynman, mendeley-mcp, zotero), API key presence, and GitHub update availability.
 
 ```bash
 docent doctor
@@ -342,7 +422,7 @@ Outputs a table with `OK` / `WARN` / `FAIL` / `SKIP` status for each check. Run 
 
 ### `docent setup`
 
-Interactive guided setup: Mendeley connection, PDF database directory, API keys (Tavily, Semantic Scholar). Safe to re-run — existing values are shown as defaults.
+Interactive guided setup: reference manager connection (Mendeley or Zotero), PDF database directory, API keys (Tavily, Semantic Scholar). Safe to re-run — existing values are shown as defaults.
 
 Each API key is validated against its service before saving. An invalid key shows a red ✗ and offers a "save anyway" prompt rather than silently storing a broken value.
 

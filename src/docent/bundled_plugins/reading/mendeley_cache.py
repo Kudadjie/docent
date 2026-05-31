@@ -24,13 +24,15 @@ On MCP transport / auth error the cache returns `None` — callers fall
 back to the snapshot fields persisted in queue.json by sync-from-mendeley.
 A failed fetch is never written to disk.
 """
+
 from __future__ import annotations
 
 import json
 import os
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from .mendeley_client import list_documents as default_list_documents
 from .mendeley_client import list_folders as default_list_folders
@@ -128,8 +130,10 @@ class MendeleyCache:
             name = f.get("name")
             fid = f.get("id")
             if (
-                isinstance(name, str) and name
-                and isinstance(fid, str) and fid
+                isinstance(name, str)
+                and name
+                and isinstance(fid, str)
+                and fid
                 and counts.get(name, 0) == 1
             ):
                 by_name[name] = fid

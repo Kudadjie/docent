@@ -1,12 +1,14 @@
 """Preflight checks, Tavily key resolver, and output routing helpers."""
+
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel
+
 from docent.config import write_setting
 from docent.core import Context
-from pydantic import BaseModel
 
 
 def _oc_unavailable_reason(oc: Any) -> str:
@@ -18,6 +20,7 @@ def _oc_unavailable_reason(oc: Any) -> str:
     - Model provider overloaded / transient timeout
     """
     from docent.bundled_plugins.studio.helpers import _check_connectivity
+
     if not oc.is_available():
         return (
             "OpenCode server stopped responding. "
@@ -35,6 +38,7 @@ def _oc_unavailable_reason(oc: Any) -> str:
 # Tavily key resolver
 # ---------------------------------------------------------------------------
 
+
 def _resolve_tavily_key(context: Context) -> str | None:
     """Ensure a Tavily API key is available. Prompt interactively if missing.
 
@@ -47,11 +51,13 @@ def _resolve_tavily_key(context: Context) -> str | None:
         return rs.tavily_api_key
 
     import sys
+
     if not sys.stdin.isatty():
         return None
 
     try:
         import typer
+
         key = typer.prompt(
             "\nTavily API key (free at https://tavily.com — 1,000 calls/month)",
             default="",
@@ -72,6 +78,7 @@ def _resolve_tavily_key(context: Context) -> str | None:
 # Output routing + Obsidian vault
 # ---------------------------------------------------------------------------
 
+
 def _write_to_vault(
     out_path: Path,
     topic_or_artifact: str,
@@ -85,6 +92,7 @@ def _write_to_vault(
     Returns the destination path.
     """
     import datetime
+
     studio_dir = vault.expanduser() / "Studio"
     studio_dir.mkdir(parents=True, exist_ok=True)
 
@@ -97,7 +105,7 @@ def _write_to_vault(
         f"---\n"
         f"tags: [docent/studio, {tag}]\n"
         f"date: {date_str}\n"
-        f"topic: \"{topic_or_artifact.replace(chr(34), chr(39))}\"\n"
+        f'topic: "{topic_or_artifact.replace(chr(34), chr(39))}"\n'
         f"backend: {backend}\n"
         f"source_file: {out_path.name}\n"
         f"---\n\n"
@@ -107,13 +115,19 @@ def _write_to_vault(
     return dest
 
 
-def _route_output(inputs: Any, out_path: Path, sources_path: Path | None, context: "Context", workflow: str):
+def _route_output(
+    inputs: Any, out_path: Path, sources_path: Path | None, context: Context, workflow: str
+):
     """Generator helper: handles --output routing after local file is written.
 
     Yields ProgressEvents from _nlm_push when output='notebook'.
     Returns (notebook_id, vault_path, extra_message) as a tuple.
     """
-    from ._notebook import _nlm_push
+    from filelock import Timeout as _FileLockTimeout
+
+    from docent.core import ProgressEvent
+
+    from ._notebook import _nlm_push, notebooklm_session_lock
 
     # --to-notebook shorthand overrides --output
     if getattr(inputs, "to_notebook", False):
@@ -122,11 +136,39 @@ def _route_output(inputs: Any, out_path: Path, sources_path: Path | None, contex
     if inputs.output == "notebook":
         topic = getattr(inputs, "topic", None)
         gf_list = getattr(inputs, "guide_files", []) or []
-        result = yield from _nlm_push(
-            out_path, sources_path, context,
-            topic=topic,
-            guide_files=[Path(p).expanduser() for p in gf_list],
-        )
+        # Same machine-level NotebookLM mutex the to-notebook action uses: the
+        # shared Playwright session can't be touched by two pushes at once, and a
+        # research→notebook run reaches this push outside that action.
+        lock_timeout = context.settings.research.notebooklm_lock_timeout
+        lock = notebooklm_session_lock(timeout=lock_timeout)
+        try:
+            lock.acquire(timeout=0)
+        except _FileLockTimeout:
+            yield ProgressEvent(
+                phase="nlm-wait",
+                message="Waiting: NotebookLM session is busy — another to-notebook run is active.",
+            )
+            try:
+                lock.acquire(timeout=lock_timeout)
+            except _FileLockTimeout:
+                return (
+                    None,
+                    None,
+                    (
+                        f" (NotebookLM session stayed busy for over {int(lock_timeout)}s — "
+                        "push skipped; re-run to-notebook later.)"
+                    ),
+                )
+        try:
+            result = yield from _nlm_push(
+                out_path,
+                sources_path,
+                context,
+                topic=topic,
+                guide_files=[Path(p).expanduser() for p in gf_list],
+            )
+        finally:
+            lock.release()
         if result["ok"]:
             return result["notebook_id"], None, f" {result['message']}"
         return None, None, f" (NotebookLM push failed: {result['message']})"
@@ -134,9 +176,13 @@ def _route_output(inputs: Any, out_path: Path, sources_path: Path | None, contex
     if inputs.output == "vault":
         vault = context.settings.research.obsidian_vault
         if not vault:
-            return None, None, (
-                " (vault output requested but obsidian_vault is not configured — "
-                "set it with: docent studio config-set --key obsidian_vault --value <path>)"
+            return (
+                None,
+                None,
+                (
+                    " (vault output requested but obsidian_vault is not configured — "
+                    "set it with: docent studio config-set --key obsidian_vault --value <path>)"
+                ),
             )
         topic = getattr(inputs, "topic", None) or getattr(inputs, "artifact", "")
         dest = _write_to_vault(out_path, topic, workflow, inputs.backend, vault)
@@ -149,21 +195,127 @@ def _route_output(inputs: Any, out_path: Path, sources_path: Path | None, contex
 # Preflight checks
 # ---------------------------------------------------------------------------
 
+
 def _bail(context: Context, rich_msg: str, plain_msg: str | None = None) -> None:
     """Unified error exit for preflights.
 
-    CLI callers: print the Rich-marked-up message and raise typer.Exit(1).
-    MCP / server callers: raise RuntimeError with the plain message so the
-    caller can surface it through SSE / JSON rather than losing it to stdout.
+    Interactive CLI callers: print the Rich-marked-up message and raise typer.Exit(1).
+    Non-interactive callers (MCP, web UI): raise RuntimeError with the plain
+    message so the caller can surface it through SSE / JSON rather than losing
+    it to stdout.
     """
     import re
-    if context.via_mcp:
+
+    if context.non_interactive:
         msg = plain_msg or re.sub(r"\[/?[^\]]+\]", "", rich_msg).strip()
         raise RuntimeError(msg)
     import typer
+
     from docent.ui.console import get_console
+
     get_console().print(rich_msg)
     raise typer.Exit(1)
+
+
+def _preflight_notebook_auth(inputs: BaseModel, context: Context, *, force: bool = False) -> None:
+    """Authenticate NotebookLM up front for any action that will push to it.
+
+    Without this, the only auth check is _nlm_push Phase 0 — which for
+    research→notebook flows runs *after* a full (expensive) research run, so a
+    stale session wastes the whole run. This fires before the work: fail fast on
+    a dead session, or get the user signed in first.
+
+    Triggers when output routes to NotebookLM (output='notebook', --to-notebook)
+    or force=True (the to-notebook action itself). Reuses the same recovery as the
+    push stage — detached login terminal + poll for no-TTY callers (UI subprocess /
+    via_mcp), inline interactive login on a real CLI TTY.
+    """
+    going_to_notebook = (
+        force
+        or getattr(inputs, "to_notebook", False)
+        or getattr(inputs, "output", None) == "notebook"
+    )
+    if not going_to_notebook:
+        return
+
+    from ._notebook import (
+        _login_terminal_mode,
+        _nlm_auth_ok,
+        _nlm_exe,
+        _nlm_login,
+        _nlm_login_and_wait_ui,
+        notebooklm_session_lock,
+    )
+
+    # notebooklm not installed → let the push stage surface the install hint
+    # rather than blocking a research run for a tool the user may add later.
+    if _nlm_exe() is None:
+        return
+
+    from filelock import Timeout as _FileLockTimeout
+
+    from docent.ui.console import get_console
+
+    console = get_console()
+
+    # Serialize the whole auth check+login behind the machine-level NotebookLM
+    # mutex. Every `notebooklm` invocation — including the `list` auth probe in
+    # _nlm_auth_ok and the `login` browser — launches Chromium against the single
+    # shared profile, and two at once crash on its ProcessSingleton lock. A run
+    # that waits here almost always finds the session already authenticated by the
+    # run ahead of it (double-checked below), so it returns without a 2nd browser.
+    lock = notebooklm_session_lock(timeout=0)
+    try:
+        lock.acquire(timeout=0)
+    except _FileLockTimeout:
+        # Another run holds the NotebookLM session right now. It can only do so
+        # while authenticated (you can't drive NLM with a dead session), so auth is
+        # fine — skip this upfront fail-fast probe rather than blocking. Blocking
+        # here would stall this run's *research* behind the other run's push, which
+        # defeats concurrency. The push stage re-checks/recovers auth when this run
+        # actually reaches NotebookLM.
+        return
+
+    try:
+        if _nlm_auth_ok():
+            return  # session is live
+
+        if _login_terminal_mode(context):
+            # Drain the shared terminal+poll recovery, surfacing its progress to the
+            # activity log (preflights can't yield ProgressEvents — they run before
+            # the action generator exists).
+            gen = _nlm_login_and_wait_ui()
+            authed = False
+            try:
+                while True:
+                    evt = next(gen)
+                    if getattr(evt, "message", None):
+                        # markup=False: messages interpolate dynamic text (error
+                        # strings) that must not be parsed as Rich markup.
+                        console.print(evt.message, markup=False)
+            except StopIteration as stop:
+                authed = bool(stop.value)
+            if not authed:
+                _bail(
+                    context,
+                    "[red]Error:[/] NotebookLM authentication required. Sign in via the "
+                    "login terminal (or Settings → NotebookLM → Authenticate), then re-run.",
+                    "NotebookLM authentication required. Sign in via the login terminal "
+                    "(or Settings → NotebookLM → Authenticate), then re-run.",
+                )
+            return
+
+        # Real CLI TTY: inline interactive login.
+        console.print("[dim]NotebookLM auth expired — running notebooklm login…[/]")
+        _nlm_login()
+        if not _nlm_auth_ok(retries=1, retry_delay=1.0):
+            _bail(
+                context,
+                "[red]Error:[/] NotebookLM auth expired. Run [cyan]notebooklm login[/] then retry.",
+                "NotebookLM auth expired. Run `notebooklm login` then retry.",
+            )
+    finally:
+        lock.release()
 
 
 def _preflight_free_backend(inputs: BaseModel, context: Context) -> None:
@@ -172,8 +324,9 @@ def _preflight_free_backend(inputs: BaseModel, context: Context) -> None:
     Must be called before Rich Progress starts (it steals stdin).
     Raises typer.Exit(1) if the user declines to proceed.
 
-    In MCP mode or when confirmed=True (UI pre-confirmed): skips interactive
-    prompts; appends structured notes to context.mcp_notes for MCP callers.
+    When auto_confirm is set (MCP and web UI) or confirmed=True: skips
+    interactive prompts; appends structured notes to context.mcp_notes for MCP
+    callers (via_mcp).
     """
     if getattr(inputs, "backend", None) != "free":
         return
@@ -182,13 +335,14 @@ def _preflight_free_backend(inputs: BaseModel, context: Context) -> None:
 
     confirmed = getattr(inputs, "confirmed", False)
 
-    if context.via_mcp or confirmed:
+    if context.auto_confirm or confirmed:
         # ── MCP / pre-confirmed (UI) path ─────────────────────────────────────
         # confirmed=False on first MCP call: surface notes and raise so the
         # caller can present them to the user before proceeding.
         # confirmed=True (any caller): add notes to context and proceed.
         if context.via_mcp:
             import re
+
             from docent.core.exceptions import ConfirmationRequired
 
             def strip_markup(s: str) -> str:
@@ -223,15 +377,19 @@ def _preflight_free_backend(inputs: BaseModel, context: Context) -> None:
 
     # ── CLI path: original interactive behaviour ──────────────────────────────
     import sys
+
     import typer
-    from docent.ui.console import get_console
+
     from docent.config import write_setting
+    from docent.ui.console import get_console
 
     console = get_console()
     console.print(FREE_TIER_DISCLAIMER)
 
     try:
-        if not typer.confirm("I understand the limitations. Proceed with the free tier?", default=False):
+        if not typer.confirm(
+            "I understand the limitations. Proceed with the free tier?", default=False
+        ):
             raise typer.Exit(0)
     except (EOFError, KeyboardInterrupt):
         raise typer.Exit(0)
@@ -239,9 +397,7 @@ def _preflight_free_backend(inputs: BaseModel, context: Context) -> None:
     # ── Tavily key guidance ───────────────────────────────────────────────────
     tavily_key = context.settings.research.tavily_api_key
     if not tavily_key:
-        console.print(
-            "\n[yellow]No Tavily API key found.[/] Web search results will be skipped.\n"
-        )
+        console.print("\n[yellow]No Tavily API key found.[/] Web search results will be skipped.\n")
         console.print(TAVILY_SIGNUP_GUIDE)
 
         if sys.stdin.isatty():
@@ -259,7 +415,9 @@ def _preflight_free_backend(inputs: BaseModel, context: Context) -> None:
                 context.settings.research.tavily_api_key = raw
                 console.print("[green]✓[/] Tavily key saved.")
             else:
-                console.print("[dim]Continuing without Tavily — only academic papers will be included.[/]")
+                console.print(
+                    "[dim]Continuing without Tavily — only academic papers will be included.[/]"
+                )
 
 
 def _preflight_guide_files(inputs: BaseModel) -> None:
@@ -272,9 +430,11 @@ def _preflight_guide_files(inputs: BaseModel) -> None:
     if not raw_paths:
         return
 
-    from .helpers import _check_guide_files
-    from docent.ui.console import get_console
     import typer
+
+    from docent.ui.console import get_console
+
+    from .helpers import _check_guide_files
 
     _, problems = _check_guide_files(raw_paths)
     if not problems:
@@ -304,24 +464,28 @@ def _preflight_docent(inputs: BaseModel, context: Context) -> None:
     """
     _preflight_guide_files(inputs)
     _preflight_free_backend(inputs, context)
+    # Ensure NotebookLM auth up front when this run will push to it, so a stale
+    # session fails fast instead of after the (expensive) research completes.
+    _preflight_notebook_auth(inputs, context)
 
     from .backend import DOCENT_BACKEND_NAMES
+
     backend_name = getattr(inputs, "backend", None)
     if backend_name not in DOCENT_BACKEND_NAMES:
         return
 
     # Resolve which provider is actually active
     effective = (
-        context.settings.research.studio_backend
-        if backend_name == "docent"
-        else backend_name
+        context.settings.research.studio_backend if backend_name == "docent" else backend_name
     )
 
     if effective not in ("opencode", None, ""):
         # LiteLLM backend — validate credentials early for a clean error message
         from docent.errors import AuthError
+
         try:
             from .backend import get_backend
+
             get_backend(context.settings, override=backend_name)
         except (AuthError, ValueError) as e:
             _bail(context, f"[red]Error:[/] {e}")
@@ -329,11 +493,13 @@ def _preflight_docent(inputs: BaseModel, context: Context) -> None:
 
     # OpenCode checks
     from docent.utils.model_health import verify_opencode_model
+
     from .oc_client import OcClient, OcModelError, OcUnavailableError
 
     oc = OcClient(provider=context.settings.research.oc_provider)
     if not oc.is_available():
-        _bail(context,
+        _bail(
+            context,
             "[red]Error:[/] OpenCode server is not running. "
             "Start it with: [cyan]opencode serve --port 4096[/]\n"
             "Alternatives: --backend free  |  --backend groq  |  --backend feynman",
@@ -344,8 +510,9 @@ def _preflight_docent(inputs: BaseModel, context: Context) -> None:
 
     planner = context.settings.research.oc_model_planner
     try:
-        if not context.via_mcp:
+        if not context.non_interactive:
             from docent.ui.console import get_console
+
             console = get_console()
             with console.status(f"Checking model availability: [cyan]{planner}[/]..."):
                 verify_opencode_model(planner, provider=context.settings.research.oc_provider)
@@ -353,24 +520,28 @@ def _preflight_docent(inputs: BaseModel, context: Context) -> None:
         else:
             verify_opencode_model(planner, provider=context.settings.research.oc_provider)
     except OcModelError as e:
-        _bail(context,
+        _bail(
+            context,
             f"[red]FAIL[/] Model [cyan]{planner}[/] is not usable: {e}",
             f"Model {planner!r} is not usable: {e}",
         )
     except OcUnavailableError:
-        _bail(context,
+        _bail(
+            context,
             f"[red]FAIL[/] Model check failed: {_oc_unavailable_reason(oc)}",
             f"Model check failed: {_oc_unavailable_reason(oc)}",
         )
     except Exception as e:
-        _bail(context,
+        _bail(
+            context,
             f"[red]FAIL[/] Model check failed for [cyan]{planner}[/] ({e})",
             f"Model check failed for {planner!r}: {e}",
         )
 
     tavily_key = _resolve_tavily_key(context)
     if not tavily_key:
-        _bail(context,
+        _bail(
+            context,
             "[red]Error:[/] Tavily API key is required for the [cyan]opencode[/] backend.\n"
             "Get one at https://tavily.com — free tier 1,000 calls/month.\n"
             "Or switch to --backend free (DuckDuckGo fallback) or --backend groq.",
@@ -378,25 +549,51 @@ def _preflight_docent(inputs: BaseModel, context: Context) -> None:
             "Get one at https://tavily.com or switch to --backend free.",
         )
 
+    # Non-blocking quota warning for CLI users (skip silently on any failure).
+    import os as _os
+
+    if not context.non_interactive and not _os.environ.get("DOCENT_UI_SUBPROCESS"):
+        try:
+            from .tavily_usage import fetch_tavily_usage
+
+            _usage = fetch_tavily_usage(tavily_key, timeout=4.0)
+            _account = _usage.get("account", {})
+            _used = _account.get("plan_usage")
+            _limit = _account.get("plan_limit")
+            if _used is not None and _limit and _limit > 0:
+                _pct = _used / _limit * 100
+                if _pct >= 80:
+                    from docent.ui import get_console
+
+                    get_console().print(
+                        f"[yellow]⚠ Tavily quota:[/] {_used}/{_limit} credits used ({_pct:.0f}%). "
+                        "Running low — top up at app.tavily.com."
+                    )
+        except Exception:
+            pass
+
 
 def _preflight_oc_only(inputs: BaseModel, context: Context) -> None:
     """Pre-flight check for review/compare/draft/replicate/audit (AI backend, no Tavily needed)."""
+    # Ensure NotebookLM auth up front when --output notebook is selected.
+    _preflight_notebook_auth(inputs, context)
     from .backend import DOCENT_BACKEND_NAMES
+
     backend_name = getattr(inputs, "backend", None)
     if backend_name not in DOCENT_BACKEND_NAMES:
         return
 
     effective = (
-        context.settings.research.studio_backend
-        if backend_name == "docent"
-        else backend_name
+        context.settings.research.studio_backend if backend_name == "docent" else backend_name
     )
 
     if effective not in ("opencode", None, ""):
         # LiteLLM backend — validate credentials early
         from docent.errors import AuthError
+
         try:
             from .backend import get_backend
+
             get_backend(context.settings, override=backend_name)
         except (AuthError, ValueError) as e:
             _bail(context, f"[red]Error:[/] {e}")
@@ -404,11 +601,13 @@ def _preflight_oc_only(inputs: BaseModel, context: Context) -> None:
 
     # OpenCode checks
     from docent.utils.model_health import verify_opencode_model
+
     from .oc_client import OcClient, OcModelError, OcUnavailableError
 
     oc = OcClient(provider=context.settings.research.oc_provider)
     if not oc.is_available():
-        _bail(context,
+        _bail(
+            context,
             "[red]Error:[/] OpenCode server is not running. "
             "Start it with: [cyan]opencode serve --port 4096[/]\n"
             "Alternatives: --backend groq  |  --backend feynman",
@@ -419,8 +618,9 @@ def _preflight_oc_only(inputs: BaseModel, context: Context) -> None:
 
     reviewer = context.settings.research.oc_model_reviewer
     try:
-        if not context.via_mcp:
+        if not context.non_interactive:
             from docent.ui.console import get_console
+
             console = get_console()
             with console.status(f"Checking model availability: [cyan]{reviewer}[/]..."):
                 verify_opencode_model(reviewer, provider=context.settings.research.oc_provider)
@@ -428,17 +628,20 @@ def _preflight_oc_only(inputs: BaseModel, context: Context) -> None:
         else:
             verify_opencode_model(reviewer, provider=context.settings.research.oc_provider)
     except OcModelError as e:
-        _bail(context,
+        _bail(
+            context,
             f"[red]FAIL[/] Model [cyan]{reviewer}[/] is not usable: {e}",
             f"Model {reviewer!r} is not usable: {e}",
         )
     except OcUnavailableError:
-        _bail(context,
+        _bail(
+            context,
             f"[red]FAIL[/] Model check failed: {_oc_unavailable_reason(oc)}",
             f"Model check failed: {_oc_unavailable_reason(oc)}",
         )
     except Exception as e:
-        _bail(context,
+        _bail(
+            context,
             f"[red]FAIL[/] Model check failed for [cyan]{reviewer}[/] ({e})",
             f"Model check failed for {reviewer!r}: {e}",
         )
@@ -447,6 +650,7 @@ def _preflight_oc_only(inputs: BaseModel, context: Context) -> None:
 # ---------------------------------------------------------------------------
 # to-notebook preflight — file picker
 # ---------------------------------------------------------------------------
+
 
 def _suggest_rename(out_path: Path, console: Any, typer: Any) -> Path:
     """If the file heading implies a different name, offer to rename file + sources.
@@ -457,10 +661,11 @@ def _suggest_rename(out_path: Path, console: Any, typer: Any) -> Path:
     from docent.bundled_plugins.studio.helpers import _slugify
 
     # Derive topic two ways
-    heading_topic = _derive_topic(out_path)               # reads heading from content
+    heading_topic = _derive_topic(out_path)  # reads heading from content
     stem = out_path.stem
     # Filename topic: strip backend/workflow suffixes the same way, ignoring content
     from docent.bundled_plugins.studio._notebook import _BACKEND_SUFFIXES, _WORKFLOW_SUFFIXES
+
     fname_stem = stem
     for suf in _BACKEND_SUFFIXES:
         if fname_stem.endswith(suf):
@@ -475,6 +680,7 @@ def _suggest_rename(out_path: Path, console: Any, typer: Any) -> Path:
     # Normalize both for comparison: lowercase, strip non-alphanumeric
     def _norm(t: str) -> str:
         import re as _re
+
         return _re.sub(r"[^a-z0-9]", "", t.lower())
 
     if _norm(heading_topic) == _norm(filename_topic):
@@ -516,7 +722,9 @@ def _suggest_rename(out_path: Path, console: Any, typer: Any) -> Path:
         if new_path == out_path:
             return out_path
         if new_path.exists():
-            console.print(f"  [yellow]Warning:[/] [cyan]{new_name}[/] already exists — keeping original name.")
+            console.print(
+                f"  [yellow]Warning:[/] [cyan]{new_name}[/] already exists — keeping original name."
+            )
             return out_path
     elif choice != "1":
         return out_path
@@ -567,6 +775,7 @@ def _check_synthesis_doc(out_path: Path, console: Any, typer: Any) -> None:
 def _warn_no_sources(out_path: Path, console: Any, typer: Any) -> None:
     """Warn and confirm when no matching sources JSON exists for an output file."""
     from docent.bundled_plugins.studio._notebook import _find_sources_path
+
     if _find_sources_path(out_path):
         return
     sources_path = out_path.parent / f"{out_path.stem}-sources.json"  # for display only
@@ -616,7 +825,11 @@ def _preflight_to_notebook(inputs: BaseModel, context: Context) -> None:
     the "all" / multi case) so the generator body receives resolved paths.
     """
     import typer
+
     from docent.ui.console import get_console
+
+    # to-notebook always pushes to NotebookLM — ensure auth before picking files.
+    _preflight_notebook_auth(inputs, context, force=True)
 
     console = get_console()
     output_dir = context.settings.research.output_dir.expanduser()
@@ -644,14 +857,19 @@ def _preflight_to_notebook(inputs: BaseModel, context: Context) -> None:
         return
 
     # ── Discover candidates ───────────────────────────────────────────────
-    candidates = sorted(
-        [
-            p for p in output_dir.glob("*.md")
-            if not p.name.endswith("-review.md") and not p.name.endswith("-sources.json")
-        ],
-        key=lambda p: p.stat().st_mtime,
-        reverse=True,
-    ) if output_dir.is_dir() else []
+    candidates = (
+        sorted(
+            [
+                p
+                for p in output_dir.glob("*.md")
+                if not p.name.endswith("-review.md") and not p.name.endswith("-sources.json")
+            ],
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        if output_dir.is_dir()
+        else []
+    )
 
     if not candidates:
         console.print(
@@ -667,24 +885,28 @@ def _preflight_to_notebook(inputs: BaseModel, context: Context) -> None:
     # ── Multi-file picker ─────────────────────────────────────────────────
     # In a non-TTY subprocess (UI mode) prompting would hang — auto-pick the most recent.
     import os as _os
+
     if _os.environ.get("DOCENT_UI_SUBPROCESS"):
         inputs.output_file = str(candidates[0])
         return
 
-    console.print(
-        f"\n[bold]Found {len(candidates)} research output(s) in {output_dir}:[/]"
-    )
+    console.print(f"\n[bold]Found {len(candidates)} research output(s) in {output_dir}:[/]")
     for i, p in enumerate(candidates, 1):
         import datetime
+
         mtime = datetime.datetime.fromtimestamp(p.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
         console.print(f"  [cyan]{i}[/]) {p.stem}  [dim]({mtime})[/]")
     console.print("  [cyan]a[/]) All of the above")
 
     try:
-        raw = typer.prompt(
-            "\nSelect file(s) [1 / a]",
-            default="1",
-        ).strip().lower()
+        raw = (
+            typer.prompt(
+                "\nSelect file(s) [1 / a]",
+                default="1",
+            )
+            .strip()
+            .lower()
+        )
     except (EOFError, KeyboardInterrupt):
         raise typer.Exit(1)
 
@@ -702,6 +924,7 @@ def _preflight_to_notebook(inputs: BaseModel, context: Context) -> None:
 
     # ── Topic-diversity warning ───────────────────────────────────────────
     if len(selected) > 1:
+
         def _slug_prefix(p: Path) -> str:
             words = p.stem.replace("-", " ").replace("_", " ").split()
             return " ".join(words[:2]).lower()

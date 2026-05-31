@@ -1,4 +1,5 @@
 """Pure utility helpers: text slugging, guide file reading, reference building."""
+
 from __future__ import annotations
 
 import re
@@ -8,6 +9,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # Network helpers
 # ---------------------------------------------------------------------------
+
 
 def _check_connectivity(host: str = "8.8.8.8", port: int = 53, timeout: float = 2.0) -> bool:
     """Return True if a basic TCP connection to *host:port* succeeds."""
@@ -23,13 +25,19 @@ def _is_network_error(exc: BaseException) -> bool:
     import errno as _errno
     import urllib.error as _ue
 
-    _NETWORK_ERRNOS: frozenset[int] = frozenset({
-        _errno.ECONNREFUSED, _errno.ECONNRESET, _errno.ENETUNREACH,
-        _errno.ETIMEDOUT,    _errno.EHOSTUNREACH, _errno.ENETDOWN,
-        10060,  # Windows WSAETIMEDOUT
-        10061,  # Windows WSAECONNREFUSED
-        10065,  # Windows WSAEHOSTUNREACH
-    })
+    _NETWORK_ERRNOS: frozenset[int] = frozenset(
+        {
+            _errno.ECONNREFUSED,
+            _errno.ECONNRESET,
+            _errno.ENETUNREACH,
+            _errno.ETIMEDOUT,
+            _errno.EHOSTUNREACH,
+            _errno.ENETDOWN,
+            10060,  # Windows WSAETIMEDOUT
+            10061,  # Windows WSAECONNREFUSED
+            10065,  # Windows WSAEHOSTUNREACH
+        }
+    )
     if isinstance(exc, _ue.URLError):
         return True
     if isinstance(exc, (ConnectionError, TimeoutError)):
@@ -39,6 +47,7 @@ def _is_network_error(exc: BaseException) -> bool:
     # httpx (used in search.py, scholarly_client.py)
     try:
         import httpx as _httpx
+
         if isinstance(exc, (_httpx.ConnectError, _httpx.NetworkError, _httpx.TimeoutException)):
             return True
     except ImportError:
@@ -83,6 +92,7 @@ def _read_guide_file(path: str | None) -> str:
         if p.suffix.lower() == ".pdf":
             try:
                 from pdfminer.high_level import extract_text
+
                 return extract_text(str(p))
             except ImportError:
                 return ""
@@ -101,7 +111,8 @@ def _expand_guide_paths(paths: list[str]) -> list[str]:
         p = Path(raw).expanduser()
         if p.is_dir():
             expanded.extend(
-                str(f) for f in sorted(p.iterdir())
+                str(f)
+                for f in sorted(p.iterdir())
                 if f.is_file() and f.suffix.lower() in _GUIDE_EXTS
             )
         else:
@@ -123,8 +134,7 @@ def _check_guide_files(paths: list[str]) -> tuple[list[str], list[str]]:
         p = Path(raw).expanduser()
         if p.is_dir():
             matches = [
-                f for f in sorted(p.iterdir())
-                if f.is_file() and f.suffix.lower() in _GUIDE_EXTS
+                f for f in sorted(p.iterdir()) if f.is_file() and f.suffix.lower() in _GUIDE_EXTS
             ]
             if not matches:
                 problems.append(f"{raw}  (folder contains no .md/.txt/.pdf files)")
@@ -152,6 +162,7 @@ def _is_readable(p: Path) -> bool:
         if p.suffix.lower() == ".pdf":
             try:
                 from pdfminer.high_level import extract_text
+
                 extract_text(str(p))
                 return True
             except Exception:

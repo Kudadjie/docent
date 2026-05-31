@@ -9,15 +9,17 @@ Reads return safe defaults if a file is missing. Writes self-initialize the
 directory and use atomic rename so a crash mid-write can't leave a partial
 JSON file in place.
 """
+
 from __future__ import annotations
 
 import json
 import logging
 import os
+from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from filelock import FileLock
 from pydantic import BaseModel
@@ -33,7 +35,8 @@ def cleanup_legacy_paper_dirs() -> None:
     Called once at server startup.
     """
     import shutil
-    from docent.utils.paths import data_dir, cache_dir
+
+    from docent.utils.paths import cache_dir, data_dir
 
     for legacy in (data_dir() / "paper", cache_dir() / "paper"):
         if legacy.exists():
@@ -48,24 +51,43 @@ def cleanup_legacy_paper_dirs() -> None:
 # Rule: additive field additions do NOT require a version bump (Pydantic handles
 # them via defaults).  Only renames, removals, or type changes need a bump + a
 # corresponding _migrate_vN_to_vM() function below.
-_QUEUE_SCHEMA_VERSION = 1
+_QUEUE_SCHEMA_VERSION = 2
 
 
 def _infer_schema_version(entries: list[dict[str, Any]]) -> int:
-    """Guess the schema version from the first entry's keys.
+    """Detect schema version from the first entry's keys.
 
-    Keep this logic cheap and conservative — when in doubt return the lowest
-    plausible version so the migration guard runs.
+    Conservative: when in doubt return the lowest plausible version so the
+    migration guard always runs rather than silently skipping it.
+
+    v1 → v2 marker: renamed mendeley_id → reference_id and
+                     not_in_mendeley → not_in_library.
     """
-    return 1  # only one version exists today; extend as migrations are added
+    if not entries:
+        return 1  # empty queue — run migrations (no-op on empty list)
+    first = entries[0]
+    if "mendeley_id" in first or "not_in_mendeley" in first:
+        return 1
+    return 2
+
+
+def _migrate_v1_to_v2(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Rename mendeley_id → reference_id and not_in_mendeley → not_in_library."""
+    out = []
+    for e in entries:
+        e = dict(e)
+        if "mendeley_id" in e:
+            e["reference_id"] = e.pop("mendeley_id")
+        if "not_in_mendeley" in e:
+            e["not_in_library"] = e.pop("not_in_mendeley")
+        out.append(e)
+    return out
 
 
 def _run_migrations(entries: list[dict[str, Any]], from_version: int) -> list[dict[str, Any]]:
     """Apply all pending migrations in order from *from_version* to _QUEUE_SCHEMA_VERSION."""
-    # Example shape for future use:
-    #   if from_version < 2:
-    #       entries = _migrate_v1_to_v2(entries)
-    # Nothing to do yet — v1 is current.
+    if from_version < 2:
+        entries = _migrate_v1_to_v2(entries)
     return entries
 
 
@@ -97,14 +119,14 @@ class ReadingQueueStore:
         timeout=0 (default): fail immediately if another process holds the lock.
         """
         from filelock import Timeout as _FileLockTimeout
+
         self.root.mkdir(parents=True, exist_ok=True)
         try:
             with FileLock(str(self.root / "queue.json.lock"), timeout=timeout):
                 yield
         except _FileLockTimeout:
             raise RuntimeError(
-                "Queue is busy — another Docent process is currently writing. "
-                "Retry in a moment."
+                "Queue is busy — another Docent process is currently writing. Retry in a moment."
             ) from None
 
     def load_queue(self) -> list[dict[str, Any]]:
@@ -119,7 +141,8 @@ class ReadingQueueStore:
         if detected < _QUEUE_SCHEMA_VERSION:
             _logger.info(
                 "queue.json schema v%d detected; migrating to v%d",
-                detected, _QUEUE_SCHEMA_VERSION,
+                detected,
+                _QUEUE_SCHEMA_VERSION,
             )
             entries = _run_migrations(entries, detected)
         return entries
@@ -167,7 +190,7 @@ class ReadingQueueStore:
         return {
             e["id"]: {
                 "title": e.get("title", ""),
-                "status": e["status"],
+                "status": e.get("status", "queued"),
                 "order": e.get("order", 0),
             }
             for e in queue
@@ -175,10 +198,10 @@ class ReadingQueueStore:
 
     def _write_state(self, queue: list[dict[str, Any]]) -> None:
         state = {
-            "queued": sum(1 for e in queue if e["status"] == "queued"),
-            "reading": sum(1 for e in queue if e["status"] == "reading"),
-            "done": sum(1 for e in queue if e["status"] == "done"),
-            "last_updated": datetime.now().isoformat(),
+            "queued": sum(1 for e in queue if e.get("status", "queued") == "queued"),
+            "reading": sum(1 for e in queue if e.get("status") == "reading"),
+            "done": sum(1 for e in queue if e.get("status") == "done"),
+            "last_updated": datetime.now(UTC).isoformat(),
         }
         self._atomic_write_json(self.state_path, state)
 

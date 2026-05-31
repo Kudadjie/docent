@@ -1,4 +1,5 @@
 """Tests for the alphaXiv search-papers and get-paper studio actions."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -6,9 +7,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from docent.config.settings import ResearchSettings, Settings
-from docent.core.context import Context
-from docent.core.shapes import ErrorShape, LinkShape, MessageShape, MetricShape
 from docent.bundled_plugins.studio import (
     GetPaperInputs,
     GetPaperResult,
@@ -17,6 +15,9 @@ from docent.bundled_plugins.studio import (
     StudioTool,
 )
 from docent.bundled_plugins.studio.alphaxiv_client import AlphaXivAuthError
+from docent.config.settings import ResearchSettings, Settings
+from docent.core.context import Context
+from docent.core.shapes import ErrorShape, LinkShape, MessageShape, MetricShape
 
 
 def _mock_context(*, alphaxiv_api_key: str | None = None) -> Context:
@@ -64,24 +65,29 @@ SAMPLE_OVERVIEW = {
 # search-papers
 # ---------------------------------------------------------------------------
 
+
 class TestSearchPapers:
     def test_happy_path_returns_papers(self):
         tool = StudioTool()
         ctx = _mock_context(alphaxiv_api_key="test-key")
-        with patch("docent.bundled_plugins.studio.alphaxiv_client.search_papers", return_value=SAMPLE_PAPERS) as mock_search:
+        with patch(
+            "docent.bundled_plugins.studio.alphaxiv_client.search_papers",
+            return_value=SAMPLE_PAPERS,
+        ) as mock_search:
             result = tool.search_papers(SearchPapersInputs(query="storm surge Ghana"), ctx)
         assert result.ok is True
         assert result.count == 2
         assert result.papers == SAMPLE_PAPERS
         assert "storm surge Ghana" in result.message
-        mock_search.assert_called_once_with(
-            "storm surge Ghana", api_key="test-key", max_results=10
-        )
+        mock_search.assert_called_once_with("storm surge Ghana", api_key="test-key", max_results=10)
 
     def test_respects_max_results(self):
         tool = StudioTool()
         ctx = _mock_context(alphaxiv_api_key="key")
-        with patch("docent.bundled_plugins.studio.alphaxiv_client.search_papers", return_value=SAMPLE_PAPERS[:1]):
+        with patch(
+            "docent.bundled_plugins.studio.alphaxiv_client.search_papers",
+            return_value=SAMPLE_PAPERS[:1],
+        ):
             result = tool.search_papers(SearchPapersInputs(query="test", max_results=1), ctx)
         assert result.count == 1
 
@@ -119,7 +125,9 @@ class TestSearchPapers:
     def test_passes_none_api_key_when_not_configured(self):
         tool = StudioTool()
         ctx = _mock_context()  # no key
-        with patch("docent.bundled_plugins.studio.alphaxiv_client.search_papers", return_value=[]) as mock_search:
+        with patch(
+            "docent.bundled_plugins.studio.alphaxiv_client.search_papers", return_value=[]
+        ) as mock_search:
             tool.search_papers(SearchPapersInputs(query="test"), ctx)
         mock_search.assert_called_once_with("test", api_key=None, max_results=10)
 
@@ -127,6 +135,7 @@ class TestSearchPapers:
 # ---------------------------------------------------------------------------
 # get-paper
 # ---------------------------------------------------------------------------
+
 
 class TestGetPaper:
     def test_happy_path(self):
@@ -190,9 +199,11 @@ class TestGetPaper:
 # AlphaXivAuthError — _build_client
 # ---------------------------------------------------------------------------
 
+
 class TestAlphaXivAuthError:
     def test_raises_when_no_key_and_saved_key_fails(self):
         from docent.bundled_plugins.studio.alphaxiv_client import _build_client
+
         with patch(
             "docent.bundled_plugins.studio.alphaxiv_client.AlphaXivClient.from_saved_api_key",
             side_effect=ValueError("no key"),
@@ -203,6 +214,7 @@ class TestAlphaXivAuthError:
 
     def test_uses_explicit_key_without_saved_lookup(self):
         from docent.bundled_plugins.studio.alphaxiv_client import _build_client
+
         with patch(
             "docent.bundled_plugins.studio.alphaxiv_client.AlphaXivClient.from_api_key",
         ) as mock_from_key:
@@ -214,10 +226,14 @@ class TestAlphaXivAuthError:
 # to_shapes
 # ---------------------------------------------------------------------------
 
+
 class TestToShapes:
     def test_search_ok_emits_metrics_and_links(self):
         result = SearchPapersResult(
-            ok=True, query="test", papers=SAMPLE_PAPERS, count=2,
+            ok=True,
+            query="test",
+            papers=SAMPLE_PAPERS,
+            count=2,
             message="Found 2 paper(s).",
         )
         shapes = result.to_shapes()
@@ -226,15 +242,19 @@ class TestToShapes:
         assert any(isinstance(s, LinkShape) for s in shapes)
 
     def test_search_fail_emits_error_shape(self):
-        result = SearchPapersResult(ok=False, query="test", papers=[], count=0, message="Auth failed.")
+        result = SearchPapersResult(
+            ok=False, query="test", papers=[], count=0, message="Auth failed."
+        )
         shapes = result.to_shapes()
         assert len(shapes) == 1
         assert isinstance(shapes[0], ErrorShape)
 
     def test_get_paper_ok_emits_link_and_preview(self):
         result = GetPaperResult(
-            ok=True, arxiv_id="2401.00001",
-            title="Storm Surge", abstract="Abstract text.",
+            ok=True,
+            arxiv_id="2401.00001",
+            title="Storm Surge",
+            abstract="Abstract text.",
             overview="# Overview\n\nDetails here.",
             message="Retrieved overview.",
         )
@@ -244,8 +264,12 @@ class TestToShapes:
 
     def test_get_paper_fail_emits_error_shape(self):
         result = GetPaperResult(
-            ok=False, arxiv_id="bad-id", title=None,
-            abstract="", overview="", message="Not found.",
+            ok=False,
+            arxiv_id="bad-id",
+            title=None,
+            abstract="",
+            overview="",
+            message="Not found.",
         )
         shapes = result.to_shapes()
         assert len(shapes) == 1

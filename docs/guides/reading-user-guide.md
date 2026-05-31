@@ -1,19 +1,22 @@
 # Docent Reading Queue — User Guide
 
-The `reading` tool is a personal reading queue that syncs with Mendeley Desktop.
-It tracks what you plan to read, what you're currently reading, and what you've
-finished — with deadline warnings, priority ordering, and category organisation by
-course or project.
+The `reading` tool is a personal reading queue that syncs with your reference manager
+(Mendeley or Zotero). It tracks what you plan to read, what you're currently reading,
+and what you've finished — with deadline warnings, priority ordering, and category
+organisation by course or project.
 
 ---
 
 ## Prerequisites
 
 1. **Docent installed.** `docent --version` should print a version number.
-2. **Mendeley Desktop** (or Mendeley Reference Manager) installed and logged in.
-3. **Mendeley MCP server** available. The tool calls Mendeley via
-   `uvx mendeley-mcp` by default; if you use a different command, set
-   `reading.mendeley_mcp_command` manually in `~/.docent/config.toml`.
+2. **A reference manager** — either:
+   - **Mendeley Desktop** (or Mendeley Reference Manager), installed and logged in. The
+     tool connects via `uvx mendeley-mcp` by default; if you use a different command, set
+     `reading.mendeley_mcp_command` in `~/.docent/config.toml`.
+   - **Zotero**, with an API key configured (see
+     [Configuration → Reference manager](../../cli.md#reference-manager-mendeley-or-zotero)
+     for setup steps).
 
 ---
 
@@ -21,18 +24,17 @@ course or project.
 
 ### 1. Point Docent at your PDF folder
 
-This is the folder where Mendeley auto-imports PDFs (usually the same folder
-you've already pointed Mendeley's file-organiser at).
+This is the folder where your reference manager stores or auto-imports PDFs.
 
 ```bash
 docent reading config-set database_dir ~/Documents/Papers
 ```
 
-### 2. Create a Mendeley collection named `Docent-Queue`
+### 2. Create a collection named `Docent-Queue`
 
-In Mendeley Desktop, create a top-level collection called `Docent-Queue`. This is
-the collection Docent watches. You can change the name if you prefer — just update
-the setting to match:
+In your reference manager (Mendeley or Zotero), create a top-level collection called
+`Docent-Queue`. This is the collection Docent watches. You can change the name if you
+prefer — just update the setting to match:
 
 ```bash
 docent reading config-set queue_collection "My Reading List"
@@ -45,32 +47,32 @@ docent reading config-show
 docent reading sync-status
 ```
 
-`config-show` prints the current settings. `sync-status` reports how many PDFs
-are in your database folder and how many entries are in the local queue.
+`config-show` prints the current settings. `sync-status` reports how many PDFs are in
+your database folder and how many entries are in the local queue.
 
 ---
 
 ## The workflow
 
-Mendeley is the source of truth for bibliographic metadata (title, authors, year,
-DOI). Docent adds workflow metadata on top: reading order, status, deadlines, notes.
+Your reference manager is the source of truth for bibliographic metadata (title, authors,
+year, DOI). Docent adds workflow metadata on top: reading order, status, deadlines, notes.
 
 ```
-PDF file                Mendeley Desktop             Docent
----------               ----------------             ------
-Drop into               Auto-imports PDF          
-database_dir    ──▶     with metadata         
-                        
-                        Drag into               
-                        Docent-Queue       ──▶   sync-from-mendeley
-                        collection                adds entry to local queue
-                        
-                                                  next / start / done
-                                                  manage reading progress
+PDF file              Reference manager            Docent
+---------             -----------------            ------
+Drop into             Auto-imports PDF
+database_dir  ──▶     with metadata
+
+                      Drag into
+                      Docent-Queue     ──▶   sync-from-library
+                      collection               adds entry to local queue
+
+                                               next / start / done
+                                               manage reading progress
 ```
 
-You never add papers directly through Docent — ingestion always goes through
-Mendeley so metadata stays authoritative.
+You never add papers directly through Docent — ingestion always goes through your
+reference manager so metadata stays authoritative.
 
 ---
 
@@ -129,7 +131,7 @@ Counts by status (queued / reading / done) and by category.
 ## Priority and ordering
 
 Every entry has an `order` field (integer, 1 = read first). When you
-`sync-from-mendeley`, new entries are assigned the next available order number.
+`sync-from-library`, new entries are assigned the next available order number.
 Entries with `order=0` sort to the bottom.
 
 ### Adjust order
@@ -165,15 +167,15 @@ Each time you run any `docent` command, Docent checks for entries due within
 
 ## Categories (courses / projects)
 
-Categories are automatically detected from your Mendeley sub-collection structure.
-If you drag a paper into `Docent-Queue/CES701/LitReview`, the entry gets
+Categories are automatically detected from your reference manager's sub-collection
+structure. If you drag a paper into `Docent-Queue/CES701/LitReview`, the entry gets
 `category = "CES701/LitReview"`.
 
-| Mendeley path                        | category value        |
-|--------------------------------------|-----------------------|
-| `Docent-Queue`                       | *(none)*              |
-| `Docent-Queue/CES701`                | `CES701`              |
-| `Docent-Queue/CES701/Storm Surge`    | `CES701/Storm Surge`  |
+| Collection path                        | category value        |
+|----------------------------------------|-----------------------|
+| `Docent-Queue`                         | *(none)*              |
+| `Docent-Queue/CES701`                  | `CES701`              |
+| `Docent-Queue/CES701/Storm Surge`      | `CES701/Storm Surge`  |
 
 `next` and `search` accept a `--category` prefix:
 
@@ -192,14 +194,15 @@ docent reading edit smith-2024 --category "Thesis/Chapter2"
 
 ## Entry types
 
-Papers are automatically typed from their Mendeley document type on sync:
+Papers are automatically typed from the document type set in your reference manager
+on sync:
 
-| Mendeley type     | Docent type      |
-|-------------------|------------------|
-| `journal_article` | `paper`          |
-| `book`            | `book`           |
-| `book_section`    | `book_chapter`   |
-| anything else     | `paper`          |
+| Document type      | Docent type      |
+|--------------------|------------------|
+| `journal_article`  | `paper`          |
+| `book`             | `book`           |
+| `book_section`     | `book_chapter`   |
+| anything else      | `paper`          |
 
 Override with:
 
@@ -209,39 +212,43 @@ docent reading edit smith-2024 --type book_chapter
 
 ---
 
-## Syncing with Mendeley
+## Syncing with your reference manager
 
-### Pull from Mendeley
+### Pull from your reference manager
 
 ```bash
-docent reading sync-from-mendeley
+docent reading sync-from-library
 ```
 
-Reconciles the configured Mendeley collection with the local queue:
+Reconciles the configured collection with the local queue:
 
-- **Added** — new Mendeley entries appear in the queue.
+- **Added** — new entries appear in the queue.
 - **Unchanged** — already in queue, no action.
-- **Removed** — entries removed from the Mendeley collection are marked `removed` in the queue.
+- **Removed** — entries removed from the collection are marked `removed` in the queue.
 
 Preview without writing:
 
 ```bash
-docent reading sync-from-mendeley --dry-run
+docent reading sync-from-library --dry-run
 ```
+
+> **Note:** `sync-from-mendeley` is a back-compat alias for `sync-from-library` and
+> works identically — use whichever you prefer.
 
 ### Metadata freshness
 
-`next`, `show`, `search`, and `export` all overlay live Mendeley metadata
-(title / authors / year / DOI) on top of the local queue snapshot before
-displaying. A read-through cache (5-minute TTL) keeps this fast. If Mendeley is
-unreachable, the cached snapshot is used transparently.
+`next`, `show`, `search`, and `export` all overlay live metadata from your reference
+manager (title / authors / year / DOI) on top of the local queue snapshot before
+displaying. A read-through cache (5-minute TTL) keeps this fast. If the reference
+manager is unreachable, the cached snapshot is used transparently.
 
 ---
 
 ## Editing entries
 
 Only workflow fields are editable through Docent. Bibliographic fields
-(title / authors / year / DOI) are Mendeley-owned and refreshed automatically.
+(title / authors / year / DOI) are reference-manager-owned and refreshed automatically
+on sync.
 
 ```bash
 docent reading edit <id> --notes "Key paper for lit review"
@@ -268,8 +275,8 @@ docent reading export --format markdown            # Markdown table
 docent reading export --format markdown --status queued --category CES701
 ```
 
-Exported entries are sorted by reading order. Freshly overlaid Mendeley metadata
-is used so the export reflects the current bibliographic record.
+Exported entries are sorted by reading order. Freshly overlaid reference manager
+metadata is used so the export reflects the current bibliographic record.
 
 ---
 
@@ -308,8 +315,8 @@ is used so the export reflects the current bibliographic record.
 
 | Command | Description |
 |---|---|
-| `docent reading sync-from-mendeley` | Reconcile local queue with Mendeley collection |
-| `docent reading sync-from-mendeley --dry-run` | Preview without writing |
+| `docent reading sync-from-library` | Reconcile local queue with configured reference manager collection |
+| `docent reading sync-from-library --dry-run` | Preview without writing |
 | `docent reading sync-status` | Queue size + PDF count in database_dir |
 
 ### Export / config / maintenance
@@ -317,7 +324,7 @@ is used so the export reflects the current bibliographic record.
 | Command | Description |
 |---|---|
 | `docent reading export [--format json\|markdown] [--status S] [--category C]` | Export queue |
-| `docent reading add` | Print ingestion instructions (no-op — use Mendeley) |
+| `docent reading add` | Print ingestion instructions (no-op — use your reference manager) |
 | `docent reading config-show` | Print current reading settings |
 | `docent reading config-set <key> <value>` | Update a setting |
 | `docent reading queue-clear --yes` | Wipe the entire queue (irreversible) |
@@ -348,8 +355,8 @@ All reading-tool data lives in `~/.docent/data/reading/`:
 | `deadline-seen.json` | Tracks which deadline alerts fired today |
 | `run-log.jsonl` | Structured event log of all mutations |
 
-Mendeley cache lives at `~/.docent/cache/paper/mendeley_collection.json` (5-min
-TTL for documents, 24-hour TTL for folder IDs).
+Reference manager metadata cache lives at `~/.docent/cache/paper/` (5-min TTL for
+documents, 24-hour TTL for folder IDs).
 
 Config lives at `~/.docent/config.toml` under the `[reading]` section.
 
@@ -357,23 +364,27 @@ Config lives at `~/.docent/config.toml` under the `[reading]` section.
 
 ## Troubleshooting
 
-**`sync-from-mendeley` says the collection was not found**
+**`sync-from-library` says the collection was not found**
 
-Create a collection in Mendeley Desktop with exactly the name shown in
+Create a collection in your reference manager with exactly the name shown in
 `docent reading config-show` (default: `Docent-Queue`). Collection names are
 case-sensitive.
 
-**Metadata looks stale after editing in Mendeley**
+**Metadata looks stale after editing in your reference manager**
 
-The cache TTL is 5 minutes. Run `sync-from-mendeley` (which invalidates the
-cache) or wait for the TTL to expire.
+The cache TTL is 5 minutes. Run `sync-from-library` (which invalidates the cache) or
+wait for the TTL to expire.
 
 **`database_dir not configured`**
 
-Run `docent reading config-set database_dir <path>` with the absolute path to
-your PDF folder.
+Run `docent reading config-set database_dir <path>` with the absolute path to your
+PDF folder.
 
 **Mendeley MCP auth fails**
 
-Run `uvx mendeley-mcp` manually in a terminal to complete the OAuth flow, then
-retry.
+Run `uvx mendeley-mcp` manually in a terminal to complete the OAuth flow, then retry.
+
+**Zotero sync returns no entries**
+
+Check that `reference_manager` is set to `zotero` and that `zotero_api_key` and
+`zotero_library_id` are configured. Run `docent reading config-show` to verify.

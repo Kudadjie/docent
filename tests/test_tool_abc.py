@@ -1,9 +1,10 @@
 """Invariants on Tool ABC, @action decorator, collect_actions, and register_tool."""
 
-from docent.core.tool import Tool, action, collect_actions, Action
-from docent.core.registry import register_tool, get_tool, all_tools
-from pydantic import BaseModel
 import pytest
+from pydantic import BaseModel
+
+from docent.core.registry import all_tools, get_tool, register_tool
+from docent.core.tool import Tool, action, collect_actions
 
 
 class _DummyInputs(BaseModel):
@@ -13,6 +14,7 @@ class _DummyInputs(BaseModel):
 # -----------------------------------------------------------------------
 # 1. Tool.run() raises NotImplementedError when not overridden
 # -----------------------------------------------------------------------
+
 
 def test_run_raises_not_implemented():
     class BareTool(Tool):
@@ -26,6 +28,7 @@ def test_run_raises_not_implemented():
 # -----------------------------------------------------------------------
 # 2. collect_actions: underscores → dashes in CLI name
 # -----------------------------------------------------------------------
+
 
 def test_collect_actions_cli_name_from_method_name(isolated_registry):
     class MyTool(Tool):
@@ -45,6 +48,7 @@ def test_collect_actions_cli_name_from_method_name(isolated_registry):
 # 3. collect_actions: custom name override
 # -----------------------------------------------------------------------
 
+
 def test_collect_actions_custom_name_override(isolated_registry):
     class MyTool(Tool):
         name = "my-tool-xyz"
@@ -62,6 +66,7 @@ def test_collect_actions_custom_name_override(isolated_registry):
 # -----------------------------------------------------------------------
 # 4. collect_actions: name collision raises ValueError
 # -----------------------------------------------------------------------
+
 
 def test_collect_actions_name_collision_raises(isolated_registry):
     class MyTool(Tool):
@@ -84,6 +89,7 @@ def test_collect_actions_name_collision_raises(isolated_registry):
 # 5. register_tool rejects non-Tool classes
 # -----------------------------------------------------------------------
 
+
 def test_register_non_tool_class_rejected(isolated_registry):
     class NotATool:
         name = "bad-xyz"
@@ -97,6 +103,7 @@ def test_register_non_tool_class_rejected(isolated_registry):
 # 6. Missing name attr rejected
 # -----------------------------------------------------------------------
 
+
 def test_missing_name_attr_rejected(isolated_registry):
     class NoName(Tool):
         description = "No name."
@@ -108,6 +115,7 @@ def test_missing_name_attr_rejected(isolated_registry):
 # -----------------------------------------------------------------------
 # 7. Missing description attr rejected
 # -----------------------------------------------------------------------
+
 
 def test_missing_description_attr_rejected(isolated_registry):
     class NoDesc(Tool):
@@ -121,6 +129,7 @@ def test_missing_description_attr_rejected(isolated_registry):
 # 8. Empty name rejected
 # -----------------------------------------------------------------------
 
+
 def test_empty_name_rejected(isolated_registry):
     class EmptyName(Tool):
         name = ""
@@ -133,6 +142,7 @@ def test_empty_name_rejected(isolated_registry):
 # -----------------------------------------------------------------------
 # 9. Mixed single-action and multi-action rejected
 # -----------------------------------------------------------------------
+
 
 def test_mixed_single_and_multi_action_rejected(isolated_registry):
     class MixedTool(Tool):
@@ -155,6 +165,7 @@ def test_mixed_single_and_multi_action_rejected(isolated_registry):
 # 10. Mixed input_schema and @action rejected
 # -----------------------------------------------------------------------
 
+
 def test_mixed_input_schema_and_action_rejected(isolated_registry):
     class MixedSchemaTool(Tool):
         name = "mixed-schema-xyz"
@@ -173,6 +184,7 @@ def test_mixed_input_schema_and_action_rejected(isolated_registry):
 # 11. @action with non-BaseModel input_schema rejected
 # -----------------------------------------------------------------------
 
+
 def test_action_non_basemodel_input_schema_rejected(isolated_registry):
     class BadSchemaTool(Tool):
         name = "bad-schema-xyz"
@@ -190,6 +202,7 @@ def test_action_non_basemodel_input_schema_rejected(isolated_registry):
 # 12. get_tool with missing name raises KeyError
 # -----------------------------------------------------------------------
 
+
 def test_get_tool_missing_raises_key_error():
     with pytest.raises(KeyError):
         get_tool("nonexistent-xyz")
@@ -198,6 +211,7 @@ def test_get_tool_missing_raises_key_error():
 # -----------------------------------------------------------------------
 # 13. all_tools returns a copy (mutation doesn't affect registry)
 # -----------------------------------------------------------------------
+
 
 def test_all_tools_returns_copy(isolated_registry):
     @register_tool

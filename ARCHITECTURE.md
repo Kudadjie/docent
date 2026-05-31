@@ -13,18 +13,31 @@ docent/
 ├── AGENTS.md                   # Behavioral contract for Claude Code + MCP callers
 ├── .mcp.json                   # MCP server stanza template (copy into Claude Code config)
 ├── scripts/
-│   └── oc_delegate.py          # Delegate bounded tasks to OpenCode Go sub
+│   ├── oc_delegate.py          # Delegate bounded tasks to OpenCode Go sub
+│   └── hermes_delegate.py      # Delegate self-correcting loop tasks to Hermes
 ├── frontend/                   # docent-ui — Next.js 16 + React 19 + Tailwind CSS v4
 ├── src/
 │   └── docent/                 # The package itself
 │       ├── __init__.py
 │       ├── cli.py              # Typer app entry point + command routing
+│       ├── cli_setup.py        # Interactive first-run setup wizard (extracted from cli.py)
 │       ├── mcp_server.py       # MCP adapter — exposes registry as MCP tools (`docent serve`)
+│       ├── ui_server.py        # FastAPI app — serves UI on localhost:7432
+│       ├── ui_routes/          # FastAPI route modules (split from ui_server.py)
+│       │   ├── reading.py      # /api/queue, /api/actions, /api/database
+│       │   ├── studio.py       # /api/studio/* — SSE + WebSocket for research runs
+│       │   ├── config.py       # /api/config — read/write settings
+│       │   ├── backup.py       # /api/backup/* — create, restore, list, Drive sync
+│       │   ├── doctor.py       # /api/doctor — health checks
+│       │   ├── filesystem.py   # /api/fs/read, /api/fs/open — path-approved file access
+│       │   └── opencode.py     # /api/opencode/* — start/stop OpenCode subprocess
 │       ├── core/
 │       │   ├── registry.py     # Tool registry (the plugin system)
 │       │   ├── tool.py         # Base Tool interface/protocol + @action decorator
 │       │   ├── context.py      # Shared runtime context (config, LLM client, executor)
+│       │   ├── invoke.py       # Central dispatcher: run_action, make_context, invoke_action_for_ui
 │       │   ├── events.py       # ProgressEvent — yielded by generator actions
+│       │   ├── exceptions.py   # ConfirmationRequired — surfaced by destructive actions
 │       │   ├── shapes.py       # Output Shapes vocabulary (MarkdownShape, DataTableShape, …)
 │       │   └── plugin_loader.py # Discovers + loads bundled + external plugins
 │       ├── ui/
@@ -40,44 +53,63 @@ docent/
 │       ├── config/
 │       │   ├── settings.py     # Pydantic settings (API keys, paths, per-tool nested models)
 │       │   └── loader.py       # Reads ~/.docent/config.toml; write_setting for config-set
+│       ├── backup/             # Backup archive creation + restoration (path-safe extraction)
 │       ├── tools/              # Flat single-file tools (auto-discovered; _ prefix = skipped)
 │       │   └── __init__.py
 │       ├── bundled_plugins/    # Multi-module first-party tools (packaged with Docent)
 │       │   ├── reading/        # Reading queue tool (Mendeley-backed, deadline tracking)
-│       │   │   ├── __init__.py         # Re-exports ReadingQueue
-│       │   │   ├── reading.py          # ReadingQueue Tool class + all actions
+│       │   │   ├── __init__.py         # ReadingQueue Tool class + all actions + load_queue_for_ui
 │       │   │   ├── models.py           # Schemas — Literal status/type, YYYY-MM-DD deadline validation
 │       │   │   ├── reading_store.py    # ReadingQueueStore — atomic JSON writes, file lock, state recompute
 │       │   │   ├── mendeley_client.py  # In-process MCP client facade (list_folders, list_documents)
 │       │   │   ├── mendeley_cache.py   # File-backed read-through cache (TTL 300s / 24h for folder ids)
+│       │   │   ├── mendeley_sync.py    # sync-from-mendeley logic (derive_id, normalize_authors)
+│       │   │   ├── mendeley_backend.py # MendeleyBackend wrapper for client operations
+│       │   │   ├── ref_manager.py      # ReferenceManagerClient protocol (Mendeley/Zotero abstraction)
 │       │   │   └── reading_notify.py   # Startup deadline check (daily dedup)
-│       │   └── studio/         # Research workflows (deep research, lit review, peer review, NotebookLM)
-│       │       ├── __init__.py         # StudioTool class + all actions; path-validates read_output/save_synthesis
-│       │       ├── models.py           # Schemas — Literal output, backend validator against _BACKEND_ENUM
-│       │       ├── pipeline.py         # 6-stage manual pipeline; accepts SearchAdapter for DI
-│       │       ├── search_adapter.py   # SearchAdapter Protocol + DefaultSearchAdapter + FakeSearchAdapter
-│       │       ├── search.py           # Concrete: Tavily web search, Semantic Scholar, arXiv, page fetch
-│       │       ├── free_research.py    # Tavily Research API primary path (replaces stages 1-5)
-│       │       ├── _notebook.py        # NotebookLM push pipeline (to-notebook action)
-│       │       ├── feynman.py          # Feynman CLI wrapper
-│       │       ├── backend.py          # StudioBackend Protocol (OcClient, FeynmanBackend)
-│       │       ├── oc_client.py        # OpenCode in-process client
-│       │       ├── alphaxiv_client.py  # alphaXiv SDK wrapper
-│       │       ├── scholarly_client.py # Google Scholar / Semantic Scholar wrapper
-│       │       └── agents/             # Prompt templates for each pipeline stage
+│       │   ├── studio/         # Research workflows (deep research, lit review, peer review, NotebookLM)
+│       │   │   ├── __init__.py         # StudioTool class + action dispatch; path-validates read_output/save_synthesis
+│       │   │   ├── models.py           # Schemas — Literal output, backend validator against _BACKEND_ENUM
+│       │   │   ├── _research.py        # Deep research + lit review action implementations
+│       │   │   ├── _search_actions.py  # search-papers, get-paper, scholarly-search actions
+│       │   │   ├── _notebook_actions.py # to-notebook action
+│       │   │   ├── _config_actions.py  # config-show, config-set actions
+│       │   │   ├── pipeline.py         # 6-stage manual pipeline; accepts SearchAdapter for DI
+│       │   │   ├── search_adapter.py   # SearchAdapter Protocol + DefaultSearchAdapter + FakeSearchAdapter
+│       │   │   ├── search.py           # Concrete: Tavily web search, Semantic Scholar, arXiv, page fetch
+│       │   │   ├── free_research.py    # Tavily Research API primary path (replaces stages 1-5)
+│       │   │   ├── _notebook.py        # NotebookLM push pipeline internals
+│       │   │   ├── feynman.py          # Feynman CLI wrapper (hardened Windows subprocess)
+│       │   │   ├── backend.py          # StudioBackend Protocol (OcClient, FeynmanBackend)
+│       │   │   ├── oc_client.py        # OpenCode in-process client
+│       │   │   ├── alphaxiv_client.py  # alphaXiv SDK wrapper
+│       │   │   ├── scholarly_client.py # Google Scholar / Semantic Scholar wrapper
+│       │   │   ├── citation_verifier.py # Automated citation verification
+│       │   │   ├── helpers.py          # Shared utility functions
+│       │   │   ├── preflights.py       # Preflight checks for studio actions
+│       │   │   └── agents/             # Prompt templates for each pipeline stage
+│       │   └── backup/         # Backup + Google Drive sync
+│       │       ├── __init__.py         # BackupTool — create, restore, list, Drive sync actions
+│       │       ├── manager.py          # Archive creation + path-safe restoration
+│       │       └── drive_client.py     # Google Drive OAuth + upload/download
 │       └── utils/
 │           ├── paths.py        # XDG-style paths for cache, config, data
-│           └── prompt.py       # prompt_for_path with quote-strip + validation
+│           ├── prompt.py       # prompt_for_path with quote-strip + validation
+│           ├── logging.py      # Structured logging setup
+│           ├── update_check.py # GitHub release update checker
+│           ├── model_health.py # LiteLLM model health probing
+│           └── rich_compat.py  # Rich compatibility helpers
 ├── tests/
 └── ~/.docent/              # User data (created at runtime)
     ├── config.toml
     ├── cache/
-    │   └── paper/
+    │   └── reading/
     │       └── mendeley_collection.json  # Read-through Mendeley cache
     ├── data/
     │   └── reading/
     │       ├── queue.json          # Sidecar state (order, status, deadline, category…)
     │       ├── queue-index.json    # Fast-lookup index keyed by id
+    │       ├── state.json          # Banner counts + last_updated timestamp
     │       └── run-log.jsonl       # Append-only structured event log
     └── plugins/                    # User-installed external plugins (drop .py or package here)
 ```
@@ -100,10 +132,10 @@ Every tool — ported skill, subprocess wrapper, or future MCP client — confor
    - **`run(inputs, context) -> result`** — the execution method
    - CLI shape: `docent <name> --flag ...`
 
-2. **Multi-action tool** (e.g. `paper-pipeline`, `alpha-research`, `browse`):
+2. **Multi-action tool** (e.g. `reading`, `studio`, `backup`):
    - One or more methods decorated with `@action(description=..., input_schema=...)`
    - Each action has its own Pydantic input schema
-   - Shared helpers live as regular methods on the Tool class. For tools with non-trivial persistent state, extract a per-tool **Store** class (see `PaperQueueStore` — owns load / save / atomic-write / state-recompute). Actions mutate state via the store, never by reaching into JSON files directly. Establishes a clean seam for tests and future actions.
+   - Shared helpers live as regular methods on the Tool class. For tools with non-trivial persistent state, extract a per-tool **Store** class (see `ReadingQueueStore` — owns load / save / atomic-write / state-recompute). Actions mutate state via the store, never by reaching into JSON files directly. Establishes a clean seam for tests and future actions.
    - CLI shape: `docent <name> <action> --flag ...`
 
 **Action shape — single-shot vs generator:**
@@ -124,7 +156,8 @@ The `context` object passed to every tool provides the shared runtime: `settings
 - Tools self-register via a `@register_tool` decorator at import time.
 - `docent/tools/__init__.py` walks the `tools/` directory and imports every module, triggering registration. Modules whose names start with `_` are skipped (reserved for scratch/private files).
 - Reserved tool names: `list`, `info`, `config`, `version` — `@register_tool` rejects these to prevent shadowing built-in CLI commands.
-- Later, add a second discovery path: `~/.docent/plugins/` — drop in external tool files without editing the package.
+- Two discovery paths, loaded in order by `core/plugin_loader.py`: (1) `bundled_plugins/` — multi-module first-party tools packaged with Docent; (2) `~/.docent/plugins/` — user-installed external plugins (flat `.py` files or packages with `__init__.py`). Bundled takes precedence; name collisions with external plugins produce a warning and skip.
+- `on_startup(context)` lifecycle hook — if a plugin module defines it, `run_startup_hooks()` calls it after all plugins load (used by reading for deadline notifications).
 - Typer commands are **generated dynamically** from the registry at startup. Adding a tool = adding a file. No CLI changes needed.
   - Single-action tool → one Typer command per tool.
   - Multi-action tool → one Typer sub-app per tool, one nested command per action.
@@ -147,7 +180,7 @@ The `context` object passed to every tool provides the shared runtime: `settings
 Keep UI concerns out of tool logic. Tools return structured data; the UI layer renders it. Mechanically enforced: **tools do not import `docent.ui` and do not receive a console via `Context`.**
 
 - **Console singleton** — one `Console()` instance lives in `docent.ui.console`. `cli.py` and renderers import it directly. Tools never touch it.
-- **Standard renderers** (cli.py + future `ui/renderers.py`): success panels, error panels, markdown blocks, progress spinners, tables. The CLI calls these to render tool results.
+- **Standard renderers** (`ui/renderers.py`): success panels, error panels, markdown blocks, progress spinners, tables. `cli.py` calls `render_shapes()` to render tool results via the Output Shapes vocabulary.
 - **Theme file** — centralized colors so you can restyle the whole app in one place.
 - **Logging vs display** — logs go to file (`~/.docent/logs/`) via `context.logger`, user-facing output goes to Rich in the CLI layer. Don't mix them.
 - **Rich markup gotcha** — `[required]`, `[default=...]` style brackets in help strings get eaten by Rich's markup parser as style tags. Use parentheses or escape them.
@@ -174,8 +207,8 @@ For workers like `feynman`:
 ## Layer 7: Config & State
 
 - **Config file**: `~/.docent/config.toml` — API keys, default model, tool-specific settings.
-- **Pydantic Settings** loads and validates it; env vars override file values.
-- **Per-tool config** lives under a tool-named table. Pattern: `paper.database_dir`, `paper.unpaywall_email`, `paper.queue_collection`, `paper.mendeley_mcp_command`. Keys are nested Pydantic models on `Settings`; `config.loader.write_setting` does TOML round-trips for `config-set` actions. Required-but-unset paths trigger a first-run prompt (`prompt_for_path`) with a `NO_INTERACTIVE` escape for CI.
+- **Pydantic Settings** loads and validates it; env vars override file values. `load_settings()` is memoized and self-invalidates on a config-file content hash + `DOCENT_*` env snapshot, so the UI server's per-request dispatch no longer re-parses TOML and re-validates the model on every call.
+- **Per-tool config** lives under a tool-named table. Pattern: `reading.database_dir`, `reading.queue_collection`, `reading.mendeley_mcp_command`. Keys are nested Pydantic models on `Settings`; `config.loader.write_setting` does TOML round-trips for `config-set` actions. Required-but-unset paths trigger a first-run prompt (`prompt_for_path`) with a `NO_INTERACTIVE` escape for CI.
 - **Cache directory**: `~/.docent/cache/` — for anything expensive to recompute.
 - **Tool data directory**: `~/.docent/data/<toolname>/` — per-tool persistent state (queues, indexes, counters). Tools must never reach into `~/.claude/skills/`.
 - **No state in the package itself** — installed code is read-only; all mutable state lives in `~/.docent/`.
@@ -249,16 +282,16 @@ That's the whole setup.
 
 ## Layer 10: Web UI (`docent ui`)
 
-`ui_server.py` is a FastAPI app served on `localhost:7432`. The frontend is a Next.js static export in `ui_dist/`, bundled into the wheel.
+`ui_server.py` is a FastAPI app served on `localhost:7432`. Route handlers live in `ui_routes/` modules (split from the original monolith). The frontend is a Next.js static export in `ui_dist/`, bundled into the wheel. In development, `next.config.ts` proxies `/api/*` to FastAPI — no duplicate Next.js API routes needed.
 
-**Surfaces:**
-- `/api/action` — dispatches reading queue actions via `invoke_action_for_ui` (from `core.invoke`, not `mcp_server`).
-- `/api/studio/*` — SSE streaming for in-process studio runs; WebSocket for subprocess-based runs.
-- `/api/fs/read` (GET) — reads a file for Markdown preview; restricted to approved roots.
-- `/api/fs/open` (POST) — opens a file/folder in the OS file manager; restricted to approved roots.
-- `/api/config` (GET/POST) — reads/writes config settings.
-- `/api/doctor` — health checks.
-- `/api/opencode/*` — start/stop the OpenCode subprocess.
+**Route modules** (`ui_routes/`):
+- `reading.py` — `/api/queue` (reads through `load_queue_for_ui` with Mendeley overlay), `/api/actions` (mutations via `invoke_action_for_ui`), `/api/database`.
+- `studio.py` — `/api/studio/*` — SSE streaming for in-process studio runs; WebSocket for subprocess-based runs.
+- `filesystem.py` — `/api/fs/read` (GET) reads a file for Markdown preview; `/api/fs/open` (POST) opens in OS file manager. Both restricted to approved roots.
+- `config.py` — `/api/config` (GET/POST) — reads/writes settings.
+- `backup.py` — `/api/backup/*` — create, restore, list, Google Drive sync.
+- `doctor.py` — `/api/doctor` — health checks.
+- `opencode.py` — `/api/opencode/*` — start/stop the OpenCode subprocess.
 
 **Security model (localhost-only):**
 - `_LocalhostGuard` middleware rejects any request whose `Origin` header is not `localhost` or `127.0.0.1`. This prevents malicious web pages from making cross-site requests to the UI server.
@@ -266,9 +299,13 @@ That's the whole setup.
 - `/api/fs/open` is POST-only (not GET) so standard links can't trigger it.
 - Audit logging (`~/.docent/audit.log`) records sensitive operations: file open, config write, queue clear, OpenCode start/stop.
 - Bind address defaults to `127.0.0.1` — the server is never exposed beyond localhost without explicit configuration.
+- **SSRF guard on page fetching** (`studio/search.py::fetch_page` → `_url_is_fetchable`): page URLs come from search providers, so they are attacker-influenceable. Each URL — and each redirect hop, since redirects are followed manually — must use an http(s) scheme and resolve to a public IP; loopback / private / link-local / reserved targets (e.g. `169.254.169.254`, localhost services) are refused.
 
-**Studio action mapping** (`_parse_studio_body`):
-- Single source of truth for converting the UI form state into either `run_action` kwargs (in-process SSE) or CLI argv (subprocess WebSocket). Adding a new studio action requires editing only `_parse_studio_body` and `_args_to_cli`.
+**Non-interactive vs consent (Context flags):** `Context` carries three orthogonal flags instead of the old overloaded `via_mcp`: `via_mcp` (MCP agent — governs `mcp_notes` and AI-agent output framing), `non_interactive` (no TTY — preflights raise structured errors and skip spinners), and `auto_confirm` (skip human confirmation gates). MCP sets all three; the web UI sets `non_interactive` + `auto_confirm` only, so UI users get human-facing output and an explicit (not accidental) auto-confirm. `make_context(via_mcp=True)` still implies the other two unless overridden.
+
+**Studio action mapping** (`build_studio_request`):
+- **One** source of truth. `build_studio_request(body)` resolves a `StudioRunBody` into a `StudioRequest` holding BOTH the in-process `kwargs` (for `run_action` on the SSE path) and the CLI `argv` (for the subprocess WebSocket path), built side by side in the same per-action branch. The two thin renderers — `_parse_studio_body` (ui_server) and `_build_studio_cmd` (ui_routes/opencode) — both derive from it, so a new action or argument is added in exactly one place and the two surfaces cannot drift. (Historically these were two hand-synced mappings; `test_ui_server_tooling.py::test_both_builders_agree_on_confirmed_gate` guards against regression.)
+- The live frontend uses the WebSocket subprocess path; the SSE path remains wired and unit-tested.
 
 ---
 

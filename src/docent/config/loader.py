@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import tomllib
 from pathlib import Path
@@ -40,6 +41,21 @@ def _ensure_config_file() -> Path:
     return path
 
 
+# Memoized Settings, invalidated when the config file contents or any DOCENT_*
+# env var change. The UI server dispatches every action through make_context ->
+# load_settings; without this it re-read and re-parsed config.toml on every
+# request. The cache key hashes the raw file bytes (not mtime — too coarse on
+# filesystems with 1s granularity) plus the DOCENT_* env snapshot, so callers
+# and tests that mutate either always get a fresh load. Reading the small TOML
+# file is cheap; the cache exists to skip the tomllib parse + Pydantic
+# validation, which is the actual cost.
+_settings_cache: dict[str, Any] = {"key": None, "value": None}
+
+
+def _env_snapshot() -> tuple:
+    return tuple(sorted((k, v) for k, v in os.environ.items() if k.startswith("DOCENT_")))
+
+
 def load_settings() -> Settings:
     """Load Docent settings with env-var-over-file priority.
 
@@ -54,19 +70,36 @@ def load_settings() -> Settings:
     first, so env vars always win.  TOML data is passed as constructor kwargs,
     which Pydantic treats as ``init_settings`` — the second-highest priority.
     This keeps the implementation simple while preserving correct override order.
+
+    Result is memoized (see ``_settings_cache``); the cache self-invalidates on
+    config-file mtime or DOCENT_* env changes.
     """
     _ensure_runtime_dirs()
     path = _ensure_config_file()
-    with path.open("rb") as f:
-        toml_data = tomllib.load(f)
-    return Settings(**toml_data)
+    raw = path.read_bytes()
+    key = (str(path), hashlib.sha256(raw).hexdigest(), _env_snapshot())
+    if _settings_cache["value"] is not None and _settings_cache["key"] == key:
+        return _settings_cache["value"]
+    toml_data = tomllib.loads(raw.decode("utf-8"))
+    settings = Settings(**toml_data)
+    _settings_cache["key"] = key
+    _settings_cache["value"] = settings
+    return settings
 
 
-_KNOWN_TOP_LEVEL_SECTIONS = frozenset({
-    "reading", "research", "tools",
-    # Root-level scalar keys (no section prefix)
-    "default_model", "verbose", "no_color", "anthropic_api_key", "openai_api_key",
-})
+_KNOWN_TOP_LEVEL_SECTIONS = frozenset(
+    {
+        "reading",
+        "research",
+        "tools",
+        # Root-level scalar keys (no section prefix)
+        "default_model",
+        "verbose",
+        "no_color",
+        "anthropic_api_key",
+        "openai_api_key",
+    }
+)
 
 
 def write_setting(key_path: str, value: Any) -> Path:
@@ -83,8 +116,7 @@ def write_setting(key_path: str, value: Any) -> Path:
     top = key_path.split(".")[0]
     if top not in _KNOWN_TOP_LEVEL_SECTIONS:
         raise ValueError(
-            f"Unknown config section {top!r}. "
-            f"Known sections: {sorted(_KNOWN_TOP_LEVEL_SECTIONS)}"
+            f"Unknown config section {top!r}. Known sections: {sorted(_KNOWN_TOP_LEVEL_SECTIONS)}"
         )
     _ensure_runtime_dirs()
     path = _ensure_config_file()

@@ -1,4 +1,5 @@
 """Generic external tool update checker with daily cache."""
+
 from __future__ import annotations
 
 import json
@@ -45,7 +46,9 @@ def check_npm(
         latest = cached.get("latest")
         if latest:
             if _is_newer(current_version, latest):
-                return UpdateInfo(tool=package, current=current_version, latest=latest, upgrade_cmd=cmd)
+                return UpdateInfo(
+                    tool=package, current=current_version, latest=latest, upgrade_cmd=cmd
+                )
             return None
 
     latest = _fetch_npm_latest(package)
@@ -82,15 +85,23 @@ def check_github_release(
         latest = cached.get("latest")
         if latest:
             if _is_newer(current_version, latest):
-                return UpdateInfo(tool=repo.split("/")[-1], current=current_version, latest=latest, upgrade_cmd=cmd)
+                return UpdateInfo(
+                    tool=repo.split("/")[-1],
+                    current=current_version,
+                    latest=latest,
+                    upgrade_cmd=cmd,
+                )
             return None
 
     latest = _fetch_github_latest(repo)
     if latest:
         import datetime
+
         _save_cache(cache_path, {"latest": latest, "fetched": datetime.date.today().isoformat()})
         if _is_newer(current_version, latest):
-            return UpdateInfo(tool=repo.split("/")[-1], current=current_version, latest=latest, upgrade_cmd=cmd)
+            return UpdateInfo(
+                tool=repo.split("/")[-1], current=current_version, latest=latest, upgrade_cmd=cmd
+            )
     return None
 
 
@@ -123,7 +134,9 @@ def check_pypi(
         latest = cached.get("latest")
         if latest:
             if _is_newer(current_version, latest):
-                return UpdateInfo(tool=package, current=current_version, latest=latest, upgrade_cmd=cmd)
+                return UpdateInfo(
+                    tool=package, current=current_version, latest=latest, upgrade_cmd=cmd
+                )
             return None
 
     latest = _fetch_pypi_latest(package)
@@ -136,6 +149,7 @@ def check_pypi(
 
 def _default_cache_dir() -> Path:
     from docent.utils.paths import cache_dir
+
     return cache_dir() / "updates"
 
 
@@ -148,6 +162,7 @@ def _cache_path(key: str, override: Path | None) -> Path:
 def _load_cache(path: Path) -> dict | None:
     """Return cached data if it exists and is from today, else None."""
     import datetime
+
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         if data.get("fetched") == datetime.date.today().isoformat():
@@ -169,6 +184,7 @@ def _fetch_npm_latest(package: str) -> str | None:
     """Query npm registry for latest version. Returns version string or None."""
     try:
         import httpx
+
         encoded = package.replace("@", "%40").replace("/", "%2F")
         resp = httpx.get(
             f"https://registry.npmjs.org/{encoded}/latest",
@@ -185,6 +201,7 @@ def _fetch_pypi_latest(package: str) -> str | None:
     """Query PyPI JSON API for latest version. Returns version string or None."""
     try:
         import httpx
+
         resp = httpx.get(
             f"https://pypi.org/pypi/{package}/json",
             timeout=5,
@@ -200,6 +217,7 @@ def _fetch_github_latest(repo: str) -> str | None:
     """Query GitHub releases API for latest tag. Returns version string (without 'v') or None."""
     try:
         import httpx
+
         resp = httpx.get(
             f"https://api.github.com/repos/{repo}/releases/latest",
             timeout=5,
@@ -221,8 +239,10 @@ def _is_newer(current: str | None, latest: str) -> bool:
     if current is None:
         return True
     try:
+
         def _parse(v: str) -> tuple:
             return tuple(int(x) for x in v.lstrip("v").split(".")[:3])
+
         return _parse(latest) > _parse(current)
     except Exception:
         return latest != current

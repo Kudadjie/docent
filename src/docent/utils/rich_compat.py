@@ -10,7 +10,10 @@ Call ``patch_rich_unicode_loader()`` before the first Rich import that
 would trigger the broken load path.  Patching is idempotent and
 failure-safe — if anything goes wrong the original behaviour is left intact.
 """
+
 from __future__ import annotations
+
+import functools
 
 
 def patch_rich_unicode_loader() -> None:
@@ -20,7 +23,6 @@ def patch_rich_unicode_loader() -> None:
         import importlib.util
         import os
         import unicodedata
-        from functools import lru_cache
 
         import rich._unicode_data as _rd
         from rich._unicode_data._versions import VERSIONS
@@ -29,7 +31,7 @@ def patch_rich_unicode_loader() -> None:
         _version_set = set(VERSIONS)
         _version_order = [[int(x) for x in v.split(".")] for v in VERSIONS]
 
-        @lru_cache(maxsize=None)
+        @functools.cache
         def _fixed_load(unicode_version: str = "auto"):
             if unicode_version in ("auto", "latest"):
                 detected = unicodedata.unidata_version

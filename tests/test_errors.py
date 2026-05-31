@@ -1,7 +1,6 @@
 """Tests for docent.errors — D-series codes and formatted() output."""
-from __future__ import annotations
 
-import pytest
+from __future__ import annotations
 
 from docent.errors import (
     AuthError,
@@ -60,15 +59,17 @@ def test_docent_error_is_runtime_error():
 
 def test_subclass_is_docent_error():
     from docent.bundled_plugins.studio import FeynmanNotFoundError
+
     assert issubclass(FeynmanNotFoundError, DocentError)
     assert FeynmanNotFoundError.code == "D002"
 
 
 def test_oc_exceptions_are_docent_errors():
     from docent.bundled_plugins.studio.oc_client import (
-        OcUnavailableError,
         OcModelError,
+        OcUnavailableError,
     )
+
     assert issubclass(OcUnavailableError, DocentError)
     assert issubclass(OcModelError, DocentError)
     assert OcUnavailableError.code == "D007"
@@ -77,6 +78,7 @@ def test_oc_exceptions_are_docent_errors():
 
 def test_oc_model_error_http_code():
     from docent.bundled_plugins.studio.oc_client import OcModelError
+
     err = OcModelError("rate limited", http_code=429)
     assert err.http_code == 429
     assert err.code == "D003"  # D-code unchanged

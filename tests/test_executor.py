@@ -1,8 +1,8 @@
 """Tests for Executor: happy path, non-zero exit, timeout + process-group kill."""
+
 from __future__ import annotations
 
 import os
-import signal
 import subprocess
 import sys
 from unittest.mock import MagicMock, patch
@@ -10,7 +10,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from docent.execution.executor import Executor, ProcessExecutionError, _kill_tree
-
 
 # All tests that spawn real subprocesses hang on GitHub Actions Linux runners.
 # The Popen pipe drain blocks indefinitely after process exit when
@@ -22,6 +21,7 @@ _skip_on_ci = pytest.mark.skipif(
 
 
 # ─── happy path (real subprocess — skipped on CI) ─────────────────────────────
+
 
 @_skip_on_ci
 def test_run_returns_process_result():
@@ -60,6 +60,7 @@ def test_run_nonzero_raises_when_check_true():
 
 # ─── timeout (real subprocess — skipped on CI) ────────────────────────────────
 
+
 @_skip_on_ci
 def test_run_timeout_raises_timeout_expired():
     ex = Executor()
@@ -69,6 +70,7 @@ def test_run_timeout_raises_timeout_expired():
 
 # ─── timeout (mock-based — runs everywhere) ──────────────────────────────────
 
+
 def test_run_timeout_calls_kill_tree():
     """On timeout, _kill_tree must be called before re-raising TimeoutExpired."""
     mock_proc = MagicMock()
@@ -77,8 +79,10 @@ def test_run_timeout_calls_kill_tree():
     mock_proc.communicate.side_effect = [subprocess.TimeoutExpired(cmd=[], timeout=1), ("", "")]
     mock_proc.returncode = -1
 
-    with patch("docent.execution.executor.subprocess.Popen", return_value=mock_proc), \
-         patch("docent.execution.executor._kill_tree") as mock_kill:
+    with (
+        patch("docent.execution.executor.subprocess.Popen", return_value=mock_proc),
+        patch("docent.execution.executor._kill_tree") as mock_kill,
+    ):
         with pytest.raises(subprocess.TimeoutExpired):
             Executor().run(["dummy"], timeout=1)
         mock_kill.assert_called_once_with(mock_proc)
@@ -86,13 +90,16 @@ def test_run_timeout_calls_kill_tree():
 
 # ─── _kill_tree (mock-based — runs everywhere) ───────────────────────────────
 
+
 def test_kill_tree_on_posix_calls_killpg():
     mock_proc = MagicMock()
     mock_proc.pid = 12345
-    with patch("docent.execution.executor.sys") as mock_sys, \
-         patch("docent.execution.executor.os.killpg", create=True) as mock_killpg, \
-         patch("docent.execution.executor.os.getpgid", create=True, return_value=12345), \
-         patch("docent.execution.executor.signal") as mock_signal:
+    with (
+        patch("docent.execution.executor.sys") as mock_sys,
+        patch("docent.execution.executor.os.killpg", create=True) as mock_killpg,
+        patch("docent.execution.executor.os.getpgid", create=True, return_value=12345),
+        patch("docent.execution.executor.signal") as mock_signal,
+    ):
         mock_signal.SIGKILL = 9
         mock_sys.platform = "linux"
         _kill_tree(mock_proc)
@@ -102,9 +109,11 @@ def test_kill_tree_on_posix_calls_killpg():
 def test_kill_tree_on_windows_sends_ctrl_break():
     mock_proc = MagicMock()
     mock_proc.pid = 12345
-    with patch("docent.execution.executor.sys") as mock_sys, \
-         patch("docent.execution.executor.os.kill") as mock_os_kill, \
-         patch("docent.execution.executor.signal") as mock_signal:
+    with (
+        patch("docent.execution.executor.sys") as mock_sys,
+        patch("docent.execution.executor.os.kill") as mock_os_kill,
+        patch("docent.execution.executor.signal") as mock_signal,
+    ):
         mock_sys.platform = "win32"
         mock_signal.CTRL_BREAK_EVENT = 1
         _kill_tree(mock_proc)
@@ -114,9 +123,11 @@ def test_kill_tree_on_windows_sends_ctrl_break():
 def test_kill_tree_on_windows_falls_back_on_oserror():
     mock_proc = MagicMock()
     mock_proc.pid = 12345
-    with patch("docent.execution.executor.sys") as mock_sys, \
-         patch("docent.execution.executor.os.kill", side_effect=OSError("denied")), \
-         patch("docent.execution.executor.signal") as mock_signal:
+    with (
+        patch("docent.execution.executor.sys") as mock_sys,
+        patch("docent.execution.executor.os.kill", side_effect=OSError("denied")),
+        patch("docent.execution.executor.signal") as mock_signal,
+    ):
         mock_sys.platform = "win32"
         mock_signal.CTRL_BREAK_EVENT = 1
         _kill_tree(mock_proc)

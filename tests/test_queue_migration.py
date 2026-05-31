@@ -3,16 +3,15 @@
 Every time a new field is added to QueueEntry, add a corresponding assertion
 here to confirm the old fixture still loads and the new field gets its default.
 """
+
 from __future__ import annotations
 
 import json
 
-import pytest
-
 from reading.reading_store import ReadingQueueStore
 
-
-# Frozen v1.1.x queue entry — no v1.2 fields (not_in_mendeley, manually_kept, etc.)
+# Frozen v1 queue entry (uses old field names mendeley_id / not_in_mendeley).
+# Keep this fixture in old-format — it is the migration source.
 _V1_ENTRY = {
     "id": "smith-2024-coastal",
     "title": "Coastal Dynamics of the Volta Delta",
@@ -59,8 +58,20 @@ def test_v1_queue_loads_without_error(tmp_path):
     assert len(entries) == 2
 
 
+def test_v1_migrates_field_names(tmp_path):
+    """Loading a v1 queue must rename mendeley_id → reference_id and
+    not_in_mendeley → not_in_library via the migration path."""
+    store = ReadingQueueStore(tmp_path / "reading")
+    _write_v1_queue(store)
+    entries = store.load_queue()
+    for raw in entries:
+        assert "reference_id" in raw, "mendeley_id should have been migrated to reference_id"
+        assert "mendeley_id" not in raw, "old mendeley_id key must not remain after migration"
+        assert "not_in_library" in raw or "not_in_mendeley" not in raw
+
+
 def test_v1_queue_pydantic_validates(tmp_path):
-    """QueueEntry must parse every v1 entry with no ValidationError."""
+    """QueueEntry must parse every migrated v1 entry with no ValidationError."""
     from docent.bundled_plugins.reading.models import QueueEntry
 
     store = ReadingQueueStore(tmp_path / "reading")
@@ -68,8 +79,7 @@ def test_v1_queue_pydantic_validates(tmp_path):
     entries = store.load_queue()
     for raw in entries:
         parsed = QueueEntry(**raw)
-        # New v1.2 fields should carry their defaults
-        assert parsed.not_in_mendeley is False
+        assert parsed.not_in_library is False
         assert parsed.not_in_parent_collection is False
         assert parsed.manually_kept is False
         assert parsed.manually_kept_at is None

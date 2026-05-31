@@ -1,15 +1,21 @@
 """Search and output action mixins: search-papers, get-paper, scholarly-search, read-output, save-synthesis."""
+
 from __future__ import annotations
-
-
-from docent.core import Context, action
 
 from docent.bundled_plugins.studio._init_helpers import _path_under
 from docent.bundled_plugins.studio.models import (
-    GetPaperInputs, GetPaperResult, ReadOutputInputs, ReadOutputResult,
-    SaveSynthesisInputs, SaveSynthesisResult, ScholarlySearchInputs,
-    ScholarlySearchResult, SearchPapersInputs, SearchPapersResult,
+    GetPaperInputs,
+    GetPaperResult,
+    ReadOutputInputs,
+    ReadOutputResult,
+    SaveSynthesisInputs,
+    SaveSynthesisResult,
+    ScholarlySearchInputs,
+    ScholarlySearchResult,
+    SearchPapersInputs,
+    SearchPapersResult,
 )
+from docent.core import Context, action
 
 
 class SearchMixin:
@@ -26,6 +32,7 @@ class SearchMixin:
     )
     def read_output(self, inputs: ReadOutputInputs, context: Context) -> ReadOutputResult:  # noqa: ARG002
         from pathlib import Path
+
         from docent.config import load_settings
         from docent.utils.paths import root_dir
 
@@ -82,8 +89,9 @@ class SearchMixin:
         name="save-synthesis",
     )
     def save_synthesis(self, inputs: SaveSynthesisInputs, context: Context) -> SaveSynthesisResult:  # noqa: ARG002
-        from pathlib import Path
         import datetime
+        from pathlib import Path
+
         from docent.config import load_settings
         from docent.utils.paths import root_dir
 
@@ -132,7 +140,9 @@ class SearchMixin:
         name="search-papers",
     )
     def search_papers(self, inputs: SearchPapersInputs, context: Context) -> SearchPapersResult:
-        from .alphaxiv_client import AlphaXivAuthError, search_papers as _search
+        from .alphaxiv_client import AlphaXivAuthError
+        from .alphaxiv_client import search_papers as _search
+
         try:
             papers = _search(
                 inputs.query,
@@ -140,9 +150,13 @@ class SearchMixin:
                 max_results=inputs.max_results,
             )
         except AlphaXivAuthError as e:
-            return SearchPapersResult(ok=False, query=inputs.query, papers=[], count=0, message=str(e))
+            return SearchPapersResult(
+                ok=False, query=inputs.query, papers=[], count=0, message=str(e)
+            )
         except Exception as e:
-            return SearchPapersResult(ok=False, query=inputs.query, papers=[], count=0, message=f"Search failed: {e}")
+            return SearchPapersResult(
+                ok=False, query=inputs.query, papers=[], count=0, message=f"Search failed: {e}"
+            )
         return SearchPapersResult(
             ok=True,
             query=inputs.query,
@@ -158,13 +172,18 @@ class SearchMixin:
     )
     def get_paper(self, inputs: GetPaperInputs, context: Context) -> GetPaperResult:
         from .alphaxiv_client import get_paper_overview
+
         raw = inputs.arxiv_id.strip().rstrip("/")
 
         # Detect non-arXiv URLs early and give a clear error rather than
         # submitting a filename like "paper.pdf" to the arXiv API.
         if raw.startswith("http") and "arxiv.org" not in raw:
             return GetPaperResult(
-                ok=False, arxiv_id=raw, title=None, abstract="", overview=None,
+                ok=False,
+                arxiv_id=raw,
+                title=None,
+                abstract="",
+                overview=None,
                 message=(
                     "Get paper only works with arXiv IDs or arxiv.org links "
                     "(e.g. 2301.12345 or https://arxiv.org/abs/2301.12345). "
@@ -177,7 +196,11 @@ class SearchMixin:
         if "/" in arxiv_id:
             arxiv_id = arxiv_id.rsplit("/", 1)[-1]
         # Strip version suffix: 2301.12345v2 → 2301.12345
-        arxiv_id = arxiv_id.split("v")[0] if arxiv_id and arxiv_id[-1].isdigit() and "v" in arxiv_id else arxiv_id
+        arxiv_id = (
+            arxiv_id.split("v")[0]
+            if arxiv_id and arxiv_id[-1].isdigit() and "v" in arxiv_id
+            else arxiv_id
+        )
 
         try:
             data = get_paper_overview(
@@ -185,7 +208,14 @@ class SearchMixin:
                 api_key=context.settings.research.alphaxiv_api_key,
             )
         except Exception as e:
-            return GetPaperResult(ok=False, arxiv_id=arxiv_id, title=None, abstract="", overview=None, message=f"Failed to fetch paper: {e}")
+            return GetPaperResult(
+                ok=False,
+                arxiv_id=arxiv_id,
+                title=None,
+                abstract="",
+                overview=None,
+                message=f"Failed to fetch paper: {e}",
+            )
         has_overview = bool(data.get("overview"))
         msg = f"Retrieved {'overview + abstract' if has_overview else 'abstract'} for {arxiv_id}."
         return GetPaperResult(
@@ -202,8 +232,11 @@ class SearchMixin:
         input_schema=ScholarlySearchInputs,
         name="scholarly-search",
     )
-    def scholarly_search(self, inputs: ScholarlySearchInputs, context: Context) -> ScholarlySearchResult:
+    def scholarly_search(
+        self, inputs: ScholarlySearchInputs, context: Context
+    ) -> ScholarlySearchResult:
         from .scholarly_client import search_scholarly
+
         try:
             papers, backend = search_scholarly(
                 inputs.query,
@@ -212,17 +245,28 @@ class SearchMixin:
             )
         except RuntimeError as e:
             return ScholarlySearchResult(
-                ok=False, query=inputs.query, papers=[], count=0,
-                backend_used="none", message=str(e),
+                ok=False,
+                query=inputs.query,
+                papers=[],
+                count=0,
+                backend_used="none",
+                message=str(e),
             )
         except Exception as e:
             return ScholarlySearchResult(
-                ok=False, query=inputs.query, papers=[], count=0,
-                backend_used="none", message=f"Search failed: {e}",
+                ok=False,
+                query=inputs.query,
+                papers=[],
+                count=0,
+                backend_used="none",
+                message=f"Search failed: {e}",
             )
         if not papers:
             return ScholarlySearchResult(
-                ok=False, query=inputs.query, papers=[], count=0,
+                ok=False,
+                query=inputs.query,
+                papers=[],
+                count=0,
                 backend_used=backend,
                 message=f"No results found for '{inputs.query}' (via {backend}).",
             )
@@ -234,4 +278,3 @@ class SearchMixin:
             backend_used=backend,
             message=f"Found {len(papers)} paper(s) for '{inputs.query}' (via {backend}).",
         )
-

@@ -8,6 +8,7 @@ free arXiv API (no key required).  The alphaxiv path adds GitHub links, topic
 tags, and AI overviews — the arXiv fallback returns the same dict shape with
 those fields set to None/[].
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -42,17 +43,19 @@ def _build_client(api_key: str | None) -> AlphaXivClient:
 # ── arXiv free-API fallback ───────────────────────────────────────────────────
 
 _ARXIV_API = "https://export.arxiv.org/api/query"
-_ATOM_NS   = "http://www.w3.org/2005/Atom"
-_ARXIV_NS  = "http://arxiv.org/schemas/atom"
+_ATOM_NS = "http://www.w3.org/2005/Atom"
+_ARXIV_NS = "http://arxiv.org/schemas/atom"
 
 
 def _search_arxiv(query: str, max_results: int = 10) -> list[dict[str, Any]]:
     """Query the free arXiv API and return results in the same dict shape as alphaXiv."""
-    params = urllib.parse.urlencode({
-        "search_query": f"all:{query}",
-        "max_results": max_results,
-        "sortBy": "relevance",
-    })
+    params = urllib.parse.urlencode(
+        {
+            "search_query": f"all:{query}",
+            "max_results": max_results,
+            "sortBy": "relevance",
+        }
+    )
     url = f"{_ARXIV_API}?{params}"
     try:
         with urllib.request.urlopen(url, timeout=20) as resp:
@@ -63,7 +66,9 @@ def _search_arxiv(query: str, max_results: int = 10) -> list[dict[str, Any]]:
     root = ET.fromstring(raw)
     results: list[dict[str, Any]] = []
     for entry in root.findall(f"{{{_ATOM_NS}}}entry"):
-        def _text(tag: str, ns: str = _ATOM_NS) -> str:
+        # entry bound as a default arg so the closure captures the current
+        # iteration's element, not the loop variable's final value (B023).
+        def _text(tag: str, ns: str = _ATOM_NS, entry: Any = entry) -> str:
             el = entry.find(f"{{{ns}}}{tag}")
             return el.text.strip() if el is not None and el.text else ""
 
@@ -80,21 +85,24 @@ def _search_arxiv(query: str, max_results: int = 10) -> list[dict[str, Any]]:
         published = _text("published")[:10]  # YYYY-MM-DD
         abstract = _text("summary").replace("\n", " ")[:400]
 
-        results.append({
-            "arxiv_id": arxiv_id,
-            "title": _text("title").replace("\n", " "),
-            "abstract": abstract,
-            "authors": authors,
-            "topics": [],
-            "arxiv_url": f"https://arxiv.org/abs/{arxiv_id}" if arxiv_id else None,
-            "github_url": None,
-            "published": published,
-        })
+        results.append(
+            {
+                "arxiv_id": arxiv_id,
+                "title": _text("title").replace("\n", " "),
+                "abstract": abstract,
+                "authors": authors,
+                "topics": [],
+                "arxiv_url": f"https://arxiv.org/abs/{arxiv_id}" if arxiv_id else None,
+                "github_url": None,
+                "published": published,
+            }
+        )
 
     return results
 
 
 # ── alphaXiv async helpers ────────────────────────────────────────────────────
+
 
 async def _search_async(client: AlphaXivClient, query: str) -> list[dict[str, Any]]:
     async with client:
@@ -106,9 +114,7 @@ async def _search_async(client: AlphaXivClient, query: str) -> list[dict[str, An
             "abstract": r.abstract[:400] if r.abstract else "",
             "authors": [a.name for a in r.authors] if r.authors else [],
             "topics": r.topics or [],
-            "arxiv_url": (
-                f"https://arxiv.org/abs/{r.canonical_id}" if r.canonical_id else None
-            ),
+            "arxiv_url": (f"https://arxiv.org/abs/{r.canonical_id}" if r.canonical_id else None),
             "github_url": r.github_url,
             "published": (r.publication_date or "")[:10],
         }
@@ -128,6 +134,7 @@ async def _overview_async(client: AlphaXivClient, arxiv_id: str) -> dict[str, An
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
+
 
 def search_papers(
     query: str,
@@ -180,7 +187,7 @@ def _get_paper_arxiv(arxiv_id: str) -> dict[str, Any]:
         "arxiv_id": arxiv_id,
         "title": _text("title").replace("\n", " "),
         "abstract": _text("summary").replace("\n", " "),
-        "overview": None,   # AI overview requires alphaXiv key
+        "overview": None,  # AI overview requires alphaXiv key
         "authors": authors,
         "published": _text("published")[:10],
     }

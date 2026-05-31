@@ -10,7 +10,7 @@ import { OutputPanel, HistoryDrawer, OutputsPanel } from './_output';
 import {
   findAction, actionSummary,
   type ActionId, type FormState,
-  type Preset, type Status,
+  type Preset,
 } from './_shared';
 import { useStudioRun } from '@/lib/studio-run-context';
 
@@ -23,6 +23,8 @@ const DEFAULT_FORM: FormState = {
   outPath: '', srcPath: '', maxSources: 20,
   nlm: true, gate: true, persp: true,
   cfgKey: '', cfgVal: '',
+  citeIdentifier: '', citeDirection: 'cited-by', citeMax: 25,
+  expandCitations: false,
 };
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -181,7 +183,7 @@ export default function StudioPage() {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault(); setCmdKOpen(o => !o);
       }
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && run.status !== 'running' && !run.gating) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !run.gating) {
         e.preventDefault();
         const a = action;
         if (a.form === 'topic' && !form.topic.trim()) return;
@@ -203,10 +205,22 @@ export default function StudioPage() {
   // ── Derived values ─────────────────────────────────────────────────────────────
 
   // Sidebar reads currentRun from the context directly — no prop needed.
+  // The dot reflects ANY running run, not just the viewed one.
   const dotState: DotState =
-    run.status === 'running' ? 'working' :
+    run.anyRunning ? 'working' :
     run.status === 'failure' ? 'error' :
     (run.status === 'success' || run.status === 'stopped') ? 'done' : 'idle';
+
+  // The output panel must render the VIEWED run's action/state, which can differ
+  // from the live form once you start a second run or browse history.
+  const viewedActive = run.activeRuns.find(r => r.runId === run.currentRunId);
+  const viewedRecord = viewedActive ? null : run.runs.find(r => r.id === run.currentRunId);
+  const outAction = viewedActive ? findAction(viewedActive.actionId)
+    : viewedRecord ? findAction(viewedRecord.actionId)
+    : action;
+  const outState: FormState = viewedActive ? viewedActive.form
+    : viewedRecord ? { ...DEFAULT_FORM, ...viewedRecord.state }
+    : form;
 
   const suggestedPresetName = action.label + ' · ' + (actionSummary(action, form) || '').slice(0, 30);
 
@@ -240,8 +254,6 @@ export default function StudioPage() {
             onDeletePreset={handleDeletePreset}
             onSelectPreset={handleSelectPreset}
             onOpenCmdK={() => setCmdKOpen(true)}
-            isRunning={run.status === 'running'}
-            onStop={handleStop}
             activePresetId={activePresetId}
             width={leftWidth}
           />
@@ -253,10 +265,12 @@ export default function StudioPage() {
             className="studio-resize-divider"
           />
           <OutputPanel
-            action={action} state={form}
+            action={outAction} state={outState}
             status={run.status} logs={run.logs} sources={run.sources}
             currentPhase={run.currentPhase}
             doneData={run.doneData}
+            activeRuns={run.activeRuns} currentRunId={run.currentRunId}
+            onViewRun={run.viewRun} onStop={handleStop}
             onReset={handleReset}
             onSaveAsPreset={() => setSavePresetOpen(true)}
             onPipeToNotebook={handlePipeToNotebook}

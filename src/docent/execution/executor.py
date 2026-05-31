@@ -24,8 +24,7 @@ class ProcessExecutionError(RuntimeError):
     def __init__(self, result: ProcessResult) -> None:
         self.result = result
         super().__init__(
-            f"Command {result.args!r} exited with {result.returncode} "
-            f"after {result.duration:.2f}s"
+            f"Command {result.args!r} exited with {result.returncode} after {result.duration:.2f}s"
         )
 
 
@@ -33,7 +32,13 @@ class ProcessExecutionError(RuntimeError):
 # timeout can kill the entire tree (including grandchildren like pandoc workers).
 # On POSIX, start_new_session=True creates a new session (and process group)
 # so os.killpg can signal the entire tree.
-_CREATION_FLAGS = subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0
+# Use an if-statement (not a ternary) so mypy applies its `sys.platform`
+# narrowing: on non-Windows it treats the win32 branch as unreachable and does
+# not flag the Windows-only `subprocess.CREATE_NEW_PROCESS_GROUP` attribute.
+if sys.platform == "win32":
+    _CREATION_FLAGS = subprocess.CREATE_NEW_PROCESS_GROUP
+else:
+    _CREATION_FLAGS = 0
 _START_NEW_SESSION = sys.platform != "win32"
 
 

@@ -14,8 +14,8 @@ When adding a new AI provider, add a matching ``check_<provider>()`` and/or
   - ``cli.py`` doctor_command  (for `docent doctor` diagnostics)
   - the relevant tool's ``_preflight_*`` function  (for per-task gating)
 """
-from __future__ import annotations
 
+from __future__ import annotations
 
 # Type alias matching the doctor table row format
 DoctorRow = tuple[str, str, str, str]  # (label, status, version, detail)
@@ -44,10 +44,7 @@ def check_opencode_server(
             "OpenCode server",
             "FAIL",
             "-",
-            (
-                f"Not reachable at {oc.base_url}. "
-                "Start with: opencode serve --port 4096"
-            ),
+            (f"Not reachable at {oc.base_url}. Start with: opencode serve --port 4096"),
         )
 
     detail = f"Running at {oc.base_url}"

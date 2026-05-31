@@ -1,8 +1,9 @@
 """Reading queue tool: manage what you're reading + Mendeley sync."""
+
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,14 @@ from docent.learning import RunLog
 from docent.utils.paths import cache_dir, data_dir
 from docent.utils.prompt import NoInteractiveError, prompt_for_path
 
+from .mendeley_backend import MendeleyBackend
+from .mendeley_cache import MendeleyCache
+from .mendeley_client import (
+    list_documents as mendeley_list_documents,
+)
+from .mendeley_client import (
+    list_folders as mendeley_list_folders,
+)
 from .models import (
     AddInputs,
     AddResult,
@@ -34,60 +43,83 @@ from .models import (
     SetDeadlineInputs,
     StatsInputs,
     StatsResult,
-    SyncFromMendeleyInputs,
-    SyncFromMendeleyResult as SyncFromMendeleyResult,
+    SyncFromLibraryInputs,
     SyncStatusInputs,
     SyncStatusResult,
 )
-from .mendeley_sync import (
+from .models import (
+    SyncFromLibraryResult as SyncFromLibraryResult,
+)
+from .models import (
+    SyncFromMendeleyInputs as SyncFromMendeleyInputs,
+)
+from .models import (
+    SyncFromMendeleyResult as SyncFromMendeleyResult,
+)
+from .reading_store import ReadingQueueStore
+from .sync_engine import (
     normalize_mendeley_authors,
     sync_from_mendeley_run,
 )
-from .reading_store import ReadingQueueStore
-from .mendeley_cache import MendeleyCache
-from .mendeley_backend import MendeleyBackend
-from .mendeley_client import (
-    list_documents as mendeley_list_documents,
-    list_folders as mendeley_list_folders,
-)
-
 
 _DEFAULT_DATABASE_DIR = "~/Documents/Papers"
-_KNOWN_READING_KEYS = {"database_dir", "queue_collection", "mendeley_mcp_command", "reference_manager"}
+_KNOWN_READING_KEYS = {
+    "database_dir",
+    "queue_collection",
+    "mendeley_mcp_command",
+    "reference_manager",
+    "zotero_api_key",
+    "zotero_library_id",
+    "zotero_library_type",
+}
+
 
 @register_tool
 class ReadingQueue(Tool):
-    """Reading queue + Mendeley sync."""
+    """Reading queue + reference manager sync."""
 
     name = "reading"
-    description = "Reading queue management and Mendeley sync."
+    description = "Reading queue management and reference manager sync (Mendeley or Zotero)."
     category = "reading"
 
     def __init__(self) -> None:
         self._store = ReadingQueueStore(data_dir() / "reading")
 
     @action(
-        description="Show how to add papers to your reading queue via Mendeley.",
+        description="Show how to add papers to your reading queue via your configured reference manager.",
         input_schema=AddInputs,
     )
     def add(self, inputs: AddInputs, context: Context) -> AddResult:
         collection = context.settings.reading.queue_collection
+        rm = (context.settings.reading.reference_manager or "mendeley").lower()
+        if rm == "zotero":
+            how = (
+                f"Add the paper to your '{collection}' collection (or a sub-collection) in Zotero, "
+                "then run `docent reading sync-from-library`. "
+            )
+        else:
+            how = (
+                "Drop the PDF in your reading.database_dir (Mendeley auto-imports it), "
+                f"drag it into the '{collection}' collection (or a sub-collection) in Mendeley, "
+                "then run `docent reading sync-from-library`. "
+            )
         return AddResult(
             added=False,
             queue_size=len(self._store.load_index()),
             banner=self._store.banner_counts(),
             message=(
-                "Drop the PDF in your reading.database_dir (Mendeley auto-imports it), "
-                f"drag it into the '{collection}' collection (or a sub-collection) in Mendeley, "
-                "then run `docent reading sync-from-mendeley`. "
-                "Category is auto-detected from sub-collections: "
-                f"'{collection}/CES701' -> category='CES701', "
-                f"'{collection}/CES701/Topic' -> category='CES701/Topic'. "
-                "Papers in the root collection get no category."
+                how
+                + "Category is auto-detected from sub-collections: "
+                + f"'{collection}/CES701' -> category='CES701', "
+                + f"'{collection}/CES701/Topic' -> category='CES701/Topic'. "
+                + "Papers in the root collection get no category."
             ),
         )
 
-    @action(description="Show the next entry to read (lowest order number among queued).", input_schema=NextInputs)
+    @action(
+        description="Show the next entry to read (lowest order number among queued).",
+        input_schema=NextInputs,
+    )
     def next(self, inputs: NextInputs, context: Context) -> MutationResult:
         queue = self._store.load_queue()
         queue = self._apply_overlay(queue, self._load_mendeley_overlay(context))
@@ -95,13 +127,17 @@ class ReadingQueue(Tool):
         if inputs.category:
             cat = inputs.category
             candidates = [
-                e for e in candidates
+                e
+                for e in candidates
                 if e.get("category") == cat or (e.get("category") or "").startswith(cat + "/")
             ]
         if not candidates:
             scope = f" for category {inputs.category!r}" if inputs.category else ""
             return MutationResult(
-                ok=False, id="", entry=None, queue_size=len(queue),
+                ok=False,
+                id="",
+                entry=None,
+                queue_size=len(queue),
                 banner=self._store.banner_counts(),
                 message=f"No queued entries{scope}.",
             )
@@ -110,8 +146,11 @@ class ReadingQueue(Tool):
             key=lambda e: (e.get("order", 0) or 999999, e.get("added", "")),
         )[0]
         return MutationResult(
-            ok=True, id=best["id"], entry=QueueEntry(**best),
-            queue_size=len(queue), banner=self._store.banner_counts(),
+            ok=True,
+            id=best["id"],
+            entry=QueueEntry(**best),
+            queue_size=len(queue),
+            banner=self._store.banner_counts(),
             message=f"Read next: {best['title']!r} (order={best.get('order', 0)}, added {best.get('added', '')}).",
         )
 
@@ -123,8 +162,11 @@ class ReadingQueue(Tool):
         if not entry:
             return self._not_found(inputs.id, queue)
         return MutationResult(
-            ok=True, id=inputs.id, entry=QueueEntry(**entry),
-            queue_size=len(queue), banner=self._store.banner_counts(),
+            ok=True,
+            id=inputs.id,
+            entry=QueueEntry(**entry),
+            queue_size=len(queue),
+            banner=self._store.banner_counts(),
             message=f"Found {inputs.id!r}: {entry['title']!r}.",
         )
 
@@ -135,18 +177,22 @@ class ReadingQueue(Tool):
         q = inputs.query.lower()
         matches: list[QueueEntry] = []
         for e in queue:
-            haystack = " ".join([
-                e.get("title", "") or "",
-                e.get("authors", "") or "",
-                e.get("notes", "") or "",
-                e.get("category") or "",
-                e.get("id", "") or "",
-                " ".join(e.get("tags") or []),
-            ]).lower()
+            haystack = " ".join(
+                [
+                    e.get("title", "") or "",
+                    e.get("authors", "") or "",
+                    e.get("notes", "") or "",
+                    e.get("category") or "",
+                    e.get("id", "") or "",
+                    " ".join(e.get("tags") or []),
+                ]
+            ).lower()
             if q in haystack:
                 matches.append(QueueEntry(**e))
         matches.sort(key=lambda e: (e.order or 999999, e.added or ""))
-        return SearchResult(query=inputs.query, matches=matches, total=len(matches), queue_size=len(queue))
+        return SearchResult(
+            query=inputs.query, matches=matches, total=len(matches), queue_size=len(queue)
+        )
 
     @action(description="Show queue statistics.", input_schema=StatsInputs)
     def stats(self, inputs: StatsInputs, context: Context) -> StatsResult:
@@ -159,7 +205,8 @@ class ReadingQueue(Tool):
             cat = e.get("category") or "(root)"
             by_category[cat] = by_category.get(cat, 0) + 1
         return StatsResult(
-            total=len(queue), by_status=by_status,
+            total=len(queue),
+            by_status=by_status,
             by_category=by_category,
             banner=self._store.banner_counts(),
         )
@@ -175,12 +222,18 @@ class ReadingQueue(Tool):
             self._store.save_queue(new_queue)
             self._log_event("remove", id=inputs.id, title=entry.get("title"))
             return MutationResult(
-                ok=True, id=inputs.id, entry=QueueEntry(**entry),
-                queue_size=len(new_queue), banner=self._store.banner_counts(),
+                ok=True,
+                id=inputs.id,
+                entry=QueueEntry(**entry),
+                queue_size=len(new_queue),
+                banner=self._store.banner_counts(),
                 message=f"Removed {inputs.id!r}.",
             )
 
-    @action(description="Edit user-settable fields on an existing entry (Mendeley-owned fields: title/authors/year/doi are not editable here).", input_schema=EditInputs)
+    @action(
+        description="Edit user-settable fields on an existing entry (reference manager fields — title/authors/year/doi — are not editable here).",
+        input_schema=EditInputs,
+    )
     def edit(self, inputs: EditInputs, context: Context) -> MutationResult:
         with self._store.lock():
             queue = self._store.load_queue()
@@ -204,8 +257,11 @@ class ReadingQueue(Tool):
                 updates["tags"] = inputs.tags
             if not updates and inputs.order is None:
                 return MutationResult(
-                    ok=False, id=inputs.id, entry=QueueEntry(**entry),
-                    queue_size=len(queue), banner=self._store.banner_counts(),
+                    ok=False,
+                    id=inputs.id,
+                    entry=QueueEntry(**entry),
+                    queue_size=len(queue),
+                    banner=self._store.banner_counts(),
                     message="No fields supplied; nothing to edit.",
                 )
             # Status already applied via _apply_status_transition; skip it here.
@@ -216,8 +272,11 @@ class ReadingQueue(Tool):
             self._store.save_queue(queue)
             self._log_event("edit", id=inputs.id, fields=sorted(updates.keys()))
             return MutationResult(
-                ok=True, id=inputs.id, entry=QueueEntry(**entry),
-                queue_size=len(queue), banner=self._store.banner_counts(),
+                ok=True,
+                id=inputs.id,
+                entry=QueueEntry(**entry),
+                queue_size=len(queue),
+                banner=self._store.banner_counts(),
                 message=f"Updated {inputs.id!r}: {sorted(updates.keys())}.",
             )
 
@@ -248,7 +307,11 @@ class ReadingQueue(Tool):
                 message=f"Cleared {n} entries from the queue.",
             )
 
-    @action(description="Set or clear a reading deadline on an entry.", input_schema=SetDeadlineInputs, name="set-deadline")
+    @action(
+        description="Set or clear a reading deadline on an entry.",
+        input_schema=SetDeadlineInputs,
+        name="set-deadline",
+    )
     def set_deadline(self, inputs: SetDeadlineInputs, context: Context) -> MutationResult:
         with self._store.lock():
             queue = self._store.load_queue()
@@ -259,8 +322,11 @@ class ReadingQueue(Tool):
             self._store.save_queue(queue)
             self._log_event("set_deadline", id=inputs.id, deadline=entry["deadline"])
             return MutationResult(
-                ok=True, id=inputs.id, entry=QueueEntry(**entry),
-                queue_size=len(queue), banner=self._store.banner_counts(),
+                ok=True,
+                id=inputs.id,
+                entry=QueueEntry(**entry),
+                queue_size=len(queue),
+                banner=self._store.banner_counts(),
                 message=f"Deadline {'set to ' + entry['deadline'] if entry['deadline'] else 'cleared'} for {inputs.id!r}.",
             )
 
@@ -268,11 +334,16 @@ class ReadingQueue(Tool):
     def done(self, inputs: IdOnlyInputs, context: Context) -> MutationResult:
         return self._set_status(inputs.id, "done")
 
-    @action(description="Mark an entry as in-progress (currently reading).", input_schema=IdOnlyInputs)
+    @action(
+        description="Mark an entry as in-progress (currently reading).", input_schema=IdOnlyInputs
+    )
     def start(self, inputs: IdOnlyInputs, context: Context) -> MutationResult:
         return self._set_status(inputs.id, "reading")
 
-    @action(description="Export the queue (or a filtered subset), applying fresh Mendeley metadata.", input_schema=ExportInputs)
+    @action(
+        description="Export the queue (or a filtered subset), applying fresh reference manager metadata.",
+        input_schema=ExportInputs,
+    )
     def export(self, inputs: ExportInputs, context: Context) -> ExportResult:
         queue = self._store.load_queue()
         queue = self._apply_overlay(queue, self._load_mendeley_overlay(context))
@@ -303,7 +374,11 @@ class ReadingQueue(Tool):
             raise ValueError(f"Unsupported format: {inputs.format!r}. Use 'json' or 'markdown'.")
         return ExportResult(format=inputs.format, count=len(filtered), content=content)
 
-    @action(description="Move an entry one position earlier in the reading order.", input_schema=IdOnlyInputs, name="move-up")
+    @action(
+        description="Move an entry one position earlier in the reading order.",
+        input_schema=IdOnlyInputs,
+        name="move-up",
+    )
     def move_up(self, inputs: IdOnlyInputs, context: Context) -> MutationResult:
         with self._store.lock():
             queue = self._store.load_queue()
@@ -313,25 +388,35 @@ class ReadingQueue(Tool):
             # Rank among active entries only (done/removed excluded).
             active = sorted(
                 [e for e in queue if e.get("status") not in ("done", "removed")],
-                key=lambda e: (e.get("order") or 0),
+                key=lambda e: e.get("order") or 0,
             )
             rank = next((i + 1 for i, e in enumerate(active) if e.get("id") == inputs.id), 0)
             if rank <= 1:
                 return MutationResult(
-                    ok=False, id=inputs.id, entry=QueueEntry(**entry),
-                    queue_size=len(queue), banner=self._store.banner_counts(),
+                    ok=False,
+                    id=inputs.id,
+                    entry=QueueEntry(**entry),
+                    queue_size=len(queue),
+                    banner=self._store.banner_counts(),
                     message=f"{inputs.id!r} is already at position 1; can't move up.",
                 )
             self._reorder_move_to(queue, inputs.id, rank - 1)
             self._store.save_queue(queue)
             updated = self._find_entry(queue, inputs.id)
             return MutationResult(
-                ok=True, id=inputs.id, entry=QueueEntry(**updated),
-                queue_size=len(queue), banner=self._store.banner_counts(),
+                ok=True,
+                id=inputs.id,
+                entry=QueueEntry(**updated),
+                queue_size=len(queue),
+                banner=self._store.banner_counts(),
                 message=f"Moved {inputs.id!r} to position {updated.get('order')}.",
             )
 
-    @action(description="Move an entry one position later in the reading order.", input_schema=IdOnlyInputs, name="move-down")
+    @action(
+        description="Move an entry one position later in the reading order.",
+        input_schema=IdOnlyInputs,
+        name="move-down",
+    )
     def move_down(self, inputs: IdOnlyInputs, context: Context) -> MutationResult:
         with self._store.lock():
             queue = self._store.load_queue()
@@ -341,25 +426,35 @@ class ReadingQueue(Tool):
             # Rank among active entries only (done/removed excluded).
             active = sorted(
                 [e for e in queue if e.get("status") not in ("done", "removed")],
-                key=lambda e: (e.get("order") or 0),
+                key=lambda e: e.get("order") or 0,
             )
             rank = next((i + 1 for i, e in enumerate(active) if e.get("id") == inputs.id), 0)
             if rank >= len(active):
                 return MutationResult(
-                    ok=False, id=inputs.id, entry=QueueEntry(**entry),
-                    queue_size=len(queue), banner=self._store.banner_counts(),
+                    ok=False,
+                    id=inputs.id,
+                    entry=QueueEntry(**entry),
+                    queue_size=len(queue),
+                    banner=self._store.banner_counts(),
                     message=f"{inputs.id!r} is already at the last position; can't move down.",
                 )
             self._reorder_move_to(queue, inputs.id, rank + 1)
             self._store.save_queue(queue)
             updated = self._find_entry(queue, inputs.id)
             return MutationResult(
-                ok=True, id=inputs.id, entry=QueueEntry(**updated),
-                queue_size=len(queue), banner=self._store.banner_counts(),
+                ok=True,
+                id=inputs.id,
+                entry=QueueEntry(**updated),
+                queue_size=len(queue),
+                banner=self._store.banner_counts(),
                 message=f"Moved {inputs.id!r} to position {updated.get('order')}.",
             )
 
-    @action(description="Move an entry to a specific position in the reading order.", input_schema=MoveToInputs, name="move-to")
+    @action(
+        description="Move an entry to a specific position in the reading order.",
+        input_schema=MoveToInputs,
+        name="move-to",
+    )
     def move_to(self, inputs: MoveToInputs, context: Context) -> MutationResult:
         with self._store.lock():
             queue = self._store.load_queue()
@@ -370,34 +465,55 @@ class ReadingQueue(Tool):
             self._store.save_queue(queue)
             updated = self._find_entry(queue, inputs.id)
             return MutationResult(
-                ok=True, id=inputs.id, entry=QueueEntry(**updated),
-                queue_size=len(queue), banner=self._store.banner_counts(),
+                ok=True,
+                id=inputs.id,
+                entry=QueueEntry(**updated),
+                queue_size=len(queue),
+                banner=self._store.banner_counts(),
                 message=f"Moved {inputs.id!r} to position {updated.get('order')}.",
             )
 
-    @action(description="Show the configured reading settings.", input_schema=ConfigShowInputs, name="config-show")
+    @action(
+        description="Show the configured reading settings.",
+        input_schema=ConfigShowInputs,
+        name="config-show",
+    )
     def config_show(self, inputs: ConfigShowInputs, context: Context) -> ConfigShowResult:
         from docent.utils.paths import config_file
+
         rs = context.settings.reading
         db = str(rs.database_dir) if rs.database_dir else None
+        key = rs.zotero_api_key
+        masked = (key[:4] + "..." + key[-4:]) if key and len(key) > 8 else ("set" if key else None)
         return ConfigShowResult(
             config_path=str(config_file()),
             database_dir=db,
             queue_collection=rs.queue_collection,
             mendeley_mcp_command=rs.mendeley_mcp_command,
+            reference_manager=rs.reference_manager or "mendeley",
+            zotero_api_key=masked,
+            zotero_library_id=rs.zotero_library_id,
+            zotero_library_type=rs.zotero_library_type,
         )
 
     @action(
-        description="Set a reading setting (database_dir, queue_collection, mendeley_mcp_command).",
+        description=(
+            "Set a reading setting: database_dir, queue_collection, mendeley_mcp_command, "
+            "reference_manager (mendeley|zotero), zotero_api_key, zotero_library_id, zotero_library_type."
+        ),
         input_schema=ConfigSetInputs,
         name="config-set",
     )
     def config_set(self, inputs: ConfigSetInputs, context: Context) -> ConfigSetResult:
         import shlex
+
         from docent.utils.paths import config_file
+
         if inputs.key not in _KNOWN_READING_KEYS:
             return ConfigSetResult(
-                ok=False, key=inputs.key, value=inputs.value,
+                ok=False,
+                key=inputs.key,
+                value=inputs.value,
                 config_path=str(config_file()),
                 message=f"Unknown key {inputs.key!r}. Known: {sorted(_KNOWN_READING_KEYS)}.",
             )
@@ -408,7 +524,9 @@ class ReadingQueue(Tool):
         else:
             path = write_setting(f"reading.{inputs.key}", inputs.value)
         return ConfigSetResult(
-            ok=True, key=inputs.key, value=inputs.value,
+            ok=True,
+            key=inputs.key,
+            value=inputs.value,
             config_path=str(path),
             message=f"Set reading.{inputs.key} = {inputs.value!r} in {path}.",
         )
@@ -423,24 +541,29 @@ class ReadingQueue(Tool):
         try:
             database_dir, err = self._require_database_dir(context)
         except NoInteractiveError as e:
-            return empty.model_copy(update={"message": (
-                f"reading.database_dir not configured. Run "
-                f"`docent reading config-set database_dir <path>` or set "
-                f"DOCENT_READING__DATABASE_DIR. ({e})"
-            )})
+            return empty.model_copy(
+                update={
+                    "message": (
+                        f"reading.database_dir not configured. Run "
+                        f"`docent reading config-set database_dir <path>` or set "
+                        f"DOCENT_READING__DATABASE_DIR. ({e})"
+                    )
+                }
+            )
         if database_dir is None:
-            return empty.model_copy(update={"message": err or "Cancelled — no database folder configured."})
+            return empty.model_copy(
+                update={"message": err or "Cancelled — no database folder configured."}
+            )
         if not database_dir.is_dir():
-            return empty.model_copy(update={
-                "database_dir": str(database_dir),
-                "message": f"database_dir does not exist: {database_dir}.",
-            })
+            return empty.model_copy(
+                update={
+                    "database_dir": str(database_dir),
+                    "message": f"database_dir does not exist: {database_dir}.",
+                }
+            )
         db_pdfs = ReadingQueueStore.list_database_pdfs(database_dir)
         queue = self._store.load_queue()
-        summary = (
-            f"{len(queue)} queue entry/entries, "
-            f"{len(db_pdfs)} PDF(s) in database_dir."
-        )
+        summary = f"{len(queue)} queue entry/entries, {len(db_pdfs)} PDF(s) in database_dir."
         return SyncStatusResult(
             database_dir=str(database_dir),
             queue_size=len(queue),
@@ -450,13 +573,12 @@ class ReadingQueue(Tool):
 
     @action(
         description="Reconcile the local reading queue with the configured reference manager collection (default 'Docent-Queue').",
-        input_schema=SyncFromMendeleyInputs,
+        input_schema=SyncFromLibraryInputs,
         name="sync-from-mendeley",
     )
-    def sync_from_mendeley(self, inputs: SyncFromMendeleyInputs, context: Context):
+    def sync_from_mendeley(self, inputs: SyncFromLibraryInputs, context: Context):
         collection_name = context.settings.reading.queue_collection
-        launch_command = context.settings.reading.mendeley_mcp_command
-        backend = MendeleyBackend(launch_command)
+        backend = self._select_backend(context)
         return sync_from_mendeley_run(
             self._store,
             collection_name,
@@ -467,25 +589,37 @@ class ReadingQueue(Tool):
         )
 
     @action(
+        description="Reconcile the local reading queue with the configured reference manager collection. Canonical name; sync-from-mendeley is the back-compat alias.",
+        input_schema=SyncFromLibraryInputs,
+        name="sync-from-library",
+    )
+    def sync_from_library(self, inputs: SyncFromLibraryInputs, context: Context):
+        return self.sync_from_mendeley(inputs, context)
+
+    @action(
         description="Keep an entry in the reading queue despite it being absent from the reference manager collection. Records that the user made this choice.",
         input_schema=IdOnlyInputs,
         name="clear-library-flag",
     )
     def clear_library_flag(self, inputs: IdOnlyInputs, context: Context) -> MutationResult:
-        from datetime import datetime, timezone
+        from datetime import datetime
+
         with self._store.lock():
             queue = self._store.load_queue()
             entry = self._find_entry(queue, inputs.id)
             if not entry:
                 return self._not_found(inputs.id, queue)
-            entry["not_in_mendeley"] = False
+            entry["not_in_library"] = False
             entry["manually_kept"] = True
-            entry["manually_kept_at"] = datetime.now(timezone.utc).isoformat()
+            entry["manually_kept_at"] = datetime.now(UTC).isoformat()
             self._store.save_queue(queue)
             self._log_event("keep_entry", id=inputs.id, manually_kept=True)
             return MutationResult(
-                ok=True, id=inputs.id, entry=QueueEntry(**entry),
-                queue_size=len(queue), banner=self._store.banner_counts(),
+                ok=True,
+                id=inputs.id,
+                entry=QueueEntry(**entry),
+                queue_size=len(queue),
+                banner=self._store.banner_counts(),
                 message=f"Kept {inputs.id!r} — marked as manually retained (not in library).",
             )
 
@@ -501,7 +635,7 @@ class ReadingQueue(Tool):
         # Only active entries participate; normalize to 1-based before moving.
         active = sorted(
             [e for e in queue if e.get("status") not in ("done", "removed")],
-            key=lambda e: (e.get("order") or 0),
+            key=lambda e: e.get("order") or 0,
         )
         for i, e in enumerate(active):
             e["order"] = i + 1
@@ -545,8 +679,31 @@ class ReadingQueue(Tool):
     ) -> str | None:
         return self._mendeley_cache().get_folder_id(collection_name, launch_command)
 
+    @staticmethod
+    def _select_backend(context: Context):
+        """Pick the reference-manager backend from config.
+
+        Both implement the ``ReferenceManagerBackend`` protocol, so the
+        backend-agnostic ``sync_from_mendeley_run`` engine works with either.
+        """
+        rs = context.settings.reading
+        if (rs.reference_manager or "mendeley").lower() == "zotero":
+            from .zotero_backend import ZoteroBackend
+
+            return ZoteroBackend(
+                rs.zotero_api_key,
+                rs.zotero_library_id,
+                rs.zotero_library_type,
+            )
+        return MendeleyBackend(rs.mendeley_mcp_command)
+
     def _load_mendeley_overlay(self, context: Context) -> dict[str, dict[str, Any]] | None:
         rs = context.settings.reading
+        # Read-through metadata overlay is Mendeley-only. Zotero entries use
+        # their sync-time snapshot (no per-read refresh) — return no overlay so
+        # readers don't try to spawn mendeley-mcp for a Zotero user.
+        if (rs.reference_manager or "mendeley").lower() != "mendeley":
+            return None
         collection_name = rs.queue_collection
         launch_command = rs.mendeley_mcp_command
         folder_id = self._resolve_collection_folder_id_quiet(collection_name, launch_command)
@@ -580,7 +737,7 @@ class ReadingQueue(Tool):
             return queue
         out: list[dict[str, Any]] = []
         for e in queue:
-            mid = e.get("mendeley_id")
+            mid = e.get("reference_id")
             if mid and mid in overlay:
                 out.append(self._overlay_entry(e, overlay[mid]))
             else:
@@ -619,7 +776,10 @@ class ReadingQueue(Tool):
 
     def _not_found(self, entry_id: str, queue: list[dict[str, Any]]) -> MutationResult:
         return MutationResult(
-            ok=False, id=entry_id, entry=None, queue_size=len(queue),
+            ok=False,
+            id=entry_id,
+            entry=None,
+            queue_size=len(queue),
             banner=self._store.banner_counts(),
             message=f"No entry with id {entry_id!r}.",
         )
@@ -628,7 +788,7 @@ class ReadingQueue(Tool):
         """Mutate entry in-place for a status change. Stamps started/finished. Returns previous status."""
         previous = entry.get("status", "queued")
         entry["status"] = status
-        ts = datetime.now().isoformat()
+        ts = datetime.now(UTC).isoformat()
         if status == "reading" and not entry.get("started"):
             entry["started"] = ts
         elif status == "done" and not entry.get("finished"):
@@ -645,8 +805,11 @@ class ReadingQueue(Tool):
             self._store.save_queue(queue)
             self._log_event("set_status", id=entry_id, status=status, previous=previous)
             return MutationResult(
-                ok=True, id=entry_id, entry=QueueEntry(**entry),
-                queue_size=len(queue), banner=self._store.banner_counts(),
+                ok=True,
+                id=entry_id,
+                entry=QueueEntry(**entry),
+                queue_size=len(queue),
+                banner=self._store.banner_counts(),
                 message=f"Set status to {status!r} for {entry_id!r} (was {previous!r}).",
             )
 
@@ -654,9 +817,57 @@ class ReadingQueue(Tool):
         RunLog(self.name).append({"event": event, **fields})
 
 
+def load_queue_for_ui() -> dict[str, Any]:
+    """Return the full overlaid queue state for the FastAPI read endpoint.
+
+    Goes through ReadingQueueStore + Mendeley overlay so the UI sees the
+    same data as CLI and MCP callers.
+    """
+    from docent.core.invoke import make_context
+
+    store = ReadingQueueStore(data_dir() / "reading")
+    ctx = make_context(non_interactive=True, auto_confirm=True)
+
+    rq = ReadingQueue()
+    queue = store.load_queue()
+    overlay = rq._load_mendeley_overlay(ctx)
+    queue = rq._apply_overlay(queue, overlay)
+
+    banner = store.banner_counts()
+    state_path = store.state_path
+    last_updated = None
+    if state_path.exists():
+        import json as _json
+
+        try:
+            last_updated = _json.loads(state_path.read_text(encoding="utf-8")).get("last_updated")
+        except Exception:
+            pass
+
+    rs = ctx.settings.reading
+    database_count: int | None = None
+    if rs.database_dir is not None:
+        db = rs.database_dir.expanduser()
+        if db.is_dir():
+            database_count = len(ReadingQueueStore.list_database_pdfs(db))
+
+    return {
+        "entries": queue,
+        "banner": {
+            "queued": banner.queued,
+            "reading": banner.reading,
+            "done": banner.done,
+        },
+        "last_updated": last_updated,
+        "database_count": database_count,
+    }
+
+
 def on_startup(context) -> None:  # noqa: ARG001
-    from docent.utils.paths import data_dir
     from docent.ui import get_console
+    from docent.utils.paths import data_dir
+
     from .reading_notify import check_deadlines
+
     for alert in check_deadlines(data_dir() / "reading"):
         get_console().print(f"[yellow]READING DEADLINE:[/] {alert}")

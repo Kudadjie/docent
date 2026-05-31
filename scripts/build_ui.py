@@ -56,7 +56,7 @@ def main() -> None:
     # is applied, eliminating the flash entirely.
     _hoist_theme_script(OUT)
 
-    print(f"Copying frontend/out -> src/docent/ui_dist")
+    print("Copying frontend/out -> src/docent/ui_dist")
     if DIST.exists():
         shutil.rmtree(DIST)
     shutil.copytree(OUT, DIST)

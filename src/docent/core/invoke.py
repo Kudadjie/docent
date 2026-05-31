@@ -22,6 +22,7 @@ UI backend (needs JSON string output)::
     from docent.core.invoke import invoke_action_for_ui
     json_str = invoke_action_for_ui("reading", "stats", {})
 """
+
 from __future__ import annotations
 
 import inspect
@@ -32,19 +33,41 @@ from docent.core.context import Context
 from docent.core.registry import all_tools, collect_actions
 
 
-def make_context(*, via_mcp: bool = False) -> Context:
+def make_context(
+    *,
+    via_mcp: bool = False,
+    non_interactive: bool | None = None,
+    auto_confirm: bool | None = None,
+) -> Context:
     """Create a fresh Context with default settings, LLM client, and executor.
 
     Used by MCP and FastAPI, which have no persistent ctx.obj.
     CLI surfaces should use the Context already on ctx.obj.
-    Pass via_mcp=True when building a context for the MCP server.
+
+    Pass ``via_mcp=True`` for the MCP server — it implies ``non_interactive`` and
+    ``auto_confirm`` unless those are set explicitly. Web-UI callers should pass
+    ``non_interactive=True, auto_confirm=True`` (leaving ``via_mcp`` False) so they
+    get non-interactive, pre-confirmed behaviour *without* the MCP-agent output
+    framing.
     """
     from docent.config import load_settings
     from docent.execution import Executor
     from docent.llm import LLMClient
 
+    if non_interactive is None:
+        non_interactive = via_mcp
+    if auto_confirm is None:
+        auto_confirm = via_mcp
+
     settings = load_settings()
-    return Context(settings=settings, llm=LLMClient(settings), executor=Executor(), via_mcp=via_mcp)
+    return Context(
+        settings=settings,
+        llm=LLMClient(settings),
+        executor=Executor(),
+        via_mcp=via_mcp,
+        non_interactive=non_interactive,
+        auto_confirm=auto_confirm,
+    )
 
 
 def run_action(
@@ -123,6 +146,7 @@ def run_action(
 def serialize_result(result: Any) -> str:
     """Convert any action result to a JSON string. Shared by MCP and UI surfaces."""
     from pydantic import BaseModel
+
     if isinstance(result, BaseModel):
         return result.model_dump_json(indent=2)
     try:
@@ -144,11 +168,13 @@ def invoke_action_for_ui(
     from docent.core.events import ProgressEvent
     from docent.core.exceptions import ConfirmationRequired
 
-    ctx = make_context(via_mcp=True)
+    ctx = make_context(non_interactive=True, auto_confirm=True)
     try:
         raw = run_action(tool_name, action_cli_name, arguments, context=ctx)
     except ConfirmationRequired as exc:
-        return json.dumps({"ok": False, "confirmation_required": True, "notes": exc.notes}, indent=2)
+        return json.dumps(
+            {"ok": False, "confirmation_required": True, "notes": exc.notes}, indent=2
+        )
 
     if inspect.isgenerator(raw):
         result_value = None

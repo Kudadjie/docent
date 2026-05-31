@@ -2,14 +2,19 @@
 
 **Tool:** `reading`  
 **Version:** Docent v1.2.0  
-**Last updated:** 2026-05-18  
+**Last updated:** 2026-05-31  
 **Audience:** Designer / frontend developer
 
 ---
 
 ## 1. Overview
 
-The reading queue is a ranked, metadata-rich academic paper tracker that syncs with Mendeley. Papers enter via Mendeley (under a configured collection), are pulled into the local SQLite queue via `sync-from-mendeley`, then navigated and managed through 19 actions. The queue tracks reading order, status, deadlines, course categories, tags, and notes. All actions are available both via CLI (`docent reading <action>`) and MCP (`reading__<action>`).
+The reading queue is a ranked, metadata-rich academic paper tracker that syncs with your
+reference manager (Mendeley or Zotero). Papers enter via the reference manager (under a
+configured collection), are pulled into the local queue via `sync-from-library`, then
+navigated and managed through 19 actions. The queue tracks reading order, status,
+deadlines, course categories, tags, and notes. All actions are available both via CLI
+(`docent reading <action>`) and MCP (`reading__<action>`).
 
 ---
 
@@ -17,12 +22,12 @@ The reading queue is a ranked, metadata-rich academic paper tracker that syncs w
 
 | Action | Input fields | Output type | Notes |
 |--------|-------------|-------------|-------|
-| `add` | _(none)_ | `AddResult` | Guidance-only — explains the add-via-Mendeley workflow. Never mutates queue. |
+| `add` | _(none)_ | `AddResult` | Guidance-only — explains the add-via-reference-manager workflow. Never mutates queue. |
 | `next` | `category: str\|null` | `MutationResult` | Returns lowest-order queued entry, optionally filtered by category prefix. |
 | `show` | `id: str` (req) | `MutationResult` | Full details for one entry. |
 | `search` | `query: str` (req) | `SearchResult` | Case-insensitive substring across title, authors, notes, category, id, tags. |
 | `stats` | _(none)_ | `StatsResult` | Queue counts by status and category. |
-| `edit` | `id: str` (req), `status`, `order`, `type`, `category`, `deadline`, `notes`, `tags` (all optional) | `MutationResult` | Edits user-settable fields only. Mendeley-owned fields (title, authors, year, doi) are read-only. |
+| `edit` | `id: str` (req), `status`, `order`, `type`, `category`, `deadline`, `notes`, `tags` (all optional) | `MutationResult` | Edits user-settable fields only. Reference-manager-owned fields (title, authors, year, doi) are read-only. |
 | `set-deadline` | `id: str` (req), `deadline: str` (req) | `MutationResult` | Set or clear deadline. Pass `""` to clear. |
 | `done` | `id: str` (req) | `MutationResult` | Mark as done. Sets `finished` timestamp. Irreversible. |
 | `start` | `id: str` (req) | `MutationResult` | Mark as reading. Sets `started` timestamp. Irreversible. |
@@ -30,11 +35,11 @@ The reading queue is a ranked, metadata-rich academic paper tracker that syncs w
 | `move-up` | `id: str` (req) | `MutationResult` | Decrement position by 1. No-op at position 1. |
 | `move-down` | `id: str` (req) | `MutationResult` | Increment position by 1. No-op at last position. |
 | `move-to` | `id: str` (req), `position: int ≥ 1` (req) | `MutationResult` | Move to explicit position. Reorders contiguously. |
-| `export` | `format: "json"\|"markdown"` (default `json`), `category: str\|null`, `status: str\|null` | `ExportResult` | Export full queue with fresh Mendeley metadata. |
-| `sync-from-mendeley` | `dry_run: bool` (default `false`) | `SyncFromMendeleyResult` | Pull from Mendeley collection. Generator — yields progress. |
+| `export` | `format: "json"\|"markdown"` (default `json`), `category: str\|null`, `status: str\|null` | `ExportResult` | Export full queue with fresh reference manager metadata. |
+| `sync-from-library` | `dry_run: bool` (default `false`) | `SyncFromLibraryResult` | Pull from configured reference manager collection. Generator — yields progress. Alias: `sync-from-mendeley`. |
 | `sync-status` | _(none)_ | `SyncStatusResult` | Show queue size vs PDF database stats. |
 | `config-show` | _(none)_ | `ConfigShowResult` | Show reading settings. |
-| `config-set` | `key: str` (req), `value: str` (req) | `ConfigSetResult` | Set `database_dir`, `queue_collection`, or `mendeley_mcp_command`. |
+| `config-set` | `key: str` (req), `value: str` (req) | `ConfigSetResult` | Set `database_dir`, `queue_collection`, `reference_manager`, or `mendeley_mcp_command`. |
 | `queue-clear` | `yes: bool` (default `false`) | `QueueClearResult` | Wipe all entries. Without `yes=true`, reports count and exits without mutating. |
 
 ---
@@ -42,8 +47,8 @@ The reading queue is a ranked, metadata-rich academic paper tracker that syncs w
 ## 3. Primary Flows
 
 ### Flow 1 — Add paper and sync
-1. User adds a PDF to Mendeley under the `Docent-Queue` collection (or whichever `queue_collection` is configured)
-2. User runs `sync-from-mendeley` (or calls `reading__sync_from_mendeley`)
+1. User adds a PDF to their reference manager under the `Docent-Queue` collection (or whichever `queue_collection` is configured)
+2. User runs `sync-from-library` (or calls `reading__sync_from_library`)
 3. Result shows: added count, unchanged count, removed count, failed count
 4. Added entries appear in results with `id`, `title`
 
@@ -79,23 +84,23 @@ The reading queue is a ranked, metadata-rich academic paper tracker that syncs w
 | Field | Type | Description |
 |-------|------|-------------|
 | `id` | `str` | Unique slug, e.g. `"smith-2024-storm-surge"` |
-| `title` | `str` | Paper title — Mendeley-owned, refreshed on sync |
-| `authors` | `str` | Semicolon-separated authors — Mendeley-owned |
-| `year` | `int\|null` | Publication year — Mendeley-owned |
-| `doi` | `str\|null` | DOI — Mendeley-owned |
-| `type` | `str` | `paper` \| `book` \| `book_chapter` — mapped from Mendeley document type |
+| `title` | `str` | Paper title — reference-manager-owned, refreshed on sync |
+| `authors` | `str` | Semicolon-separated authors — reference-manager-owned |
+| `year` | `int\|null` | Publication year — reference-manager-owned |
+| `doi` | `str\|null` | DOI — reference-manager-owned |
+| `type` | `str` | `paper` \| `book` \| `book_chapter` — mapped from reference manager document type |
 | `added` | `str` | ISO date added to queue |
 | `status` | `str` | `queued` \| `reading` \| `done` |
 | `order` | `int` | 1-based reading position; `0` = unordered |
-| `category` | `str\|null` | Mendeley sub-collection path, e.g. `"CES701"` or `"CES701/Topic"` |
+| `category` | `str\|null` | Reference manager sub-collection path, e.g. `"CES701"` or `"CES701/Topic"` |
 | `deadline` | `str\|null` | ISO date deadline (YYYY-MM-DD) |
 | `tags` | `list[str]` | User-defined tags |
 | `notes` | `str` | User notes |
-| `mendeley_id` | `str\|null` | Mendeley internal ID |
+| `reference_id` | `str\|null` | Reference manager internal ID (Mendeley GUID or Zotero item key) |
 | `started` | `str\|null` | ISO timestamp when status → reading |
 | `finished` | `str\|null` | ISO timestamp when status → done |
 
-**Invariant:** Every entry requires at least one of `doi` or `mendeley_id`. Entries without either are rejected at creation.
+**Invariant:** Every entry requires at least one of `doi` or `reference_id`. Entries without either are rejected at creation.
 
 ### MutationResult
 Used by: `next`, `show`, `edit`, `set-deadline`, `done`, `start`, `remove`, `move-up`, `move-down`, `move-to`
@@ -144,20 +149,22 @@ Used by: `next`, `show`, `edit`, `set-deadline`, `done`, `start`, `remove`, `mov
 
 **Shapes rendered:** `MetricShape(Total)`, `DataTableShape(Status/Count)`, `DataTableShape(Category/Count)`.
 
-### SyncFromMendeleyResult
+### SyncFromLibraryResult
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `queue_collection` | `str` | Collection name synced from |
-| `folder_id` | `str\|null` | Mendeley folder ID (`null` if collection not found) |
-| `added` | `list[dict]` | `{id, mendeley_id, title}` for each added entry |
+| `folder_id` | `str\|null` | Reference manager folder/group ID (`null` if collection not found) |
+| `added` | `list[dict]` | `{id, reference_id, title}` for each added entry |
 | `unchanged` | `list[str]` | Entry ids that were already up to date |
-| `removed` | `list[str]` | Entry ids removed from queue (no longer in collection) |
-| `failed` | `list[dict]` | `{mendeley_id, error}` for entries that failed to sync |
+| `flagged` | `list[str]` | Entry ids newly absent from all collections (pending user decision) |
+| `cleared` | `list[str]` | Entry ids whose absence flag was cleared (returned to collection) |
+| `removed` | `list[str]` | Entry ids removed from queue (user action, not sync) |
+| `failed` | `list[dict]` | `{reference_id, error}` for entries that failed to sync |
 | `dry_run_added` | `list[dict]` | Preview of what would be added (dry-run only) |
 | `dry_run_removed` | `list[str]` | Preview of what would be removed (dry-run only) |
 | `summary` | `str` | One-line summary |
-| `message` | `str` | Early-exit reason (collection missing, MCP error, etc.) |
+| `message` | `str` | Early-exit reason (collection missing, MCP/API error, etc.) |
 
 **Shapes rendered:** If `message` is non-empty (early exit), shows `MessageShape(warning)`. Otherwise: collection name metric, added/unchanged/removed/failed metrics, optional data tables for added and failed entries (capped at 10 rows each).
 
@@ -185,8 +192,12 @@ Used by: `next`, `show`, `edit`, `set-deadline`, `done`, `start`, `remove`, `mov
 |-------|------|-------------|
 | `config_path` | `str` | Absolute path to `config.toml` |
 | `database_dir` | `str\|null` | PDF database directory |
-| `queue_collection` | `str` | Mendeley collection name |
-| `mendeley_mcp_command` | `list[str]\|null` | Mendeley MCP launch command |
+| `queue_collection` | `str` | Reference manager collection name to sync from |
+| `reference_manager` | `str` | Active backend: `mendeley` or `zotero` |
+| `mendeley_mcp_command` | `list[str]\|null` | Mendeley MCP launch command (Mendeley only) |
+| `zotero_api_key` | `str\|null` | Zotero API key — masked in display (Zotero only) |
+| `zotero_library_id` | `str\|null` | Zotero numeric library ID (Zotero only) |
+| `zotero_library_type` | `str\|null` | `user` or `group` (Zotero only) |
 
 ### ConfigSetResult / AddResult / QueueClearResult
 
@@ -200,17 +211,17 @@ Standard result shapes — `ok: bool`, `message: str`, plus relevant counts/bann
 - All id-based actions: `MutationResult(ok=False, id="", entry=null, message="No entry with id '…'")`
 
 ### `add` — guidance only
-- `add` never creates an entry — it returns markdown instructions explaining how to add via Mendeley and then run `sync-from-mendeley`. The result `added=false`.
+- `add` never creates an entry — it returns markdown instructions explaining how to add via the reference manager and then run `sync-from-library`. The result `added=false`.
 
 ### `queue-clear` without confirmation
 - Without `yes=true`: returns `QueueClearResult(cleared=false, removed_count=0, message="Queue has N entries. Pass --yes to clear.")` — no mutation.
 - With `yes=true`: wipes all entries, returns count.
 
-### `sync-from-mendeley` — collection not found
-- Returns early with `message="Collection '{name}' not found in Mendeley. Check queue_collection config."` and `folder_id=null`. No mutations.
+### `sync-from-library` — collection not found
+- Returns early with `message="Collection '{name}' not found. Check queue_collection config."` and `folder_id=null`. No mutations.
 
-### `sync-from-mendeley` — Mendeley MCP unavailable
-- Returns early with `message` containing the MCP connection error. No mutations.
+### `sync-from-library` — reference manager unavailable
+- Returns early with `message` containing the connection error (MCP error for Mendeley; API/network error for Zotero). No mutations.
 
 ### `set-deadline` — clearing
 - Pass `deadline=""` to clear an existing deadline. Clearing a deadline that wasn't set is a no-op (success).
@@ -218,8 +229,8 @@ Standard result shapes — `ok: bool`, `message: str`, plus relevant counts/bann
 ### `export` — empty result
 - Returns `ExportResult(count=0, content="[]" or "")` — not an error.
 
-### `edit` — Mendeley-owned fields
-- `title`, `authors`, `year`, `doi` are NOT editable via `edit`. The action silently ignores any attempt. These refresh on `sync-from-mendeley`. Only `status`, `order`, `type`, `category`, `deadline`, `notes`, `tags` are user-settable.
+### `edit` — reference-manager-owned fields
+- `title`, `authors`, `year`, `doi` are NOT editable via `edit`. The action silently ignores any attempt. These refresh on `sync-from-library`. Only `status`, `order`, `type`, `category`, `deadline`, `notes`, `tags` are user-settable.
 
 ### `move-up` at position 1 / `move-down` at last position
 - No-op: returns the entry unchanged with `message="Already at top"` or `"Already at bottom"`.
@@ -232,11 +243,11 @@ Standard result shapes — `ok: bool`, `message: str`, plus relevant counts/bann
 ## 6. Design Invariants
 
 - **Order is 1-based and contiguous.** Positions are integers starting at 1. `move-up`, `move-down`, `move-to` all maintain contiguity — the implementation re-numbers adjacent entries. The UI must not display order values as gaps.
-- **Mendeley owns title / authors / year / doi.** These four fields are populated from Mendeley on sync and cannot be edited via `edit`. The UI should render them read-only and note they refresh on sync.
+- **Reference manager owns title / authors / year / doi.** These four fields are populated from the reference manager on sync and cannot be edited via `edit`. The UI should render them read-only and note they refresh on sync.
 - **`done`, `start`, `remove` are irreversible.** `started` and `finished` timestamps are set once and never overwritten. There is no undo. The UI should present these as destructive actions.
 - **`queue-clear` requires `yes=true`.** Without it, the action is a no-op that reports the entry count. The UI must show a confirmation gate.
-- **`add` is guidance-only.** Papers enter via Mendeley → `sync-from-mendeley`. The `add` action only returns an explanation. The UI should not present `add` as a way to create entries directly.
-- **`sync-from-mendeley` is a generator.** It yields progress events before returning the final result. The UI should stream these as live log lines.
+- **`add` is guidance-only.** Papers enter via the reference manager → `sync-from-library`. The `add` action only returns an explanation. The UI should not present `add` as a way to create entries directly.
+- **`sync-from-library` is a generator.** It yields progress events before returning the final result. The UI should stream these as live log lines.
 - **`next` filters by category prefix.** Passing `category="CES701"` matches entries with category `"CES701"` or `"CES701/Topic"` or any deeper path starting with that prefix.
 - **BannerCounts drive sidebar badges.** Every mutation returns `banner` counts so the UI can update badges (queued count, reading count, overdue, due-soon) without a separate `stats` call.
 - **API key masking.** Config values that look like API keys are masked. The UI should not display raw API key values.

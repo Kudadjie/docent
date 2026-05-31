@@ -12,6 +12,7 @@ work for most use cases.
 Verification pattern inspired by Academic Research Skills (Cheng-I Wu, CC-BY-NC 4.0):
   https://github.com/Imbad0202/academic-research-skills
 """
+
 from __future__ import annotations
 
 import logging
@@ -52,9 +53,7 @@ class CitationReport:
         lines = ["## Citation Verification\n"]
         total = len(self.verified) + len(self.unverified)
         if total == 0:
-            lines.append(
-                "*No citable identifiers (DOIs or arXiv IDs) found in this document.*\n"
-            )
+            lines.append("*No citable identifiers (DOIs or arXiv IDs) found in this document.*\n")
             return "\n".join(lines)
 
         lines.append(

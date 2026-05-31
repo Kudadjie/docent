@@ -16,6 +16,7 @@ Return shape is `{"items": list, "error": str | None}`:
 Callers bucket on `error` prefix. Lazy-imports `mcp` so importing this
 module is cheap; the SDK is only loaded when a function actually runs.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -50,7 +51,9 @@ def _classify_error(message: str) -> str:
     return "tool"
 
 
-async def _call_tool(launch_command: list[str], tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+async def _call_tool(
+    launch_command: list[str], tool_name: str, arguments: dict[str, Any]
+) -> dict[str, Any]:
     # Lazy import: keeps `paper.py` import path free of the mcp SDK.
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
@@ -70,9 +73,17 @@ async def _call_tool(launch_command: list[str], tool_name: str, arguments: dict[
                 await session.initialize()
                 result = await session.call_tool(tool_name, arguments)
     except FileNotFoundError as e:
-        return {"items": [], "error": f"transport: launch command not found ({e})", "maybe_truncated": False}
+        return {
+            "items": [],
+            "error": f"transport: launch command not found ({e})",
+            "maybe_truncated": False,
+        }
     except Exception as e:  # noqa: BLE001 — surfaces stdio_client / session errors uniformly.
-        return {"items": [], "error": f"transport: {type(e).__name__}: {e}", "maybe_truncated": False}
+        return {
+            "items": [],
+            "error": f"transport: {type(e).__name__}: {e}",
+            "maybe_truncated": False,
+        }
 
     parsed = _parse_text_payload(result)
 

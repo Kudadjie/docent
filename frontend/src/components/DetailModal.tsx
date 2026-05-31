@@ -112,7 +112,7 @@ export default function DetailModal({ entry, dark, onClose }: Props) {
           </div>
 
           {/* Library status banner — only when a flag is set */}
-          {(entry.not_in_mendeley || entry.manually_kept || entry.not_in_parent_collection) && (
+          {(entry.not_in_library || entry.manually_kept || entry.not_in_parent_collection) && (
             <div style={{ borderRadius: 8, border: '1px solid var(--border-md)', overflow: 'hidden' }}>
               {entry.manually_kept && (
                 <div style={{ display: 'flex', gap: 10, padding: '10px 14px', background: 'var(--bg-subtle)' }}>
@@ -130,7 +130,7 @@ export default function DetailModal({ entry, dark, onClose }: Props) {
                   </div>
                 </div>
               )}
-              {entry.not_in_mendeley && !entry.manually_kept && (
+              {entry.not_in_library && !entry.manually_kept && (
                 <div style={{ display: 'flex', gap: 10, padding: '10px 14px', background: 'rgba(195,125,13,0.06)' }}>
                   <AlertTriangle size={14} strokeWidth={1.5} color="#C37D0D" style={{ flexShrink: 0, marginTop: 1 }} />
                   <div>
@@ -144,7 +144,7 @@ export default function DetailModal({ entry, dark, onClose }: Props) {
                 </div>
               )}
               {entry.not_in_parent_collection && (
-                <div style={{ display: 'flex', gap: 10, padding: '10px 14px', background: 'rgba(59,130,246,0.05)', borderTop: (entry.not_in_mendeley || entry.manually_kept) ? '1px solid var(--border)' : undefined }}>
+                <div style={{ display: 'flex', gap: 10, padding: '10px 14px', background: 'rgba(59,130,246,0.05)', borderTop: (entry.not_in_library || entry.manually_kept) ? '1px solid var(--border)' : undefined }}>
                   <Info size={14} strokeWidth={1.5} color="#3B82F6" style={{ flexShrink: 0, marginTop: 1 }} />
                   <div>
                     <div style={{ fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500, color: 'var(--fg1)' }}>
@@ -177,9 +177,9 @@ export default function DetailModal({ entry, dark, onClose }: Props) {
             <span style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>{entry.id}</span>
           </Field>
 
-          {entry.mendeley_id && (
+          {entry.reference_id && (
             <Field label="Reference ID">
-              <span style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>{entry.mendeley_id}</span>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>{entry.reference_id}</span>
             </Field>
           )}
 

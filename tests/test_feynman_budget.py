@@ -1,4 +1,5 @@
 """Tests for Feynman error handling and resolution."""
+
 from __future__ import annotations
 
 import inspect
@@ -9,14 +10,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import docent.bundled_plugins.studio as rtn
-import docent.bundled_plugins.studio.feynman as feynman_mod
 from docent.bundled_plugins.studio import (
     DeepInputs,
     FeynmanNotFoundError,
-    ResearchResult,
     StudioTool,
     _extract_feynman_cost,
-    _run_feynman,
 )
 from docent.config.settings import ResearchSettings, Settings
 from docent.core.context import Context
@@ -55,7 +53,10 @@ class TestFindFeynman:
     """Tests for _find_feynman executable resolution."""
 
     def test_configured_command_found_on_path(self):
-        with patch("docent.bundled_plugins.studio.feynman.shutil.which", return_value="/usr/local/bin/feynman"):
+        with patch(
+            "docent.bundled_plugins.studio.feynman.shutil.which",
+            return_value="/usr/local/bin/feynman",
+        ):
             result = rtn._find_feynman(["feynman"])
         assert result == ["/usr/local/bin/feynman"]
 
@@ -66,14 +67,15 @@ class TestFindFeynman:
             assert "feynman" in str(exc_info.value)
 
     def test_fallback_to_none_command_finds_on_path(self):
-        with patch("docent.bundled_plugins.studio.feynman.shutil.which", return_value="/usr/bin/feynman"):
+        with patch(
+            "docent.bundled_plugins.studio.feynman.shutil.which", return_value="/usr/bin/feynman"
+        ):
             result = rtn._find_feynman(None)
         assert result == ["/usr/bin/feynman"]
 
     def test_fallback_to_none_command_windows_npm(self, monkeypatch):
         monkeypatch.setattr("docent.bundled_plugins.studio.feynman.shutil.which", lambda _: None)
         monkeypatch.setenv("APPDATA", "/fake/appdata")
-        npm_path = Path("/fake/appdata/npm/feynman.cmd")
         monkeypatch.setattr(
             "docent.bundled_plugins.studio.feynman.Path.is_file",
             lambda self: str(self).endswith("feynman.cmd"),
@@ -107,9 +109,8 @@ class TestFeynmanNotFoundError:
 class TestSummarizeFeynmanError:
     def test_quota_exhausted_json_lines(self):
         from docent.bundled_plugins.studio import _summarize_feynman_error
-        stderr = (
-            '{"model":"gemini-3.1-pro","errorMessage":"{\\"error\\":{\\"code\\":429,\\"status\\":\\"RESOURCE_EXHAUSTED\\"}}"}\n'
-        )
+
+        stderr = '{"model":"gemini-3.1-pro","errorMessage":"{\\"error\\":{\\"code\\":429,\\"status\\":\\"RESOURCE_EXHAUSTED\\"}}"}\n'
         msg = _summarize_feynman_error(stderr)
         assert "quota exhausted" in msg.lower()
         assert "gemini-3.1-pro" in msg
@@ -117,70 +118,64 @@ class TestSummarizeFeynmanError:
 
     def test_auth_failure(self):
         from docent.bundled_plugins.studio import _summarize_feynman_error
-        stderr = (
-            '{"model":"anthropic/claude-sonnet-4-5","errorMessage":"{\\"error\\":{\\"code\\":401}}"}\n'
-        )
+
+        stderr = '{"model":"anthropic/claude-sonnet-4-5","errorMessage":"{\\"error\\":{\\"code\\":401}}"}\n'
         msg = _summarize_feynman_error(stderr)
         assert "auth" in msg.lower()
         assert "feynman setup" in msg.lower()
 
     def test_unknown_error(self):
         from docent.bundled_plugins.studio import _summarize_feynman_error
-        stderr = (
-            '{"model":"openai/gpt-4o","errorMessage":"{\\"error\\":{\\"code\\":500,\\"message\\":\\"server error\\"}}"}\n'
-        )
+
+        stderr = '{"model":"openai/gpt-4o","errorMessage":"{\\"error\\":{\\"code\\":500,\\"message\\":\\"server error\\"}}"}\n'
         msg = _summarize_feynman_error(stderr)
         assert "code 500" in msg
         assert "openai/gpt-4o" in msg
 
     def test_empty_stderr(self):
         from docent.bundled_plugins.studio import _summarize_feynman_error
+
         msg = _summarize_feynman_error("")
         assert "feynman" in msg.lower()
         assert "Model attempted" in msg  # model attribution now shown via _model_note
 
     def test_invalid_model(self):
         from docent.bundled_plugins.studio import _summarize_feynman_error
-        stderr = (
-            '{"model":"openai/gpt-5","errorMessage":"{\\"error\\":{\\"code\\":400,\\"message\\":\\"model not found\\"}}"}\n'
-        )
+
+        stderr = '{"model":"openai/gpt-5","errorMessage":"{\\"error\\":{\\"code\\":400,\\"message\\":\\"model not found\\"}}"}\n'
         msg = _summarize_feynman_error(stderr)
         assert "model" in msg.lower()
         assert "feynman model list" in msg.lower()
 
     def test_server_error(self):
         from docent.bundled_plugins.studio import _summarize_feynman_error
-        stderr = (
-            '{"model":"anthropic/claude-sonnet-4-5","errorMessage":"{\\"error\\":{\\"code\\":503}}"}\n'
-        )
+
+        stderr = '{"model":"anthropic/claude-sonnet-4-5","errorMessage":"{\\"error\\":{\\"code\\":503}}"}\n'
         msg = _summarize_feynman_error(stderr)
         assert "server error" in msg.lower()
         assert "anthropic" in msg.lower()
 
     def test_rate_limited(self):
         from docent.bundled_plugins.studio import _summarize_feynman_error
+
         # code 429 from OpenAI with "rate limit exceeded" → quota exhaustion path
         # (429 is always treated as quota for billing purposes; true rate-limits
         # have code 0 with "rate limit" in the message text)
-        stderr = (
-            '{"model":"openai/gpt-4o","errorMessage":"{\\"error\\":{\\"code\\":429,\\"message\\":\\"rate limit exceeded\\"}}"}\n'
-        )
+        stderr = '{"model":"openai/gpt-4o","errorMessage":"{\\"error\\":{\\"code\\":429,\\"message\\":\\"rate limit exceeded\\"}}"}\n'
         msg = _summarize_feynman_error(stderr)
         assert "quota exhausted" in msg.lower()
 
     def test_timeout(self):
         from docent.bundled_plugins.studio import _summarize_feynman_error
-        stderr = (
-            '{"model":"openai/gpt-4o","errorMessage":"{\\"error\\":{\\"code\\":0,\\"message\\":\\"request timeout\\"}}"}\n'
-        )
+
+        stderr = '{"model":"openai/gpt-4o","errorMessage":"{\\"error\\":{\\"code\\":0,\\"message\\":\\"request timeout\\"}}"}\n'
         msg = _summarize_feynman_error(stderr)
         assert "timed out" in msg.lower()
 
     def test_with_configured_model(self):
         from docent.bundled_plugins.studio import _summarize_feynman_error
-        stderr = (
-            '{"model":"gemini-3.1-pro","errorMessage":"{\\"error\\":{\\"code\\":429,\\"status\\":\\"RESOURCE_EXHAUSTED\\"}}"}\n'
-        )
+
+        stderr = '{"model":"gemini-3.1-pro","errorMessage":"{\\"error\\":{\\"code\\":429,\\"status\\":\\"RESOURCE_EXHAUSTED\\"}}"}\n'
         msg = _summarize_feynman_error(stderr, configured_model="anthropic/claude-sonnet-4-5")
         assert "Docent configured" in msg
         assert "anthropic/claude-sonnet-4-5" in msg
@@ -188,8 +183,9 @@ class TestSummarizeFeynmanError:
 
     def test_raw_text_fallback(self):
         from docent.bundled_plugins.studio import _summarize_feynman_error
+
         # Plain text with no recognizable patterns — falls back to showing tail
-        stderr = 'Error: something went wrong with the agent runtime'
+        stderr = "Error: something went wrong with the agent runtime"
         msg = _summarize_feynman_error(stderr)
         assert "Feynman exited with an error" in msg
         assert "something went wrong" in msg
@@ -198,9 +194,8 @@ class TestSummarizeFeynmanError:
     def test_footer_includes_feynman_cli_hint(self):
         """Every error message should include the Feynman CLI adjustment hint."""
         from docent.bundled_plugins.studio import _summarize_feynman_error
-        stderr = (
-            '{"model":"openai/gpt-4o","errorMessage":"{\\"error\\":{\\"code\\":429,\\"status\\":\\"RESOURCE_EXHAUSTED\\"}}"}\n'
-        )
+
+        stderr = '{"model":"openai/gpt-4o","errorMessage":"{\\"error\\":{\\"code\\":429,\\"status\\":\\"RESOURCE_EXHAUSTED\\"}}"}\n'
         msg = _summarize_feynman_error(stderr)
         assert "Adjust Feynman settings via its CLI" in msg
         assert "Feynman-native options" in msg
@@ -208,6 +203,7 @@ class TestSummarizeFeynmanError:
     def test_regex_fallback_extracts_model(self):
         """Regex fallback should show the model extracted from stderr text."""
         from docent.bundled_plugins.studio import _summarize_feynman_error
+
         stderr = 'some log text... {"model":"openai/gpt-4o","code":429} ...traceback...'
         msg = _summarize_feynman_error(stderr)
         assert "openai/gpt-4o" in msg
