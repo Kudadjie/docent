@@ -1,18 +1,15 @@
 # CONTEXT - resume hint for next session
 
-**Current Task:** Citation scavenger + UX polish shipped. PR dev → main still pending.
+**Current Task:** Tier-4 B fan-out + --expand-citations fully shipped (694 tests green, Win).
 
 **Key Decisions:**
-- cite-graph is a pure discovery list (no downloads, no RM writes) — S2 citation
-  graph + OA filter + abstract preview; user adds interesting papers to their RM.
-- Zotero ingestion friction is a known arch limitation (no watch folder); tip added
-  to HowToAddModal: select collection in Zotero desktop before clicking connector.
-- Browser extension idea explored and dropped — doesn't remove steps, can't touch
-  paywalled PDFs, real fix is aiming the connector at Docent-Queue collection.
+- `fanout.py: parallel_fetch()` — ThreadPoolExecutor, submission-order results, per-task
+  None on failure; inserted at action layer (not pipeline internals).
+- `--expand-citations` on deep-research + lit (docent backend): parallel cite-graph fetch
+  on top anchor DOIs → enrichment LLM pass (citation_enricher.md) synthesises OA abstracts
+  into draft; quality guard (≥50% original length); fallback to appended list if it fails.
+- UI toggle added to FormTopic (deep/lit only, dimmed with note on non-Docent backends).
 
 **Next Steps:**
-- PR dev → main (672 passed on Windows; run WSL before merging).
-- Tier-4 B fan-out primitive — two consumers identified: parallel cite-graph calls
-  in deep-research --expand-citations, + parallel Tavily search plan queries.
-- deep-research --expand-citations flag: after S2 keyword search, run cite-graph
-  on top 2–3 anchor DOIs concurrently, add OA abstracts to source pool.
+- Run WSL test suite before merging (CI runs Linux — mandatory gate).
+- PR dev → main.

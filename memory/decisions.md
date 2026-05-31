@@ -227,3 +227,13 @@ Live entries below cover the most recent work; older active decisions are still 
 **Why:** Back-compat aliases let external code (MCP clients, scripts) import old names without breaking. Key-based version detection is cheap and conservative (sees `mendeley_id` key → v1). Genuinely Mendeley-specific functions (`extract_mendeley_id`, `normalize_mendeley_authors`, `build_entry_from_mendeley`) left named as-is — they operate on Mendeley API responses, not queue entries.
 **Alternatives rejected:** Hard rename without aliases — breaks external importers. Single combined PR — wave approach let hygiene land clean before structural changes. Renaming `mendeley_backend.py`/`mendeley_client.py`/`mendeley_cache.py` — those are genuinely Mendeley-specific; renaming would add confusion not clarity.
 **Status:** Active. 633 tests (Windows). WSL run pending before PR to main.
+
+---
+
+## 2026-05-31 — --expand-citations enrichment: Option B (post-synthesis LLM pass)
+
+**Context:** First implementation of `--expand-citations` appended a `## Related Papers` discovery list after the pipeline had already finished writing. The draft writer never saw the citation graph papers. User confirmed it looked correct but asked whether the papers were actually synthesised — they were not.
+**Decision:** Option B — post-synthesis enrichment pass. After `_expand_citations()` returns OA papers, build a `papers_text` block of titles + abstracts, run a single `backend.call(citation_enricher_prompt, ...)` that asks the model to weave relevant insights into the existing draft. Quality guard: if enrichment output < 50% of original length (model returned a diff/summary instead of the full draft), discard and keep original. If enrichment fails entirely, fall back to appending the `## Related Papers` list.
+**Why:** Option A (inject sources into pipeline before writer) would require threading the flag through generator functions and into `_run_tavily_pipeline`/`_run_pipeline` — invasive, and can't inject into Tavily's black-box synthesis anyway. Option B is one extra call at the action layer, requires no pipeline changes, and degrades gracefully. The quality guard (50% floor) mirrors the existing verifier/refiner guards already in the pipeline — same pattern, same reasoning.
+**Alternatives rejected:** Option A (pre-writer injection) — Tavily pipeline can't accept injected sources; manual pipeline would need structural changes. Keep-as-list with clearer label — discovery-only was insufficient for the use case; user explicitly wanted synthesis.
+**Status:** Active. `agents/citation_enricher.md` + enrichment call in both `deep_research` and `lit` docent paths. 694 tests (Windows). Commits `5689d7a` (fan-out + flag) → `7d40943` (enrichment).
