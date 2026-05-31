@@ -11,7 +11,6 @@ wheels/
 
 # Virtual environments
 .venv
-.venv-wsl
 
 # Local agent / Claude Code state
 .claude/
@@ -21,11 +20,17 @@ claudemap-*.json
 
 skills/*
 
-txt/*
+keystone_project.txt
+readingtool-tweaks.txt
+concerns.txt
 
-# Development context — tracked on dev, not on main
+# Development context — not tracked on main
 CLAUDE.md
 CLAUDE.performance.md
+CONTEXT.md
+memory/
+oc_briefs/
+.mcp.json
 
 # Secrets and local config
 .env
@@ -47,6 +52,4 @@ Desktop.ini
 *.sqlite
 
 # Local gstack security reports and session data
-.gstack/src/docent/_version.py
-
 .gstack/
