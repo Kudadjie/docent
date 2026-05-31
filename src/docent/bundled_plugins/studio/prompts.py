@@ -44,6 +44,8 @@ PROMPT_NAMES: frozenset[str] = frozenset(
         # NotebookLM quality gates (to-notebook)
         "quality_gate",
         "perspectives",
+        # citation graph enrichment (--expand-citations)
+        "citation_enricher",
     }
 )
 

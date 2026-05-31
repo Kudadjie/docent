@@ -238,6 +238,28 @@ class ResearchMixin:
                             phase="expand_citations",
                             message=f"Added {len(extra_sources)} open-access related paper(s) from citation graph.",
                         )
+                        papers_text = "\n\n".join(
+                            f"**{s['title']}** ({s.get('year', '?')})\n{s['snippet']}"
+                            for s in extra_sources if s.get("snippet")
+                        )
+                        if papers_text:
+                            yield ProgressEvent(
+                                phase="expand_citations",
+                                message="Enriching draft with citation graph insights...",
+                            )
+                            try:
+                                from .prompts import load_prompt as _load_prompt
+                                enrich_prompt = (
+                                    _load_prompt("citation_enricher")
+                                    .replace("{draft}", result_data["draft"])
+                                    .replace("{papers_text}", papers_text)
+                                )
+                                enriched = backend.call(enrich_prompt, role="writer", timeout=600)
+                                if enriched and len(enriched) >= len(result_data["draft"]) * 0.5:
+                                    result_data["draft"] = enriched
+                                    cite_section = ""  # insights absorbed into draft
+                            except Exception as _ee:
+                                logger.warning("Citation enrichment call failed: %s", _ee)
                 except Exception as _ce:
                     logger.warning("Citation expansion failed: %s", _ce)
 
@@ -246,7 +268,7 @@ class ResearchMixin:
             sources_file = output_dir / f"{slug}-sources.json"
 
             draft_text = result_data["draft"]
-            if cite_section:
+            if cite_section:  # only appended when enrichment was skipped or failed
                 draft_text = draft_text + "\n\n" + cite_section
             draft_with_refs = _append_references(
                 draft_text, result_data.get("sources", [])
@@ -456,6 +478,28 @@ class ResearchMixin:
                             phase="expand_citations",
                             message=f"Added {len(extra_sources)} open-access related paper(s) from citation graph.",
                         )
+                        papers_text = "\n\n".join(
+                            f"**{s['title']}** ({s.get('year', '?')})\n{s['snippet']}"
+                            for s in extra_sources if s.get("snippet")
+                        )
+                        if papers_text:
+                            yield ProgressEvent(
+                                phase="expand_citations",
+                                message="Enriching draft with citation graph insights...",
+                            )
+                            try:
+                                from .prompts import load_prompt as _load_prompt
+                                enrich_prompt = (
+                                    _load_prompt("citation_enricher")
+                                    .replace("{draft}", result_data["draft"])
+                                    .replace("{papers_text}", papers_text)
+                                )
+                                enriched = backend.call(enrich_prompt, role="writer", timeout=600)
+                                if enriched and len(enriched) >= len(result_data["draft"]) * 0.5:
+                                    result_data["draft"] = enriched
+                                    cite_section = ""  # insights absorbed into draft
+                            except Exception as _ee:
+                                logger.warning("Citation enrichment call failed: %s", _ee)
                 except Exception as _ce:
                     logger.warning("Citation expansion failed: %s", _ce)
 
@@ -464,7 +508,7 @@ class ResearchMixin:
             sources_file = output_dir / f"{slug}-sources.json"
 
             draft_text = result_data["draft"]
-            if cite_section:
+            if cite_section:  # only appended when enrichment was skipped or failed
                 draft_text = draft_text + "\n\n" + cite_section
             draft_with_refs = _append_references(
                 draft_text, result_data.get("sources", [])
