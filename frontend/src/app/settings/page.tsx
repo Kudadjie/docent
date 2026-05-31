@@ -177,6 +177,19 @@ export default function SettingsPage() {
   }, []);
   /* eslint-enable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 
+  const [readingHighlight, setReadingHighlight] = useState(false);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('from') !== 'rm-setup') return;
+    window.history.replaceState(null, '', window.location.pathname);
+    const timer = setTimeout(() => {
+      document.getElementById('section-reading')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setReadingHighlight(true);
+      setTimeout(() => setReadingHighlight(false), 1800);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function handleSaveReading(key: keyof ReadingConfig, value: string) {
     signalDot('working');
     try {
@@ -288,6 +301,15 @@ export default function SettingsPage() {
 
             {/* Left column: Reading config + System health */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+              <section
+                id="section-reading"
+                style={{
+                  borderRadius: 12,
+                  outline: readingHighlight ? '2px solid #14B8A6' : '2px solid transparent',
+                  outlineOffset: 3,
+                  transition: 'outline-color 0.3s ease',
+                }}
+              >
               <SectionCard
                 accentColor="#14B8A6"
                 icon={<BookOpen size={14} strokeWidth={1.5} color="#14B8A6" />}
@@ -325,13 +347,15 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                <ConfigRow
-                  label="Database directory"
-                  description="Local folder where your PDFs are stored. Docent counts PDFs here and uses this path for paper scanning."
-                  value={rc?.database_dir ?? null}
-                  placeholder="~/Documents/Papers"
-                  onSave={v => handleSaveReading('database_dir', v)}
-                />
+                {(rc?.reference_manager ?? 'mendeley') !== 'zotero' && (
+                  <ConfigRow
+                    label="Watch folder"
+                    description="Mendeley watch folder — PDFs dropped here are auto-imported into your library. Set this to the same folder Mendeley monitors."
+                    value={rc?.database_dir ?? null}
+                    placeholder="~/Documents/Papers"
+                    onSave={v => handleSaveReading('database_dir', v)}
+                  />
+                )}
                 <ConfigRow
                   label="Queue collection"
                   description="Name of the collection to sync from. Must exactly match the collection name in your reference manager."
@@ -397,6 +421,7 @@ export default function SettingsPage() {
                   onSave={v => handleSaveReading('output_dir', v)}
                 />
               </SectionCard>
+              </section>
 
               {/* Studio settings */}
               <SectionCard

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { useDarkMode } from '@/hooks/useDarkMode';
 import { RefreshCw, Download, Printer, Search, Filter, HelpCircle, BookOpen, ArrowRight, BarChart2, ArrowUpDown, AlertTriangle, Info, X, Trash2, BookmarkCheck } from 'lucide-react';
 
@@ -27,6 +28,7 @@ import NotInLibraryModal from '@/components/reading/NotInLibraryModal';
 import RefManagerSetupCard from '@/components/reading/RefManagerSetupCard';
 
 export default function ReadingPage() {
+  const router = useRouter();
   const { dark, toggleDark } = useDarkMode();
 
   useTour('reading', [
@@ -149,10 +151,7 @@ export default function ReadingPage() {
     setRefManagerName(name);
     markRmChosen();
     setRmBusy(false);
-    setToast({
-      type: 'success',
-      message: `${name} selected. Complete your connection setup in Settings.`,
-    });
+    router.push('/settings?from=rm-setup');
   }
 
   // Read filter + search from URL on mount; fall back to sessionStorage

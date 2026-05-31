@@ -12,16 +12,34 @@ interface Props {
 export default function HowToAddModal({ onClose, collectionName = 'Docent-Queue', refManager = 'Mendeley' }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const STEPS = [
+  const isZotero = refManager.toLowerCase() === 'zotero';
+
+  const STEPS = isZotero ? [
+    {
+      icon: <BookOpen size={15} strokeWidth={1.5} />,
+      label: 'Select the collection first',
+      detail: `In the Zotero desktop app, click your "${collectionName}" collection (or a sub-collection) to make it active.`,
+    },
     {
       icon: <FolderOpen size={15} strokeWidth={1.5} />,
-      label: 'Drop the document',
-      detail: 'Place the document (preferably PDF) into your database folder.',
+      label: 'Save via the Zotero connector',
+      detail: `Click the Zotero browser connector on the paper page. It saves directly into the active collection — no dragging needed.`,
+    },
+    {
+      icon: <RefreshCw size={15} strokeWidth={1.5} />,
+      label: 'Sync',
+      detail: `Click "Sync" in the toolbar — Docent will pull the new entry into your queue.`,
+    },
+  ] : [
+    {
+      icon: <FolderOpen size={15} strokeWidth={1.5} />,
+      label: 'Get the paper into Mendeley',
+      detail: `Use the Mendeley Web Importer (browser extension) and save directly to "${collectionName}", or drop the PDF into your watch folder and drag it to the collection in Mendeley.`,
     },
     {
       icon: <BookOpen size={15} strokeWidth={1.5} />,
-      label: `Add to ${refManager}`,
-      detail: `In ${refManager}, drag the document into your "${collectionName}" collection.`,
+      label: 'Tip: target the collection',
+      detail: `In the Web Importer popup, choose "${collectionName}" as the destination — skips the manual drag entirely.`,
     },
     {
       icon: <RefreshCw size={15} strokeWidth={1.5} />,
