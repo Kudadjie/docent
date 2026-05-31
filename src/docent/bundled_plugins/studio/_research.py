@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import re
 from pathlib import Path
 
 from docent.core import Context, ProgressEvent, action
@@ -20,6 +22,141 @@ from docent.bundled_plugins.studio.models import (
 from docent.bundled_plugins.studio.preflights import (
     _preflight_docent, _preflight_oc_only, _route_output,
 )
+
+logger = logging.getLogger(__name__)
+
+_ARXIV_URL_RE = re.compile(r"arxiv\.org/abs/([\d.]+)")
+_DOI_URL_RE = re.compile(r"doi\.org/(.+)")
+
+
+def _extract_anchor_ids(sources: list[dict], max_anchors: int = 2) -> list[dict]:
+    """Extract arXiv IDs or DOIs from sources for cite-graph anchoring.
+
+    Returns a list of dicts each with an 'arxiv_id' or 'doi' key, up to max_anchors.
+    Prefers arXiv IDs (more reliably resolved by S2); falls back to DOI URLs.
+    """
+    seen: set[str] = set()
+    anchors: list[dict] = []
+    for s in sources:
+        if len(anchors) >= max_anchors:
+            break
+        url = s.get("url", "")
+        m = _ARXIV_URL_RE.search(url)
+        if m:
+            arxiv_id = m.group(1)
+            if arxiv_id not in seen:
+                seen.add(arxiv_id)
+                anchors.append({"arxiv_id": arxiv_id})
+            continue
+        m = _DOI_URL_RE.search(url)
+        if m:
+            doi = m.group(1).rstrip("/")
+            if doi not in seen:
+                seen.add(doi)
+                anchors.append({"doi": doi})
+            continue
+        doi = s.get("doi")
+        if doi and doi not in seen:
+            seen.add(doi)
+            anchors.append({"doi": doi})
+    return anchors
+
+
+def _expand_citations(
+    sources: list[dict],
+    api_key: str | None,
+    *,
+    max_anchors: int = 2,
+) -> tuple[list[dict], str]:
+    """Parallel cite-graph expansion on anchor papers.
+
+    1. Extracts up to max_anchors arXiv/DOI identifiers from sources.
+    2. Fetches citation graphs concurrently via S2 (cited-by direction).
+    3. Returns (extra_sources, citation_section_markdown).
+       extra_sources are OA papers not already in sources; the markdown section
+       is a formatted list suitable for appending to the research draft.
+    """
+    from .citation_client import fetch_citation_graph, resolve_s2_id
+    from .fanout import parallel_fetch
+
+    anchors = _extract_anchor_ids(sources, max_anchors)
+    if not anchors:
+        return [], ""
+
+    # Build set of existing identifiers for deduplication.
+    existing_ids: set[str] = set()
+    for s in sources:
+        url = s.get("url", "")
+        m = _ARXIV_URL_RE.search(url)
+        if m:
+            existing_ids.add(m.group(1))
+        m = _DOI_URL_RE.search(url)
+        if m:
+            existing_ids.add(m.group(1).rstrip("/"))
+        doi = s.get("doi")
+        if doi:
+            existing_ids.add(doi)
+
+    def _fetch_one(anchor: dict) -> list[dict]:
+        s2_id = resolve_s2_id(anchor.get("doi"), anchor.get("arxiv_id"))
+        return fetch_citation_graph(s2_id, "cited-by", 20, api_key)
+
+    tasks = [lambda a=anchor: _fetch_one(a) for anchor in anchors]
+    raw_results = parallel_fetch(tasks)
+
+    # Collect unique OA papers not already in sources.
+    oa_papers: list[dict] = []
+    seen: set[str] = set(existing_ids)
+    for result in raw_results:
+        if not isinstance(result, list):
+            continue
+        for p in result:
+            if not p.get("oa_url"):
+                continue
+            key = p.get("arxiv_id") or p.get("doi") or p.get("title", "")
+            if key and key not in seen:
+                seen.add(key)
+                oa_papers.append(p)
+
+    if not oa_papers:
+        return [], ""
+
+    capped = oa_papers[:15]
+
+    extra_sources = [
+        {
+            "title": p["title"],
+            "url": p.get("oa_url") or "",
+            "snippet": (p.get("abstract") or "")[:500],
+            "authors": p.get("authors", ""),
+            "year": p.get("year"),
+            "source_type": "cite-graph",
+        }
+        for p in capped
+    ]
+
+    lines = [
+        "## Related Papers (Citation Discovery)",
+        "",
+        f"*{len(capped)} open-access papers discovered via Semantic Scholar "
+        f"citation graph (cited-by, {len(anchors)} anchor paper(s)).*",
+        "",
+    ]
+    for p in capped:
+        title = p.get("title", "Untitled")
+        authors = p.get("authors", "")
+        year = p.get("year")
+        oa_url = p.get("oa_url", "")
+        doi = p.get("doi", "")
+        meta = " | ".join(filter(None, [authors, str(year) if year else ""]))
+        link = oa_url or (f"https://doi.org/{doi}" if doi else "")
+        suffix = f" — {meta}" if meta else ""
+        if link:
+            lines.append(f"- [{title}]({link}){suffix}")
+        else:
+            lines.append(f"- **{title}**{suffix}")
+
+    return extra_sources, "\n".join(lines)
 
 
 class ResearchMixin:
@@ -83,12 +220,36 @@ class ResearchMixin:
                     message=result_data.get("error") or "Pipeline failed.",
                 )
 
+            # Expand citations: parallel cite-graph on top anchor papers.
+            cite_section = ""
+            if inputs.expand_citations:
+                yield ProgressEvent(
+                    phase="expand_citations",
+                    message="Expanding citation graph on anchor papers...",
+                )
+                try:
+                    extra_sources, cite_section = _expand_citations(
+                        result_data.get("sources", []),
+                        context.settings.research.semantic_scholar_api_key,
+                    )
+                    if extra_sources:
+                        result_data["sources"] = result_data.get("sources", []) + extra_sources
+                        yield ProgressEvent(
+                            phase="expand_citations",
+                            message=f"Added {len(extra_sources)} open-access related paper(s) from citation graph.",
+                        )
+                except Exception as _ce:
+                    logger.warning("Citation expansion failed: %s", _ce)
+
             out_file = output_dir / f"{slug}.md"
             review_file = output_dir / f"{slug}-review.md"
             sources_file = output_dir / f"{slug}-sources.json"
 
+            draft_text = result_data["draft"]
+            if cite_section:
+                draft_text = draft_text + "\n\n" + cite_section
             draft_with_refs = _append_references(
-                result_data["draft"], result_data.get("sources", [])
+                draft_text, result_data.get("sources", [])
             )
             out_file.write_text(draft_with_refs, encoding="utf-8")
             review_file.write_text(result_data["review"], encoding="utf-8")
@@ -277,12 +438,36 @@ class ResearchMixin:
                     message=result_data.get("error") or "Pipeline failed.",
                 )
 
+            # Expand citations: parallel cite-graph on top anchor papers.
+            cite_section = ""
+            if inputs.expand_citations:
+                yield ProgressEvent(
+                    phase="expand_citations",
+                    message="Expanding citation graph on anchor papers...",
+                )
+                try:
+                    extra_sources, cite_section = _expand_citations(
+                        result_data.get("sources", []),
+                        context.settings.research.semantic_scholar_api_key,
+                    )
+                    if extra_sources:
+                        result_data["sources"] = result_data.get("sources", []) + extra_sources
+                        yield ProgressEvent(
+                            phase="expand_citations",
+                            message=f"Added {len(extra_sources)} open-access related paper(s) from citation graph.",
+                        )
+                except Exception as _ce:
+                    logger.warning("Citation expansion failed: %s", _ce)
+
             out_file = output_dir / f"{slug}.md"
             review_file = output_dir / f"{slug}-review.md"
             sources_file = output_dir / f"{slug}-sources.json"
 
+            draft_text = result_data["draft"]
+            if cite_section:
+                draft_text = draft_text + "\n\n" + cite_section
             draft_with_refs = _append_references(
-                result_data["draft"], result_data.get("sources", [])
+                draft_text, result_data.get("sources", [])
             )
             out_file.write_text(draft_with_refs, encoding="utf-8")
             review_file.write_text(result_data["review"], encoding="utf-8")

@@ -110,6 +110,14 @@ class DeepInputs(BaseModel):
             "Only relevant for the 'free' backend via MCP."
         ),
     )
+    expand_citations: bool = Field(
+        False,
+        description=(
+            "After research completes, run the Semantic Scholar citation graph on "
+            "the top anchor papers found in sources and append open-access related "
+            "papers to the output. Only available with the 'docent' backend."
+        ),
+    )
 
 
 class LitInputs(BaseModel):
@@ -139,6 +147,14 @@ class LitInputs(BaseModel):
             "Set to true on a retry after the user has acknowledged the disclaimer "
             "and any warnings returned in a previous confirmation_required response. "
             "Only relevant for the 'free' backend via MCP."
+        ),
+    )
+    expand_citations: bool = Field(
+        False,
+        description=(
+            "After research completes, run the Semantic Scholar citation graph on "
+            "the top anchor papers found in sources and append open-access related "
+            "papers to the output. Only available with the 'docent' backend."
         ),
     )
 

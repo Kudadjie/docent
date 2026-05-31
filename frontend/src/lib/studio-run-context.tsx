@@ -270,9 +270,10 @@ export function StudioRunProvider({ children }: { children: ReactNode }) {
         persp:       form.persp,
         cfg_key:         form.cfgKey,
         cfg_val:         form.cfgVal,
-        cite_identifier: form.citeIdentifier,
-        cite_direction:  form.citeDirection,
-        cite_max:        form.citeMax,
+        cite_identifier:   form.citeIdentifier,
+        cite_direction:    form.citeDirection,
+        cite_max:          form.citeMax,
+        expand_citations:  form.expandCitations,
       }));
     };
 

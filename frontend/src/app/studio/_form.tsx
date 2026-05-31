@@ -437,6 +437,8 @@ function FormTopic({ state, set, actionId }: { state: FormState; set: SetFn; act
   const backend = !freeOk && state.backend === 'Free' ? DEFAULT_AI_BACKEND : state.backend;
   const backendNote = BACKEND_NOTES[backend] ?? 'Runs 3–30 min. May time out over MCP.';
   const destNote    = DEST_NOTES[state.dest] ?? '';
+  const showExpandCitations = (actionId === 'deep' || actionId === 'lit');
+  const expandEnabled = backend === 'Docent';
   return <>
     <Field label="Topic">
       <StudioInput value={state.topic} onChange={v => set('topic', v)} placeholder="e.g. storm surge inundation under climate change" />
@@ -452,6 +454,20 @@ function FormTopic({ state, set, actionId }: { state: FormState; set: SetFn; act
       {destNote && <Note>{destNote}</Note>}
     </Field>
     <GuideFiles files={state.guides} setFiles={v => set('guides', v)} />
+    {showExpandCitations && (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', opacity: expandEnabled ? 1 : 0.45 }}>
+        <div>
+          <span style={{ fontFamily: 'var(--sans)', fontSize: 12.5, color: 'var(--fg2)', fontWeight: 500 }}>Expand citations</span>
+          <span style={{ fontFamily: 'var(--sans)', fontSize: 11, color: 'var(--fg4)', marginLeft: 8 }}>
+            {expandEnabled ? 'Find OA papers citing your sources (S2)' : 'Docent backend only'}
+          </span>
+        </div>
+        <Toggle
+          checked={expandEnabled && state.expandCitations}
+          onChange={v => expandEnabled && set('expandCitations', v)}
+        />
+      </div>
+    )}
   </>;
 }
 

@@ -455,6 +455,7 @@ class StudioRunBody(BaseModel):
     cite_identifier: str = ""
     cite_direction: str = "cited-by"
     cite_max: int = 25
+    expand_citations: bool = False
 
 
 def _parse_studio_body(body: StudioRunBody) -> tuple[str, dict[str, Any]] | None:
@@ -486,6 +487,8 @@ def _parse_studio_body(body: StudioRunBody) -> tuple[str, dict[str, Any]] | None
         # and its DraftInputs model has no `confirmed` field.
         if studio_action in ('deep-research', 'lit'):
             args['confirmed'] = True
+            if body.expand_citations:
+                args['expand_citations'] = True
     elif studio_action in ('review', 'replicate', 'audit'):
         args = {'artifact': body.artifact, 'backend': backend, 'output': dest, 'guide_files': body.guides}
     elif studio_action == 'compare':

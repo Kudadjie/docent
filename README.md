@@ -249,8 +249,11 @@ The `docent studio` tool runs AI-powered deep research, literature reviews, and 
 | Action | Description |
 |--------|-------------|
 | `docent studio deep-research "topic"` | Full 6-stage research pipeline |
+| `docent studio deep-research "topic" --expand-citations` | Pipeline + parallel citation graph expansion on anchor papers |
 | `docent studio lit "topic"` | Literature-focused review (80% paper bias) |
+| `docent studio lit "topic" --expand-citations` | Literature review + citation discovery (OA papers via S2) |
 | `docent studio review "paper"` | Peer review of an artifact |
+| `docent studio cite-graph --doi "10.x/y"` | Explore the S2 citation graph around a paper |
 | `docent studio search-papers "query"` | Search alphaXiv for academic papers |
 | `docent studio get-paper "arxiv-id"` | AI-generated overview for a paper |
 | `docent studio usage` | Today's Feynman/OpenCode spend + Tavily requests |

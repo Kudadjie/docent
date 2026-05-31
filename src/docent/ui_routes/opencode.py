@@ -52,6 +52,8 @@ def _build_studio_cmd(body: StudioRunBody) -> list[str] | None:
         # has no such flag — passing it makes Click reject the command.
         if action in ("deep-research", "lit"):
             cmd += ["--confirmed"]
+            if getattr(body, "expand_citations", False):
+                cmd += ["--expand-citations"]
         for g in (body.guides or []):
             cmd += ["--guide-files", g]
     elif action in ("review", "replicate", "audit"):

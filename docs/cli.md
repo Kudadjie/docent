@@ -252,8 +252,8 @@ Studio runs deep research, literature reviews, and peer reviews, backed by Feynm
 
 | Command | Notes |
 |---------|-------|
-| `docent studio deep-research --topic "..." [--backend <b>] [--output local\|notebook\|vault] [--to-notebook] [--guide-files <path>]` | Full research pipeline |
-| `docent studio lit --topic "..." [--backend <b>] [--output local\|notebook\|vault] [--to-notebook] [--guide-files <path>]` | Literature review (Tavily + scholarly + arXiv) |
+| `docent studio deep-research --topic "..." [--backend <b>] [--output local\|notebook\|vault] [--to-notebook] [--guide-files <path>] [--expand-citations]` | Full research pipeline |
+| `docent studio lit --topic "..." [--backend <b>] [--output local\|notebook\|vault] [--to-notebook] [--guide-files <path>] [--expand-citations]` | Literature review (Tavily + scholarly + arXiv) |
 | `docent studio review --artifact "..." [--backend feynman\|docent] [--output local\|notebook\|vault]` | Peer review of arXiv ID, PDF, or URL |
 | `docent studio compare --artifact-a "..." --artifact-b "..." [--backend feynman\|docent]` | Side-by-side comparison of two artifacts |
 | `docent studio draft --topic "..." [--backend feynman\|docent]` | Draft a paper section or document |
@@ -295,6 +295,24 @@ automatically includes a **## Citation Verification** section at the end of the 
 Every DOI and arXiv ID found in the draft is checked against CrossRef and Semantic Scholar.
 Identifiers that cannot be resolved are flagged — they may be hallucinated, misprinted,
 or not yet indexed, and should be checked before citing.
+
+### Citation discovery (`--expand-citations`)
+
+Add `--expand-citations` to `deep-research` or `lit` (with `--backend docent` only) to run
+a Semantic Scholar citation graph expansion after the pipeline completes:
+
+```bash
+docent studio deep-research --topic "transformer attention" --backend docent --expand-citations
+docent studio lit --topic "graph neural networks" --backend docent --expand-citations
+```
+
+Docent finds the top anchor papers from the research sources, fetches papers that cite each
+of them in parallel, and appends a **## Related Papers (Citation Discovery)** section listing
+open-access papers. The extra papers are also added to the `*-sources.json` file.
+
+- Only open-access papers are included (downloadable via the OA link).
+- Only active for `--backend docent`; silently skipped for `--backend feynman` and `--backend free`.
+- Requires a Semantic Scholar API key for best results (rate limits apply without one).
 
 ### Output destinations (`--output`)
 

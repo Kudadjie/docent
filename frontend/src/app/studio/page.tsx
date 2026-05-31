@@ -24,6 +24,7 @@ const DEFAULT_FORM: FormState = {
   nlm: true, gate: true, persp: true,
   cfgKey: '', cfgVal: '',
   citeIdentifier: '', citeDirection: 'cited-by', citeMax: 25,
+  expandCitations: false,
 };
 
 // ── Page ──────────────────────────────────────────────────────────────────────

@@ -26,6 +26,7 @@ export interface FormState {
   nlm: boolean; gate: boolean; persp: boolean;
   cfgKey: string; cfgVal: string;
   citeIdentifier: string; citeDirection: string; citeMax: number;
+  expandCitations: boolean;
 }
 
 export interface Preset {
@@ -114,6 +115,7 @@ export const PHASE_LABELS: Record<string, string> = {
   // docent pipeline backend
   search_plan: 'Plan', write: 'Write', review: 'Review', refine: 'Refine',
   verify: 'Verify', verify_citations: 'Citations', research: 'Research',
+  expand_citations: 'Cite expand',
   // action-specific
   compare: 'Compare', analyze: 'Analyze', audit: 'Audit',
   // to-notebook phases
@@ -163,6 +165,10 @@ export function commandFor(actionId: ActionId, s: FormState): string {
       if (backend && (backend !== 'free' || supportsFreeBackend(actionId))) parts.push('--backend', backend);
       if (s.dest && s.dest !== 'Local') parts.push('--output', s.dest.toLowerCase().replace(' →', '').trim());
       (s.guides ?? []).forEach(g => parts.push('--guide-files', quoteIfNeeded(g)));
+      // --expand-citations only applies to deep/lit on the docent backend
+      if ((actionId === 'deep' || actionId === 'lit') && s.expandCitations && backend === 'docent') {
+        parts.push('--expand-citations');
+      }
       break;
     case 'peer': case 'replicate': case 'audit':
       parts.push('--artifact', quoteIfNeeded(s.artifact));
