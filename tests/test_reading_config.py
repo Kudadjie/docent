@@ -46,7 +46,6 @@ def test_config_set_unknown_key_rejected(tmp_docent_home):
 # ─── config-set: mendeley_mcp_command (list-typed) ────────────────────────────
 
 def test_config_set_mendeley_mcp_command_parses_to_list(tmp_docent_home):
-    from docent.config.loader import load_settings as _load
     import tomllib
 
     tool = ReadingQueue()
@@ -96,7 +95,7 @@ def test_config_show_reflects_set_mendeley_mcp_command(tmp_docent_home):
     tool = ReadingQueue()
     tool.config_set(ConfigSetInputs(key="mendeley_mcp_command", value="uvx mendeley-mcp"), _ctx())
     # Reload settings so config_show picks up the written value.
-    result = tool.config_show(ConfigShowInputs(), _ctx())
+    tool.config_show(ConfigShowInputs(), _ctx())
     # The settings object cached in context may not reflect the write; read via
     # a fresh context to confirm the value is persisted, not just returned from cache.
     fresh_settings = load_settings()

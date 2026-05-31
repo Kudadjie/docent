@@ -1,7 +1,6 @@
 """Tests for backup archive creation and restoration, with focus on path traversal prevention."""
 from __future__ import annotations
 
-import json
 import zipfile
 from pathlib import Path
 

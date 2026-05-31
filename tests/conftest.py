@@ -102,7 +102,7 @@ def _seed_queue_entry(
     Defaults to mendeley_id="m-<id>" so the entry passes _require_identifier
     when the test doesn't supply a doi.
     """
-    from docent.bundled_plugins.reading import ReadingQueue, QueueEntry
+    from docent.bundled_plugins.reading import QueueEntry
     from docent.bundled_plugins.reading.mendeley_sync import derive_id
 
     entry_id = id or derive_id(authors, year, title)

@@ -9,14 +9,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import docent.bundled_plugins.studio as rtn
-import docent.bundled_plugins.studio.feynman as feynman_mod
 from docent.bundled_plugins.studio import (
     DeepInputs,
     FeynmanNotFoundError,
-    ResearchResult,
     StudioTool,
     _extract_feynman_cost,
-    _run_feynman,
 )
 from docent.config.settings import ResearchSettings, Settings
 from docent.core.context import Context
@@ -73,7 +70,6 @@ class TestFindFeynman:
     def test_fallback_to_none_command_windows_npm(self, monkeypatch):
         monkeypatch.setattr("docent.bundled_plugins.studio.feynman.shutil.which", lambda _: None)
         monkeypatch.setenv("APPDATA", "/fake/appdata")
-        npm_path = Path("/fake/appdata/npm/feynman.cmd")
         monkeypatch.setattr(
             "docent.bundled_plugins.studio.feynman.Path.is_file",
             lambda self: str(self).endswith("feynman.cmd"),

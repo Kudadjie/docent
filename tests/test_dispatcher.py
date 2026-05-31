@@ -84,7 +84,7 @@ def test_invoke_generator_action_contains_progress():
 def test_invoke_generator_action_last_line_is_json():
     raw = invoke_action("test-stream-xyz", "stream", {"n": 2})
     lines = raw.split("\n")
-    json_start = next(i for i, l in enumerate(lines) if l.startswith("{"))
+    json_start = next(i for i, ln in enumerate(lines) if ln.startswith("{"))
     result = json.loads("\n".join(lines[json_start:]))
     assert result["done"] is True
 

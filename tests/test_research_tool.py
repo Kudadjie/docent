@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import inspect
 import json
-import webbrowser
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -29,10 +28,8 @@ from docent.bundled_plugins.studio import (
     ResearchResult,
     StudioTool,
     ToNotebookInputs,
-    ToNotebookResult,
     _slugify,
     _artifact_slug,
-    _rank_sources,
     _preflight_docent,
     _preflight_oc_only,
 )
@@ -55,7 +52,7 @@ def _fake_pipeline_gen(result_dict: dict):
     Used to mock run_deep / run_lit / run_review which are now generators.
     """
     return result_dict
-    yield  # noqa: unreachable — makes this a generator
+    yield  # makes this a generator
 
 
 def _make_nlm_push(
@@ -581,7 +578,7 @@ class TestToNotebook:
         with patch("docent.bundled_plugins.studio._notebook_actions._nlm_push", new=_make_nlm_push(notebook_id="nb-x")):
             result = self._run(tool, ToNotebookInputs(), ctx)
         urls_content = (Path(result.package_dir) / "sources_urls.txt").read_text()
-        lines = [l for l in urls_content.strip().splitlines() if l]
+        lines = [ln for ln in urls_content.strip().splitlines() if ln]
         assert "arxiv.org" in lines[0]
 
     def test_to_notebook_respects_max_sources(self, tmp_path):

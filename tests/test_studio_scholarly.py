@@ -8,7 +8,7 @@ import pytest
 
 from docent.config.settings import ResearchSettings, Settings
 from docent.core.context import Context
-from docent.core.shapes import ErrorShape, LinkShape, MessageShape, MetricShape
+from docent.core.shapes import ErrorShape, LinkShape, MetricShape
 from docent.bundled_plugins.studio import (
     ScholarlySearchInputs,
     ScholarlySearchResult,

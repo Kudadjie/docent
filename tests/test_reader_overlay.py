@@ -9,9 +9,7 @@ tmp file so test runs don't touch each other.
 """
 from __future__ import annotations
 
-from typing import Any
 
-import pytest
 
 from docent.config import load_settings
 from docent.core.context import Context

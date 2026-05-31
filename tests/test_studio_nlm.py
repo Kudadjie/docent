@@ -2,17 +2,14 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 
 from docent.bundled_plugins.studio._notebook import (
     _nlm_auth_ok,
     _nlm_create_notebook,
     _nlm_add_source,
     _nlm_run,
-    _nlm_exe,
 )
 
 

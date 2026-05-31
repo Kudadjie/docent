@@ -364,27 +364,21 @@ interface TavilyUsage {
 
 function TavilyUsageWidget({ keyIsSet }: { keyIsSet: boolean }) {
   const [usage, setUsage] = useState<TavilyUsage | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  async function load() {
-    setLoading(true);
-    try {
-      const r = await fetch('/api/studio/tavily-usage');
-      const d = await r.json() as TavilyUsage;
-      setUsage(d);
-    } catch {
-      setUsage({ ok: false, message: 'Could not reach server.' });
-    } finally {
-      setLoading(false);
-    }
-  }
+  const [fetchKey, setFetchKey] = useState(0);
 
   useEffect(() => {
-    if (keyIsSet) load();
-  }, [keyIsSet]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!keyIsSet) return;
+    let cancelled = false;
+    fetch('/api/studio/tavily-usage')
+      .then(r => r.json() as Promise<TavilyUsage>)
+      .then(d => { if (!cancelled) setUsage(d); })
+      .catch(() => { if (!cancelled) setUsage({ ok: false, message: 'Could not reach server.' }); });
+    return () => { cancelled = true; };
+  }, [keyIsSet, fetchKey]);
 
   if (!keyIsSet) return null;
 
+  const loading = usage === null;
   const pct = usage?.pct_used ?? null;
   const barColor = pct === null ? 'var(--fg4)' : pct >= 90 ? '#D45656' : pct >= 70 ? '#C97B00' : '#18E299';
 
@@ -395,7 +389,7 @@ function TavilyUsageWidget({ keyIsSet }: { keyIsSet: boolean }) {
           Monthly usage
         </span>
         <button
-          onClick={load}
+          onClick={() => { setUsage(null); setFetchKey(k => k + 1); }}
           disabled={loading}
           style={{ background: 'none', border: 'none', cursor: loading ? 'default' : 'pointer', padding: 0, display: 'flex', opacity: loading ? 0.5 : 1 }}
           title="Refresh Tavily usage"
@@ -403,7 +397,7 @@ function TavilyUsageWidget({ keyIsSet }: { keyIsSet: boolean }) {
           <RefreshCw size={11} strokeWidth={1.5} color="var(--fg4)" style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} />
         </button>
       </div>
-      {loading && !usage ? (
+      {loading ? (
         <span style={{ fontFamily: 'var(--sans)', fontSize: 11.5, color: 'var(--fg4)' }}>Loading…</span>
       ) : usage?.ok === false ? (
         <span style={{ fontFamily: 'var(--sans)', fontSize: 11.5, color: '#D45656' }}>{usage.message ?? 'Failed to load.'}</span>

@@ -1,7 +1,6 @@
 """Tests for docent.errors — D-series codes and formatted() output."""
 from __future__ import annotations
 
-import pytest
 
 from docent.errors import (
     AuthError,

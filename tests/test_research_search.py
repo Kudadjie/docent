@@ -1,12 +1,8 @@
 """Unit tests for search.py (web_search, paper_search, fetch_page, Tavily spend tracking)."""
 from __future__ import annotations
 
-import datetime
-import json
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 
 class TestWebSearch:

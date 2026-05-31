@@ -513,7 +513,7 @@ def test_subfolder_error_is_non_fatal(tmp_docent_home, monkeypatch):
     assert result.added[0]["mendeley_id"] == "M-ROOT"
 
 
-def test_doc_without_doi_or_pdf_persists_via_mendeley_id(tmp_docent_home, monkeypatch):
+def test_non_int_year_snaps_to_none_on_sync(tmp_docent_home, monkeypatch):
     """Mendeley sometimes returns year=null; some PDFs surface stringified
     years. Anything non-int snaps to None on the snapshot."""
     tool = ReadingQueue()

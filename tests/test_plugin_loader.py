@@ -7,7 +7,6 @@ from unittest.mock import MagicMock
 import pytest
 
 from docent.core import all_tools, load_plugins, register_tool, run_startup_hooks
-from docent.core.registry import _REGISTRY
 from docent.core.tool import Tool
 
 

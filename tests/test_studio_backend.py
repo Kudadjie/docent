@@ -1,7 +1,6 @@
 """Unit tests for the platform-agnostic studio backend (backend.py)."""
 from __future__ import annotations
 
-import os
 from unittest.mock import MagicMock, patch
 
 import pytest

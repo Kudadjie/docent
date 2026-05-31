@@ -6,15 +6,11 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 
 from docent.utils.update_check import (
-    UpdateInfo,
     _is_newer,
     _load_cache,
-    _save_cache,
     check_npm,
-    check_github_release,
     check_pypi,
 )
 

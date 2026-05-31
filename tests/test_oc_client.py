@@ -1,6 +1,6 @@
 """Tests for OcClient error handling and model checking."""
 import urllib.error
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -117,7 +117,6 @@ def test_call_raises_model_error_on_generic_error_in_response():
 
 def test_check_model_passes_and_caches(monkeypatch):
     """check_model() caches a successful result; second call skips the API."""
-    import docent.bundled_plugins.studio.oc_client as oc_mod
     monkeypatch.setattr(oc_mod, "_model_check_cache", {})
 
     client = OcClient()
@@ -145,7 +144,6 @@ def test_check_model_passes_and_caches(monkeypatch):
 
 def test_check_model_caches_failure_and_reraises(monkeypatch):
     """check_model() caches an OcModelError; second call re-raises without an API call."""
-    import docent.bundled_plugins.studio.oc_client as oc_mod
     monkeypatch.setattr(oc_mod, "_model_check_cache", {})
 
     client = OcClient()

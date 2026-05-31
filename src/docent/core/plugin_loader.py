@@ -71,7 +71,7 @@ def _load_plugin_module(
             module = importlib.util.module_from_spec(spec)
             sys.modules[module_name] = module
             spec.loader.exec_module(module)  # type: ignore[union-attr]
-        except BaseException as exc:  # also catch SystemExit, KeyboardInterrupt
+        except (Exception, SystemExit) as exc:
             sys.modules.pop(module_name, None)
             _logger.warning("Failed to load plugin '%s': %s", module_name, exc)
             return False

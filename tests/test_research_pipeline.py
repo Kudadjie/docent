@@ -373,7 +373,7 @@ class TestFetchArtifact:
     def test_arxiv_id_with_version(self):
         with patch("docent.bundled_plugins.studio.pipeline.fetch_page") as mock_fetch:
             mock_fetch.return_value = "Content"
-            result = _fetch_artifact("2401.12345v2")
+            _fetch_artifact("2401.12345v2")
             mock_fetch.assert_called_with("https://arxiv.org/abs/2401.12345v2", max_chars=6000)
 
     def test_url_artifact(self):
@@ -386,7 +386,7 @@ class TestFetchArtifact:
     def test_http_url_artifact(self):
         with patch("docent.bundled_plugins.studio.pipeline.fetch_page") as mock_fetch:
             mock_fetch.return_value = "Content"
-            result = _fetch_artifact("http://example.com/paper")
+            _fetch_artifact("http://example.com/paper")
             mock_fetch.assert_called_with("http://example.com/paper", max_chars=6000)
 
     def test_unknown_artifact_returns_error_string(self):

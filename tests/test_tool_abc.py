@@ -1,6 +1,6 @@
 """Invariants on Tool ABC, @action decorator, collect_actions, and register_tool."""
 
-from docent.core.tool import Tool, action, collect_actions, Action
+from docent.core.tool import Tool, action, collect_actions
 from docent.core.registry import register_tool, get_tool, all_tools
 from pydantic import BaseModel
 import pytest
