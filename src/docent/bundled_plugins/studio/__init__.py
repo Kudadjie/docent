@@ -24,6 +24,9 @@ from .helpers import (
 )
 from .models import (  # noqa: F401
     AuditInputs,
+    CitedPaperItem,
+    CiteGraphInputs,
+    CiteGraphResult,
     CompareInputs,
     ConfigSetInputs,
     ConfigSetResult,
@@ -62,12 +65,13 @@ from docent.bundled_plugins.studio._research import ResearchMixin
 from docent.bundled_plugins.studio._notebook_actions import NotebookMixin
 from docent.bundled_plugins.studio._search_actions import SearchMixin
 from docent.bundled_plugins.studio._config_actions import ConfigMixin
+from docent.bundled_plugins.studio._cite_actions import CiteMixin
 from docent.bundled_plugins.studio._studio_shared import _KNOWN_RESEARCH_KEYS  # noqa: F401
 from docent.bundled_plugins.studio._init_helpers import _path_under  # noqa: F401
 
 
 @register_tool
-class StudioTool(ResearchMixin, NotebookMixin, SearchMixin, ConfigMixin, Tool):
+class StudioTool(ResearchMixin, NotebookMixin, SearchMixin, ConfigMixin, CiteMixin, Tool):
     """Run research workflows (deep research, literature review, peer review) via Feynman."""
 
     name = "studio"

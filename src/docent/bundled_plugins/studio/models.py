@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from docent.core.shapes import (
     ErrorShape,
@@ -508,6 +508,88 @@ class ScholarlySearchResult(BaseModel):
             if url:
                 label = p.get("doi") or url[:60]
                 shapes.append(LinkShape(url=url, label=label))
+        return shapes
+
+
+# ---------------------------------------------------------------------------
+# cite-graph
+# ---------------------------------------------------------------------------
+
+class CiteGraphInputs(BaseModel):
+    doi: str | None = Field(
+        None,
+        description=(
+            "DOI of the anchor paper — bare (10.1234/example) or as a URL "
+            "(https://doi.org/10.1234/example). Provide this OR arxiv_id."
+        ),
+    )
+    arxiv_id: str | None = Field(
+        None,
+        description=(
+            "arXiv ID of the anchor paper — bare (2301.12345) or as a URL "
+            "(https://arxiv.org/abs/2301.12345). Provide this OR doi."
+        ),
+    )
+    direction: str = Field(
+        "cited-by",
+        description=(
+            "Which direction of the citation graph to explore.\n"
+            "  'cited-by' (default) — papers that cite this one (who built on it).\n"
+            "  'citing' — papers this one cites (its bibliography).\n"
+            "  'both' — both directions merged and deduplicated."
+        ),
+    )
+    max_results: int = Field(25, description="Maximum number of papers to return. Default 25.")
+
+    @model_validator(mode="after")
+    def _require_identifier(self) -> "CiteGraphInputs":
+        if not self.doi and not self.arxiv_id:
+            raise ValueError("Provide either doi or arxiv_id.")
+        if self.direction not in ("cited-by", "citing", "both"):
+            raise ValueError("direction must be 'cited-by', 'citing', or 'both'.")
+        return self
+
+
+class CitedPaperItem(BaseModel):
+    title: str
+    authors: str
+    year: int | None = None
+    doi: str | None = None
+    arxiv_id: str | None = None
+    oa_url: str | None = None
+    s2_url: str = ""
+
+
+class CiteGraphResult(BaseModel):
+    ok: bool
+    anchor_title: str
+    anchor_doi: str | None
+    direction: str
+    total_found: int
+    oa_count: int
+    papers: list[CitedPaperItem]
+    message: str
+
+    def to_shapes(self) -> list[Shape]:
+        if not self.ok:
+            return [ErrorShape(text=self.message)]
+        shapes: list[Shape] = [
+            MessageShape(text=self.message, level="success"),
+            MetricShape(label="Anchor", value=self.anchor_title or "Unknown"),
+            MetricShape(label="Direction", value=self.direction),
+            MetricShape(label="Found", value=str(self.total_found)),
+            MetricShape(label="Open access", value=str(self.oa_count)),
+        ]
+        for p in self.papers:
+            year = str(p.year) if p.year else "?"
+            oa_tag = " [OA]" if p.oa_url else ""
+            shapes.append(MetricShape(
+                label=f"{p.title[:80]} ({year}){oa_tag}",
+                value=p.authors or "Unknown authors",
+            ))
+            url = p.oa_url or (f"https://doi.org/{p.doi}" if p.doi else p.s2_url)
+            if url:
+                shapes.append(LinkShape(url=url, label=p.doi or url[:60]))
         return shapes
 
 
