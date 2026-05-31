@@ -617,6 +617,7 @@ from docent.ui_routes.opencode import router as _opencode_router
 from docent.ui_routes.studio import router as _studio_sse_router
 from docent.ui_routes.backup import router as _backup_router
 from docent.ui_routes.tools import router as _tools_router
+from docent.ui_routes.docs import router as _docs_router
 
 app.include_router(_reading_router)
 app.include_router(_config_router)
@@ -626,6 +627,7 @@ app.include_router(_opencode_router)
 app.include_router(_studio_sse_router)
 app.include_router(_backup_router)
 app.include_router(_tools_router)
+app.include_router(_docs_router)
 
 
 if UI_DIST.is_dir():

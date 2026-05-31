@@ -1,8 +1,6 @@
 # Docent CLI v1.2
 
-Docent is a personal CLI control center for grad-school workflows. It manages an academic reading queue and syncs with a Mendeley library. All tools are also exposed as MCP (Model Context Protocol) tools so Claude Code can call them directly.
-
-> **Mendeley setup:** Docent connects to your Mendeley library via [mendeley-mcp](https://github.com/pallaprolus/mendeley-mcp). You'll need to register a Mendeley API client (Client ID + Secret) and run through the OAuth flow once before `sync-from-mendeley` works. Full instructions at the link above.
+Docent is a personal CLI control center for grad-school workflows. It manages an academic reading queue and syncs with your reference manager (Mendeley or Zotero). All tools are also exposed as MCP (Model Context Protocol) tools so Claude Code can call them directly.
 
 ---
 
@@ -51,8 +49,8 @@ The reading queue tracks academic papers with status, category, course, and dead
 
 **Workflow:**
 
-1. Papers live in Mendeley under a collection called `Docent-Queue`
-2. `docent reading sync-from-mendeley` pulls them into the local queue
+1. Papers live in your reference manager under a collection called `Docent-Queue`
+2. `docent reading sync-from-library` pulls them into the local queue
 3. Use `next`, `search`, `stats` to navigate
 4. Use `done`, `start`, `edit` to update status
 5. Use `set-deadline` to set reading deadlines
@@ -61,12 +59,12 @@ The reading queue tracks academic papers with status, category, course, and dead
 
 | Command | What it does |
 |---------|-------------|
-| `docent reading add` | Guidance-only; explains the add-via-Mendeley workflow |
+| `docent reading add` | Guidance-only; explains the add-via-reference-manager workflow |
 | `docent reading next [--category <name>]` | Show the next entry to read (lowest order, optionally filtered by category prefix) |
 | `docent reading show --id <id>` | Show one entry's full details |
 | `docent reading search --query <q>` | Search title, authors, notes, and tags |
 | `docent reading stats` | Queue statistics by category and status |
-| `docent reading edit --id <id> [--order N] [--status <s>] [--category <c>] [--deadline <d>] [--notes <text>] [--tags <t>] [--type <t>]` | Edit user-settable fields. Mendeley-owned fields (title, authors) are read-only. |
+| `docent reading edit --id <id> [--order N] [--status <s>] [--category <c>] [--deadline <d>] [--notes <text>] [--tags <t>] [--type <t>]` | Edit user-settable fields. Reference-manager-owned fields (title, authors) are read-only. |
 | `docent reading set-deadline --id <id> --deadline YYYY-MM-DD` | Set a deadline. Pass `--deadline ""` to clear. |
 | `docent reading done --id <id>` | Mark as done |
 | `docent reading start --id <id>` | Mark as currently reading |
@@ -74,8 +72,8 @@ The reading queue tracks academic papers with status, category, course, and dead
 | `docent reading move-up --id <id>` | Move one position earlier in reading order |
 | `docent reading move-down --id <id>` | Move one position later |
 | `docent reading move-to --id <id> --position N` | Move to a specific position |
-| `docent reading export [--format json|markdown] [--status <s>] [--category <c>]` | Export queue with fresh Mendeley metadata |
-| `docent reading sync-from-mendeley [--dry-run]` | Pull entries from the configured Mendeley collection |
+| `docent reading export [--format json|markdown] [--status <s>] [--category <c>]` | Export queue with fresh reference manager metadata |
+| `docent reading sync-from-library [--dry-run]` | Pull entries from the configured reference manager collection |
 | `docent reading sync-status` | Show queue vs database stats |
 | `docent reading config-show` | Show current reading settings |
 | `docent reading config-set --key <k> --value <v>` | Set `database_dir` or `queue_collection` |
@@ -112,8 +110,10 @@ Docent syncs your reading queue from a named collection in your reference manage
 Pick one with `reference_manager` (you can switch anytime — one active at a time):
 
 - **Mendeley** (default) — uses the `mendeley-mcp` server (`uvx mendeley-mcp`), which
-  owns the OAuth login. Put papers in a collection named `Docent-Queue`, then
-  `docent reading sync-from-mendeley`.
+  owns the OAuth login. You'll need to register a Mendeley API client (Client ID + Secret)
+  and run through the OAuth flow once; see [mendeley-mcp](https://github.com/pallaprolus/mendeley-mcp)
+  for full instructions. Put papers in a collection named `Docent-Queue`, then
+  `docent reading sync-from-library`.
 - **Zotero** — uses the Zotero Web API via an API key (no browser login, no OAuth).
 
   #### Getting your Zotero API key and Library ID
@@ -134,14 +134,14 @@ Pick one with `reference_manager` (you can switch anytime — one active at a ti
   docent reading config-set --key zotero_api_key --value <your-key>
   docent reading config-set --key zotero_library_id --value <your-numeric-id>
   # group library? also set: --key zotero_library_type --value group
-  docent reading sync-from-mendeley   # same command; pulls from the Zotero collection
+  docent reading sync-from-library   # pulls from the Zotero collection
   ```
 
   Or do it in the UI: **Settings → Reading → Zotero** (reference manager toggle).
 
   Create a Zotero collection named `Docent-Queue` (or whatever `queue_collection` is set
   to), add the papers you want to read, then sync. Sub-collections become categories,
-  same as Mendeley.
+  same as with Mendeley.
 
 ---
 
@@ -158,7 +158,7 @@ MCP tool names follow the pattern `{tool}__{action}`, with hyphens replaced by u
 | `reading next` | `reading__next` |
 | `reading stats` | `reading__stats` |
 | `reading search` | `reading__search` |
-| `reading sync-from-mendeley` | `reading__sync_from_mendeley` |
+| `reading sync-from-library` | `reading__sync_from_library` |
 | `reading set-deadline` | `reading__set_deadline` |
 | `reading move-up` | `reading__move_up` |
 
@@ -225,10 +225,10 @@ Claude calls `reading__search` with the relevant query and returns matching entr
 
 ---
 
-**Sync your Mendeley library into the queue:**
-> "Pull in any new papers from my Mendeley Docent-Queue collection."
+**Sync your reference manager library into the queue:**
+> "Pull in any new papers from my Docent-Queue collection."
 
-Claude calls `reading__sync_from_mendeley` and reports what was added, unchanged, or removed.
+Claude calls `reading__sync_from_library` and reports what was added, unchanged, or removed.
 
 ---
 
@@ -375,7 +375,7 @@ For the full plugin contract (Tool ABC, `@action`, `to_shapes()`, `on_startup`),
 
 ### `docent doctor`
 
-Check environment health: Python version, Docent version, external tools (feynman, mendeley-mcp), API key presence, and GitHub update availability.
+Check environment health: Python version, Docent version, external tools (feynman, mendeley-mcp, zotero), API key presence, and GitHub update availability.
 
 ```bash
 docent doctor
@@ -385,7 +385,7 @@ Outputs a table with `OK` / `WARN` / `FAIL` / `SKIP` status for each check. Run 
 
 ### `docent setup`
 
-Interactive guided setup: Mendeley connection, PDF database directory, API keys (Tavily, Semantic Scholar). Safe to re-run — existing values are shown as defaults.
+Interactive guided setup: reference manager connection (Mendeley or Zotero), PDF database directory, API keys (Tavily, Semantic Scholar). Safe to re-run — existing values are shown as defaults.
 
 Each API key is validated against its service before saving. An invalid key shows a red ✗ and offers a "save anyway" prompt rather than silently storing a broken value.
 
