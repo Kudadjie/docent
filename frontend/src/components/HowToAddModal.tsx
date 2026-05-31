@@ -214,7 +214,7 @@ export default function HowToAddModal({ onClose, collectionName = 'Docent-Queue'
               lineHeight: 1.6,
             }}
           >
-            Docent has no "Add paper" button by design — {refManager} owns your library,
+            Docent has no &ldquo;Add paper&rdquo; button by design — {refManager} owns your library,
             metadata, and PDFs. Docent only manages what you read and when.
           </p>
         </div>
