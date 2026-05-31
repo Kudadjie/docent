@@ -126,10 +126,28 @@ def test_extract_respects_max_anchors():
     assert len(anchors) == 2
 
 
-def test_extract_skips_web_sources_without_identifiers():
-    sources = [{"url": "https://example.com/article", "source_type": "web"}]
+def test_extract_skips_web_sources():
+    # Web sources are skipped regardless of URL content
+    sources = [
+        {"url": "https://doi.org/10.1234/example", "source_type": "web"},
+        {"url": "https://arxiv.org/abs/2301.12345", "source_type": "web"},
+    ]
     anchors = _extract_anchor_ids(sources)
     assert anchors == []
+
+
+def test_extract_s2_paper_id_fallback():
+    # Non-arXiv, non-DOI paper: fall back to bare S2 paper ID
+    sources = [{"url": "", "source_type": "paper", "s2_paper_id": "abc123paperid"}]
+    anchors = _extract_anchor_ids(sources)
+    assert anchors == [{"s2_id": "abc123paperid"}]
+
+
+def test_extract_prefers_doi_over_s2_id():
+    sources = [{"url": "https://doi.org/10.1/x", "source_type": "paper", "s2_paper_id": "abc123"}]
+    anchors = _extract_anchor_ids(sources)
+    # DOI extracted from URL takes priority
+    assert anchors[0].get("doi") == "10.1/x"
 
 
 # ---------------------------------------------------------------------------

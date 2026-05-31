@@ -120,17 +120,29 @@ def paper_search(
         authors = ", ".join(
             a.get("name", "") for a in (p.get("authors") or [])[:3]
         )
-        arxiv_id = (p.get("externalIds") or {}).get("ArXiv")
-        url = f"https://arxiv.org/abs/{arxiv_id}" if arxiv_id else ""
-        results.append(
-            {
-                "title": p.get("title") or "",
-                "url": url,
-                "snippet": (p.get("abstract") or "")[:500],
-                "authors": authors,
-                "year": p.get("year"),
-            }
+        ext = p.get("externalIds") or {}
+        arxiv_id = ext.get("ArXiv")
+        doi = ext.get("DOI")
+        # Prefer arXiv URL; fall back to DOI URL so _extract_anchor_ids can find it
+        url = (
+            f"https://arxiv.org/abs/{arxiv_id}" if arxiv_id
+            else (f"https://doi.org/{doi}" if doi else "")
         )
+        entry: dict = {
+            "title": p.get("title") or "",
+            "url": url,
+            "snippet": (p.get("abstract") or "")[:500],
+            "authors": authors,
+            "year": p.get("year"),
+        }
+        # Carry DOI and raw S2 paper ID so _extract_anchor_ids has fallback
+        # identifiers for non-arXiv papers (e.g. coastal science journals)
+        if doi:
+            entry["doi"] = doi
+        s2_id = p.get("paperId")
+        if s2_id:
+            entry["s2_paper_id"] = s2_id
+        results.append(entry)
     return results
 
 
@@ -138,7 +150,7 @@ def _scholarly_to_source(paper: dict, query: str) -> dict:
     authors = ", ".join(paper.get("authors", [])[:3])
     doi = paper.get("doi", "")
     url = paper.get("url") or (f"https://doi.org/{doi}" if doi else "")
-    return {
+    result = {
         "title": paper.get("title", ""),
         "url": url,
         "snippet": (paper.get("abstract") or "")[:500],
@@ -147,6 +159,9 @@ def _scholarly_to_source(paper: dict, query: str) -> dict:
         "source_type": "paper",
         "query": query,
     }
+    if doi:
+        result["doi"] = doi
+    return result
 
 
 def _alphaxiv_to_source(paper: dict, query: str) -> dict:

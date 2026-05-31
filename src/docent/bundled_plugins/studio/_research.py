@@ -30,16 +30,20 @@ _DOI_URL_RE = re.compile(r"doi\.org/(.+)")
 
 
 def _extract_anchor_ids(sources: list[dict], max_anchors: int = 2) -> list[dict]:
-    """Extract arXiv IDs or DOIs from sources for cite-graph anchoring.
+    """Extract identifiers from sources for cite-graph anchoring.
 
-    Returns a list of dicts each with an 'arxiv_id' or 'doi' key, up to max_anchors.
-    Prefers arXiv IDs (more reliably resolved by S2); falls back to DOI URLs.
+    Priority: arXiv ID > DOI (URL or field) > bare S2 paper ID.
+    Returns a list of dicts each with an 'arxiv_id', 'doi', or 's2_id' key,
+    up to max_anchors. Only paper-type sources are considered.
     """
     seen: set[str] = set()
     anchors: list[dict] = []
     for s in sources:
         if len(anchors) >= max_anchors:
             break
+        # Skip pure web sources — they rarely resolve in S2
+        if s.get("source_type") == "web":
+            continue
         url = s.get("url", "")
         m = _ARXIV_URL_RE.search(url)
         if m:
@@ -59,6 +63,12 @@ def _extract_anchor_ids(sources: list[dict], max_anchors: int = 2) -> list[dict]
         if doi and doi not in seen:
             seen.add(doi)
             anchors.append({"doi": doi})
+            continue
+        # Last resort: bare S2 paper ID (for non-arXiv, non-DOI papers)
+        s2_id = s.get("s2_paper_id")
+        if s2_id and s2_id not in seen:
+            seen.add(s2_id)
+            anchors.append({"s2_id": s2_id})
     return anchors
 
 
@@ -98,7 +108,11 @@ def _expand_citations(
             existing_ids.add(doi)
 
     def _fetch_one(anchor: dict) -> list[dict]:
-        s2_id = resolve_s2_id(anchor.get("doi"), anchor.get("arxiv_id"))
+        # Bare S2 paper IDs skip resolve_s2_id — they're already the right format
+        if anchor.get("s2_id"):
+            s2_id = anchor["s2_id"]
+        else:
+            s2_id = resolve_s2_id(anchor.get("doi"), anchor.get("arxiv_id"))
         return fetch_citation_graph(s2_id, "cited-by", 20, api_key)
 
     tasks = [lambda a=anchor: _fetch_one(a) for anchor in anchors]
