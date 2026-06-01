@@ -248,7 +248,7 @@ def ui_payload(version: str | None = None) -> dict:
         rel = get_latest_release()
     seen_key = _ui_seen_key(version)
     seen = _load_state(_UI_STATE_FILE) or {}
-    is_new = bool(rel) and bool(rel.highlights) and seen.get("version") != seen_key
+    is_new = rel is not None and bool(rel.highlights) and seen.get("version") != seen_key
     return {
         "version": version,
         "release": rel.as_dict() if rel else None,
