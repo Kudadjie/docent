@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import shutil
 
+from rich.console import Console
+
 _FG = "#18E299"  # brand green  (pixel fills)
 _M = "#3a3a3a"  # muted        (separator / meta)
 
@@ -116,7 +118,7 @@ def _short_version() -> str:
         return ""
 
 
-def print_banner(console: object) -> None:
+def print_banner(console: Console) -> None:
     ver = _short_version()
     term_cols = shutil.get_terminal_size((80, 24)).columns
 

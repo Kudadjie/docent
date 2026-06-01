@@ -187,7 +187,7 @@ class ConfigShowResult(BaseModel):
             if self.mendeley_mcp_command
             else "(default: uvx mendeley-mcp)"
         )
-        shapes = [
+        shapes: list[Shape] = [
             MetricShape(label="Config", value=self.config_path),
             MetricShape(label="database_dir", value=self.database_dir or "(not set)"),
             MetricShape(label="queue_collection", value=self.queue_collection),

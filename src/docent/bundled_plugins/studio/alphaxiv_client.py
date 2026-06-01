@@ -77,9 +77,9 @@ def _search_arxiv(query: str, max_results: int = 10) -> list[dict[str, Any]]:
         arxiv_id = arxiv_id_url.rsplit("/", 1)[-1].split("v")[0] if arxiv_id_url else ""
 
         authors = [
-            a.find(f"{{{_ATOM_NS}}}name").text.strip()
+            (name_el.text or "").strip()
             for a in entry.findall(f"{{{_ATOM_NS}}}author")
-            if a.find(f"{{{_ATOM_NS}}}name") is not None
+            if (name_el := a.find(f"{{{_ATOM_NS}}}name")) is not None
         ]
 
         published = _text("published")[:10]  # YYYY-MM-DD
@@ -178,9 +178,9 @@ def _get_paper_arxiv(arxiv_id: str) -> dict[str, Any]:
         return el.text.strip() if el is not None and el.text else ""
 
     authors = [
-        a.find(f"{{{_ATOM_NS}}}name").text.strip()
+        (name_el.text or "").strip()
         for a in entry.findall(f"{{{_ATOM_NS}}}author")
-        if a.find(f"{{{_ATOM_NS}}}name") is not None
+        if (name_el := a.find(f"{{{_ATOM_NS}}}name")) is not None
     ]
 
     return {

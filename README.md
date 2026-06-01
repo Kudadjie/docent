@@ -147,6 +147,30 @@ Manages your academic reading queue and syncs with your reference manager — **
 |---|---|
 | `docent reading queue-clear --yes` | Wipe the entire queue (irreversible) |
 
+## 🔬 Studio
+
+The `docent studio` tool runs AI-powered deep research, literature reviews, and peer reviews:
+
+| Action | Description |
+|--------|-------------|
+| `docent studio deep-research "topic"` | Full 6-stage research pipeline |
+| `docent studio deep-research "topic" --expand-citations` | Pipeline + parallel citation graph expansion on anchor papers |
+| `docent studio lit "topic"` | Literature-focused review (80% paper bias) |
+| `docent studio lit "topic" --expand-citations` | Literature review + citation discovery (OA papers via S2) |
+| `docent studio review "paper"` | Peer review of an artifact |
+| `docent studio cite-graph --doi "10.x/y"` | Explore the S2 citation graph around a paper |
+| `docent studio search-papers "query"` | Search alphaXiv for academic papers |
+| `docent studio get-paper "arxiv-id"` | AI-generated overview for a paper |
+| `docent studio usage` | Today's Feynman/OpenCode spend + Tavily requests |
+| `docent studio config-show` | Show research settings |
+| `docent studio config-set --key <k> --value <v>` | Set config (e.g. `tavily_api_key`, `alphaxiv_api_key`) |
+
+**Backends:** [Feynman CLI](https://www.feynman.is/) (primary) or Docent-native pipeline via OpenCode Go models (fallback).  
+**Web search:** [Tavily](https://tavily.com/) (free tier: 1,000 calls/month). Set your key:
+```bash
+docent studio config-set --key tavily_api_key --value "tvly-..."
+```
+
 ## 🔌 MCP — Use Docent from Claude Code
 
 `docent serve` starts an MCP server over stdio, exposing every action as an MCP tool. Claude Code can call your reading queue directly — no terminal needed.
@@ -253,30 +277,6 @@ git push --tags
 ```
 
 GitHub Actions builds the wheel, publishes to PyPI, and creates a GitHub release automatically.
-
-## 🔬 Research Tool
-
-The `docent studio` tool runs AI-powered deep research, literature reviews, and peer reviews:
-
-| Action | Description |
-|--------|-------------|
-| `docent studio deep-research "topic"` | Full 6-stage research pipeline |
-| `docent studio deep-research "topic" --expand-citations` | Pipeline + parallel citation graph expansion on anchor papers |
-| `docent studio lit "topic"` | Literature-focused review (80% paper bias) |
-| `docent studio lit "topic" --expand-citations` | Literature review + citation discovery (OA papers via S2) |
-| `docent studio review "paper"` | Peer review of an artifact |
-| `docent studio cite-graph --doi "10.x/y"` | Explore the S2 citation graph around a paper |
-| `docent studio search-papers "query"` | Search alphaXiv for academic papers |
-| `docent studio get-paper "arxiv-id"` | AI-generated overview for a paper |
-| `docent studio usage` | Today's Feynman/OpenCode spend + Tavily requests |
-| `docent studio config-show` | Show research settings |
-| `docent studio config-set --key <k> --value <v>` | Set config (e.g. `tavily_api_key`, `alphaxiv_api_key`) |
-
-**Backends:** [Feynman CLI](https://www.feynman.is/) (primary) or Docent-native pipeline via OpenCode Go models (fallback).  
-**Web search:** [Tavily](https://tavily.com/) (free tier: 1,000 calls/month). Set your key:
-```bash
-docent studio config-set --key tavily_api_key --value "tvly-..."
-```
 
 ## 🚀 Coming Soon
 

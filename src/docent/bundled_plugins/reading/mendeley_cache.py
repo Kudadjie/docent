@@ -107,9 +107,9 @@ class MendeleyCache:
         entry = store.get(_FOLDERS_KEY)
         now = time.time()
         if entry and (now - entry.get("fetched_at", 0.0)) < self._folder_ttl:
-            by_name = entry.get("by_name")
-            if isinstance(by_name, dict) and collection_name in by_name:
-                fid = by_name[collection_name]
+            cached_by_name = entry.get("by_name")
+            if isinstance(cached_by_name, dict) and collection_name in cached_by_name:
+                fid = cached_by_name[collection_name]
                 return fid if isinstance(fid, str) and fid else None
 
         resp = self._list_folders(launch_command=launch_command)

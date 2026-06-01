@@ -13,7 +13,7 @@ import httpx
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 
-router = APIRouter()
+router: APIRouter = APIRouter()
 from docent.ui_server import StudioRunBody  # noqa: E402
 
 _log = logging.getLogger("docent.ui.opencode")

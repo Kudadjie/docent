@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -22,7 +22,7 @@ _OUTPUT_CHOICES = (
     "'local' (default), 'notebook' (push to NotebookLM), 'vault' (write to Obsidian vault)."
 )
 
-_GUIDE_FILES_FIELD = Field(
+_GUIDE_FILES_FIELD: Any = Field(
     default_factory=list,
     description=(
         "Optional path(s) to files (.md, .txt, PDF) or a folder that guide the research — "
@@ -42,7 +42,7 @@ _GUIDE_FILES_FIELD = Field(
 # Active backend values exposed in the UI and MCP tool descriptions.
 # Archived backends (gemini, openrouter, mistral, cerebras, anthropic, openai,
 # ollama, lm_studio, local) still work from the CLI with --backend <name>.
-_BACKEND_ENUM = ["free", "feynman", "docent", "groq"]
+_BACKEND_ENUM: list[Any] = ["free", "feynman", "docent", "groq"]
 
 _AI_ONLY_FREE_ERROR = (
     "The 'free' backend only aggregates sources — it cannot generate or rewrite "
@@ -641,7 +641,7 @@ class CiteGraphResult(BaseModel):
 
     def to_shapes(self) -> list[Shape]:
         if not self.ok:
-            return [ErrorShape(text=self.message)]
+            return [ErrorShape(reason=self.message)]
         shapes: list[Shape] = [
             MessageShape(text=self.message, level="success"),
             MetricShape(label="Anchor", value=self.anchor_title or "Unknown"),

@@ -274,7 +274,7 @@ async def _run_command(cmd: str, args: list[str], timeout: float = 30.0) -> tupl
     except TimeoutError:
         proc.kill()
         raise
-    return stdout_b.decode(), stderr_b.decode(), proc.returncode
+    return stdout_b.decode(), stderr_b.decode(), proc.returncode or 0
 
 
 async def _run(args: list[str], timeout: float = 30.0) -> tuple[str, str, int]:

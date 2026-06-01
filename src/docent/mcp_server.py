@@ -35,7 +35,7 @@ warnings.filterwarnings("ignore", category=SyntaxWarning, module=r"scholarly")
 import asyncio
 import inspect
 import json
-from typing import Any
+from typing import Any, Literal, cast
 
 from mcp import types
 from mcp.server import Server
@@ -75,7 +75,7 @@ def parse_mcp_tool_name(mcp_name: str) -> tuple[str, str] | None:
 # ---------------------------------------------------------------------------
 
 
-def _mcp_input_schema(model: type) -> dict:
+def _mcp_input_schema(model: type[BaseModel]) -> dict:
     """Return the JSON schema for an input model, adjusted for MCP callers.
 
     Strips the default from the ``backend`` field so MCP clients are forced
@@ -367,7 +367,19 @@ def run_server() -> None:
                     if session is not None:
                         try:
                             await session.send_log_message(
-                                level=_level_map.get(payload.level, "info"),
+                                level=cast(
+                                    Literal[
+                                        "debug",
+                                        "info",
+                                        "notice",
+                                        "warning",
+                                        "error",
+                                        "critical",
+                                        "alert",
+                                        "emergency",
+                                    ],
+                                    _level_map.get(payload.level, "info"),
+                                ),
                                 data=line,
                                 related_request_id=request_id,
                             )

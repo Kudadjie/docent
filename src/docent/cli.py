@@ -13,7 +13,7 @@ import os
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from docent.utils.rich_compat import patch_rich_unicode_loader
 
@@ -29,6 +29,7 @@ from rich.progress import (
     MofNCompleteColumn,
     Progress,
     SpinnerColumn,
+    TaskID,
     TextColumn,
     TimeElapsedColumn,
 )
@@ -126,14 +127,20 @@ def _run_workspace() -> None:
 
         _hist = _rd() / ".repl_history"
         _hist.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            _rl.read_history_file(str(_hist))
-        except FileNotFoundError:
-            pass
-        _rl.set_history_length(500)
+        _read_fn = getattr(_rl, "read_history_file", None)
+        if _read_fn is not None:
+            try:
+                _read_fn(str(_hist))
+            except FileNotFoundError:
+                pass
+        _set_fn = getattr(_rl, "set_history_length", None)
+        if _set_fn is not None:
+            _set_fn(500)
         import atexit as _ae
 
-        _ae.register(_rl.write_history_file, str(_hist))
+        _write_fn = getattr(_rl, "write_history_file", None)
+        if _write_fn is not None:
+            _ae.register(_write_fn, str(_hist))
     except (ImportError, Exception):
         pass
 
@@ -245,7 +252,12 @@ def main(
 
     # Skip startup prompts for commands that manage their own output or that run
     # as a stdio server (serve) where stdout must be pure JSON-RPC, and workspace.
-    _skip_startup = _in_workspace or ctx.invoked_subcommand in ("setup", "doctor", "serve")
+    _skip_startup = _in_workspace or ctx.invoked_subcommand in (
+        "setup",
+        "doctor",
+        "serve",
+        "whatsnew",
+    )
     if not _skip_startup:
         _run_setup_if_needed()
         _startup_doctor_check(settings)
@@ -419,7 +431,7 @@ def _drive_progress(gen: Any) -> Any:
     )
     result = None
     with Progress(*columns, console=console, transient=False) as progress:
-        task_id: int | None = None
+        task_id: TaskID | None = None
         current_phase: str | None = None
         try:
             while True:
@@ -558,7 +570,9 @@ def _build_callback(
         if finfo.is_required():
             option_default = ...
         elif finfo.default_factory is not None:
-            option_default = finfo.default_factory()
+            # Pydantic v2 types default_factory as Callable[[], Any] | Callable[[dict], Any].
+            # CLI defaults are never data-dependent, so cast to the zero-arg form.
+            option_default = cast(Callable[[], Any], finfo.default_factory)()
         else:
             option_default = finfo.default
         if finfo.annotation is bool:
@@ -611,7 +625,10 @@ def _register_tool_in_app(tool_cls: type[Tool]) -> None:
     for cli_name, (method_name, meta) in sorted(actions.items()):
 
         def make_invoke(mname: str) -> Callable[[BaseModel, Context], Any]:
-            return lambda inp, ctx, _m=mname: getattr(tool_cls(), _m)(inp, ctx)
+            def _invoke(inp: BaseModel, ctx: Context, _m: str = mname) -> Any:
+                return getattr(tool_cls(), _m)(inp, ctx)
+
+            return _invoke
 
         callback = _build_callback(
             schema=meta.input_schema,
@@ -628,6 +645,15 @@ discover_tools()
 load_plugins()
 for _tool_cls in all_tools().values():
     _register_tool_in_app(_tool_cls)
+
+
+def _md_to_rich(text: str) -> str:
+    """Convert markdown bold and inline-code to Rich markup for terminal display."""
+    import re as _re
+
+    text = _re.sub(r"\*\*(.+?)\*\*", r"[bold]\1[/bold]", text)
+    text = _re.sub(r"`(.+?)`", r"[cyan]\1[/]", text)
+    return text
 
 
 def _maybe_show_whatsnew() -> None:
@@ -648,7 +674,7 @@ def _maybe_show_whatsnew() -> None:
         return
     if rel is None or not rel.highlights:
         return
-    bullets = "\n".join(f"  • {h}" for h in rel.highlights[:4])
+    bullets = "\n".join(f"  • {_md_to_rich(h)}" for h in rel.highlights[:4])
     body = (
         f"[dim]Updated to[/] [bold]{rel.version}[/]\n{bullets}\n"
         "[dim]Run[/] [cyan]docent whatsnew[/] [dim]for the full notes.[/]"
@@ -668,7 +694,7 @@ def whatsnew_command() -> None:
         console.print("[dim]See https://github.com/Kudadjie/docent/releases[/]")
         return
     when = f" [dim]({rel.date})[/]" if rel.date else ""
-    body = "\n".join(f"  • {h}" for h in rel.highlights)
+    body = "\n".join(f"  • {_md_to_rich(h)}" for h in rel.highlights)
     console.print(
         Panel(body, title=f"What's New in {rel.version}{when}", border_style="cyan", expand=False)
     )

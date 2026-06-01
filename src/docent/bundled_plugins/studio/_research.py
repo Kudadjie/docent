@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import re
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any, cast
 
 from docent.bundled_plugins.studio.feynman import (
     FeynmanNotFoundError,
@@ -127,7 +130,10 @@ def _expand_citations(
             s2_id = resolve_s2_id(anchor.get("doi"), anchor.get("arxiv_id"))
         return fetch_citation_graph(s2_id, "cited-by", 20, api_key)
 
-    tasks = [lambda a=anchor: _fetch_one(a) for anchor in anchors]
+    tasks = cast(
+        list[Callable[[], Any]],
+        [functools.partial(_fetch_one, anchor) for anchor in anchors],
+    )
     raw_results = parallel_fetch(tasks)
 
     # Collect unique OA papers not already in sources.
@@ -291,7 +297,7 @@ class ResearchMixin:
 
             out_file = output_dir / f"{slug}.md"
             review_file = output_dir / f"{slug}-review.md"
-            sources_file = output_dir / f"{slug}-sources.json"
+            sources_file: Path | None = output_dir / f"{slug}-sources.json"
 
             draft_text = result_data["draft"]
             if cite_section:  # only appended when enrichment was skipped or failed
@@ -299,6 +305,7 @@ class ResearchMixin:
             draft_with_refs = _append_references(draft_text, result_data.get("sources", []))
             out_file.write_text(draft_with_refs, encoding="utf-8")
             review_file.write_text(result_data["review"], encoding="utf-8")
+            assert sources_file is not None
             sources_file.write_text(
                 json.dumps(result_data.get("sources", []), indent=2, ensure_ascii=False),
                 encoding="utf-8",
@@ -550,7 +557,7 @@ class ResearchMixin:
 
             out_file = output_dir / f"{slug}.md"
             review_file = output_dir / f"{slug}-review.md"
-            sources_file = output_dir / f"{slug}-sources.json"
+            sources_file_lit: Path | None = output_dir / f"{slug}-sources.json"
 
             draft_text = result_data["draft"]
             if cite_section:  # only appended when enrichment was skipped or failed
@@ -558,7 +565,8 @@ class ResearchMixin:
             draft_with_refs = _append_references(draft_text, result_data.get("sources", []))
             out_file.write_text(draft_with_refs, encoding="utf-8")
             review_file.write_text(result_data["review"], encoding="utf-8")
-            sources_file.write_text(
+            assert sources_file_lit is not None
+            sources_file_lit.write_text(
                 json.dumps(result_data.get("sources", []), indent=2, ensure_ascii=False),
                 encoding="utf-8",
             )
@@ -566,7 +574,7 @@ class ResearchMixin:
             yield ProgressEvent(phase="done", message="Completed")
 
             notebook_id, vault_path, extra = yield from _route_output(
-                inputs, out_file, sources_file, context, "lit"
+                inputs, out_file, sources_file_lit, context, "lit"
             )
             return ResearchResult(
                 ok=True,

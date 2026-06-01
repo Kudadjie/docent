@@ -115,7 +115,7 @@ def _web_search_ddg(query: str, max_results: int = 10) -> list[dict]:
     try:
         from ddgs import DDGS  # renamed from duckduckgo_search
     except ImportError:
-        from duckduckgo_search import DDGS  # old name fallback
+        from duckduckgo_search import DDGS  # type: ignore[no-redef]  # old name fallback
     results = []
     with DDGS() as ddgs:
         for r in ddgs.text(query, max_results=max_results):
