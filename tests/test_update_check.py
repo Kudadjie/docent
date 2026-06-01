@@ -131,18 +131,28 @@ def test_check_pypi_default_upgrade_cmd(tmp_path: Path):
 
 # ── _detect_upgrade_cmd ───────────────────────────────────────────────────────
 
+
 def test_detect_upgrade_cmd_uv_tool(monkeypatch):
     from docent.cli import _detect_upgrade_cmd
-    monkeypatch.setattr("docent.cli.sys.executable", "/home/user/.local/share/uv/tools/docent-cli/bin/python")
+
+    monkeypatch.setattr(
+        "docent.cli.sys.executable", "/home/user/.local/share/uv/tools/docent-cli/bin/python"
+    )
     assert _detect_upgrade_cmd() == ["uv", "tool", "upgrade", "docent-cli"]
+
 
 def test_detect_upgrade_cmd_pipx(monkeypatch):
     from docent.cli import _detect_upgrade_cmd
-    monkeypatch.setattr("docent.cli.sys.executable", "/home/user/.local/share/pipx/venvs/docent-cli/bin/python")
+
+    monkeypatch.setattr(
+        "docent.cli.sys.executable", "/home/user/.local/share/pipx/venvs/docent-cli/bin/python"
+    )
     assert _detect_upgrade_cmd() == ["pipx", "upgrade", "docent-cli"]
+
 
 def test_detect_upgrade_cmd_pip_fallback(monkeypatch):
     from docent.cli import _detect_upgrade_cmd
+
     monkeypatch.setattr("docent.cli.sys.executable", "/usr/bin/python3")
     cmd = _detect_upgrade_cmd()
     assert cmd[0] == "/usr/bin/python3"
