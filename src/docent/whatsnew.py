@@ -221,21 +221,34 @@ def pop_banner_release(version: str | None = None) -> Release | None:
 # ── UI toast state ──────────────────────────────────────────────────────────────
 
 
+def _ui_seen_key(version: str) -> str:
+    """Stable key for the 'seen' state.
+
+    For production builds this is the version string itself.  For dev builds
+    (containing ``.dev``) it is the latest tagged release version — so the toast
+    fires once when a new release lands and stays quiet on every subsequent dev
+    commit, rather than firing on every ``uv sync``.
+    """
+    if ".dev" not in version:
+        return version
+    latest = get_latest_release()
+    return latest.version if latest else version
+
+
 def ui_payload(version: str | None = None) -> dict:
     """Return the What's New payload for the UI.
 
     ``new`` is True when the current version's entry has not yet been dismissed
-    in the UI (i.e. first load after an update).  Dev builds (version contains
-    ``.dev``) always return ``new=False`` so the toast doesn't fire on every
-    reload; the release data is still populated (latest tagged release).
+    in the UI (i.e. first load after an update).
     """
     version = version or __version__
     rel = get_release(version)
     is_dev = ".dev" in version
     if (rel is None or not rel.highlights) and is_dev:
         rel = get_latest_release()
+    seen_key = _ui_seen_key(version)
     seen = _load_state(_UI_STATE_FILE) or {}
-    is_new = bool(rel) and seen.get("version") != version and not is_dev
+    is_new = bool(rel) and bool(rel.highlights) and seen.get("version") != seen_key
     return {
         "version": version,
         "release": rel.as_dict() if rel else None,
@@ -246,4 +259,4 @@ def ui_payload(version: str | None = None) -> dict:
 def mark_ui_seen(version: str | None = None) -> None:
     """Record that the UI toast for *version* has been dismissed."""
     version = version or __version__
-    _save_state(_UI_STATE_FILE, {"version": version})
+    _save_state(_UI_STATE_FILE, {"version": _ui_seen_key(version)})

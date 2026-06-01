@@ -59,7 +59,10 @@ export default function WhatsNewToast() {
   if (!visible || !release) return null;
 
   const previewItems = release.highlights.slice(0, 3);
-  const hasMore = release.highlights.length > 3;
+  // Show "See more" if there are extra bullets OR if any visible bullet is truncated.
+  const hasMore =
+    release.highlights.length > 3 ||
+    previewItems.some((h) => stripMd(h).length > 72);
   // Build a markdown bullet list for the modal.
   const fullMarkdown = release.highlights.map((h) => `- ${h}`).join('\n');
 
