@@ -119,6 +119,18 @@ def _normalize(version: str) -> str:
     return version.split("+", 1)[0].split(".dev", 1)[0]
 
 
+def get_latest_release() -> Release | None:
+    """Return the most recent tagged release, ignoring [Unreleased]."""
+    path = changelog_path()
+    if path is None:
+        return None
+    try:
+        releases = parse_changelog(path.read_text(encoding="utf-8"))
+    except OSError:
+        return None
+    return next((r for r in releases if r.version != "Unreleased"), None)
+
+
 def get_release(version: str | None = None, *, allow_unreleased: bool = True) -> Release | None:
     """Return the Release entry matching *version* (default: installed version).
 
@@ -213,12 +225,17 @@ def ui_payload(version: str | None = None) -> dict:
     """Return the What's New payload for the UI.
 
     ``new`` is True when the current version's entry has not yet been dismissed
-    in the UI (i.e. first load after an update).
+    in the UI (i.e. first load after an update).  Dev builds (version contains
+    ``.dev``) always return ``new=False`` so the toast doesn't fire on every
+    reload; the release data is still populated (latest tagged release).
     """
     version = version or __version__
     rel = get_release(version)
+    is_dev = ".dev" in version
+    if (rel is None or not rel.highlights) and is_dev:
+        rel = get_latest_release()
     seen = _load_state(_UI_STATE_FILE) or {}
-    is_new = bool(rel) and seen.get("version") != version
+    is_new = bool(rel) and seen.get("version") != version and not is_dev
     return {
         "version": version,
         "release": rel.as_dict() if rel else None,

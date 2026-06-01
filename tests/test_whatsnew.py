@@ -49,6 +49,26 @@ def test_parse_falls_back_to_bare_bullets_when_no_whatsnew_section():
     assert by_ver["2.0.4"].highlights == ["Bare bullet one", "Bare bullet two"]
 
 
+# ── get_latest_release ───────────────────────────────────────────────────────
+
+
+def test_get_latest_release_returns_first_tagged(tmp_path, monkeypatch):
+    _write_changelog(tmp_path, monkeypatch)
+    rel = wn.get_latest_release()
+    assert rel is not None and rel.version == "2.1.0"
+
+
+def test_get_latest_release_skips_unreleased(tmp_path, monkeypatch):
+    _write_changelog(tmp_path, monkeypatch)
+    rel = wn.get_latest_release()
+    assert rel is not None and rel.version != "Unreleased"
+
+
+def test_get_latest_release_none_when_no_changelog(monkeypatch):
+    monkeypatch.setattr(wn, "changelog_path", lambda: None)
+    assert wn.get_latest_release() is None
+
+
 # ── get_release matching ──────────────────────────────────────────────────────
 
 
@@ -126,11 +146,24 @@ def test_ui_route_get_then_seen(tmp_docent_home, tmp_path, monkeypatch):
     client = TestClient(ui_server.app)
 
     data = client.get("/api/whatsnew").json()
-    assert data["new"] is True
-    assert data["release"]["highlights"]  # non-empty (Unreleased fallback in dev)
+    # Dev builds (version contains ".dev") never set new=True — the toast should
+    # not fire on every reload for local development installs.
+    assert data["new"] is False
+    assert data["release"]["highlights"]  # still populated (Unreleased fallback)
 
     assert client.post("/api/whatsnew/seen").status_code == 200
     assert client.get("/api/whatsnew").json()["new"] is False
+
+
+def test_ui_payload_dev_build_falls_back_to_latest_when_unreleased_empty(
+    tmp_docent_home, tmp_path, monkeypatch
+):
+    empty_unreleased = "## [Unreleased]\n\n## [2.1.0] - 2026-06-01\n\n### What's New\n- Faster UI\n"
+    _write_changelog(tmp_path, monkeypatch, text=empty_unreleased)
+    payload = wn.ui_payload("1.0.0.dev5+gabcdef")
+    assert payload["new"] is False
+    assert payload["release"] is not None
+    assert payload["release"]["version"] == "2.1.0"
 
 
 # ── CLI command + banner ──────────────────────────────────────────────────────
@@ -148,6 +181,25 @@ def test_whatsnew_command_prints_highlights(tmp_path, monkeypatch):
     out = rec.export_text()
     assert "What's New" in out
     assert "Dev highlight A" in out  # the [Unreleased] highlight
+
+
+def test_whatsnew_command_dev_build_shows_latest_when_unreleased_empty(tmp_path, monkeypatch):
+    """On dev builds with an empty [Unreleased], show latest tagged release notes."""
+    from rich.console import Console
+
+    import docent.cli as cli
+
+    empty_unreleased = "## [Unreleased]\n\n## [2.1.0] - 2026-06-01\n\n### What's New\n- Faster UI\n"
+    _write_changelog(tmp_path, monkeypatch, text=empty_unreleased)
+    # Simulate a dev-build version string.
+    monkeypatch.setattr(cli, "__version__", "1.0.0.dev5+gabcdef")
+    rec = Console(record=True, width=100)
+    monkeypatch.setattr(cli, "get_console", lambda: rec)
+    cli.whatsnew_command()
+    out = rec.export_text()
+    assert "2.1.0" in out
+    assert "Faster UI" in out
+    assert "Dev build" in out
 
 
 def test_cli_banner_renders_when_interactive(tmp_path, monkeypatch):
