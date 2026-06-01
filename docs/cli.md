@@ -1,4 +1,4 @@
-# Docent CLI v1.2
+# Docent CLI
 
 Docent is a personal CLI control center for grad-school workflows. It manages an academic reading queue and syncs with your reference manager (Mendeley or Zotero). All tools are also exposed as MCP (Model Context Protocol) tools so Claude Code can call them directly.
 
@@ -438,4 +438,4 @@ Upgrade to the latest PyPI release.
 docent update
 ```
 
-Equivalent to `uv tool upgrade docent-cli`. Only works if Docent was installed via `uv tool install`.
+Detects how Docent was installed (uv, pipx, or pip) and runs the correct upgrader automatically.
