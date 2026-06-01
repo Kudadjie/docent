@@ -8,23 +8,23 @@ frontend auto-generates a form from each. A new plugin dropped into
 
 Endpoints:
   GET  /api/tools          → tool/action catalogue with JSON schemas
-  POST /api/tools/invoke   → run one action, return its JSON result
-
-Note: generator (streaming) actions are drained synchronously and only the
-final result is returned. Long-running Studio actions keep their dedicated
-streaming page (`/studio`); this surface targets quick CRUD-style actions.
+  POST /api/tools/invoke   → run one action, return its JSON result (sync)
+  POST /api/tools/stream   → run one action, stream ProgressEvents + result as SSE
 """
 
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
+import queue
+import threading
 
 from fastapi import APIRouter
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
-from docent.core.invoke import invoke_action_for_ui
+from docent.core.invoke import invoke_action_for_ui, make_context, run_action, serialize_result
 from docent.core.registry import all_tools, collect_actions
 
 router = APIRouter()
@@ -108,3 +108,101 @@ async def invoke_tool(body: InvokeBody) -> JSONResponse:
         return JSONResponse({"ok": False, "confirmation_required": True, "result": parsed})
 
     return JSONResponse({"ok": True, "result": parsed})
+
+
+@router.post("/api/tools/stream")
+async def stream_tool(body: InvokeBody) -> StreamingResponse:
+    """Run one action and stream its output as Server-Sent Events.
+
+    Each event is a ``data: <json>\\n\\n`` line. Three event shapes:
+
+    - ``{"type": "progress", "phase": "...", "message": "...", "level": "info"}``
+      — intermediate ProgressEvent from a generator action
+    - ``{"type": "result",  "ok": true,  "result": {...}}``
+      — final result (generator drained or sync action completed)
+    - ``{"type": "error",   "ok": false, "error": "...", ...}``
+      — validation failure, unknown action, or runtime error
+
+    Non-generator actions emit no progress events and go directly to ``result``.
+    The frontend shows the telemetry strip only when progress events arrive.
+    """
+    from docent.core.events import ProgressEvent
+    from docent.core.exceptions import ConfirmationRequired
+
+    event_q: queue.Queue[str | None] = queue.Queue()
+
+    def _worker() -> None:
+        try:
+            ctx = make_context(non_interactive=True, auto_confirm=True)
+            raw = run_action(body.tool, body.action, body.inputs, context=ctx)
+        except ConfirmationRequired as exc:
+            event_q.put(
+                json.dumps(
+                    {
+                        "type": "error",
+                        "ok": False,
+                        "confirmation_required": True,
+                        "notes": exc.notes,
+                    }
+                )
+            )
+            event_q.put(None)
+            return
+        except (ValueError, Exception) as exc:
+            event_q.put(json.dumps({"type": "error", "ok": False, "error": str(exc)}))
+            event_q.put(None)
+            return
+
+        try:
+            if inspect.isgenerator(raw):
+                result_value = None
+                try:
+                    while True:
+                        evt = next(raw)
+                        if isinstance(evt, ProgressEvent):
+                            event_q.put(json.dumps({"type": "progress", **evt.model_dump()}))
+                        else:
+                            result_value = evt
+                except StopIteration as stop:
+                    result_value = stop.value
+            else:
+                result_value = raw
+
+            try:
+                parsed = json.loads(serialize_result(result_value))
+            except (json.JSONDecodeError, TypeError):
+                parsed = str(result_value)
+
+            if isinstance(parsed, dict) and parsed.get("confirmation_required"):
+                event_q.put(
+                    json.dumps(
+                        {
+                            "type": "error",
+                            "ok": False,
+                            "confirmation_required": True,
+                            "result": parsed,
+                        }
+                    )
+                )
+            else:
+                event_q.put(json.dumps({"type": "result", "ok": True, "result": parsed}))
+        except Exception as exc:
+            event_q.put(json.dumps({"type": "error", "ok": False, "error": str(exc)}))
+        finally:
+            event_q.put(None)
+
+    threading.Thread(target=_worker, daemon=True).start()
+
+    async def _generate():  # type: ignore[return]
+        loop = asyncio.get_event_loop()
+        while True:
+            msg: str | None = await loop.run_in_executor(None, event_q.get)
+            if msg is None:
+                break
+            yield f"data: {msg}\n\n"
+
+    return StreamingResponse(
+        _generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

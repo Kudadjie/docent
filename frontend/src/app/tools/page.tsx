@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Wrench, Play, ChevronRight, AlertTriangle, CheckCircle, Terminal } from 'lucide-react';
 import Sidebar from '@/components/Sidebar';
 import StatusBanner from '@/components/StatusBanner';
@@ -22,7 +22,14 @@ interface InvokeResult {
   ok: boolean;
   error?: string;
   confirmation_required?: boolean;
+  notes?: string[];
   result?: unknown;
+}
+
+interface LogLine {
+  phase: string;
+  message: string;
+  level: 'info' | 'warn' | 'error';
 }
 
 export default function ToolsPage() {
@@ -35,6 +42,8 @@ export default function ToolsPage() {
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<InvokeResult | null>(null);
+  const [logLines, setLogLines] = useState<LogLine[]>([]);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     fetch('/api/tools')
@@ -86,17 +95,60 @@ export default function ToolsPage() {
     }
     if (confirmed) payload.confirmed = true;
 
+    // Cancel any prior in-flight stream.
+    if (abortRef.current) abortRef.current.abort();
+    const abort = new AbortController();
+    abortRef.current = abort;
+
     setRunning(true);
+    setLogLines([]);
     setResult(null);
+
     try {
-      const r = await fetch('/api/tools/invoke', {
+      const resp = await fetch('/api/tools/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tool: selTool, action: selAction, inputs: payload }),
+        signal: abort.signal,
       });
-      const data = await r.json() as InvokeResult;
-      setResult(data);
-    } catch {
+
+      const reader = resp.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      outer: while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          let msg: Record<string, unknown>;
+          try { msg = JSON.parse(line.slice(6)); } catch { continue; }
+
+          if (msg.type === 'progress') {
+            setLogLines(prev => [...prev, {
+              phase: String(msg.phase ?? ''),
+              message: String(msg.message ?? msg.phase ?? ''),
+              level: (msg.level === 'warn' || msg.level === 'error') ? msg.level : 'info',
+            }]);
+          } else {
+            // result or error — terminal event
+            setResult({
+              ok: msg.ok === true,
+              error: typeof msg.error === 'string' ? msg.error : undefined,
+              confirmation_required: msg.confirmation_required === true,
+              notes: Array.isArray(msg.notes) ? msg.notes as string[] : undefined,
+              result: msg.result,
+            });
+            setRunning(false);
+            break outer;
+          }
+        }
+      }
+    } catch (e) {
+      if (e instanceof Error && e.name === 'AbortError') return;
       setResult({ ok: false, error: 'Could not reach the server.' });
     } finally {
       setRunning(false);
@@ -221,6 +273,9 @@ export default function ToolsPage() {
                   {!complete && <span style={{ fontFamily: 'var(--sans)', fontSize: 11.5, color: 'var(--fg4)' }}>Required fields are marked with *</span>}
                 </div>
 
+                {/* Telemetry strip — visible only when progress events arrive */}
+                <TelemetryStrip lines={logLines} running={running} />
+
                 {/* Result */}
                 {result && <ResultPanel result={result} onConfirm={() => run(true)} running={running} />}
               </div>
@@ -236,12 +291,66 @@ export default function ToolsPage() {
   );
 }
 
+// ── Telemetry strip ──────────────────────────────────────────────────────────
+
+function TelemetryStrip({ lines, running }: { lines: LogLine[]; running: boolean }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [lines]);
+
+  if (lines.length === 0) return null;
+
+  const lineColor = (level: LogLine['level']) =>
+    level === 'error' ? RED : level === 'warn' ? '#C97B00' : BRAND;
+
+  return (
+    <div style={{ marginTop: 16, border: '1px solid var(--code-border)', borderRadius: 8, overflow: 'hidden' }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 7, padding: '6px 12px',
+        borderBottom: '1px solid var(--code-border)', background: 'var(--code-bg)',
+      }}>
+        <span style={{
+          width: 6, height: 6, borderRadius: '50%',
+          background: running ? BRAND : 'var(--fg4)',
+          flexShrink: 0,
+        }} />
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 9.5, color: 'var(--fg4)', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+          {running ? 'Running' : 'Done'}
+        </span>
+        <span style={{ marginLeft: 'auto', fontFamily: 'var(--mono)', fontSize: 9.5, color: 'var(--fg4)' }}>
+          {lines.length} {lines.length === 1 ? 'event' : 'events'}
+        </span>
+      </div>
+      <div ref={scrollRef} style={{
+        maxHeight: 180, overflowY: 'auto', padding: '10px 12px',
+        background: 'var(--code-bg)', display: 'flex', flexDirection: 'column', gap: 3,
+      }}>
+        {lines.map((line, i) => (
+          <div key={i} style={{ display: 'flex', gap: 8, fontFamily: 'var(--mono)', fontSize: 11.5, lineHeight: 1.45 }}>
+            <span style={{ color: lineColor(line.level), flexShrink: 0, minWidth: 0 }}>
+              [{line.phase}]
+            </span>
+            <span style={{ color: 'var(--fg2)', wordBreak: 'break-word' }}>
+              {line.message}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Result panel ─────────────────────────────────────────────────────────────
 
 function ResultPanel({ result, onConfirm, running }: { result: InvokeResult; onConfirm: () => void; running: boolean }) {
   const confirmation = result.confirmation_required;
   const ok = result.ok && !confirmation;
-  const notes = confirmation && isRecord(result.result) ? (result.result.notes as string[] | undefined) : undefined;
+  // notes may come at the top level (stream path) or nested in result (invoke path)
+  const notes = confirmation
+    ? (result.notes ?? (isRecord(result.result) ? result.result.notes as string[] | undefined : undefined))
+    : undefined;
   const pretty = (() => {
     try { return JSON.stringify(result.result, null, 2); } catch { return String(result.result); }
   })();

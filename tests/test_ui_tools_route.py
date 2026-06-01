@@ -104,6 +104,99 @@ def test_invoke_missing_required_field_returns_400(tmp_docent_home):
     assert body["error"]
 
 
+def _parse_sse(body: str) -> list[dict]:
+    """Parse a raw SSE response body into a list of decoded event dicts."""
+    import json as _json
+
+    events = []
+    for line in body.splitlines():
+        if line.startswith("data: "):
+            events.append(_json.loads(line[6:]))
+    return events
+
+
+def test_stream_sync_action_emits_result_event(tmp_docent_home):
+    """Non-generator actions emit a single result event with no progress events."""
+    resp = _client().post(
+        "/api/tools/stream",
+        json={"tool": "reading", "action": "stats", "inputs": {}},
+    )
+    assert resp.status_code == 200
+    events = _parse_sse(resp.text)
+    assert events, "Expected at least one SSE event"
+    assert events[-1]["type"] == "result"
+    assert events[-1]["ok"] is True
+    # No progress events for a sync action.
+    assert all(e["type"] != "progress" for e in events[:-1])
+
+
+def test_stream_generator_action_emits_progress_then_result(tmp_docent_home):
+    """Generator actions emit ProgressEvent rows before the final result event."""
+    from pydantic import BaseModel
+
+    from docent.core.events import ProgressEvent
+    from docent.core.registry import _REGISTRY, register_tool
+    from docent.core.tool import Tool, action
+
+    class _Inp(BaseModel):
+        pass
+
+    @register_tool
+    class _Streamer(Tool):
+        name = "streamertest"
+        description = "Yields progress then returns."
+
+        @action(description="Stream two progress events.", input_schema=_Inp)
+        def go(self, inputs, context):  # noqa: ANN001
+            yield ProgressEvent(phase="alpha", message="step 1")
+            yield ProgressEvent(phase="beta", message="step 2", level="warn")
+            return {"done": True}
+
+    try:
+        resp = _client().post(
+            "/api/tools/stream",
+            json={"tool": "streamertest", "action": "go", "inputs": {}},
+        )
+        assert resp.status_code == 200
+        events = _parse_sse(resp.text)
+        progress = [e for e in events if e["type"] == "progress"]
+        results = [e for e in events if e["type"] == "result"]
+        assert len(progress) == 2
+        assert progress[0]["phase"] == "alpha"
+        assert progress[0]["message"] == "step 1"
+        assert progress[0]["level"] == "info"
+        assert progress[1]["phase"] == "beta"
+        assert progress[1]["level"] == "warn"
+        assert len(results) == 1
+        assert results[0]["ok"] is True
+        assert results[0]["result"]["done"] is True
+    finally:
+        _REGISTRY.pop("streamertest", None)
+
+
+def test_stream_unknown_tool_emits_error_event():
+    resp = _client().post(
+        "/api/tools/stream",
+        json={"tool": "nope", "action": "run", "inputs": {}},
+    )
+    assert resp.status_code == 200  # HTTP level is always 200 for SSE
+    events = _parse_sse(resp.text)
+    assert events[-1]["type"] == "error"
+    assert events[-1]["ok"] is False
+    assert events[-1]["error"]
+
+
+def test_stream_missing_required_field_emits_error_event(tmp_docent_home):
+    resp = _client().post(
+        "/api/tools/stream",
+        json={"tool": "reading", "action": "show", "inputs": {}},
+    )
+    assert resp.status_code == 200
+    events = _parse_sse(resp.text)
+    assert events[-1]["type"] == "error"
+    assert events[-1]["ok"] is False
+
+
 def test_invoke_action_that_calls_asyncio_run_succeeds():
     """Regression: actions that call asyncio.run() internally (e.g. the Mendeley
     overlay on reading.search) must not blow up with 'asyncio.run() cannot be
