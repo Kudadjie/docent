@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 from docent.errors import ToolNotFoundError
@@ -386,10 +387,8 @@ def _run_feynman(
     stderr_output = ""
     returncode: int
 
-    import platform
-
     popen_kwargs: dict = {}
-    if platform.system() == "Windows":
+    if sys.platform == "win32":
         popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
 
     try:
@@ -503,7 +502,7 @@ def _run_feynman(
             "docent studio config-set --key feynman_timeout --value <seconds>"
         )
     except KeyboardInterrupt:
-        if platform.system() == "Windows":
+        if sys.platform == "win32":
             import signal as _signal
 
             try:
