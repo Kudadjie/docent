@@ -685,10 +685,16 @@ def _maybe_show_whatsnew() -> None:
 @app.command("whatsnew", help="Show what changed in the current Docent version.")
 def whatsnew_command() -> None:
     """Print the current version's release highlights from the changelog."""
-    from docent.whatsnew import get_release
+    from docent.whatsnew import get_latest_release, get_release
 
     console = get_console()
     rel = get_release()
+    is_dev = ".dev" in __version__
+    if (rel is None or not rel.highlights) and is_dev:
+        latest = get_latest_release()
+        if latest and latest.highlights:
+            console.print(f"[dim]Dev build ({__version__}) — latest release:[/]")
+            rel = latest
     if rel is None or not rel.highlights:
         console.print(f"[dim]No release notes found for[/] [bold]{__version__}[/].")
         console.print("[dim]See https://github.com/Kudadjie/docent/releases[/]")

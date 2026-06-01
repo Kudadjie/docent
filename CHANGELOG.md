@@ -19,6 +19,22 @@ subsection with 2–5 user-facing highlights — those are what the banner shows
 
 ## [Unreleased]
 
+## [2.1.2] - 2026-06-01
+
+### What's New
+- **Docs page** — all guide sections now load in packaged installs (was 404 in v2.1.1
+  due to a packaging error; `docs/` files are now correctly bundled in the wheel).
+- **`docent whatsnew`** and the UI "What's New" toast now correctly show release
+  highlights after an update (v2.1.1 bundled the wrong `CHANGELOG.md`).
+- **Dev builds** — `docent whatsnew` now shows the latest tagged release notes
+  instead of "No release notes found" when the `[Unreleased]` section is empty.
+
+### Fixed
+- v2.1.1 was tagged before its packaging fixes (`force-include` for `docs/` and
+  the renamed `[2.1.1]` CHANGELOG entry) landed on `main`, producing a wheel that
+  silently shipped without bundled docs or correct release metadata. v2.1.2 is a
+  corrected re-release of the same changes.
+
 ## [2.1.1] - 2026-06-01
 
 ### Changed
