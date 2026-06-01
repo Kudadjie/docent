@@ -25,6 +25,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from docent.core.invoke import invoke_action_for_ui, make_context, run_action, serialize_result
+from docent.core.plugin_loader import list_plugins
 from docent.core.registry import all_tools, collect_actions
 
 router = APIRouter()
@@ -36,9 +37,21 @@ class InvokeBody(BaseModel):
     inputs: dict = {}
 
 
+def _tool_source(tool_cls: type, external_modules: set[str]) -> str:
+    """Return 'plugin' for user-installed tools, 'bundled' for shipped ones."""
+    module = inspect.getmodule(tool_cls)
+    mod_name = getattr(module, "__name__", "") if module else ""
+    return "plugin" if mod_name in external_modules else "bundled"
+
+
 @router.get("/api/tools")
 async def list_tools() -> JSONResponse:
-    """Return every registered tool, its actions, and each action's JSON schema."""
+    """Return every registered tool, its actions, and each action's JSON schema.
+
+    Each entry includes a ``source`` field: ``"bundled"`` for shipped tools,
+    ``"plugin"`` for tools loaded from ``~/.docent/plugins/``.
+    """
+    external_modules = {p["name"] for p in list_plugins() if p["source"] == "external"}
     catalogue = []
     for tool_name, tool_cls in sorted(all_tools().items()):
         actions_meta = collect_actions(tool_cls)
@@ -66,6 +79,7 @@ async def list_tools() -> JSONResponse:
                 "tool": tool_name,
                 "description": tool_cls.description,
                 "category": tool_cls.category,
+                "source": _tool_source(tool_cls, external_modules),
                 "actions": actions,
             }
         )

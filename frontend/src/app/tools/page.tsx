@@ -16,7 +16,13 @@ const INDIGO = '#6366f1';
 const RED = '#D45656';
 
 interface ActionMeta { action: string; description: string; schema: Record<string, unknown>; }
-interface ToolMeta { tool: string; description: string; category: string | null; actions: ActionMeta[]; }
+interface ToolMeta {
+  tool: string;
+  description: string;
+  category: string | null;
+  source: 'bundled' | 'plugin';
+  actions: ActionMeta[];
+}
 
 interface InvokeResult {
   ok: boolean;
@@ -39,6 +45,7 @@ export default function ToolsPage() {
   const [loadError, setLoadError] = useState(false);
   const [selTool, setSelTool] = useState<string | null>(null);
   const [selAction, setSelAction] = useState<string | null>(null);
+  const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<InvokeResult | null>(null);
@@ -50,12 +57,19 @@ export default function ToolsPage() {
       .then(r => r.json())
       .then((data: ToolMeta[]) => {
         setCatalogue(data);
-        // Auto-select the first action of the first tool.
-        const first = data[0];
-        if (first && first.actions[0]) { setSelTool(first.tool); setSelAction(first.actions[0].action); }
+        // Auto-select first action of first plugin, falling back to first built-in.
+        const first = data.find(t => t.source === 'plugin') ?? data[0];
+        if (first?.actions[0]) {
+          setSelTool(first.tool);
+          setSelAction(first.actions[0].action);
+          setExpandedTools(new Set([first.tool]));
+        }
       })
       .catch(() => setLoadError(true));
   }, []);
+
+  const pluginTools = useMemo(() => catalogue?.filter(t => t.source === 'plugin') ?? [], [catalogue]);
+  const builtinTools = useMemo(() => catalogue?.filter(t => t.source === 'bundled') ?? [], [catalogue]);
 
   const activeAction = useMemo<ActionMeta | null>(() => {
     if (!catalogue || !selTool || !selAction) return null;
@@ -68,20 +82,30 @@ export default function ToolsPage() {
     [activeAction],
   );
 
-  // Reset the form when the selected action changes — done during render (the
-  // React-recommended "adjust state on prop change" pattern) rather than in an
-  // effect, which would trigger a cascading re-render.
+  // Reset form + telemetry + result when the selected action changes.
   const selKey = `${selTool}::${selAction}`;
   const [prevSelKey, setPrevSelKey] = useState<string | null>(null);
   if (selKey !== prevSelKey) {
     setPrevSelKey(selKey);
     setValues(initialValues(fields));
     setResult(null);
+    setLogLines([]);
   }
 
   function selectAction(tool: string, action: string) {
     setSelTool(tool);
     setSelAction(action);
+    // Keep the parent tool expanded.
+    setExpandedTools(prev => new Set([...prev, tool]));
+  }
+
+  function toggleTool(toolName: string) {
+    setExpandedTools(prev => {
+      const next = new Set(prev);
+      if (next.has(toolName)) next.delete(toolName);
+      else next.add(toolName);
+      return next;
+    });
   }
 
   async function run(confirmed = false) {
@@ -95,7 +119,6 @@ export default function ToolsPage() {
     }
     if (confirmed) payload.confirmed = true;
 
-    // Cancel any prior in-flight stream.
     if (abortRef.current) abortRef.current.abort();
     const abort = new AbortController();
     abortRef.current = abort;
@@ -134,7 +157,6 @@ export default function ToolsPage() {
               level: (msg.level === 'warn' || msg.level === 'error') ? msg.level : 'info',
             }]);
           } else {
-            // result or error — terminal event
             setResult({
               ok: msg.ok === true,
               error: typeof msg.error === 'string' ? msg.error : undefined,
@@ -167,7 +189,8 @@ export default function ToolsPage() {
         .map(f => {
           const flag = '--' + f.name.replace(/_/g, '-');
           if (f.kind === 'boolean') return ` ${flag}`;
-          if (f.kind === 'string_array') return (values[f.name] as string[]).map(x => ` ${flag} ${shellQuote(x)}`).join('');
+          if (f.kind === 'string_array')
+            return (values[f.name] as string[]).map(x => ` ${flag} ${shellQuote(x)}`).join('');
           return ` ${flag} ${shellQuote(String(values[f.name]))}`;
         })
         .join('')
@@ -184,54 +207,66 @@ export default function ToolsPage() {
         <div style={{ padding: '20px 28px 16px', borderBottom: '1px solid var(--border)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
             <Wrench size={16} strokeWidth={1.5} color={BRAND_DEEP} />
-            <h1 style={{ fontFamily: 'var(--sans)', fontSize: 18, fontWeight: 600, letterSpacing: '-0.3px', color: 'var(--fg1)', margin: 0 }}>Tools</h1>
+            <h1 style={{ fontFamily: 'var(--sans)', fontSize: 18, fontWeight: 600, letterSpacing: '-0.3px', color: 'var(--fg1)', margin: 0 }}>
+              Tools
+            </h1>
           </div>
           <p style={{ fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--fg3)', margin: 0 }}>
-            Run any registered tool action. Forms are generated automatically from each action&apos;s schema —
-            new plugins appear here with no extra code.
+            Run any registered tool action. Custom plugins from{' '}
+            <code style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>~/.docent/plugins/</code>{' '}
+            appear automatically — no extra code needed.
           </p>
         </div>
 
         <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
-          {/* Left: tool/action catalogue */}
-          <aside style={{ width: 280, flexShrink: 0, borderRight: '1px solid var(--border)', overflowY: 'auto', padding: '16px 14px' }}>
+          {/* Left: collapsible catalogue */}
+          <aside style={{
+            width: 280, flexShrink: 0, borderRight: '1px solid var(--border)',
+            overflowY: 'auto', padding: '14px 10px',
+          }}>
             {loadError ? (
-              <div style={{ fontFamily: 'var(--sans)', fontSize: 12.5, color: RED }}>Could not load tools. Is the server running?</div>
+              <div style={{ fontFamily: 'var(--sans)', fontSize: 12.5, color: RED }}>
+                Could not load tools. Is the server running?
+              </div>
             ) : !catalogue ? (
               <div style={{ fontFamily: 'var(--sans)', fontSize: 12.5, color: 'var(--fg4)' }}>Loading…</div>
             ) : (
-              catalogue.map(tool => (
-                <div key={tool.tool} style={{ marginBottom: 18 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '0 6px 7px', fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 600, color: 'var(--fg4)', letterSpacing: '0.7px', textTransform: 'uppercase' }}>
-                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: BRAND, flexShrink: 0 }} />
-                    {tool.tool}
-                    <span style={{ marginLeft: 'auto', fontWeight: 400, letterSpacing: 0 }}>{tool.actions.length}</span>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                    {tool.actions.map(a => {
-                      const active = tool.tool === selTool && a.action === selAction;
-                      return (
-                        <button key={a.action} onClick={() => selectAction(tool.tool, a.action)}
-                          title={a.description}
-                          style={{
-                            display: 'flex', alignItems: 'center', gap: 4, width: '100%', textAlign: 'left',
-                            padding: '6px 10px', borderRadius: 6, border: 'none', cursor: 'pointer',
-                            background: active ? BRAND + '1f' : 'transparent',
-                            color: active ? BRAND_DEEP : 'var(--fg2)',
-                            fontFamily: 'var(--mono)', fontSize: 12, fontWeight: active ? 600 : 400,
-                          }}>
-                          <ChevronRight size={12} strokeWidth={2} style={{ opacity: active ? 1 : 0.3, flexShrink: 0 }} />
-                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.action}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))
+              <>
+                {/* Custom Plugins */}
+                <SectionHeader label="Custom Plugins" count={pluginTools.length} />
+                {pluginTools.length === 0
+                  ? <EmptyPluginsState />
+                  : pluginTools.map(tool => (
+                    <ToolGroup
+                      key={tool.tool}
+                      tool={tool}
+                      expanded={expandedTools.has(tool.tool)}
+                      onToggle={() => toggleTool(tool.tool)}
+                      selTool={selTool}
+                      selAction={selAction}
+                      onSelectAction={selectAction}
+                    />
+                  ))
+                }
+
+                {/* Built-in Tools */}
+                <SectionHeader label="Built-in Tools" count={builtinTools.length} topMargin />
+                {builtinTools.map(tool => (
+                  <ToolGroup
+                    key={tool.tool}
+                    tool={tool}
+                    expanded={expandedTools.has(tool.tool)}
+                    onToggle={() => toggleTool(tool.tool)}
+                    selTool={selTool}
+                    selAction={selAction}
+                    onSelectAction={selectAction}
+                  />
+                ))}
+              </>
             )}
           </aside>
 
-          {/* Right: form + result */}
+          {/* Right: form + telemetry + result */}
           <div style={{ flex: 1, overflowY: 'auto', padding: '22px 28px', minWidth: 0 }}>
             {activeAction ? (
               <div style={{ maxWidth: 640 }}>
@@ -244,8 +279,11 @@ export default function ToolsPage() {
                   </p>
                 </div>
 
-                <SchemaForm fields={fields} values={values}
-                  onChange={(name, v) => setValues(prev => ({ ...prev, [name]: v }))} />
+                <SchemaForm
+                  fields={fields}
+                  values={values}
+                  onChange={(name, v) => setValues(prev => ({ ...prev, [name]: v }))}
+                />
 
                 {/* CLI preview */}
                 <div style={{ marginTop: 18 }}>
@@ -259,24 +297,29 @@ export default function ToolsPage() {
 
                 {/* Run */}
                 <div style={{ marginTop: 18, display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <button onClick={() => run(false)} disabled={running || !complete}
+                  <button
+                    onClick={() => run(false)}
+                    disabled={running || !complete}
                     title={!complete ? 'Fill all required fields' : undefined}
                     style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 20px', borderRadius: 9999,
-                      background: (running || !complete) ? 'var(--gray200)' : INDIGO, color: '#fff',
-                      fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600, border: 'none',
-                      cursor: (running || !complete) ? 'not-allowed' : 'pointer',
-                    }}>
+                      display: 'inline-flex', alignItems: 'center', gap: 7,
+                      padding: '9px 20px', borderRadius: 9999,
+                      background: (running || !complete) ? 'var(--gray200)' : INDIGO,
+                      color: '#fff', fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600,
+                      border: 'none', cursor: (running || !complete) ? 'not-allowed' : 'pointer',
+                    }}
+                  >
                     <Play size={13} strokeWidth={2} />
                     {running ? 'Running…' : 'Run'}
                   </button>
-                  {!complete && <span style={{ fontFamily: 'var(--sans)', fontSize: 11.5, color: 'var(--fg4)' }}>Required fields are marked with *</span>}
+                  {!complete && (
+                    <span style={{ fontFamily: 'var(--sans)', fontSize: 11.5, color: 'var(--fg4)' }}>
+                      Required fields are marked with *
+                    </span>
+                  )}
                 </div>
 
-                {/* Telemetry strip — visible only when progress events arrive */}
                 <TelemetryStrip lines={logLines} running={running} />
-
-                {/* Result */}
                 {result && <ResultPanel result={result} onConfirm={() => run(true)} running={running} />}
               </div>
             ) : (
@@ -287,6 +330,120 @@ export default function ToolsPage() {
           </div>
         </div>
       </main>
+    </div>
+  );
+}
+
+// ── Catalogue components ──────────────────────────────────────────────────────
+
+function SectionHeader({ label, count, topMargin }: { label: string; count: number; topMargin?: boolean }) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 7,
+      padding: '4px 6px 6px',
+      marginTop: topMargin ? 16 : 0,
+      fontFamily: 'var(--mono)', fontSize: 9.5, fontWeight: 600,
+      color: 'var(--fg4)', letterSpacing: '0.6px', textTransform: 'uppercase',
+    }}>
+      <span style={{ width: 5, height: 5, borderRadius: '50%', background: BRAND, flexShrink: 0 }} />
+      {label}
+      <span style={{ marginLeft: 'auto', fontWeight: 400, letterSpacing: 0 }}>{count}</span>
+    </div>
+  );
+}
+
+function EmptyPluginsState() {
+  return (
+    <div style={{
+      margin: '2px 4px 4px', padding: '12px 14px',
+      border: '1px dashed var(--border-md)', borderRadius: 8,
+    }}>
+      <p style={{ fontFamily: 'var(--sans)', fontSize: 11.5, color: 'var(--fg4)', margin: 0, lineHeight: 1.65 }}>
+        Drop a{' '}
+        <code style={{ fontFamily: 'var(--mono)', fontSize: 10.5 }}>.py</code>
+        {' '}file into{' '}
+        <code style={{ fontFamily: 'var(--mono)', fontSize: 10.5 }}>~/.docent/plugins/</code>
+        {' '}to get started. See the{' '}
+        <a href="/docs" style={{ color: BRAND_DEEP, textDecoration: 'none' }}>plugin guide</a>
+        {' '}for the API.
+      </p>
+    </div>
+  );
+}
+
+function ToolGroup({
+  tool, expanded, onToggle, selTool, selAction, onSelectAction,
+}: {
+  tool: ToolMeta;
+  expanded: boolean;
+  onToggle: () => void;
+  selTool: string | null;
+  selAction: string | null;
+  onSelectAction: (tool: string, action: string) => void;
+}) {
+  const hasActiveChild = tool.tool === selTool;
+  return (
+    <div style={{ marginBottom: 2 }}>
+      {/* Tool header — click to collapse / expand */}
+      <button
+        onClick={onToggle}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 6, width: '100%', textAlign: 'left',
+          padding: '7px 10px', borderRadius: 7, border: 'none', cursor: 'pointer',
+          background: hasActiveChild && !expanded ? BRAND + '15' : 'transparent',
+        }}
+      >
+        <ChevronRight
+          size={12} strokeWidth={2}
+          style={{
+            transform: expanded ? 'rotate(90deg)' : 'none',
+            transition: 'transform 0.15s',
+            flexShrink: 0,
+            color: 'var(--fg4)',
+          }}
+        />
+        <span style={{
+          fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 600,
+          color: hasActiveChild ? BRAND_DEEP : 'var(--fg2)',
+          flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {tool.tool}
+        </span>
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 9.5, color: 'var(--fg4)', flexShrink: 0 }}>
+          {tool.actions.length}
+        </span>
+      </button>
+
+      {/* Action list */}
+      {expanded && (
+        <div style={{ paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 1, paddingBottom: 4 }}>
+          {tool.actions.map(a => {
+            const isActive = tool.tool === selTool && a.action === selAction;
+            return (
+              <button
+                key={a.action}
+                onClick={() => onSelectAction(tool.tool, a.action)}
+                title={a.description}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 7, width: '100%', textAlign: 'left',
+                  padding: '5px 10px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                  background: isActive ? BRAND + '1f' : 'transparent',
+                  color: isActive ? BRAND_DEEP : 'var(--fg2)',
+                  fontFamily: 'var(--mono)', fontSize: 11.5, fontWeight: isActive ? 600 : 400,
+                }}
+              >
+                <span style={{
+                  width: 4, height: 4, borderRadius: '50%',
+                  background: isActive ? BRAND_DEEP : 'var(--fg4)', flexShrink: 0,
+                }} />
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {a.action}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -311,11 +468,7 @@ function TelemetryStrip({ lines, running }: { lines: LogLine[]; running: boolean
         display: 'flex', alignItems: 'center', gap: 7, padding: '6px 12px',
         borderBottom: '1px solid var(--code-border)', background: 'var(--code-bg)',
       }}>
-        <span style={{
-          width: 6, height: 6, borderRadius: '50%',
-          background: running ? BRAND : 'var(--fg4)',
-          flexShrink: 0,
-        }} />
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: running ? BRAND : 'var(--fg4)', flexShrink: 0 }} />
         <span style={{ fontFamily: 'var(--mono)', fontSize: 9.5, color: 'var(--fg4)', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
           {running ? 'Running' : 'Done'}
         </span>
@@ -329,12 +482,8 @@ function TelemetryStrip({ lines, running }: { lines: LogLine[]; running: boolean
       }}>
         {lines.map((line, i) => (
           <div key={i} style={{ display: 'flex', gap: 8, fontFamily: 'var(--mono)', fontSize: 11.5, lineHeight: 1.45 }}>
-            <span style={{ color: lineColor(line.level), flexShrink: 0, minWidth: 0 }}>
-              [{line.phase}]
-            </span>
-            <span style={{ color: 'var(--fg2)', wordBreak: 'break-word' }}>
-              {line.message}
-            </span>
+            <span style={{ color: lineColor(line.level), flexShrink: 0 }}>[{line.phase}]</span>
+            <span style={{ color: 'var(--fg2)', wordBreak: 'break-word' }}>{line.message}</span>
           </div>
         ))}
       </div>
@@ -347,14 +496,14 @@ function TelemetryStrip({ lines, running }: { lines: LogLine[]; running: boolean
 function ResultPanel({ result, onConfirm, running }: { result: InvokeResult; onConfirm: () => void; running: boolean }) {
   const confirmation = result.confirmation_required;
   const ok = result.ok && !confirmation;
-  // notes may come at the top level (stream path) or nested in result (invoke path)
   const notes = confirmation
     ? (result.notes ?? (isRecord(result.result) ? result.result.notes as string[] | undefined : undefined))
     : undefined;
   const pretty = (() => {
     try { return JSON.stringify(result.result, null, 2); } catch { return String(result.result); }
   })();
-  const message = isRecord(result.result) && typeof result.result.message === 'string' ? result.result.message : null;
+  const message = isRecord(result.result) && typeof result.result.message === 'string'
+    ? result.result.message : null;
 
   const tone = confirmation ? '#C97B00' : ok ? BRAND_DEEP : RED;
   const bg = confirmation ? 'rgba(201,123,0,0.07)' : ok ? 'rgba(24,226,153,0.06)' : 'rgba(212,86,86,0.05)';
@@ -362,8 +511,8 @@ function ResultPanel({ result, onConfirm, running }: { result: InvokeResult; onC
   return (
     <div style={{ marginTop: 24, border: `1px solid ${tone}40`, borderRadius: 10, overflow: 'hidden', background: bg }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: `1px solid ${tone}30` }}>
-        {confirmation ? <AlertTriangle size={14} strokeWidth={2} color={tone} />
-          : ok ? <CheckCircle size={14} strokeWidth={2} color={tone} />
+        {ok
+          ? <CheckCircle size={14} strokeWidth={2} color={tone} />
           : <AlertTriangle size={14} strokeWidth={2} color={tone} />}
         <span style={{ fontFamily: 'var(--sans)', fontSize: 12.5, fontWeight: 600, color: tone }}>
           {confirmation ? 'Confirmation required' : ok ? 'Success' : 'Failed'}
@@ -372,19 +521,28 @@ function ResultPanel({ result, onConfirm, running }: { result: InvokeResult; onC
 
       <div style={{ padding: '14px' }}>
         {result.error && (
-          <p style={{ margin: '0 0 10px', fontFamily: 'var(--sans)', fontSize: 12.5, color: RED, lineHeight: 1.5 }}>{result.error}</p>
+          <p style={{ margin: '0 0 10px', fontFamily: 'var(--sans)', fontSize: 12.5, color: RED, lineHeight: 1.5 }}>
+            {result.error}
+          </p>
         )}
         {message && (
-          <p style={{ margin: '0 0 10px', fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--fg1)', lineHeight: 1.55 }}>{message}</p>
+          <p style={{ margin: '0 0 10px', fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--fg1)', lineHeight: 1.55 }}>
+            {message}
+          </p>
         )}
         {notes && notes.length > 0 && (
           <ul style={{ margin: '0 0 12px', paddingLeft: 18 }}>
-            {notes.map((n, i) => <li key={i} style={{ fontFamily: 'var(--sans)', fontSize: 12.5, color: 'var(--fg2)', lineHeight: 1.6 }}>{n}</li>)}
+            {notes.map((n, i) => (
+              <li key={i} style={{ fontFamily: 'var(--sans)', fontSize: 12.5, color: 'var(--fg2)', lineHeight: 1.6 }}>{n}</li>
+            ))}
           </ul>
         )}
         {confirmation && (
-          <button onClick={onConfirm} disabled={running}
-            style={{ marginBottom: 14, padding: '7px 16px', borderRadius: 8, border: 'none', background: '#C97B00', color: '#fff', fontFamily: 'var(--sans)', fontSize: 12.5, fontWeight: 600, cursor: running ? 'wait' : 'pointer' }}>
+          <button
+            onClick={onConfirm}
+            disabled={running}
+            style={{ marginBottom: 14, padding: '7px 16px', borderRadius: 8, border: 'none', background: '#C97B00', color: '#fff', fontFamily: 'var(--sans)', fontSize: 12.5, fontWeight: 600, cursor: running ? 'wait' : 'pointer' }}
+          >
             {running ? 'Running…' : 'Confirm and run'}
           </button>
         )}

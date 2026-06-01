@@ -36,15 +36,15 @@ const PLUGIN_NAV: NavItem[] = [
     label: 'Studio',
     icon: <FlaskConical size={16} strokeWidth={1.5} />,
   },
-];
-
-const UTILITY_NAV: NavItem[] = [
   {
     id: 'tools',
     href: '/tools',
     label: 'Tools',
-    icon: <Wrench size={15} strokeWidth={1.5} />,
+    icon: <Wrench size={16} strokeWidth={1.5} />,
   },
+];
+
+const UTILITY_NAV: NavItem[] = [
   {
     id: 'ecosystem',
     href: '/ecosystem',
@@ -76,7 +76,14 @@ const REORDERABLE_IDS = PLUGIN_NAV.filter(n => n.id !== 'dashboard').map(n => n.
 function loadNavOrder(): string[] {
   try {
     const stored = JSON.parse(localStorage.getItem(NAV_ORDER_KEY) ?? 'null') as string[] | null;
-    if (Array.isArray(stored) && stored.every(id => REORDERABLE_IDS.includes(id))) return stored;
+    if (Array.isArray(stored)) {
+      const valid = stored.filter(id => REORDERABLE_IDS.includes(id));
+      const missing = REORDERABLE_IDS.filter(id => !valid.includes(id));
+      // Exact match — use as stored.
+      if (missing.length === 0 && valid.length === REORDERABLE_IDS.length) return valid;
+      // Partial (e.g. old localStorage missing 'tools') — append new ids to end.
+      if (valid.length > 0) return [...valid, ...missing];
+    }
   } catch {}
   return REORDERABLE_IDS;
 }
