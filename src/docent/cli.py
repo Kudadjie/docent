@@ -727,7 +727,15 @@ def update_command() -> None:
     console.print(f"[dim]Running:[/] {' '.join(cmd)}\n")
     result = subprocess.run(cmd)
     if result.returncode != 0:
-        console.print("\n[red]Upgrade failed.[/] Check the output above.")
+        if sys.platform == "win32":
+            console.print(
+                "\n[yellow]If the error above mentions 'file in use', the package "
+                "upgraded successfully but the executable is locked by the running "
+                "process.[/]\n[yellow]Restart your terminal and run "
+                "[cyan]docent --version[/cyan] to confirm.[/]"
+            )
+        else:
+            console.print("\n[red]Upgrade failed.[/] Check the output above.")
         raise typer.Exit(1)
     console.print("\n[green]Upgraded successfully.[/]")
     console.print("[dim]If you use Docent via MCP, restart Claude to load the new version.[/]")
