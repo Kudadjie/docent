@@ -706,15 +706,26 @@ def whatsnew_command() -> None:
     )
 
 
+def _detect_upgrade_cmd() -> list[str]:
+    """Return the right upgrade command based on how Docent was installed."""
+    exe = sys.executable.lower()
+    if "uv" in exe and "tools" in exe:
+        return ["uv", "tool", "upgrade", "docent-cli"]
+    if "pipx" in exe:
+        return ["pipx", "upgrade", "docent-cli"]
+    return [sys.executable, "-m", "pip", "install", "--upgrade", "docent-cli"]
+
+
 @app.command("update", help="Upgrade Docent to the latest version on PyPI.")
 def update_command() -> None:
-    """Upgrade the installed docent-cli package via uv tool upgrade."""
+    """Upgrade the installed docent-cli package using the correct package manager."""
     import subprocess
 
     console = get_console()
+    cmd = _detect_upgrade_cmd()
     console.print(f"[dim]Installed version:[/] {__version__}")
-    console.print("[dim]Running:[/] uv tool upgrade docent-cli\n")
-    result = subprocess.run(["uv", "tool", "upgrade", "docent-cli"])
+    console.print(f"[dim]Running:[/] {' '.join(cmd)}\n")
+    result = subprocess.run(cmd)
     if result.returncode != 0:
         console.print("\n[red]Upgrade failed.[/] Check the output above.")
         raise typer.Exit(1)
