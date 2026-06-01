@@ -143,7 +143,6 @@ def test_detect_upgrade_cmd_pipx(monkeypatch):
 
 def test_detect_upgrade_cmd_pip_fallback(monkeypatch):
     from docent.cli import _detect_upgrade_cmd
-    import sys as _sys
     monkeypatch.setattr("docent.cli.sys.executable", "/usr/bin/python3")
     cmd = _detect_upgrade_cmd()
     assert cmd[0] == "/usr/bin/python3"
