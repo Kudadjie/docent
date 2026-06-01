@@ -58,12 +58,17 @@ def parse_changelog(text: str) -> list[Release]:
 
     If a version block has no ``### What's New`` subsection, all of its top-level
     bullets are used as highlights instead.
+
+    Multi-line bullets (continuation lines indented with whitespace) are joined
+    into a single string so the full text is preserved.
     """
     releases: list[Release] = []
     cur: Release | None = None
     in_whatsnew = False
     saw_whatsnew_section = False
     fallback_bullets: list[str] = []
+    # Track which list we are appending to so continuations go to the right place.
+    _active_list: list[str] | None = None
 
     def _finalize(rel: Release | None, fallback: list[str], saw_section: bool) -> None:
         if rel is None:
@@ -81,6 +86,7 @@ def parse_changelog(text: str) -> list[Release]:
             in_whatsnew = False
             saw_whatsnew_section = False
             fallback_bullets = []
+            _active_list = None
             continue
         if cur is None:
             continue
@@ -89,13 +95,20 @@ def parse_changelog(text: str) -> list[Release]:
             in_whatsnew = "new" in heading
             if in_whatsnew:
                 saw_whatsnew_section = True
+            _active_list = None
             continue
         if stripped.startswith(("- ", "* ")):
             item = stripped[2:].strip()
-            if in_whatsnew:
-                cur.highlights.append(item)
-            else:
-                fallback_bullets.append(item)
+            _active_list = cur.highlights if in_whatsnew else fallback_bullets
+            _active_list.append(item)
+            continue
+        # Continuation line: non-empty, not a new bullet/heading, starts with whitespace.
+        if stripped and line[:1] in (" ", "\t") and _active_list:
+            _active_list[-1] = _active_list[-1] + " " + stripped
+            continue
+        # Blank line or unrecognised structure resets continuation.
+        if not stripped:
+            _active_list = None
 
     _finalize(cur, fallback_bullets, saw_whatsnew_section)
     return releases

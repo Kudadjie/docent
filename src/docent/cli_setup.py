@@ -262,10 +262,10 @@ def _run_setup_flow(*, first_run: bool = False) -> None:
         console.print(
             "  [yellow]Node.js / npm:[/] not installed  (required for Feynman and OpenCode)"
         )
-        _sys = _platform.system()
-        if _sys == "Windows":
+        _os_name = _platform.system()
+        if _os_name == "Windows":
             console.print("    winget install OpenJS.NodeJS.LTS")
-        elif _sys == "Darwin":
+        elif _os_name == "Darwin":
             console.print("    brew install node")
         else:
             console.print("    nvm install --lts    # see https://nodejs.org")

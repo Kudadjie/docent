@@ -12,7 +12,7 @@ from docent.ui_server import (
     _stream_studio_run,
 )
 
-router = APIRouter()
+router: APIRouter = APIRouter()
 
 
 @router.post("/api/studio/run", response_model=None)

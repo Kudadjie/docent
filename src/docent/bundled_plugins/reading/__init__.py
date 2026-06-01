@@ -402,7 +402,7 @@ class ReadingQueue(Tool):
                 )
             self._reorder_move_to(queue, inputs.id, rank - 1)
             self._store.save_queue(queue)
-            updated = self._find_entry(queue, inputs.id)
+            updated = self._find_entry(queue, inputs.id) or {}
             return MutationResult(
                 ok=True,
                 id=inputs.id,
@@ -440,7 +440,7 @@ class ReadingQueue(Tool):
                 )
             self._reorder_move_to(queue, inputs.id, rank + 1)
             self._store.save_queue(queue)
-            updated = self._find_entry(queue, inputs.id)
+            updated = self._find_entry(queue, inputs.id) or {}
             return MutationResult(
                 ok=True,
                 id=inputs.id,
@@ -463,7 +463,7 @@ class ReadingQueue(Tool):
                 return self._not_found(inputs.id, queue)
             self._reorder_move_to(queue, inputs.id, inputs.position)
             self._store.save_queue(queue)
-            updated = self._find_entry(queue, inputs.id)
+            updated = self._find_entry(queue, inputs.id) or {}
             return MutationResult(
                 ok=True,
                 id=inputs.id,

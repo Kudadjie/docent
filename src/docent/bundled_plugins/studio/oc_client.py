@@ -265,8 +265,8 @@ class OcClient:
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
-                body = resp.read()
-                return json.loads(body) if body else {}
+                resp_bytes = resp.read()
+                return json.loads(resp_bytes) if resp_bytes else {}
         except urllib.error.HTTPError as e:
             body_bytes = b""
             try:

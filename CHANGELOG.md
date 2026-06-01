@@ -19,6 +19,33 @@ subsection with 2–5 user-facing highlights — those are what the banner shows
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-06-01
+
+### Changed
+- `mypy` type gate now covers all of `src/docent/` (previously scoped to `core`,
+  `config`, `llm`, `execution` only). All pre-existing type errors across
+  `cli.py`, `mcp_server.py`, `ui_server.py`, `_banner.py`, the UI-route modules,
+  and the `bundled_plugins` sub-tree have been resolved (generator return types,
+  `None`-guard gaps, shadowed variables, wrong argument types, and more).
+
+### Fixed
+- `docent whatsnew` no longer shows the post-update banner *and* the full entry
+  at the same time — the startup banner is now suppressed when `whatsnew` is the
+  invoked subcommand.
+- Release highlights were truncated to the first line of each bullet; multi-line
+  continuation lines in `CHANGELOG.md` are now joined so full bullet text is
+  preserved.
+- Raw markdown syntax (`**bold**`, `` `code` ``) no longer appears literally in
+  the CLI banner and `docent whatsnew` output — it is converted to Rich markup
+  before rendering.
+- Docs page showed "404 Not Found" for all sections in a packaged install because
+  the `docs/` files were never included in the wheel; they are now bundled via
+  `force-include` in `pyproject.toml`.
+- The "What's New" UI toast displayed raw markdown text and truncated bullets
+  with no way to read the full entry; bullets are now rendered as plain text
+  (stripped of markdown), and a "See all →" link opens a modal with the full
+  changelog entry rendered as markdown.
+
 ## [2.1.0] - 2026-05-31
 
 ### What's New

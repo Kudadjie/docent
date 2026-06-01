@@ -184,7 +184,7 @@ def _route_output(
                     "set it with: docent studio config-set --key obsidian_vault --value <path>)"
                 ),
             )
-        topic = getattr(inputs, "topic", None) or getattr(inputs, "artifact", "")
+        topic = str(getattr(inputs, "topic", None) or getattr(inputs, "artifact", ""))
         dest = _write_to_vault(out_path, topic, workflow, inputs.backend, vault)
         return None, str(dest), f" Written to Obsidian vault: {dest.name}"
 
@@ -556,6 +556,7 @@ def _preflight_docent(inputs: BaseModel, context: Context) -> None:
         try:
             from .tavily_usage import fetch_tavily_usage
 
+            assert tavily_key is not None
             _usage = fetch_tavily_usage(tavily_key, timeout=4.0)
             _account = _usage.get("account", {})
             _used = _account.get("plan_usage")
@@ -813,7 +814,7 @@ def _warn_missing_guide_files(inputs: BaseModel, console: Any, typer: Any) -> No
         raise typer.Exit(1)
 
 
-def _preflight_to_notebook(inputs: BaseModel, context: Context) -> None:
+def _preflight_to_notebook(inputs: Any, context: Context) -> None:
     """Interactive file picker when multiple research outputs exist in output_dir.
 
     If output_file is already set, just validates it exists.

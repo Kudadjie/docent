@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Generator
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal, cast
 
 from docent.core import ProgressEvent
 
@@ -23,7 +23,7 @@ def compute_category_path(folder_id: str, root_id: str, folder_map: dict[str, di
     """Return 'ParentName/ChildName' path from root to folder_id (root excluded).
     Returns None when folder_id == root_id (doc is directly in the root collection)."""
     parts: list[str] = []
-    cur = folder_id
+    cur: str | None = folder_id
     while cur and cur != root_id:
         f = folder_map.get(cur)
         if not f:
@@ -120,11 +120,15 @@ def build_entry_from_mendeley(
             doi = d.strip()
 
     mendeley_type = (doc.get("type") or "").lower()
-    entry_type = {
+    _type_map: dict[str, str] = {
         "book": "book",
         "book_section": "book_chapter",
         "edited_book": "book",
-    }.get(mendeley_type, "paper")
+    }
+    entry_type = cast(
+        "Literal['paper', 'book', 'book_chapter']",
+        _type_map.get(mendeley_type, "paper"),
+    )
 
     base = derive_id(authors, year, title)
     entry_id = f"{base}-{mendeley_id[:8]}" if base in taken_ids else base
@@ -372,17 +376,17 @@ def sync_from_mendeley_run(
             added.append({"id": entry.id, "reference_id": mid, "title": entry.title})
 
     if not _maybe_truncated:
-        for e in queue:
-            mid = e.get("reference_id")
+        for qe in queue:
+            mid = qe.get("reference_id")
             if not mid or mid in in_collection:
                 continue
             # Skip entries already handled: removed, already flagged, or manually kept by the user.
-            if e.get("status") == "removed" or e.get("not_in_library") or e.get("manually_kept"):
+            if qe.get("status") == "removed" or qe.get("not_in_library") or qe.get("manually_kept"):
                 continue
             if dry_run:
-                dry_run_removed.append(e.get("id", mid))
+                dry_run_removed.append(qe.get("id", mid))
             else:
-                flagged.append(e.get("id", mid))
+                flagged.append(qe.get("id", mid))
 
     if not dry_run and (
         new_entries or flagged or cleared or not_in_parent or cleared_parent or category_updates
@@ -393,24 +397,24 @@ def sync_from_mendeley_run(
         cleared_parent_set = set(cleared_parent)
         with store.lock():
             queue = store.load_queue()
-            by_id = {e.get("id"): e for e in queue}
+            by_id = {qe.get("id"): qe for qe in queue}
             for ne in new_entries:
                 if ne["id"] not in by_id:
                     queue.append(ne)
-            for e in queue:
-                eid = e.get("id")
+            for qe in queue:
+                eid = qe.get("id")
                 if eid in flagged_set:
-                    e["not_in_library"] = True
+                    qe["not_in_library"] = True
                 if eid in cleared_set:
-                    e["not_in_library"] = False
-                    e["manually_kept"] = False
-                    e["manually_kept_at"] = None
+                    qe["not_in_library"] = False
+                    qe["manually_kept"] = False
+                    qe["manually_kept_at"] = None
                 if eid in not_in_parent_set:
-                    e["not_in_parent_collection"] = True
+                    qe["not_in_parent_collection"] = True
                 if eid in cleared_parent_set:
-                    e["not_in_parent_collection"] = False
+                    qe["not_in_parent_collection"] = False
                 if eid in category_updates:
-                    e["category"] = category_updates[eid]
+                    qe["category"] = category_updates[eid]
             store.save_queue(queue)
 
     if not dry_run:

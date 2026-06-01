@@ -17,7 +17,7 @@ import shutil
 import subprocess
 import sys
 import time
-from collections.abc import Iterator
+from collections.abc import Generator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qsl, urlencode, urlparse
@@ -178,7 +178,7 @@ def _open_login_terminal() -> tuple[bool, str]:
 
 def _nlm_login_and_wait_ui(
     poll_timeout: float = 120.0, poll_interval: float = 3.0
-) -> Iterator[ProgressEvent]:
+) -> Generator[ProgressEvent, None, bool]:
     """UI-subprocess auth recovery: open a login terminal, then poll until the
     user authenticates or we time out.
 
@@ -395,7 +395,7 @@ def _poll_research_gen(
     poll_timeout: float = 300,
     phase: str = "nlm-research",
     label: str = "",
-) -> Iterator[ProgressEvent]:
+) -> Generator[ProgressEvent, None, list[str]]:
     """Generator version of _nlm_poll_research.
 
     Yields a ProgressEvent every poll cycle so the UI stays alive during long waits.
@@ -1238,7 +1238,7 @@ def _nlm_push(
     run_nlm_research: bool = True,
     run_quality_gate: bool = True,
     run_perspectives: bool = True,
-) -> Iterator[ProgressEvent]:
+) -> Generator[ProgressEvent, None, dict[str, Any]]:
     """Full 4-phase NotebookLM pipeline.
 
     Yields ProgressEvents. Returns a result dict via StopIteration.value

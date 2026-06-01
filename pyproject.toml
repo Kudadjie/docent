@@ -67,10 +67,15 @@ version-file = "src/docent/_version.py"
 packages = ["src/docent"]
 artifacts = ["src/docent/ui_dist/**"]
 
-# Ship CHANGELOG.md inside the package so `docent.whatsnew` can read the current
-# version's "What's New" entry at runtime (CLI banner + UI toast).
+# Ship CHANGELOG.md and user-facing docs inside the package so the CLI banner,
+# UI toast, and /api/docs/* routes work in packaged (non-editable) installs.
 [tool.hatch.build.targets.wheel.force-include]
 "CHANGELOG.md" = "docent/CHANGELOG.md"
+"docs/cli.md" = "docent/docs/cli.md"
+"docs/ecosystem.md" = "docent/docs/ecosystem.md"
+"docs/plugin-guide.md" = "docent/docs/plugin-guide.md"
+"docs/guides/reading-user-guide.md" = "docent/docs/guides/reading-user-guide.md"
+"docs/guides/studio-user-guide.md" = "docent/docs/guides/studio-user-guide.md"
 
 [dependency-groups]
 dev = ["pytest>=8.0", "pytest-timeout>=2.3", "pip-audit>=2.7", "ruff>=0.9", "mypy>=1.13"]
@@ -127,7 +132,7 @@ ignore = ["E501", "B008", "B904", "UP047"]
 # coverage outward from the central packages, not to type-gate the whole tree at
 # once. Expand `files` as modules are annotated to pass.
 python_version = "3.12"
-files = ["src/docent/core", "src/docent/config", "src/docent/llm", "src/docent/execution"]
+files = ["src/docent"]
 ignore_missing_imports = true
 warn_unused_ignores = false
 check_untyped_defs = true
