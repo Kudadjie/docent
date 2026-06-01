@@ -31,6 +31,7 @@ CONTEXT.md
 memory/
 oc_briefs/
 .mcp.json
+txt/
 
 # Secrets and local config
 .env
