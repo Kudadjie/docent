@@ -197,6 +197,89 @@ def test_stream_missing_required_field_emits_error_event(tmp_docent_home):
     assert events[-1]["ok"] is False
 
 
+def test_stream_result_includes_shapes_when_result_implements_to_shapes():
+    """Result events must include a ``shapes`` list when the result has to_shapes()."""
+    from pydantic import BaseModel
+
+    from docent.core.registry import _REGISTRY, register_tool
+    from docent.core.shapes import MessageShape, MetricShape
+    from docent.core.tool import Tool, action
+
+    class _Inp(BaseModel):
+        pass
+
+    class _Result(BaseModel):
+        value: int
+
+        def to_shapes(self):  # noqa: ANN201
+            return [
+                MetricShape(label="value", value=self.value, unit="items"),
+                MessageShape(text="all good", level="success"),
+            ]
+
+    @register_tool
+    class _ShapeTool(Tool):
+        name = "shapetest"
+        description = "Returns a result with to_shapes()."
+
+        @action(description="Return a shaped result.", input_schema=_Inp)
+        def go(self, inputs, context):  # noqa: ANN001
+            return _Result(value=42)
+
+    try:
+        resp = _client().post(
+            "/api/tools/stream",
+            json={"tool": "shapetest", "action": "go", "inputs": {}},
+        )
+        assert resp.status_code == 200
+        events = _parse_sse(resp.text)
+        result_evt = next(e for e in events if e["type"] == "result")
+        assert result_evt["ok"] is True
+        shapes = result_evt.get("shapes")
+        assert isinstance(shapes, list), "shapes field must be a list"
+        assert len(shapes) == 2
+        assert shapes[0]["type"] == "metric"
+        assert shapes[0]["label"] == "value"
+        assert shapes[0]["value"] == 42
+        assert shapes[0]["unit"] == "items"
+        assert shapes[1]["type"] == "message"
+        assert shapes[1]["level"] == "success"
+    finally:
+        _REGISTRY.pop("shapetest", None)
+
+
+def test_stream_result_omits_shapes_when_result_has_no_to_shapes():
+    """Result events must NOT include a ``shapes`` key for plain dict results."""
+    from pydantic import BaseModel
+
+    from docent.core.registry import _REGISTRY, register_tool
+    from docent.core.tool import Tool, action
+
+    class _Inp(BaseModel):
+        pass
+
+    @register_tool
+    class _PlainTool(Tool):
+        name = "plaintest"
+        description = "Returns a plain dict with no to_shapes."
+
+        @action(description="Return a plain dict.", input_schema=_Inp)
+        def go(self, inputs, context):  # noqa: ANN001
+            return {"x": 1}
+
+    try:
+        resp = _client().post(
+            "/api/tools/stream",
+            json={"tool": "plaintest", "action": "go", "inputs": {}},
+        )
+        assert resp.status_code == 200
+        events = _parse_sse(resp.text)
+        result_evt = next(e for e in events if e["type"] == "result")
+        assert "shapes" not in result_evt
+    finally:
+        _REGISTRY.pop("plaintest", None)
+
+
 def test_invoke_action_that_calls_asyncio_run_succeeds():
     """Regression: actions that call asyncio.run() internally (e.g. the Mendeley
     overlay on reading.search) must not blow up with 'asyncio.run() cannot be

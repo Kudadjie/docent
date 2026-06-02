@@ -199,7 +199,20 @@ async def stream_tool(body: InvokeBody) -> StreamingResponse:
                     )
                 )
             else:
-                event_q.put(json.dumps({"type": "result", "ok": True, "result": parsed}))
+                shapes_data: list[dict] | None = None
+                if hasattr(result_value, "to_shapes"):
+                    try:
+                        shapes_data = [s.model_dump() for s in result_value.to_shapes()]
+                    except Exception:
+                        shapes_data = None
+                result_event: dict[str, object] = {
+                    "type": "result",
+                    "ok": True,
+                    "result": parsed,
+                }
+                if shapes_data is not None:
+                    result_event["shapes"] = shapes_data
+                event_q.put(json.dumps(result_event))
         except Exception as exc:
             event_q.put(json.dumps({"type": "error", "ok": False, "error": str(exc)}))
         finally:

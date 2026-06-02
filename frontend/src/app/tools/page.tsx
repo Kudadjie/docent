@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Wrench, Play, ChevronRight, AlertTriangle, CheckCircle, Terminal } from 'lucide-react';
+import { Wrench, Play, ChevronRight, AlertTriangle, CheckCircle, Terminal, ExternalLink } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import Sidebar from '@/components/Sidebar';
 import StatusBanner from '@/components/StatusBanner';
 import { useDarkMode } from '@/hooks/useDarkMode';
@@ -24,12 +26,22 @@ interface ToolMeta {
   actions: ActionMeta[];
 }
 
+type ShapeData =
+  | { type: 'markdown'; content: string }
+  | { type: 'data_table'; columns: string[]; rows: string[][] }
+  | { type: 'metric'; label: string; value: string | number; unit?: string | null }
+  | { type: 'link'; label: string; url: string }
+  | { type: 'message'; text: string; level: 'info' | 'success' | 'warning' | 'error' }
+  | { type: 'error'; reason: string; hint?: string | null }
+  | { type: 'progress'; phase: string; message: string; level: string };
+
 interface InvokeResult {
   ok: boolean;
   error?: string;
   confirmation_required?: boolean;
   notes?: string[];
   result?: unknown;
+  shapes?: ShapeData[];
 }
 
 interface LogLine {
@@ -163,6 +175,7 @@ export default function ToolsPage() {
               confirmation_required: msg.confirmation_required === true,
               notes: Array.isArray(msg.notes) ? msg.notes as string[] : undefined,
               result: msg.result,
+              shapes: Array.isArray(msg.shapes) ? msg.shapes as ShapeData[] : undefined,
             });
             setRunning(false);
             break outer;
@@ -494,6 +507,7 @@ function TelemetryStrip({ lines, running }: { lines: LogLine[]; running: boolean
 // ── Result panel ─────────────────────────────────────────────────────────────
 
 function ResultPanel({ result, onConfirm, running }: { result: InvokeResult; onConfirm: () => void; running: boolean }) {
+  const [showRaw, setShowRaw] = useState(false);
   const confirmation = result.confirmation_required;
   const ok = result.ok && !confirmation;
   const notes = confirmation
@@ -502,8 +516,7 @@ function ResultPanel({ result, onConfirm, running }: { result: InvokeResult; onC
   const pretty = (() => {
     try { return JSON.stringify(result.result, null, 2); } catch { return String(result.result); }
   })();
-  const message = isRecord(result.result) && typeof result.result.message === 'string'
-    ? result.result.message : null;
+  const hasShapes = ok && Array.isArray(result.shapes) && result.shapes.length > 0;
 
   const tone = confirmation ? '#C97B00' : ok ? BRAND_DEEP : RED;
   const bg = confirmation ? 'rgba(201,123,0,0.07)' : ok ? 'rgba(24,226,153,0.06)' : 'rgba(212,86,86,0.05)';
@@ -517,17 +530,20 @@ function ResultPanel({ result, onConfirm, running }: { result: InvokeResult; onC
         <span style={{ fontFamily: 'var(--sans)', fontSize: 12.5, fontWeight: 600, color: tone }}>
           {confirmation ? 'Confirmation required' : ok ? 'Success' : 'Failed'}
         </span>
+        {hasShapes && (
+          <button
+            onClick={() => setShowRaw(r => !r)}
+            style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--fg4)', padding: '2px 6px' }}
+          >
+            {showRaw ? 'Hide raw' : 'View raw'}
+          </button>
+        )}
       </div>
 
       <div style={{ padding: '14px' }}>
         {result.error && (
           <p style={{ margin: '0 0 10px', fontFamily: 'var(--sans)', fontSize: 12.5, color: RED, lineHeight: 1.5 }}>
             {result.error}
-          </p>
-        )}
-        {message && (
-          <p style={{ margin: '0 0 10px', fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--fg1)', lineHeight: 1.55 }}>
-            {message}
           </p>
         )}
         {notes && notes.length > 0 && (
@@ -546,12 +562,164 @@ function ResultPanel({ result, onConfirm, running }: { result: InvokeResult; onC
             {running ? 'Running…' : 'Confirm and run'}
           </button>
         )}
-        {result.result != null && (
-          <pre style={{ margin: 0, fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--fg2)', background: 'var(--code-bg)', border: '1px solid var(--code-border)', borderRadius: 8, padding: '12px', overflowX: 'auto', maxHeight: 360, lineHeight: 1.5 }}>
-            {pretty}
-          </pre>
-        )}
+        {hasShapes && !showRaw
+          ? <ShapesRenderer shapes={result.shapes!} />
+          : result.result != null && (
+            <pre style={{ margin: 0, fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--fg2)', background: 'var(--code-bg)', border: '1px solid var(--code-border)', borderRadius: 8, padding: '12px', overflowX: 'auto', maxHeight: 360, lineHeight: 1.5 }}>
+              {pretty}
+            </pre>
+          )}
       </div>
+    </div>
+  );
+}
+
+// ── Artifact viewer — shape renderers ────────────────────────────────────────
+
+function ShapesRenderer({ shapes }: { shapes: ShapeData[] }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {shapes.map((shape, i) => <ShapeItem key={i} shape={shape} />)}
+    </div>
+  );
+}
+
+function ShapeItem({ shape }: { shape: ShapeData }) {
+  switch (shape.type) {
+    case 'markdown':   return <MarkdownShapeView shape={shape} />;
+    case 'data_table': return <DataTableShapeView shape={shape} />;
+    case 'metric':     return <MetricShapeView shape={shape} />;
+    case 'link':       return <LinkShapeView shape={shape} />;
+    case 'message':    return <MessageShapeView shape={shape} />;
+    case 'error':      return <ErrorShapeView shape={shape} />;
+    default:           return null;
+  }
+}
+
+function MarkdownShapeView({ shape }: { shape: Extract<ShapeData, { type: 'markdown' }> }) {
+  return (
+    <div style={{ fontFamily: 'var(--sans)', fontSize: 13, lineHeight: 1.65, color: 'var(--fg1)' }}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          p: ({ children }) => <p style={{ margin: '0 0 8px', color: 'var(--fg1)', lineHeight: 1.65 }}>{children}</p>,
+          pre: ({ children }) => <pre style={{ fontFamily: 'var(--mono)', fontSize: 12, background: 'var(--code-bg)', border: '1px solid var(--code-border)', borderRadius: 8, padding: '10px 12px', overflowX: 'auto', lineHeight: 1.5, margin: '8px 0' }}>{children}</pre>,
+          code: ({ children, className }) => (
+            className
+              ? <code style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>{children}</code>
+              : <code style={{ fontFamily: 'var(--mono)', fontSize: 12, background: 'var(--code-bg)', padding: '1px 5px', borderRadius: 4, color: 'var(--fg2)' }}>{children}</code>
+          ),
+          ul: ({ children }) => <ul style={{ margin: '0 0 8px', paddingLeft: 20 }}>{children}</ul>,
+          ol: ({ children }) => <ol style={{ margin: '0 0 8px', paddingLeft: 20 }}>{children}</ol>,
+          li: ({ children }) => <li style={{ marginBottom: 3, color: 'var(--fg2)' }}>{children}</li>,
+          h1: ({ children }) => <h1 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 8px', color: 'var(--fg1)' }}>{children}</h1>,
+          h2: ({ children }) => <h2 style={{ fontSize: 15, fontWeight: 600, margin: '0 0 8px', color: 'var(--fg1)' }}>{children}</h2>,
+          h3: ({ children }) => <h3 style={{ fontSize: 13, fontWeight: 600, margin: '0 0 6px', color: 'var(--fg2)' }}>{children}</h3>,
+          a: ({ href, children }) => <a href={href ?? '#'} target="_blank" rel="noreferrer" style={{ color: BRAND_DEEP, textDecoration: 'none' }}>{children}</a>,
+          hr: () => <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '10px 0' }} />,
+          strong: ({ children }) => <strong style={{ fontWeight: 700 }}>{children}</strong>,
+          blockquote: ({ children }) => <blockquote style={{ borderLeft: '3px solid var(--border)', margin: '8px 0', paddingLeft: 12, color: 'var(--fg3)', fontStyle: 'italic' }}>{children}</blockquote>,
+        }}
+      >
+        {shape.content}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+function DataTableShapeView({ shape }: { shape: Extract<ShapeData, { type: 'data_table' }> }) {
+  return (
+    <div style={{ overflowX: 'auto', borderRadius: 8, border: '1px solid var(--border)' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'var(--sans)', fontSize: 12.5 }}>
+        <thead>
+          <tr style={{ background: 'var(--code-bg)' }}>
+            {shape.columns.map((col, i) => (
+              <th key={i} style={{ padding: '7px 12px', textAlign: 'left', borderBottom: '1px solid var(--border)', color: 'var(--fg3)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', whiteSpace: 'nowrap' }}>
+                {col}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {shape.rows.map((row, ri) => (
+            <tr key={ri} style={{ background: ri % 2 === 1 ? 'var(--code-bg)' : 'transparent' }}>
+              {row.map((cell, ci) => (
+                <td key={ci} style={{ padding: '7px 12px', borderBottom: ri < shape.rows.length - 1 ? '1px solid var(--border)' : 'none', color: 'var(--fg2)', lineHeight: 1.4 }}>
+                  {cell}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function MetricShapeView({ shape }: { shape: Extract<ShapeData, { type: 'metric' }> }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
+      <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--fg4)', flexShrink: 0, width: 148, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {shape.label}
+      </span>
+      <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--fg1)', fontWeight: 600, flex: 1, wordBreak: 'break-all' }}>
+        {String(shape.value)}
+      </span>
+      {shape.unit && (
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--fg4)', flexShrink: 0 }}>
+          {shape.unit}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function LinkShapeView({ shape }: { shape: Extract<ShapeData, { type: 'link' }> }) {
+  return (
+    <a
+      href={shape.url}
+      target="_blank"
+      rel="noreferrer"
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: BRAND_DEEP, fontFamily: 'var(--sans)', fontSize: 13, textDecoration: 'none', fontWeight: 500 }}
+    >
+      {shape.label}
+      <ExternalLink size={12} strokeWidth={1.5} />
+    </a>
+  );
+}
+
+const MSG_COLOR: Record<string, string> = {
+  info: 'var(--fg2)',
+  success: BRAND_DEEP,
+  warning: '#C97B00',
+  error: RED,
+};
+const MSG_BG: Record<string, string> = {
+  info: 'var(--code-bg)',
+  success: 'rgba(24,226,153,0.09)',
+  warning: 'rgba(201,123,0,0.09)',
+  error: 'rgba(212,86,86,0.07)',
+};
+const MSG_BORDER: Record<string, string> = {
+  info: 'var(--code-border)',
+  success: `${BRAND}40`,
+  warning: '#C97B0040',
+  error: `${RED}30`,
+};
+
+function MessageShapeView({ shape }: { shape: Extract<ShapeData, { type: 'message' }> }) {
+  return (
+    <div style={{ padding: '8px 12px', borderRadius: 7, background: MSG_BG[shape.level] ?? MSG_BG.info, border: `1px solid ${MSG_BORDER[shape.level] ?? MSG_BORDER.info}`, fontFamily: 'var(--sans)', fontSize: 13, color: MSG_COLOR[shape.level] ?? MSG_COLOR.info, lineHeight: 1.5 }}>
+      {shape.text}
+    </div>
+  );
+}
+
+function ErrorShapeView({ shape }: { shape: Extract<ShapeData, { type: 'error' }> }) {
+  return (
+    <div style={{ padding: '10px 12px', borderRadius: 7, background: 'rgba(212,86,86,0.07)', border: `1px solid ${RED}30` }}>
+      <p style={{ margin: 0, fontFamily: 'var(--sans)', fontSize: 13, color: RED, lineHeight: 1.5 }}>{shape.reason}</p>
+      {shape.hint && <p style={{ margin: '6px 0 0', fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg3)', lineHeight: 1.4 }}>{shape.hint}</p>}
     </div>
   );
 }
