@@ -185,6 +185,10 @@ All registered actions are exposed automatically — run `docent list` to see th
 
 ### Setup: `.mcp.json`
 
+Docent supports two MCP transports. Choose the one that fits your workflow.
+
+#### Option A — stdio (recommended for local Claude Code)
+
 Create `.mcp.json` in your Claude Code project root (or add to `~/.claude/settings.json` for global access):
 
 ```json
@@ -209,14 +213,46 @@ Replace `/absolute/path/to/docent-repo` with the actual path. On Windows: `C:/Us
 
 Restart Claude Code after saving — the server starts automatically when needed.
 
+#### Option B — HTTP + SSE (always-on server, remote access, Plugin Builder)
+
+Start `docent ui` once to auto-generate an API key, then retrieve it:
+
+```bash
+docent ui   # generates key on first start; Ctrl+C after a moment
+grep api_key ~/.docent/config.toml
+```
+
+Then configure your MCP client:
+
+```json
+{
+  "mcpServers": {
+    "docent": {
+      "url": "http://localhost:7432/mcp/sse",
+      "headers": {
+        "Authorization": "Bearer YOUR_API_KEY_HERE"
+      }
+    }
+  }
+}
+```
+
+For remote access from another machine, replace `localhost` with the server's IP or hostname and ensure port 7432 is reachable. `docent ui` must be running on the server.
+
 ### Verify Connection
 
-Test the server directly first:
+**stdio:** Test the server directly:
 
 ```bash
 docent serve
 # [docent] MCP server ready — 35 tools registered. Waiting for client…
 # (blocks on stdin — Ctrl+C to stop)
+```
+
+**HTTP:** With `docent ui` running, check the endpoint:
+
+```bash
+curl -H "Authorization: Bearer YOUR_API_KEY" http://localhost:7432/mcp/sse
 ```
 
 Then in Claude Code, try one of the example prompts below.
@@ -405,6 +441,38 @@ docent list   # your tool appears immediately
 - A web form on the **Tools page** (`docent ui` → Tools), auto-generated from each action's input schema — no frontend code
 
 For the full plugin contract (Tool ABC, `@action`, `to_shapes()`, `on_startup`), see [`docs/plugin-guide.md`](plugin-guide.md).
+
+### Plugin Builder (AI-assisted)
+
+Instead of writing a plugin by hand, describe what you want and let the Plugin Builder generate it for you. The Builder uses a specialised Docent LLM (configurable, default: `deepseek/deepseek-chat`) that has the full plugin contract baked into its system prompt.
+
+**From any MCP client (Claude Code, Cursor, etc.):**
+
+```
+"Build a plugin that scans my reading database for papers published this year
+and exports a CSV summary to ~/Desktop"
+```
+
+The MCP client applies a **worthiness gate** before generating — a plugin is only built when the workflow will be used repeatedly, makes sense without an AI present, and integrates with Docent tools. One-off tasks are handled directly by the AI instead.
+
+**The five Plugin Builder MCP tools:**
+
+| Tool | What it does |
+|------|-------------|
+| `plugin_builder__generate` | LLM generates plugin from spec (worthiness gate in description) |
+| `plugin_builder__iterate` | LLM revises code based on feedback |
+| `plugin_builder__validate` | Static AST check — no LLM, instant |
+| `plugin_builder__sandbox_test` | Runs one action in isolated registry, no disk writes |
+| `plugin_builder__install` | Writes to `~/.docent/plugins/{name}.py` after user approves |
+
+**Configure the Docent LLM:**
+
+```bash
+docent plugin_builder config-set --key model --value "gpt-4o"
+# or any LiteLLM-supported model string
+```
+
+Default is `deepseek/deepseek-chat` — swappable without code changes.
 
 ---
 

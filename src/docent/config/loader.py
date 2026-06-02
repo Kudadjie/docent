@@ -89,8 +89,10 @@ def load_settings() -> Settings:
 
 _KNOWN_TOP_LEVEL_SECTIONS = frozenset(
     {
+        "plugin_builder",
         "reading",
         "research",
+        "serve",
         "tools",
         # Root-level scalar keys (no section prefix)
         "default_model",

@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { LayoutDashboard, BookOpen, FlaskConical, BookText, Settings, Globe2, GripVertical, Wrench } from 'lucide-react';
+import { LayoutDashboard, BookOpen, FlaskConical, BookText, Settings, Globe2, GripVertical, Wrench, Blocks } from 'lucide-react';
 import WelcomeModal, { type UserProfile } from './WelcomeModal';
 import { useAppRun } from '@/lib/app-run-context';
 
@@ -41,6 +41,12 @@ const PLUGIN_NAV: NavItem[] = [
     href: '/tools',
     label: 'Tools',
     icon: <Wrench size={16} strokeWidth={1.5} />,
+  },
+  {
+    id: 'plugin-builder',
+    href: '/plugin-builder',
+    label: 'Plugin Builder',
+    icon: <Blocks size={16} strokeWidth={1.5} />,
   },
 ];
 

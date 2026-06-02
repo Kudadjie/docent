@@ -375,9 +375,11 @@ from docent.cli_doctor import (  # noqa: E402
     _check_feynman,
     _check_google_drive,
     _check_litellm_provider,
+    _check_mcp_http,
     _check_mendeley_mcp,
     _check_notebooklm_py,
     _check_opencode,
+    _check_plugin_builder_model,
     _check_profile,
     _check_reading_db,
     _check_semantic_scholar,
@@ -1103,6 +1105,8 @@ def doctor_command(ctx: typer.Context) -> None:
             "docent studio config-set --key groq_api_key --value YOUR_KEY",
         ),
         lambda: _check_google_drive(),
+        lambda: _check_mcp_http(settings),
+        lambda: _check_plugin_builder_model(settings),
         # Archived backends (gemini, openrouter, mistral, cerebras) — not checked
     ]
     with ThreadPoolExecutor(max_workers=len(check_fns)) as pool:

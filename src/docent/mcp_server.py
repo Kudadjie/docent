@@ -259,38 +259,26 @@ def _maybe_inline_research_output(lines: list[str], result: Any) -> None:
 
 
 # ---------------------------------------------------------------------------
-# MCP server
+# MCP server construction
 # ---------------------------------------------------------------------------
 
 
-def run_server() -> None:
-    """Load plugins, build the MCP tool list, and serve over stdio.
+def build_mcp_server() -> Server:
+    """Build and return a configured MCP Server from the current registry state.
 
-    Called by `docent serve`. Blocks until the client disconnects.
+    Caller must have invoked ``discover_tools()`` + ``load_plugins()`` first so
+    the registry is fully populated before ``build_mcp_tools()`` is called here.
+    Used by both the stdio path (``run_server``) and the HTTP path
+    (``mount_mcp_sse``).
     """
-    import sys
-
-    from docent.ui.console import configure_console
-
-    # Redirect Rich console to stderr — stdout must stay clean for JSON-RPC.
-    configure_console(stderr=True)
-    discover_tools()
-    load_plugins()
-    tools = build_mcp_tools()
-    print(
-        f"[docent] MCP server ready — {len(tools)} tools registered. Waiting for client…",
-        file=sys.stderr,
-        flush=True,
-    )
-
     from docent._version import __version__
 
+    tools = build_mcp_tools()
     server = Server("Docent", version=__version__)
 
     @server.list_tools()
     async def list_tools() -> list[types.Tool]:
-        # Reuse the list built above — the registry is fixed after load_plugins(),
-        # so there's no need to rebuild on every list_tools request.
+        # Snapshot taken at construction time — registry is fixed after load_plugins().
         return tools
 
     @server.call_tool()
@@ -327,7 +315,6 @@ def run_server() -> None:
         lines: list[str] = []
 
         if not inspect.isgenerator(raw):
-            # Non-streaming result — return immediately.
             for note in mcp_context.mcp_notes:
                 lines.append(json.dumps({"note": note}))
             lines.append(_serialize(raw))
@@ -338,7 +325,6 @@ def run_server() -> None:
         # as a log notification so the MCP connection stays alive during long pipelines.
         event_queue: asyncio.Queue = asyncio.Queue()
         cur_loop = asyncio.get_running_loop()
-        # ProgressEvent.level → MCP LoggingLevel
         _level_map = {"info": "info", "warn": "warning", "error": "error"}
 
         def _drain_generator() -> None:
@@ -413,6 +399,70 @@ def run_server() -> None:
         lines.append(_serialize(result_value))
         _maybe_inline_research_output(lines, result_value)
         return [types.TextContent(type="text", text="\n".join(lines))]
+
+    return server
+
+
+def mount_mcp_sse(app: Any, api_key: str) -> None:
+    """Mount MCP HTTP+SSE transport on an existing FastAPI app.
+
+    Routes added:
+      GET  /mcp/sse        — SSE stream (server → client)
+      POST /mcp/messages/  — client → server messages
+
+    Both routes require ``Authorization: Bearer <api_key>``.
+    Call after ``discover_tools()`` + ``load_plugins()`` have been invoked.
+    """
+    from fastapi import Depends, HTTPException, Request
+    from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+    from mcp.server.sse import SseServerTransport
+
+    sse = SseServerTransport("/mcp/messages/")
+    server = build_mcp_server()
+
+    security = HTTPBearer(auto_error=False)
+
+    def _require_key(
+        creds: HTTPAuthorizationCredentials | None = Depends(security),
+    ) -> None:
+        if creds is None or creds.credentials != api_key:
+            raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+    @app.get("/mcp/sse", dependencies=[Depends(_require_key)])
+    async def handle_sse(request: Request) -> None:
+        async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
+            await server.run(streams[0], streams[1], server.create_initialization_options())
+
+    @app.post("/mcp/messages/", dependencies=[Depends(_require_key)])
+    async def handle_post_message(request: Request) -> None:
+        await sse.handle_post_message(request.scope, request.receive, request._send)
+
+
+# ---------------------------------------------------------------------------
+# stdio server (docent serve)
+# ---------------------------------------------------------------------------
+
+
+def run_server() -> None:
+    """Load plugins, build the MCP tool list, and serve over stdio.
+
+    Called by ``docent serve``. Blocks until the client disconnects.
+    """
+    import sys
+
+    from docent.ui.console import configure_console
+
+    # Redirect Rich console to stderr — stdout must stay clean for JSON-RPC.
+    configure_console(stderr=True)
+    discover_tools()
+    load_plugins()
+    server = build_mcp_server()
+    print(
+        f"[docent] MCP server ready — {len(build_mcp_tools())} tools registered."
+        " Waiting for client…",
+        file=sys.stderr,
+        flush=True,
+    )
 
     async def _serve() -> None:
         async with stdio_server() as (read_stream, write_stream):

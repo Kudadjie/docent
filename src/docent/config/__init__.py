@@ -1,4 +1,18 @@
 from docent.config.loader import load_settings, write_setting
-from docent.config.settings import ReadingSettings, ResearchSettings, Settings
+from docent.config.settings import (
+    PluginBuilderSettings,
+    ReadingSettings,
+    ResearchSettings,
+    ServeSettings,
+    Settings,
+)
 
-__all__ = ["ReadingSettings", "ResearchSettings", "Settings", "load_settings", "write_setting"]
+__all__ = [
+    "PluginBuilderSettings",
+    "ReadingSettings",
+    "ResearchSettings",
+    "ServeSettings",
+    "Settings",
+    "load_settings",
+    "write_setting",
+]

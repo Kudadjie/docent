@@ -408,6 +408,34 @@ def _check_litellm_provider(
     return label, "OK", "-", f"Key present ({masked})"
 
 
+def _check_plugin_builder_model(settings: Settings) -> tuple[str, str, str, str]:
+    from docent.bundled_plugins.studio.oc_client import OcClient
+
+    model = settings.plugin_builder.model
+    client = OcClient()
+    if not client.is_available():
+        return (
+            "Plugin Builder",
+            "WARN",
+            model,
+            "OpenCode server not running — start with: opencode serve --port 4096",
+        )
+    return "Plugin Builder", "OK", model, "OpenCode reachable; Docent LLM ready"
+
+
+def _check_mcp_http(settings: Settings) -> tuple[str, str, str, str]:
+    if not settings.serve.http_mcp_enabled:
+        return "MCP HTTP", "SKIP", "-", "Disabled (serve.http_mcp_enabled = false)"
+    if not settings.serve.api_key:
+        return (
+            "MCP HTTP",
+            "WARN",
+            "-",
+            "API key not set — run `docent ui` once to auto-generate",
+        )
+    return "MCP HTTP", "OK", "-", "API key configured; endpoint at /mcp/sse"
+
+
 def _check_reading_db(settings: Settings) -> tuple[str, str, str, str]:
     db = settings.reading.database_dir
     if db is None:

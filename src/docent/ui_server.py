@@ -112,12 +112,17 @@ def _is_localhost_origin(origin: str) -> bool:
 class _LocalhostGuard(BaseHTTPMiddleware):
     """Reject requests whose Origin header points to a non-localhost host.
 
+    /mcp/* routes are exempt — they are API-key-protected and intentionally
+    reachable from remote clients.
+
     NOTE: Starlette's BaseHTTPMiddleware only runs on the `http` scope —
     WebSocket handshakes bypass it entirely. WebSocket endpoints must enforce
     the origin check themselves via `_is_localhost_origin` (see ui_routes/opencode.py).
     """
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        if request.url.path.startswith("/mcp/"):
+            return await call_next(request)
         if not _is_localhost_origin(request.headers.get("origin", "")):
             return JSONResponse({"error": "Forbidden: non-localhost origin"}, status_code=403)
         return await call_next(request)
@@ -763,13 +768,28 @@ if UI_DIST.is_dir():
 
 
 def run_server(host: str = "127.0.0.1", port: int = 7432) -> None:
+    import secrets
+
     from docent.bundled_plugins.reading.reading_store import cleanup_legacy_paper_dirs
+    from docent.config import load_settings, write_setting
     from docent.core import load_plugins
+    from docent.mcp_server import mount_mcp_sse
     from docent.tools import discover_tools
 
     discover_tools()
     load_plugins()
     cleanup_legacy_paper_dirs()
+
+    # Generate API key on first start, then mount MCP HTTP transport.
+    settings = load_settings()
+    if settings.serve.http_mcp_enabled:
+        api_key = settings.serve.api_key
+        if not api_key:
+            api_key = secrets.token_urlsafe(32)
+            write_setting("serve.api_key", api_key)
+            _log.info("Generated MCP HTTP API key — stored in ~/.docent/config.toml")
+        mount_mcp_sse(app, api_key)
+        _log.info("MCP HTTP transport active at /mcp/sse (port %d)", port)
 
     # Set up audit log
     audit_log_path = _docent_dir() / "audit.log"
