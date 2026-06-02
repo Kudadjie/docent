@@ -21,11 +21,13 @@ import json
 import re
 import types as _types
 import uuid
+from collections.abc import Generator
 from pathlib import Path
 
 from pydantic import BaseModel, Field
 
 from docent.core.context import Context
+from docent.core.events import ProgressEvent
 from docent.core.registry import _REGISTRY, register_tool
 from docent.core.tool import Tool, action
 
@@ -63,6 +65,10 @@ class GenerateInputs(BaseModel):
         None,
         description="Additional workflow context the AI client has gathered about the user's needs.",
     )
+    model: str | None = Field(
+        None,
+        description="OpenCode model override (e.g. 'deepseek-v4-pro'). Defaults to plugin_builder.model in config.",
+    )
 
 
 class GenerateResult(BaseModel):
@@ -78,6 +84,10 @@ class IterateInputs(BaseModel):
     plugin_id: str = Field(description="plugin_id from the generate step (for traceability).")
     code: str = Field(description="Current plugin code to revise.")
     feedback: str = Field(description="What to change, fix, or improve in the plugin.")
+    model: str | None = Field(
+        None,
+        description="OpenCode model override. Defaults to plugin_builder.model in config.",
+    )
 
 
 class IterateResult(BaseModel):
@@ -270,6 +280,23 @@ def _run_in_sandbox(code: str, action_name: str, inputs: dict) -> tuple[bool, st
         module.__file__ = "<sandbox>"
         exec(compile(code, "<sandbox>", "exec"), vars(module))  # noqa: S102
 
+        # Resolve Pydantic v2 forward references that stay unresolved when
+        # models are defined inside exec() with a custom namespace.
+        # `from __future__ import annotations` turns all annotations into
+        # strings; model_rebuild() must receive _types_namespace so it can
+        # resolve e.g. `list[UrgentEntry]` back to the actual class.
+        ns = vars(module)
+        for _obj in list(ns.values()):
+            if isinstance(_obj, type) and issubclass(_obj, BaseModel) and _obj is not BaseModel:
+                try:
+                    _obj.model_rebuild(
+                        force=True,
+                        _parent_namespace_depth=0,
+                        _types_namespace=ns,
+                    )
+                except Exception:
+                    pass
+
         # Identify tool name registered by exec() side-effect.
         new_names = set(_REGISTRY.keys()) - set(saved.keys())
         if not new_names:
@@ -331,16 +358,26 @@ class PluginBuilderTool(Tool):
         description=("Generate a Docent plugin from a natural-language spec. " + _WORTHINESS_GATE),
         input_schema=GenerateInputs,
     )
-    def generate(self, inputs: GenerateInputs, context: Context) -> GenerateResult:
-        model = context.settings.plugin_builder.model
+    def generate(
+        self, inputs: GenerateInputs, context: Context
+    ) -> Generator[ProgressEvent, None, GenerateResult]:
+        model = inputs.model or context.settings.plugin_builder.model
+        plugin_id = str(uuid.uuid4())
+
+        yield ProgressEvent(phase="init", message="Reading spec…")
+
         user_msg = f"Build a Docent plugin that does the following:\n\n{inputs.spec}"
         if inputs.context:
             user_msg += f"\n\nAdditional context:\n{inputs.context}"
 
+        yield ProgressEvent(phase="llm", message=f"Calling OpenCode LLM ({model})…")
+
         try:
             raw_response = _llm_generate(user_msg, model)
         except Exception as exc:
-            return GenerateResult(ok=False, plugin_id=str(uuid.uuid4()), error=str(exc))
+            return GenerateResult(ok=False, plugin_id=plugin_id, error=str(exc))
+
+        yield ProgressEvent(phase="parse", message="Extracting code…")
 
         code = _extract_code_block(raw_response)
 
@@ -357,7 +394,7 @@ class PluginBuilderTool(Tool):
 
         return GenerateResult(
             ok=True,
-            plugin_id=str(uuid.uuid4()),
+            plugin_id=plugin_id,
             code=code,
             explanation=explanation,
             actions=actions,
@@ -370,8 +407,13 @@ class PluginBuilderTool(Tool):
         ),
         input_schema=IterateInputs,
     )
-    def iterate(self, inputs: IterateInputs, context: Context) -> IterateResult:
-        model = context.settings.plugin_builder.model
+    def iterate(
+        self, inputs: IterateInputs, context: Context
+    ) -> Generator[ProgressEvent, None, IterateResult]:
+        model = inputs.model or context.settings.plugin_builder.model
+
+        yield ProgressEvent(phase="process", message="Processing feedback…")
+
         user_msg = (
             f"Here is the current Docent plugin code:\n\n"
             f"```python\n{inputs.code}\n```\n\n"
@@ -380,10 +422,14 @@ class PluginBuilderTool(Tool):
             f"Return only the complete revised Python code block."
         )
 
+        yield ProgressEvent(phase="llm", message=f"Calling OpenCode LLM ({model})…")
+
         try:
             raw_response = _llm_generate(user_msg, model)
         except Exception as exc:
             return IterateResult(ok=False, plugin_id=inputs.plugin_id, error=str(exc))
+
+        yield ProgressEvent(phase="parse", message="Applying changes…")
 
         new_code = _extract_code_block(raw_response)
         parts = raw_response.split("```python", 1)

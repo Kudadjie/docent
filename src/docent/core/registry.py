@@ -65,6 +65,10 @@ def register_tool(cls: type[T]) -> type[T]:
 
     if cls.name in _REGISTRY:
         existing = _REGISTRY[cls.name]
+        # Same class re-registering (e.g. plugin module reloaded) — silently replace.
+        if existing.__module__ == cls.__module__ and existing.__name__ == cls.__name__:
+            _REGISTRY[cls.name] = cls
+            return cls
         import sys
 
         print(

@@ -28,6 +28,7 @@
 - **`reading` tool** — reading queue CRUD (`next / show / search / stats / remove / edit / done / start / export`); Mendeley-backed ingestion; deadline notifications at startup; `move-up / move-down / move-to`; MCP-exposed so Claude Code can call it directly.
 - **`MendeleyCache`** — read-through file-backed cache (5-min TTL) for fresh metadata on every `next / show / search`. Degrades gracefully to queue snapshot on auth failure.
 - **Plugin system** — drop a `.py` file into `~/.docent/plugins/` and Docent auto-discovers it on next run.
+- **Plugin Builder** — describe a workflow in plain English and the LLM generates, validates, sandbox-tests, and installs a plugin for you. Accessible from the web UI and as five MCP tools (`plugin_builder__generate`, `__iterate`, `__validate`, `__sandbox_test`, `__install`). Requires `opencode serve --port 4096`.
 - **`docent ui`** — starts a local web dashboard at `http://localhost:7432`. Browse and manage your reading queue, sync with Mendeley, edit settings, and check for updates — all from the browser. The UI is bundled inside the package; no separate install needed.
 - **Tools page (`/tools` in the UI)** — a schema-driven runner that lists every registered tool action and auto-generates its form from the action's input schema. New plugins appear here with a working form and no frontend code. Backed by `GET /api/tools` (catalogue + JSON schemas) and `POST /api/tools/invoke` (run an action).
 

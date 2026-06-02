@@ -226,6 +226,58 @@ def test_sandbox_test_restores_registry(tool, ctx):
     assert before == after
 
 
+# Plugin with nested models and `from __future__ import annotations` — this
+# pattern triggers the Pydantic v2 forward-reference error that the sandbox
+# must resolve via model_rebuild(_types_namespace=ns).
+_NESTED_MODELS_PLUGIN = """\
+from __future__ import annotations
+from pydantic import BaseModel, Field
+from docent.core.tool import Tool, action
+from docent.core.registry import register_tool
+from docent.core.context import Context
+
+
+class ItemEntry(BaseModel):
+    id: str
+    label: str
+
+
+class ListResult(BaseModel):
+    ok: bool
+    items: list[ItemEntry] = Field(default_factory=list)
+    total: int = 0
+
+
+class ListInputs(BaseModel):
+    limit: int = 5
+
+
+@register_tool
+class ListTool(Tool):
+    name = "list_tool"
+    description = "A tool with nested Pydantic models."
+
+    @action(description="Return a list of items.", input_schema=ListInputs)
+    def list_items(self, inputs: ListInputs, context: Context) -> ListResult:
+        items = [ItemEntry(id=str(i), label=f"item-{i}") for i in range(inputs.limit)]
+        return ListResult(ok=True, items=items, total=len(items))
+"""
+
+
+def test_sandbox_nested_pydantic_models(tool, ctx):
+    """Sandbox must not raise PydanticUserError for nested model forward refs."""
+    result = tool.sandbox_test(
+        SandboxTestInputs(code=_NESTED_MODELS_PLUGIN, action="list-items", inputs='{"limit": 3}'),
+        ctx,
+    )
+    assert result.ok is True, result.errors
+    assert result.success is True, result.errors
+    output = json.loads(result.output)
+    assert output["ok"] is True
+    assert output["total"] == 3
+    assert len(output["items"]) == 3
+
+
 # ---------------------------------------------------------------------------
 # install action
 # ---------------------------------------------------------------------------
@@ -268,12 +320,27 @@ def test_install_invalid_name(tool, ctx, tmp_path):
 _LLM_RESPONSE = f"Here is the plugin:\n\n```python\n{_VALID_PLUGIN}\n```"
 
 
+def _drain(gen):
+    """Drain a generator action and return its final result value."""
+    import inspect
+
+    if not inspect.isgenerator(gen):
+        return gen
+    result = None
+    try:
+        while True:
+            next(gen)
+    except StopIteration as stop:
+        result = stop.value
+    return result
+
+
 def test_generate_calls_llm_and_parses_code(tool, ctx):
     with patch(
         "docent.bundled_plugins.plugin_builder._llm_generate",
         return_value=_LLM_RESPONSE,
     ):
-        result = tool.generate(GenerateInputs(spec="Echo a message back to the user."), ctx)
+        result = _drain(tool.generate(GenerateInputs(spec="Echo a message back to the user."), ctx))
     assert result.ok is True
     assert "PingTool" in result.code
     assert "ping" in result.actions
@@ -285,7 +352,7 @@ def test_generate_llm_error_returns_failure(tool, ctx):
         "docent.bundled_plugins.plugin_builder._llm_generate",
         side_effect=RuntimeError("model unavailable"),
     ):
-        result = tool.generate(GenerateInputs(spec="anything"), ctx)
+        result = _drain(tool.generate(GenerateInputs(spec="anything"), ctx))
     assert result.ok is False
     assert "model unavailable" in (result.error or "")
 
@@ -295,13 +362,15 @@ def test_iterate_revises_code(tool, ctx):
         "docent.bundled_plugins.plugin_builder._llm_generate",
         return_value=_LLM_RESPONSE,
     ):
-        result = tool.iterate(
-            IterateInputs(
-                plugin_id="abc-123",
-                code=_VALID_PLUGIN,
-                feedback="Add a --loud flag",
-            ),
-            ctx,
+        result = _drain(
+            tool.iterate(
+                IterateInputs(
+                    plugin_id="abc-123",
+                    code=_VALID_PLUGIN,
+                    feedback="Add a --loud flag",
+                ),
+                ctx,
+            )
         )
     assert result.ok is True
     assert result.plugin_id == "abc-123"

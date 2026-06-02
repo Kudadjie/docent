@@ -2,6 +2,8 @@
 
 Plugins let you add new tools to Docent without modifying the package. Drop a file into `~/.docent/plugins/` and your tool appears in `docent list`, gets its own CLI sub-commands, and is automatically exposed as MCP tools via `docent serve`.
 
+> **Don't want to write the plugin by hand?** Use the **Plugin Builder** in the web UI — describe what you want in plain English and the LLM generates the code, runs a sandbox test, and installs it for you. See [docs/guides/plugin-builder-guide.md](guides/plugin-builder-guide.md).
+
 ---
 
 ## 1. Quick start

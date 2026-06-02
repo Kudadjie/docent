@@ -25,6 +25,8 @@ _EXTRA_VALID = {
     # MCP JSON config argument (not a CLI flag)
     "directory",  # "--directory" in .mcp.json args array
     "no-sync",  # "uv run --no-sync" in MCP config example (uv flag, not Docent)
+    # External tool flags documented in README (opencode, not Docent)
+    "port",  # "opencode serve --port 4096"
 }
 
 
