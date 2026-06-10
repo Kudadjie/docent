@@ -162,7 +162,7 @@ async def stream_tool(body: InvokeBody) -> StreamingResponse:
             )
             event_q.put(None)
             return
-        except (ValueError, Exception) as exc:
+        except Exception as exc:
             event_q.put(json.dumps({"type": "error", "ok": False, "error": str(exc)}))
             event_q.put(None)
             return

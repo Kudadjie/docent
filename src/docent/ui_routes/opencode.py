@@ -14,31 +14,27 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 
 router: APIRouter = APIRouter()
-from docent.ui_server import StudioRunBody  # noqa: E402
+from docent.ui_routes._shared import _audit, _is_localhost_origin  # noqa: E402
+from docent.ui_routes._studio_request import (  # noqa: E402
+    StudioRunBody,
+    build_studio_request,
+)
 
 _log = logging.getLogger("docent.ui.opencode")
 
 _opencode_proc: subprocess.Popen | None = None
 
 
-def _audit(action: str, detail: str) -> None:
-    from docent.ui_server import _audit as _a
-
-    _a(action, detail)
-
-
 def _build_studio_cmd(body: StudioRunBody) -> list[str] | None:
     """Build the `docent studio <action> ...` subprocess command for the live
     WebSocket path.
 
-    Renders from :func:`docent.ui_server.build_studio_request` — the SAME source
-    of truth as the in-process/SSE builder (`_parse_studio_body`). Per-action
-    argument handling lives in exactly one place, so the two surfaces can no
-    longer drift. This function only prepends the resolved `docent` executable.
+    Renders from :func:`docent.ui_routes._studio_request.build_studio_request` —
+    the SAME source of truth as the in-process/SSE builder (`_parse_studio_body`).
+    Per-action argument handling lives in exactly one place, so the two surfaces
+    can no longer drift. This function only prepends the resolved `docent` executable.
     """
     import shutil as _sh
-
-    from docent.ui_server import build_studio_request
 
     req = build_studio_request(body)
     if req is None:
@@ -239,8 +235,6 @@ async def studio_run_ws(websocket: WebSocket):
     # does NOT see WebSocket handshakes, so we must enforce the origin policy here.
     # Without this, any web page the user visits could open this socket and drive
     # studio subprocesses (spend API credits, write files via to-notebook output).
-    from docent.ui_server import _is_localhost_origin
-
     if not _is_localhost_origin(websocket.headers.get("origin", "")):
         await websocket.close(code=1008)  # 1008 = policy violation
         return
@@ -248,6 +242,16 @@ async def studio_run_ws(websocket: WebSocket):
 
     try:
         body_raw = await websocket.receive_json()
+        # Session-token check (browsers cannot set custom WS headers, so the
+        # token rides inside the first message). The origin check alone would
+        # still admit pages served from OTHER localhost ports (e.g. :3000).
+        from docent.ui_server import get_session_token
+
+        expected = get_session_token()
+        sent = body_raw.pop("token", None) if isinstance(body_raw, dict) else None
+        if expected is not None and sent != expected:
+            await websocket.close(code=1008)
+            return
         body = StudioRunBody(**body_raw)
     except WebSocketDisconnect:
         return

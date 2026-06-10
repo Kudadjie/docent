@@ -234,7 +234,7 @@ uv tool install --python 3.13 --editable .
 ### Running tests
 
 ```bash
-uv run pytest          # full suite (~160 tests, ~4s)
+uv run pytest          # full suite (~770 tests, under 30s)
 uv run pytest -x -q    # stop on first failure, quiet output
 ```
 

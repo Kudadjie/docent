@@ -1,14 +1,27 @@
 """Doctor and tooling health-check endpoints."""
 
 import asyncio
+import json
 import os
 import shutil
 import subprocess as _sp
 import sys
+from pathlib import Path
 
 import httpx
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
+
+from docent.ui_routes._shared import (
+    _mask_key,
+    _read_config_reading,
+    _read_config_research,
+    _read_json,
+    _run,
+    _run_command,
+    _user_file,
+    _version_at_least,
+)
 
 router = APIRouter()
 
@@ -20,24 +33,6 @@ TOOLING = [
         "upgrade_cmd": "npm install -g @companion-ai/feynman",
     },
 ]
-
-
-def _run(args, timeout=30.0):
-    from docent.ui_server import _run as _r
-
-    return _r(args, timeout=timeout)
-
-
-def _run_command(cmd, args, timeout=30.0):
-    from docent.ui_server import _run_command as _rc
-
-    return _rc(cmd, args, timeout=timeout)
-
-
-def _version_at_least(installed, latest):
-    from docent.ui_server import _version_at_least as _val
-
-    return _val(installed, latest)
 
 
 async def _fetch_npm_latest(package: str) -> str | None:
@@ -69,34 +64,33 @@ async def _get_npm_installed(package: str) -> str | None:
         return None
 
 
-def _mask_key(key):
-    from docent.ui_server import _mask_key as _mk
+@router.get("/api/version")
+async def get_version() -> JSONResponse:
+    try:
 
-    return _mk(key)
+        async def _installed() -> str:
+            stdout, _, rc = await _run(["--version"])
+            if rc != 0:
+                raise RuntimeError("docent --version failed")
+            return stdout.strip().split()[-1]
 
+        async def _latest() -> str | None:
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    r = await client.get("https://pypi.org/pypi/docent-cli/json")
+                    r.raise_for_status()
+                    return r.json()["info"]["version"]
+            except Exception:
+                return None
 
-def _read_config_reading():
-    from docent.ui_server import _read_config_reading as _rcr
-
-    return _rcr()
-
-
-def _read_config_research():
-    from docent.ui_server import _read_config_research as _rcr2
-
-    return _rcr2()
-
-
-def _user_file():
-    from docent.ui_server import _user_file as _uf
-
-    return _uf()
-
-
-def _read_json(path, default):
-    from docent.ui_server import _read_json as _rj
-
-    return _rj(path, default)
+        installed, latest = await asyncio.gather(_installed(), _latest())
+        up_to_date = (installed == latest) if latest is not None else None
+        return JSONResponse({"installed": installed, "latest": latest, "up_to_date": up_to_date})
+    except Exception as exc:
+        return JSONResponse(
+            {"installed": None, "latest": None, "up_to_date": None, "error": str(exc)},
+            status_code=500,
+        )
 
 
 @router.get("/api/tooling")
@@ -426,7 +420,3 @@ async def get_doctor() -> JSONResponse:
         drive_row,
     ]
     return JSONResponse(checks)
-
-
-import json  # noqa: E402
-from pathlib import Path  # noqa: E402

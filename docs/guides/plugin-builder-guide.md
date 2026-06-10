@@ -89,7 +89,12 @@ Fix errors by using **Iterate** with the error message as feedback.
 
 ## Sandbox test
 
-Click **Sandbox Test** to run one action in an isolated registry. No files are written.
+Click **Sandbox Test** to run one action in an isolated tool registry.
+
+> **Heads up:** the isolation covers Docent's tool *registry* only — it is not a security
+> sandbox. The plugin code executes in-process with your full user privileges (it can
+> read/write files and make network calls), exactly as it would after install. Review
+> the generated code before sandbox-testing it.
 
 1. Enter the action name in the **Action name** field. The Builder pre-fills this from the generated `@action` methods.
 2. Enter any inputs as a JSON object in the **Inputs (JSON)** field (leave `{}` for no inputs).
@@ -135,7 +140,7 @@ The Plugin Builder is also available as five MCP tools when running `docent serv
 | `plugin_builder__generate` | LLM generates plugin from spec (streaming progress) |
 | `plugin_builder__iterate` | LLM revises code based on feedback (streaming progress) |
 | `plugin_builder__validate` | Static AST check — instant, no LLM |
-| `plugin_builder__sandbox_test` | Runs one action in isolated registry |
+| `plugin_builder__sandbox_test` | Runs one action in an isolated registry (registry-only isolation; code runs with full user privileges) |
 | `plugin_builder__install` | Writes to `~/.docent/plugins/<name>.py` |
 
 From Claude Code or any MCP client, call `plugin_builder__generate` with a `spec` string. The tool description includes the worthiness gate criteria so the AI client can apply them before calling.

@@ -45,52 +45,15 @@ _RESEARCH_KEY_FIELDS = [
 ]
 
 
-def _config_file():
-    from docent.ui_server import _config_file as _cf
-
-    return _cf()
-
-
-def _user_file():
-    from docent.ui_server import _user_file as _uf
-
-    return _uf()
-
-
-def _docent_dir():
-    from docent.ui_server import _docent_dir as _dd
-
-    return _dd()
-
-
-def _read_json(path, default):
-    from docent.ui_server import _read_json as _rj
-
-    return _rj(path, default)
-
-
-def _mask_key(key):
-    from docent.ui_server import _mask_key as _mk
-
-    return _mk(key)
-
-
-def _read_config_reading():
-    from docent.ui_server import _read_config_reading as _rcr
-
-    return _rcr()
-
-
-def _read_config_research():
-    from docent.ui_server import _read_config_research as _rcr2
-
-    return _rcr2()
-
-
-def _audit(action: str, detail: str) -> None:
-    from docent.ui_server import _audit as _a
-
-    _a(action, detail)
+from docent.ui_routes._shared import (  # noqa: E402
+    _audit,
+    _docent_dir,
+    _mask_key,
+    _read_config_reading,
+    _read_config_research,
+    _read_json,
+    _user_file,
+)
 
 
 @router.get("/api/config")

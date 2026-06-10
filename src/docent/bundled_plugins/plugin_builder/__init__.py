@@ -268,6 +268,11 @@ def _llm_generate(prompt: str, model: str) -> str:
 def _run_in_sandbox(code: str, action_name: str, inputs: dict) -> tuple[bool, str, list[str]]:
     """Execute code in an isolated registry, invoke action_name, restore registry.
 
+    NOT a security sandbox: only the tool REGISTRY is isolated. The code runs
+    in-process via exec() with full user privileges — same trust level as
+    installing the plugin and running it. Callers must treat the code as
+    user-approved before invoking this.
+
     Returns (success, output_json, error_list).
     """
     from docent.core.invoke import run_action
@@ -455,9 +460,12 @@ class PluginBuilderTool(Tool):
 
     @action(
         description=(
-            "Load the plugin in an isolated registry, invoke one action with test inputs, "
-            "then restore the registry. No disk writes. "
-            "Use this to verify the plugin runs correctly before installing."
+            "Test-run the plugin: load it in an isolated tool REGISTRY, invoke one action "
+            "with test inputs, then restore the registry. NOTE: only the registry is "
+            "isolated — the plugin code itself executes in-process with full user "
+            "privileges (it can read/write files, make network calls, etc.). "
+            "Only test code the user has reviewed or that came from the generate/iterate "
+            "steps. Use this to verify the plugin runs correctly before installing."
         ),
         input_schema=SandboxTestInputs,
     )

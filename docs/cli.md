@@ -239,6 +239,17 @@ Then configure your MCP client:
 
 For remote access from another machine, replace `localhost` with the server's IP or hostname and ensure port 7432 is reachable. `docent ui` must be running on the server.
 
+> **Note — UI API session token:** the web UI's own `/api/*` endpoints (separate from `/mcp/*`) require a per-session token on all state-changing requests (POST/PUT/PATCH/DELETE). The browser UI handles this automatically. If you script against the API while `docent ui` is running, fetch the token first and send it back as a header:
+>
+> ```bash
+> TOKEN=$(curl -s http://localhost:7432/api/auth/token | jq -r .token)
+> curl -X POST http://localhost:7432/api/tools/invoke \
+>   -H "Content-Type: application/json" -H "X-Docent-Token: $TOKEN" \
+>   -d '{"tool": "reading", "action": "stats", "inputs": {}}'
+> ```
+>
+> GET endpoints stay open. The token rotates on every server restart.
+
 ### Verify Connection
 
 **stdio:** Test the server directly:
@@ -462,7 +473,7 @@ The MCP client applies a **worthiness gate** before generating — a plugin is o
 | `plugin_builder__generate` | LLM generates plugin from spec (worthiness gate in description) |
 | `plugin_builder__iterate` | LLM revises code based on feedback |
 | `plugin_builder__validate` | Static AST check — no LLM, instant |
-| `plugin_builder__sandbox_test` | Runs one action in isolated registry, no disk writes |
+| `plugin_builder__sandbox_test` | Runs one action in an isolated registry (registry-only isolation — code executes in-process with full user privileges) |
 | `plugin_builder__install` | Writes to `~/.docent/plugins/{name}.py` after user approves |
 
 **Configure the Docent LLM:**
