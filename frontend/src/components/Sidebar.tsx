@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { BookOpen, FlaskConical, BookText, Settings, Globe2, GripVertical, Wrench, Blocks, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { BookOpen, FlaskConical, BookText, Settings, Globe2, GripVertical, Wrench, ChevronsLeft, ChevronsRight, type LucideIcon } from 'lucide-react';
 import WelcomeModal, { type UserProfile } from './WelcomeModal';
 import { useAppRun } from '@/lib/app-run-context';
 
@@ -17,55 +17,19 @@ interface NavItem {
   id: string;
   href: string;
   label: string;
-  icon: React.ReactNode;
+  Icon: LucideIcon;
 }
 
 const PLUGIN_NAV: NavItem[] = [
-  {
-    id: 'reading',
-    href: '/reading',
-    label: 'Reading',
-    icon: <BookOpen size={16} strokeWidth={1.5} />,
-  },
-  {
-    id: 'studio',
-    href: '/studio',
-    label: 'Studio',
-    icon: <FlaskConical size={16} strokeWidth={1.5} />,
-  },
-  {
-    id: 'tools',
-    href: '/tools',
-    label: 'Tools',
-    icon: <Wrench size={16} strokeWidth={1.5} />,
-  },
-  {
-    id: 'plugin-builder',
-    href: '/plugin-builder',
-    label: 'Plugin Builder',
-    icon: <Blocks size={16} strokeWidth={1.5} />,
-  },
+  { id: 'reading',        href: '/reading',        label: 'Reading',        Icon: BookOpen },
+  { id: 'studio',         href: '/studio',         label: 'Studio',         Icon: FlaskConical },
+  { id: 'tools',          href: '/tools',          label: 'Tools',          Icon: Wrench },
 ];
 
 const UTILITY_NAV: NavItem[] = [
-  {
-    id: 'ecosystem',
-    href: '/ecosystem',
-    label: 'Ecosystem',
-    icon: <Globe2 size={15} strokeWidth={1.5} />,
-  },
-  {
-    id: 'docs',
-    href: '/docs',
-    label: 'Docs',
-    icon: <BookText size={15} strokeWidth={1.5} />,
-  },
-  {
-    id: 'settings',
-    href: '/settings',
-    label: 'Settings',
-    icon: <Settings size={15} strokeWidth={1.5} />,
-  },
+  { id: 'ecosystem', href: '/ecosystem', label: 'Ecosystem', Icon: Globe2 },
+  { id: 'docs',      href: '/docs',      label: 'Docs',      Icon: BookText },
+  { id: 'settings',  href: '/settings',  label: 'Settings',  Icon: Settings },
 ];
 
 interface Props {
@@ -334,8 +298,8 @@ export default function Sidebar({ active, queueCount, dark: darkProp }: Props) {
                   cursor: 'pointer',
                 }}
               >
-                <span style={{ display: 'flex', color: isActive ? 'var(--brand-deep)' : 'var(--fg4)' }}>
-                  {item.icon}
+                <span style={{ display: 'flex', color: isActive ? 'var(--brand-deep)' : 'var(--fg3)' }}>
+                  <item.Icon size={collapsed ? 19 : 16} strokeWidth={collapsed ? 1.85 : 1.5} />
                 </span>
                 {/* Collapsed: small dot marks a running Studio job */}
                 {collapsed && studioRunning && (
@@ -428,7 +392,7 @@ export default function Sidebar({ active, queueCount, dark: darkProp }: Props) {
                 }}
               >
                 <span style={{ display: 'flex', color: isActive ? 'var(--fg2)' : 'var(--fg4)' }}>
-                  {item.icon}
+                  <item.Icon size={collapsed ? 18 : 15} strokeWidth={collapsed ? 1.85 : 1.5} />
                 </span>
                 {!collapsed && <span>{item.label}</span>}
               </Link>

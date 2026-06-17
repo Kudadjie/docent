@@ -790,8 +790,8 @@ export function LeftColumn({ actionId, setActionId, state, set, onRun, gating, s
 
       <div style={{ padding: '18px 22px 12px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
         <div style={{ position: 'relative' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 3 }}>
-            <span style={{ color: 'var(--brand-deep)', display: 'flex' }}><FlaskConical size={16} strokeWidth={1.5} /></span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 3 }}>
+            <span style={{ padding: 9, borderRadius: 10, background: 'var(--brand-light)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FlaskConical size={20} strokeWidth={1.75} style={{ color: 'var(--brand)' }} /></span>
             <h1 className="serif-display" style={{ fontFamily: 'var(--serif)', fontSize: 26, fontWeight: 500, color: 'var(--fg1)', letterSpacing: '-0.01em', margin: 0 }}>Studio</h1>
           </div>
           <p style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg3)', margin: 0 }}>Run AI-powered academic actions</p>

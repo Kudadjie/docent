@@ -89,18 +89,6 @@ class ReadingSettings(BaseModel):
     zotero_library_type: str = "user"  # "user" | "group"
 
 
-class PluginBuilderSettings(BaseModel):
-    """Plugin Builder settings. Stored under [plugin_builder] in config.toml.
-
-    `model` is an OpenCode Go model ID — the same models Studio uses.
-    The default `glm-5.1` requires the OpenCode server running on port 4096
-    (start with: opencode serve --port 4096).
-    Override with any OpenCode-Go model: deepseek-v4-pro, minimax-m2.7, etc.
-    """
-
-    model: str = "glm-5.1"
-
-
 class ServeSettings(BaseModel):
     """HTTP server settings. Stored under [serve] in config.toml.
 
@@ -132,7 +120,6 @@ class Settings(BaseSettings):
     reading: ReadingSettings = Field(default_factory=ReadingSettings)
     research: ResearchSettings = Field(default_factory=ResearchSettings)
     serve: ServeSettings = Field(default_factory=ServeSettings)
-    plugin_builder: PluginBuilderSettings = Field(default_factory=PluginBuilderSettings)
 
     tools: dict[str, dict[str, Any]] = Field(default_factory=dict)
 

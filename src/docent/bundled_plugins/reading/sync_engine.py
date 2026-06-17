@@ -80,14 +80,43 @@ def candidate_summary(item: dict[str, Any]) -> dict[str, str]:
 
 
 def mendeley_failure_hint(error: str, backend_name: str = "Mendeley") -> str:
-    # Mendeley errors get MCP-specific remediation; other backends (Zotero)
-    # already return self-describing errors, so leave them as-is.
+    # Mendeley MCP-specific remediation comes first: a missing launch binary is
+    # surfaced as a `transport:` error too, but it's not a network problem — it
+    # needs the install hint, not "check your connection". Check it before the
+    # generic transport handler so the install hint isn't shadowed.
     if backend_name == "Mendeley":
-        if error.startswith("auth:"):
-            return f"{error} (run `mendeley-auth login` to refresh tokens)"
         if "launch command not found" in error:
             return f"{error} (install with `uv tool install mendeley-mcp` or set reading.mendeley_mcp_command)"
+        if error.startswith("auth:"):
+            return f"{error} (run `mendeley-auth login` to refresh tokens)"
+    # Transport (network) failures are handled uniformly for every backend: the
+    # raw exception (HTTPSConnectionPool/getaddrinfo/timeout) is useless to the
+    # user, so lead with a plain-language, actionable message and keep a trimmed
+    # detail for debugging.
+    if error.startswith("transport:"):
+        detail = error[len("transport:") :].strip()
+        msg = (
+            f"Couldn't reach {backend_name}. Check your internet connection and "
+            f"that {backend_name} is online, then try syncing again."
+        )
+        return f"{msg} (details: {detail[:120]})" if detail else msg
     return error
+
+
+def fatal_fetch_message(what: str, error: str, backend_name: str) -> str:
+    """Build the early-exit message for a failed list_folders / list_documents call.
+
+    Transport (network) errors are self-explanatory — the friendly hint already
+    names the backend — so we skip the "Could not list X" prefix to avoid a
+    redundant double-mention. Auth/other errors keep the prefix for context.
+    """
+    hint = mendeley_failure_hint(error, backend_name)
+    # The network-failure hint is self-contained ("Couldn't reach X …"), so the
+    # "Could not list …" prefix would just double the mention — drop it. Other
+    # hints (auth, missing binary) keep the prefix for context.
+    if hint.startswith("Couldn't reach"):
+        return hint
+    return f"Could not list {what}: {hint}"
 
 
 def derive_id(authors: str, year: int | None, title: str) -> str:
@@ -177,11 +206,7 @@ def sync_from_mendeley_run(
     if folders_resp.get("error"):
         err = folders_resp["error"]
         return empty.model_copy(
-            update={
-                "message": (
-                    f"Could not list {backend_name} folders: {mendeley_failure_hint(err, backend_name)}"
-                )
-            }
+            update={"message": fatal_fetch_message(f"{backend_name} folders", err, backend_name)}
         )
     folders = folders_resp.get("items") or []
     matches = [f for f in folders if isinstance(f, dict) and f.get("name") == collection_name]
@@ -246,7 +271,9 @@ def sync_from_mendeley_run(
         return empty.model_copy(
             update={
                 "folder_id": folder_id,
-                "message": f"Could not list documents in {collection_name!r}: {mendeley_failure_hint(err, backend_name)}",
+                "message": fatal_fetch_message(
+                    f"documents in {collection_name!r}", err, backend_name
+                ),
             }
         )
 
@@ -255,6 +282,10 @@ def sync_from_mendeley_run(
     in_root_collection: set[str] = set()  # mids found directly in the parent/root folder
     _no_id_failed: list[dict[str, str]] = []
     _maybe_truncated = bool(docs_resp.get("maybe_truncated"))
+    # Sub-collections that couldn't be fetched (usually a mid-sync network drop).
+    # Their docs are missing from this run, so — like a truncated fetch — we must
+    # skip the removal pass to avoid falsely flagging those papers as removed.
+    _unreachable_subs: list[str] = []
 
     for doc in [d for d in (docs_resp.get("items") or []) if isinstance(d, dict)]:
         mid = extract_mendeley_id(doc)
@@ -270,10 +301,11 @@ def sync_from_mendeley_run(
         yield ProgressEvent(phase="discover", message=f"Reading sub-collection {sf_name!r}…")
         sf_resp = backend.list_documents(sfid)
         if sf_resp.get("error"):
+            _unreachable_subs.append(sf_name)
             yield ProgressEvent(
                 phase="discover",
                 level="warn",
-                message=f"Could not read '{sf_name}': {sf_resp['error']}",
+                message=f"Could not read '{sf_name}': {mendeley_failure_hint(sf_resp['error'], backend_name)}",
             )
             continue
         if sf_resp.get("maybe_truncated"):
@@ -375,7 +407,7 @@ def sync_from_mendeley_run(
             new_entries.append(entry.model_dump())
             added.append({"id": entry.id, "reference_id": mid, "title": entry.title})
 
-    if not _maybe_truncated:
+    if not _maybe_truncated and not _unreachable_subs:
         for qe in queue:
             mid = qe.get("reference_id")
             if not mid or mid in in_collection:
@@ -454,6 +486,13 @@ def sync_from_mendeley_run(
         )
     summary_parts.append(f"{len(failed)} failed")
     summary = ", ".join(summary_parts) + "."
+    if _unreachable_subs:
+        summary += (
+            f" Couldn't reach {len(_unreachable_subs)} sub-collection(s) "
+            f"({', '.join(_unreachable_subs[:3])}{'…' if len(_unreachable_subs) > 3 else ''}) "
+            f"— likely a network issue. Removal flagging was skipped to avoid "
+            f"falsely marking papers as gone; retry when {backend_name} is reachable."
+        )
     if any("auth:" in f.get("error", "") for f in failed):
         if backend_name == "Mendeley":
             summary += " Auth failure detected — run `mendeley-auth login` and retry."

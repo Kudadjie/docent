@@ -284,7 +284,9 @@ export default function SettingsPage() {
           {/* Header */}
           <div style={{ position: 'relative', padding: '28px 32px 24px', borderBottom: '1px solid var(--border)' }}>
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-              <Settings size={20} strokeWidth={1.5} style={{ color: 'var(--fg2)' }} />
+              <span style={{ padding: 9, borderRadius: 10, background: 'var(--brand-light)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Settings size={20} strokeWidth={1.75} style={{ color: 'var(--brand)' }} />
+              </span>
               <h1 className="serif-display" style={{
                 fontFamily: 'var(--serif)', fontSize: 26, fontWeight: 500,
                 letterSpacing: '-0.01em', color: 'var(--fg1)', margin: 0,

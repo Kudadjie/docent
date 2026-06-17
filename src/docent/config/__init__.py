@@ -1,6 +1,5 @@
 from docent.config.loader import load_settings, write_setting
 from docent.config.settings import (
-    PluginBuilderSettings,
     ReadingSettings,
     ResearchSettings,
     ServeSettings,
@@ -8,7 +7,6 @@ from docent.config.settings import (
 )
 
 __all__ = [
-    "PluginBuilderSettings",
     "ReadingSettings",
     "ResearchSettings",
     "ServeSettings",

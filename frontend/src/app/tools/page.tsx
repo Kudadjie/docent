@@ -219,7 +219,9 @@ export default function ToolsPage() {
         {/* Header */}
         <div style={{ padding: '20px 28px 16px', borderBottom: '1px solid var(--border)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-            <Wrench size={20} strokeWidth={1.5} style={{ color: 'var(--fg2)' }} />
+            <span style={{ padding: 9, borderRadius: 10, background: 'var(--brand-light)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Wrench size={20} strokeWidth={1.75} style={{ color: 'var(--brand)' }} />
+            </span>
             <h1 className="serif-display" style={{ fontFamily: 'var(--serif)', fontSize: 26, fontWeight: 500, letterSpacing: '-0.01em', color: 'var(--fg1)', margin: 0 }}>
               Tools
             </h1>

@@ -213,7 +213,7 @@ Replace `/absolute/path/to/docent-repo` with the actual path. On Windows: `C:/Us
 
 Restart Claude Code after saving — the server starts automatically when needed.
 
-#### Option B — HTTP + SSE (always-on server, remote access, Plugin Builder)
+#### Option B — HTTP + SSE (always-on server, remote access)
 
 Start `docent ui` once to auto-generate an API key, then retrieve it:
 
@@ -452,38 +452,6 @@ docent list   # your tool appears immediately
 - A web form on the **Tools page** (`docent ui` → Tools), auto-generated from each action's input schema — no frontend code
 
 For the full plugin contract (Tool ABC, `@action`, `to_shapes()`, `on_startup`), see [`docs/plugin-guide.md`](plugin-guide.md).
-
-### Plugin Builder (AI-assisted)
-
-Instead of writing a plugin by hand, describe what you want and let the Plugin Builder generate it for you. The Builder uses a specialised Docent LLM (configurable, default: `deepseek/deepseek-chat`) that has the full plugin contract baked into its system prompt.
-
-**From any MCP client (Claude Code, Cursor, etc.):**
-
-```
-"Build a plugin that scans my reading database for papers published this year
-and exports a CSV summary to ~/Desktop"
-```
-
-The MCP client applies a **worthiness gate** before generating — a plugin is only built when the workflow will be used repeatedly, makes sense without an AI present, and integrates with Docent tools. One-off tasks are handled directly by the AI instead.
-
-**The five Plugin Builder MCP tools:**
-
-| Tool | What it does |
-|------|-------------|
-| `plugin_builder__generate` | LLM generates plugin from spec (worthiness gate in description) |
-| `plugin_builder__iterate` | LLM revises code based on feedback |
-| `plugin_builder__validate` | Static AST check — no LLM, instant |
-| `plugin_builder__sandbox_test` | Runs one action in an isolated registry (registry-only isolation — code executes in-process with full user privileges) |
-| `plugin_builder__install` | Writes to `~/.docent/plugins/{name}.py` after user approves |
-
-**Configure the Docent LLM:**
-
-```bash
-docent plugin_builder config-set --key model --value "gpt-4o"
-# or any LiteLLM-supported model string
-```
-
-Default is `deepseek/deepseek-chat` — swappable without code changes.
 
 ---
 

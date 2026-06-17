@@ -82,9 +82,9 @@ class _LocalhostGuard(BaseHTTPMiddleware):
 # ── Session token ─────────────────────────────────────────────────────────────
 # The Origin check above blocks cross-site browser requests, but NOT requests
 # from other localhost origins (e.g. a dev server on :3000) or local non-browser
-# processes. Any of those could otherwise POST /api/tools/invoke — which reaches
-# plugin_builder install, i.e. arbitrary code on the next docent run. So every
-# state-changing /api request must also carry a per-session token.
+# processes. Any of those could otherwise POST /api/tools/invoke — which can run
+# tool actions that touch the filesystem or shell out. So every state-changing
+# /api request must also carry a per-session token.
 #
 # Delivery: the frontend GETs /api/auth/token (same-origin only in practice —
 # without CORS headers a cross-origin page cannot READ the response) and sends

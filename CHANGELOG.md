@@ -19,6 +19,59 @@ subsection with 2–5 user-facing highlights — those are what the banner shows
 
 ## [Unreleased]
 
+### What's New
+- **A fresh look** — the whole app got a design pass: Schibsted Grotesk + serif
+  headings, a cleaner white/ink palette, green primary actions, and a collapsible
+  sidebar.
+- **Always-on MCP server** — Docent now speaks MCP over HTTP + SSE (`/mcp/sse`,
+  bearer-key auth), so long-running and remote clients can connect, not just stdio.
+- **Clearer reading-sync errors** — when Zotero or Mendeley can't be reached you
+  get a plain-language "check your connection" message instead of a raw HTTP
+  error, and a dropped connection mid-sync can no longer falsely mark papers as
+  removed from your queue.
+- **`docent update` works everywhere** — it detects whether you installed via uv,
+  pipx, or pip and runs the right upgrader (no more silent failures for non-uv
+  installs).
+
+### Added
+- HTTP + SSE MCP transport at `/mcp/sse` with bearer-key auth. `serve.api_key` is
+  auto-generated on first `docent ui`; new `serve.host` and
+  `serve.http_mcp_enabled` settings.
+- Artifact viewer in the web UI, plus an `update-next-release` maintenance hook.
+
+### Changed
+- Design overhaul: new type system (Schibsted Grotesk body + serif display),
+  white/ink color system, green CTAs, and a collapsible sidebar with size-aware
+  icons and tinted page-heading icon chips.
+- `ui_server.py` slimmed to app assembly — shared helpers moved to
+  `ui_routes/_shared.py`, studio form builders to `ui_routes/_studio_request.py`
+  (re-exported for compatibility); the studio plugin monolith was split into
+  focused modules.
+- Reading sync surfaces friendly transport-error messages for both Zotero and
+  Mendeley; if a sub-collection can't be fetched mid-sync, the removal-flagging
+  pass is skipped so a flaky connection can't corrupt queue state.
+
+### Security
+- Per-session token (`X-Docent-Token`) is now required on all mutating web-UI API
+  requests; the WebSocket handshake carries it in its first message, and a new
+  `GET /api/auth/token` issues it. Closes a localhost cross-port
+  `tools/invoke` → arbitrary-code seam.
+
+### Fixed
+- Auto-sync on a stale reading queue no longer shows a spurious green
+  "An unexpected response was received" toast — the manual and auto-sync paths now
+  share a single result interpreter.
+- `docent update` detects the install method from `sys.executable`; on Windows it
+  shows a "file in use — restart your terminal" hint instead of a generic error
+  when the running process locks the executable.
+- The "What's New" toast now fires for dev builds (once per tagged release) and
+  shows a "See more" affordance whenever any bullet is truncated.
+- Duplicate tool-registration warning is routed through logging instead of stderr;
+  `_version_at_least` now uses `packaging.version`.
+- Tightened `pyproject.toml` dependency bounds to `~=` for critical dependencies so
+  `docent update` can't pull a breaking major version; corrected the stale `ddgs`
+  floor to `~=9.0`.
+
 ## [2.1.2] - 2026-06-01
 
 ### What's New

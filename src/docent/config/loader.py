@@ -89,7 +89,6 @@ def load_settings() -> Settings:
 
 _KNOWN_TOP_LEVEL_SECTIONS = frozenset(
     {
-        "plugin_builder",
         "reading",
         "research",
         "serve",

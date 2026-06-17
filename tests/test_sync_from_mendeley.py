@@ -133,6 +133,27 @@ def test_list_folders_transport_error_propagates_with_hint(tmp_docent_home, monk
     assert "uv tool install mendeley-mcp" in result.message
 
 
+def test_list_folders_network_error_gets_friendly_message(tmp_docent_home, monkeypatch):
+    """A genuine network transport failure surfaces a plain-language message,
+    not the raw HTTP exception."""
+    tool = ReadingQueue()
+    ctx = _ctx()
+    _patch_mendeley(
+        monkeypatch,
+        folders={
+            "items": [],
+            "error": "transport: HTTPSConnectionPool(host='api') Max retries exceeded: getaddrinfo failed",
+        },
+    )
+
+    result = _drain(tool.sync_from_mendeley(SyncFromLibraryInputs(), ctx))
+    # Leads with a plain-language, actionable message…
+    assert "Couldn't reach Mendeley" in result.message
+    assert "internet connection" in result.message
+    # …with the friendly text ahead of any (details: …) debug suffix.
+    assert result.message.index("Couldn't reach") < result.message.find("details:")
+
+
 def test_list_documents_error_after_folder_resolved(tmp_docent_home, monkeypatch):
     tool = ReadingQueue()
     ctx = _ctx()
@@ -626,6 +647,53 @@ def test_subfolder_error_is_non_fatal(tmp_docent_home, monkeypatch):
     # Root doc still added; sub-folder error didn't abort.
     assert len(result.added) == 1
     assert result.added[0]["reference_id"] == "M-ROOT"
+
+
+def test_unreachable_subcollection_skips_removal_flagging(tmp_docent_home, monkeypatch):
+    """If a sub-collection can't be fetched (network drop mid-sync), papers that
+    live only in it must NOT be flagged as removed — the data lives there, we just
+    couldn't see it this run. Mirrors the _maybe_truncated guard."""
+    tool = ReadingQueue()
+    ctx = _ctx()
+
+    folders = [
+        {"id": "FQ", "name": "Docent-Queue", "parent_id": None},
+        {"id": "FC1", "name": "TestCourse701", "parent_id": "FQ"},
+    ]
+
+    # First run: both folders readable; M-SUB lives in the sub-collection.
+    def docs_ok(folder_id=None):
+        if folder_id == "FQ":
+            return {
+                "items": [{"id": "M-ROOT", "title": "R", "authors": ["A"], "year": 2024}],
+                "error": None,
+            }
+        return {
+            "items": [{"id": "M-SUB", "title": "S", "authors": ["B"], "year": 2024}],
+            "error": None,
+        }
+
+    _patch_mendeley(monkeypatch, folders={"items": folders, "error": None}, documents=docs_ok)
+    _drain(tool.sync_from_mendeley(SyncFromLibraryInputs(), ctx))
+    assert {e["reference_id"] for e in tool._store.load_queue()} == {"M-ROOT", "M-SUB"}
+
+    # Second run: sub-collection fetch fails (network). M-SUB is now unseen, but
+    # must not be flagged not_in_library, and the removal pass must be skipped.
+    def docs_sub_down(folder_id=None):
+        if folder_id == "FQ":
+            return {
+                "items": [{"id": "M-ROOT", "title": "R", "authors": ["A"], "year": 2024}],
+                "error": None,
+            }
+        return {"items": [], "error": "transport: timeout"}
+
+    _patch_mendeley(monkeypatch, folders={"items": folders, "error": None}, documents=docs_sub_down)
+    result = _drain(tool.sync_from_mendeley(SyncFromLibraryInputs(), ctx))
+
+    assert result.flagged == []
+    by_mid = {e["reference_id"]: e for e in tool._store.load_queue()}
+    assert by_mid["M-SUB"].get("not_in_library") is not True
+    assert "Couldn't reach 1 sub-collection" in result.summary
 
 
 def test_non_int_year_snaps_to_none_on_sync(tmp_docent_home, monkeypatch):

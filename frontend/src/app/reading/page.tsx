@@ -222,69 +222,6 @@ export default function ReadingPage() {
     return () => clearInterval(id);
   }, [refresh]);
 
-  // Auto-sync on load if queue is stale (> 30 min)
-  useEffect(() => {
-    if (!data || autoSyncedRef.current) return;
-    autoSyncedRef.current = true;
-    const age = data.last_updated
-      ? Date.now() - new Date(data.last_updated).getTime()
-      : Infinity;
-    if (age < 30 * 60 * 1000) return;
-    fetch('/api/actions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'sync' }),
-    })
-      .then(r => r.json())
-      .then((body: Record<string, string>) => {
-        if (body.ok) {
-          const clean = extractMessage((body.stdout ?? '').replace(/\x1b\[[0-9;]*m/g, '').trim());
-          setToast({ type: 'success', message: clean.slice(0, 160) || `${refManagerName} sync complete.` });
-          refresh();
-        }
-      })
-      .catch(() => {});
-  }, [data, refresh]);
-
-  // Actions
-  async function runAction(action: string, id?: string, extra?: Record<string, unknown>) {
-    setBusy(action + (id ?? ''));
-    try {
-      let res: Response;
-      try {
-        res = await fetch('/api/actions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action, id, ...extra }),
-        });
-      } catch {
-        setToast({ type: 'error', message: 'Network error — is the server running?' });
-        return;
-      }
-
-      const body = await res.json().catch(() => ({})) as Record<string, string>;
-
-      if (!res.ok) {
-        const detail = body.error ?? body.stderr ?? 'Unknown error';
-        setToast({ type: 'error', message: toastError(action, detail) });
-      } else if (action === 'sync') {
-        const stdout = body.stdout ?? '';
-        if (/\d+ added.*?\d+ unchanged/.test(stdout)) {
-          setToast({ type: 'success', message: toastSuccess(action, stdout) });
-        } else {
-          const clean = extractMessage(stdout.replace(/\x1b\[[0-9;]*m/g, '').trim());
-          setToast({ type: 'error', message: clean.slice(0, 200) || 'Sync returned no results — check your collection name in Settings.' });
-        }
-      } else {
-        setToast({ type: 'success', message: toastSuccess(action, body.stdout ?? '') });
-      }
-
-      await refresh();
-    } finally {
-      setBusy(null);
-    }
-  }
-
   function toastSuccess(action: string, stdout: string): string {
     if (action === 'sync') {
       if (/\d+ added.*?\d+ unchanged/.test(stdout)) {
@@ -314,6 +251,81 @@ export default function ReadingPage() {
     if (action === 'remove') return 'Removed from queue.';
     if (action === 'clear-library-flag') return 'Kept in queue.';
     return 'Done.';
+  }
+
+  // Interpret a sync action's JSON stdout into a toast. Shared by the manual
+  // sync button and the stale-queue auto-sync effect so both render identically
+  // (the auto-sync path previously ran extractMessage on the raw result JSON and
+  // surfaced the "unexpected response" fallback as a green success toast).
+  function syncResultToast(stdout: string): ToastData {
+    if (/\d+ added.*?\d+ unchanged/.test(stdout)) {
+      const summary = toastSuccess('sync', stdout);
+      // A successful sync that still couldn't reach some sub-collections is a
+      // degraded outcome (removal flagging was skipped) — surface it loudly
+      // instead of a green "all good" toast so the user knows to retry.
+      if (/[Cc]ouldn.t reach/.test(stdout)) {
+        return { type: 'error', message: `${summary} Some collections were unreachable (network) — removal flagging skipped. Retry when back online.` };
+      }
+      return { type: 'success', message: summary };
+    }
+    const clean = extractMessage(stdout.replace(/\x1b\[[0-9;]*m/g, '').trim());
+    return { type: 'error', message: clean.slice(0, 200) || 'Sync returned no results — check your collection name in Settings.' };
+  }
+
+  // Auto-sync on load if queue is stale (> 30 min)
+  useEffect(() => {
+    if (!data || autoSyncedRef.current) return;
+    autoSyncedRef.current = true;
+    const age = data.last_updated
+      ? Date.now() - new Date(data.last_updated).getTime()
+      : Infinity;
+    if (age < 30 * 60 * 1000) return;
+    fetch('/api/actions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'sync' }),
+    })
+      .then(r => r.json())
+      .then((body: Record<string, string>) => {
+        if (body.ok) {
+          setToast(syncResultToast(body.stdout ?? ''));
+          refresh();
+        }
+      })
+      .catch(() => {});
+  }, [data, refresh]);
+
+  // Actions
+  async function runAction(action: string, id?: string, extra?: Record<string, unknown>) {
+    setBusy(action + (id ?? ''));
+    try {
+      let res: Response;
+      try {
+        res = await fetch('/api/actions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action, id, ...extra }),
+        });
+      } catch {
+        setToast({ type: 'error', message: 'Network error — is the server running?' });
+        return;
+      }
+
+      const body = await res.json().catch(() => ({})) as Record<string, string>;
+
+      if (!res.ok) {
+        const detail = body.error ?? body.stderr ?? 'Unknown error';
+        setToast({ type: 'error', message: toastError(action, detail) });
+      } else if (action === 'sync') {
+        setToast(syncResultToast(body.stdout ?? ''));
+      } else {
+        setToast({ type: 'success', message: toastSuccess(action, body.stdout ?? '') });
+      }
+
+      await refresh();
+    } finally {
+      setBusy(null);
+    }
   }
 
   function toastError(action: string, detail: string): string {
@@ -661,7 +673,9 @@ ${sectionsHtml}
           >
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-                <BookOpen size={20} strokeWidth={1.5} style={{ color: 'var(--fg2)' }} />
+                <span style={{ padding: 9, borderRadius: 10, background: 'var(--brand-light)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <BookOpen size={20} strokeWidth={1.75} style={{ color: 'var(--brand)' }} />
+                </span>
                 <h1 className="serif-display" style={{ fontFamily: 'var(--serif)', fontSize: 30, fontWeight: 500, letterSpacing: '-0.01em', color: 'var(--fg1)', margin: 0, lineHeight: 1.1 }}>
                   Reading
                 </h1>
