@@ -18,6 +18,13 @@ import pytest
 
 from docent.core.registry import _REGISTRY
 
+# litellm resolves its model-cost map at first import, fetching it from GitHub
+# unless told to use the bundled backup. Under the network guard below that fetch
+# is blocked and litellm retries with backoff, blowing the per-test timeout. Force
+# the local backup. Set here (conftest import — before any test imports litellm)
+# and assigned directly so a stale/empty pre-existing value can't disable it.
+os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
+
 # ---------------------------------------------------------------------------
 # Network guard — block all socket connections in unit tests.
 # Tests marked @pytest.mark.integration or @pytest.mark.eval are exempt.
