@@ -65,7 +65,7 @@ export default function ConfigRow({
                 style={{
                   fontFamily: 'var(--mono)', fontSize: 12,
                   padding: '5px 10px', borderRadius: 6,
-                  border: '1px solid #18E299',
+                  border: '1px solid #5db872',
                   background: 'var(--bg-card)', color: 'var(--fg1)',
                   outline: 'none', width: 320,
                 }}
@@ -77,7 +77,7 @@ export default function ConfigRow({
                 style={{
                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                   width: 28, height: 28, borderRadius: 6, border: 'none',
-                  background: 'rgba(24,226,153,0.15)', color: '#0fa76e',
+                  background: 'rgba(93,184,114,0.15)', color: '#3f8f54',
                   cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.6 : 1,
                 }}
               >

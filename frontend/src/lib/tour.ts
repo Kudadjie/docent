@@ -1,8 +1,7 @@
-export const TOUR_KEYS = ['dashboard', 'reading', 'studio', 'settings', 'docs', 'ecosystem'] as const;
+export const TOUR_KEYS = ['reading', 'studio', 'settings', 'docs', 'ecosystem'] as const;
 export type TourKey = typeof TOUR_KEYS[number];
 
 export const TOUR_LABELS: Record<TourKey, string> = {
-  dashboard:  'Dashboard',
   reading:    'Reading queue',
   studio:     'Studio',
   settings:   'Settings',

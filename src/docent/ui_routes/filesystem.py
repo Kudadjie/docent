@@ -22,16 +22,7 @@ class FsPickBody(BaseModel):
     title: str = "Select files"
 
 
-def _check_approved_path(path):
-    from docent.ui_server import _check_approved_path as _cap
-
-    return _cap(path)
-
-
-def _audit(action: str, detail: str) -> None:
-    from docent.ui_server import _audit as _a
-
-    _a(action, detail)
+from docent.ui_routes._shared import _audit, _check_approved_path  # noqa: E402
 
 
 @router.get("/api/fs/read")

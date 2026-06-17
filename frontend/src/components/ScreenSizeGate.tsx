@@ -38,7 +38,7 @@ export default function ScreenSizeGate() {
         alignItems: 'center', justifyContent: 'center',
         padding: 32, textAlign: 'center',
       }}>
-        <Monitor size={40} strokeWidth={1} color="#0fa76e" style={{ marginBottom: 20 }} />
+        <Monitor size={40} strokeWidth={1} color="#3f8f54" style={{ marginBottom: 20 }} />
         <h2 style={{
           fontFamily: 'var(--sans)', fontSize: 18, fontWeight: 600,
           color: 'var(--fg1)', margin: '0 0 10px', letterSpacing: '-0.3px',

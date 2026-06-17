@@ -25,6 +25,8 @@ readingtool-tweaks.txt
 concerns.txt
 
 # Development context — not tracked on main
+AI_CONTEXT.md
+hive/
 CLAUDE.md
 CLAUDE.performance.md
 CONTEXT.md

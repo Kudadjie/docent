@@ -73,7 +73,7 @@ export default function NotFound() {
         </p>
 
         <Link
-          href="/dashboard"
+          href="/reading"
           style={{
             display: 'inline-flex',
             alignItems: 'center',
@@ -81,16 +81,16 @@ export default function NotFound() {
             fontFamily: 'var(--sans)',
             fontSize: 13,
             fontWeight: 600,
-            color: '#fff',
-            background: '#0fa76e',
+            color: 'var(--on-cta)',
+            background: 'var(--cta)',
             border: 'none',
-            borderRadius: 9999,
-            padding: '8px 20px',
+            borderRadius: 8,
+            padding: '9px 20px',
             textDecoration: 'none',
             cursor: 'pointer',
           }}
         >
-          Back to dashboard
+          Back to reading
         </Link>
       </div>
     </div>

@@ -1,17 +1,17 @@
 import type { Status } from '@/lib/types';
 
 const LIGHT: Record<Status, { bg: string; text: string; dot: string }> = {
-  reading: { bg: '#FFF7ED', text: '#B45309', dot: '#F59E0B' },
-  queued:  { bg: '#EFF6FF', text: '#1D4ED8', dot: '#3B82F6' },
-  done:    { bg: '#d4fae8', text: '#0fa76e', dot: '#18E299' },
-  removed: { bg: '#f3f4f6', text: '#9ca3af', dot: '#d1d5db' },
+  reading: { bg: '#fbeede', text: '#b45309', dot: '#e8a55a' },
+  queued:  { bg: '#e6f2ee', text: '#2f7d6e', dot: '#5db8a6' },
+  done:    { bg: '#e4f1e6', text: '#3f8f54', dot: '#5db872' },
+  removed: { bg: '#efe9de', text: '#8e8b82', dot: '#c8c1b4' },
 };
 
 const DARK: Record<Status, { bg: string; text: string; dot: string }> = {
-  reading: { bg: 'rgba(245,158,11,0.12)', text: '#F5A623', dot: '#F59E0B' },
-  queued:  { bg: 'rgba(59,130,246,0.12)', text: '#60A5FA', dot: '#3B82F6' },
-  done:    { bg: 'rgba(24,226,153,0.12)', text: '#18E299', dot: '#18E299' },
-  removed: { bg: 'rgba(156,163,175,0.12)', text: '#6b7280', dot: '#9ca3af' },
+  reading: { bg: 'rgba(232,165,90,0.14)', text: '#e8a55a', dot: '#e8a55a' },
+  queued:  { bg: 'rgba(93,184,166,0.14)', text: '#7fcabb', dot: '#5db8a6' },
+  done:    { bg: 'rgba(93,184,114,0.14)', text: '#7fcb8f', dot: '#5db872' },
+  removed: { bg: 'rgba(160,157,150,0.12)', text: '#a09d96', dot: '#6f6c64' },
 };
 
 const LABEL: Record<Status, string> = {

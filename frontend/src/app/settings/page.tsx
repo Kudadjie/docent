@@ -284,10 +284,12 @@ export default function SettingsPage() {
           {/* Header */}
           <div style={{ position: 'relative', padding: '28px 32px 24px', borderBottom: '1px solid var(--border)' }}>
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-              <Settings size={16} strokeWidth={1.5} color="#0fa76e" />
-              <h1 style={{
-                fontFamily: 'var(--sans)', fontSize: 18, fontWeight: 600,
-                letterSpacing: '-0.3px', color: 'var(--fg1)', margin: 0,
+              <span style={{ padding: 9, borderRadius: 10, background: 'var(--brand-light)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Settings size={20} strokeWidth={1.75} style={{ color: 'var(--brand)' }} />
+              </span>
+              <h1 className="serif-display" style={{
+                fontFamily: 'var(--serif)', fontSize: 26, fontWeight: 500,
+                letterSpacing: '-0.01em', color: 'var(--fg1)', margin: 0,
               }}>
                 Settings
               </h1>
@@ -311,7 +313,6 @@ export default function SettingsPage() {
                 }}
               >
               <SectionCard
-                accentColor="#14B8A6"
                 icon={<BookOpen size={14} strokeWidth={1.5} color="#14B8A6" />}
                 title="Reading"
                 description="Controls how Docent syncs your reading queue with your reference manager and local paper database."
@@ -425,7 +426,6 @@ export default function SettingsPage() {
 
               {/* Studio settings */}
               <SectionCard
-                accentColor="#8B5CF6"
                 icon={<FlaskConical size={14} strokeWidth={1.5} color="#8B5CF6" />}
                 title="Studio"
                 description="Controls which AI model Feynman uses when running deep research and literature review tasks."
@@ -521,7 +521,7 @@ export default function SettingsPage() {
                             padding: '9px 20px', borderTop: '1px solid var(--border)',
                             background: 'var(--bg-subtle)',
                             fontFamily: 'var(--sans)', fontSize: 11.5,
-                            color: issues === 0 ? '#0fa76e' : '#C97B00',
+                            color: issues === 0 ? '#3f8f54' : '#C97B00',
                           }}>
                             {issues === 0 ? `All ${ok} checks passed` : `${issues} ${issues === 1 ? 'issue' : 'issues'} found`}
                           </div>
@@ -535,7 +535,6 @@ export default function SettingsPage() {
 
             {/* Right column: API keys */}
             <SectionCard
-              accentColor="#F59E0B"
               icon={<Key size={14} strokeWidth={1.5} color="#F59E0B" />}
               title="API keys"
               description={<>Keys for research backends and paper search. Stored in <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>~/.docent/config.toml</span> — never sent anywhere except the respective provider.</>}
@@ -577,7 +576,6 @@ export default function SettingsPage() {
             {/* Walkthrough tours — full width */}
             <section style={{ gridColumn: '1 / -1' }}>
               <SectionCard
-                accentColor="#06B6D4"
                 icon={<Zap size={14} strokeWidth={1.5} color="#06B6D4" />}
                 title="Walkthrough tours"
                 description="Each page has a guided walkthrough that runs the first time you visit it. Reset individual tours below or restart all of them at once."
@@ -598,8 +596,8 @@ export default function SettingsPage() {
                         <span style={{
                           fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 600,
                           padding: '2px 7px', borderRadius: 9999,
-                          background: tourSeenMap[key] ? 'rgba(24,226,153,0.12)' : 'var(--gray100)',
-                          color: tourSeenMap[key] ? '#0fa76e' : 'var(--fg4)',
+                          background: tourSeenMap[key] ? 'rgba(93,184,114,0.12)' : 'var(--gray100)',
+                          color: tourSeenMap[key] ? '#3f8f54' : 'var(--fg4)',
                           textTransform: 'uppercase', letterSpacing: '0.4px',
                         }}>
                           {tourSeenMap[key] ? 'seen' : 'not yet'}
@@ -645,7 +643,7 @@ export default function SettingsPage() {
             <section style={{ gridColumn: '1 / -1' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
                 <Trash2 size={13} strokeWidth={1.5} color="#D45656" />
-                <h2 style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600, color: '#D45656', margin: 0 }}>
+                <h2 className="serif-display" style={{ fontFamily: 'var(--serif)', fontSize: 15, fontWeight: 500, letterSpacing: '-0.01em', color: '#D45656', margin: 0 }}>
                   Danger zone
                 </h2>
               </div>

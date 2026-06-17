@@ -12,13 +12,11 @@ import {
   type ActionId, type ActionMeta, type FormState, type Preset,
 } from './_shared';
 
-const BRAND      = '#18E299';
-const BRAND_DEEP = '#0fa76e';
-const RED        = '#D45656';
+const RED        = '#c64545';
 const INDIGO     = '#6366f1';
 const INDIGO_DIM = '#a8b0f7';
 const AMBER_HDR  = '#F59E0B';
-const BLUE_HDR   = '#3B82F6';
+const BLUE_HDR   = '#5db8a6';
 
 // ── Primitives ─────────────────────────────────────────────────────────────────
 
@@ -67,14 +65,14 @@ export function GhostBtn({ icon, children, onClick, size = 'md', danger, active 
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 6,
         padding: size === 'sm' ? '4px 10px' : '5px 12px', borderRadius: 9999,
-        border: `1px solid ${active ? BRAND : 'var(--border-md)'}`,
-        background: active ? BRAND + '1a' : (hov ? 'var(--gray100)' : 'transparent'),
-        color: danger ? RED : (active ? BRAND_DEEP : 'var(--fg2)'),
+        border: `1px solid ${active ? 'var(--brand)' : 'var(--border-md)'}`,
+        background: active ? 'var(--brand-light)' : (hov ? 'var(--gray100)' : 'transparent'),
+        color: danger ? RED : (active ? 'var(--brand-deep)' : 'var(--fg2)'),
         fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500,
         cursor: 'pointer', transition: 'background 0.12s', whiteSpace: 'nowrap',
       }}
     >
-      {icon && <span style={{ color: danger ? RED : (active ? BRAND_DEEP : 'var(--fg4)'), display: 'flex' }}>{icon}</span>}
+      {icon && <span style={{ color: danger ? RED : (active ? 'var(--brand-deep)' : 'var(--fg4)'), display: 'flex' }}>{icon}</span>}
       {children}
     </button>
   );
@@ -90,9 +88,9 @@ export function PillToggle({ active, onClick, disabled, tooltip, children }: {
       title={tooltip}
       style={{
         padding: '5px 12px', borderRadius: 9999,
-        border: active ? `1px solid ${BRAND}` : '1px solid var(--border-md)',
-        background: active ? BRAND : (hov && !disabled ? 'var(--gray100)' : 'transparent'),
-        color: active ? '#0d0d0d' : (disabled ? 'var(--fg4)' : 'var(--fg2)'),
+        border: active ? `1px solid ${'var(--brand)'}` : '1px solid var(--border-md)',
+        background: active ? 'var(--brand)' : (hov && !disabled ? 'var(--gray100)' : 'transparent'),
+        color: active ? 'var(--on-primary)' : (disabled ? 'var(--fg4)' : 'var(--fg2)'),
         fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500,
         cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.55 : 1,
         transition: 'all 0.12s', whiteSpace: 'nowrap',
@@ -134,7 +132,7 @@ export function StudioInput({ value, onChange, placeholder, mono, autoFocus }: {
       onFocus={() => setFocus(true)} onBlur={() => setFocus(false)}
       style={{
         width: '100%', padding: '8px 12px',
-        border: `1px solid ${focus ? BRAND : 'var(--border-md)'}`,
+        border: `1px solid ${focus ? 'var(--brand)' : 'var(--border-md)'}`,
         borderRadius: 8,
         fontFamily: mono ? 'var(--mono)' : 'var(--sans)',
         fontSize: 13, color: 'var(--fg1)', background: 'var(--bg)',
@@ -179,7 +177,7 @@ export function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: 
   return (
     <button onClick={() => onChange(!checked)} style={{
       width: 30, height: 18, borderRadius: 9999, border: 'none',
-      background: checked ? BRAND : 'var(--gray200)',
+      background: checked ? 'var(--brand)' : 'var(--gray200)',
       position: 'relative', cursor: 'pointer', padding: 0,
       transition: 'background 0.15s', flexShrink: 0,
     }}>
@@ -217,7 +215,7 @@ export function CodeBlock({ children, small }: { children: string; small?: boole
       {children}
       <button onClick={() => { navigator.clipboard?.writeText(children); setCopied(true); setTimeout(() => setCopied(false), 1200); }}
         title="Copy"
-        style={{ position: 'absolute', top: small ? 4 : 6, right: small ? 4 : 6, width: small ? 22 : 24, height: small ? 22 : 24, borderRadius: 6, border: 'none', background: 'transparent', color: copied ? BRAND_DEEP : 'var(--fg4)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        style={{ position: 'absolute', top: small ? 4 : 6, right: small ? 4 : 6, width: small ? 22 : 24, height: small ? 22 : 24, borderRadius: 6, border: 'none', background: 'transparent', color: copied ? 'var(--brand-deep)' : 'var(--fg4)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         {copied ? <CheckCircle size={12} strokeWidth={1.5} /> : <Copy size={12} strokeWidth={1.6} />}
       </button>
     </div>
@@ -247,15 +245,15 @@ function ActionRow({ id: _id, label, desc, isActive, isPreset, onClick, onDelete
   onClick: () => void; onDelete?: (e: React.MouseEvent) => void;
 }) {
   return (
-    <div className="action-row" title={desc} style={{ position: 'relative', display: 'flex', alignItems: 'center', borderRadius: 6, background: isActive ? BRAND + '1f' : 'transparent', transition: 'background 0.1s' }}>
+    <div className="action-row" title={desc} style={{ position: 'relative', display: 'flex', alignItems: 'center', borderRadius: 6, background: isActive ? 'var(--brand-light)' : 'transparent', transition: 'background 0.1s' }}>
       <button onClick={onClick} style={{
         flex: 1, textAlign: 'left', padding: '6px 10px', borderRadius: 6, border: 'none',
         background: 'transparent', cursor: 'pointer', fontFamily: 'var(--sans)', fontSize: 12.5,
-        fontWeight: isActive ? 500 : 400, color: isActive ? BRAND_DEEP : 'var(--fg2)',
+        fontWeight: isActive ? 500 : 400, color: isActive ? 'var(--brand-deep)' : 'var(--fg2)',
         display: 'flex', alignItems: 'center', gap: 0,
       }}>
-        <span style={{ width: isActive ? 3 : 4, height: isActive ? 14 : 4, borderRadius: isActive ? 2 : '50%', background: isActive ? BRAND_DEEP : 'transparent', marginRight: 9, flexShrink: 0, transition: 'all 0.15s' }} />
-        {isPreset && <span style={{ color: isActive ? BRAND_DEEP : 'var(--fg4)', display: 'flex', marginRight: 6 }}><Bookmark size={13} strokeWidth={1.5} /></span>}
+        <span style={{ width: isActive ? 3 : 4, height: isActive ? 14 : 4, borderRadius: isActive ? 2 : '50%', background: isActive ? 'var(--brand-deep)' : 'transparent', marginRight: 9, flexShrink: 0, transition: 'all 0.15s' }} />
+        {isPreset && <span style={{ color: isActive ? 'var(--brand-deep)' : 'var(--fg4)', display: 'flex', marginRight: 6 }}><Bookmark size={13} strokeWidth={1.5} /></span>}
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
       </button>
       {isPreset && onDelete && (
@@ -373,7 +371,7 @@ function GuideFiles({ files, setFiles }: { files: string[]; setFiles: (f: string
         Add guide files
         <span style={{ color: 'var(--fg4)', fontWeight: 400 }}> (optional · PDFs / docs that steer the research)</span>
         {files.length > 0 && (
-          <span style={{ marginLeft: 4, fontFamily: 'var(--mono)', fontSize: 10, color: BRAND_DEEP, background: BRAND + '1f', padding: '1px 6px', borderRadius: 9999 }}>{files.length}</span>
+          <span style={{ marginLeft: 4, fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--brand-deep)', background: 'var(--brand-light)', padding: '1px 6px', borderRadius: 9999 }}>{files.length}</span>
         )}
       </button>
       {open && (
@@ -712,7 +710,7 @@ function FreeTierGate({ onCancel, onProceed }: { onCancel: () => void; onProceed
       </ul>
       <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
         <GhostBtn size="sm" onClick={onCancel}>Cancel</GhostBtn>
-        <button ref={proceedRef} onClick={onProceed} style={{ padding: '5px 14px', borderRadius: 9999, background: BRAND, color: '#0d0d0d', fontFamily: 'var(--sans)', fontSize: 12.5, fontWeight: 600, border: 'none', cursor: 'pointer' }}>
+        <button ref={proceedRef} onClick={onProceed} style={{ padding: '5px 14px', borderRadius: 9999, background: 'var(--cta)', color: 'var(--on-cta)', fontFamily: 'var(--sans)', fontSize: 12.5, fontWeight: 600, border: 'none', cursor: 'pointer' }}>
           Yes, proceed
         </button>
       </div>
@@ -792,9 +790,9 @@ export function LeftColumn({ actionId, setActionId, state, set, onRun, gating, s
 
       <div style={{ padding: '18px 22px 12px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
         <div style={{ position: 'relative' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 3 }}>
-            <span style={{ color: BRAND_DEEP, display: 'flex' }}><FlaskConical size={16} strokeWidth={1.5} /></span>
-            <h1 style={{ fontFamily: 'var(--sans)', fontSize: 18, fontWeight: 600, color: 'var(--fg1)', letterSpacing: '-0.3px', margin: 0 }}>Studio</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 3 }}>
+            <span style={{ padding: 9, borderRadius: 10, background: 'var(--brand-light)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FlaskConical size={20} strokeWidth={1.75} style={{ color: 'var(--brand)' }} /></span>
+            <h1 className="serif-display" style={{ fontFamily: 'var(--serif)', fontSize: 26, fontWeight: 500, color: 'var(--fg1)', letterSpacing: '-0.01em', margin: 0 }}>Studio</h1>
           </div>
           <p style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg3)', margin: 0 }}>Run AI-powered academic actions</p>
         </div>
@@ -841,11 +839,11 @@ export function LeftColumn({ actionId, setActionId, state, set, onRun, gating, s
       </div>
 
       {dragHover && supportsGuides && (
-        <div style={{ position: 'absolute', inset: 0, background: BRAND + '22', border: `2px dashed ${BRAND_DEEP}`, zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, pointerEvents: 'none' }}>
-          <div style={{ width: 48, height: 48, borderRadius: 12, background: BRAND + '33', display: 'flex', alignItems: 'center', justifyContent: 'center', color: BRAND_DEEP }}>
+        <div style={{ position: 'absolute', inset: 0, background: 'var(--brand-light)', border: `2px dashed ${'var(--brand-deep)'}`, zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, pointerEvents: 'none' }}>
+          <div style={{ width: 48, height: 48, borderRadius: 12, background: 'var(--brand-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--brand-deep)' }}>
             <Upload size={13} strokeWidth={1.5} />
           </div>
-          <div style={{ fontFamily: 'var(--sans)', fontSize: 14, fontWeight: 600, color: BRAND_DEEP }}>Drop to add as guide file</div>
+          <div style={{ fontFamily: 'var(--sans)', fontSize: 14, fontWeight: 600, color: 'var(--brand-deep)' }}>Drop to add as guide file</div>
         </div>
       )}
     </aside>
@@ -906,10 +904,10 @@ export function CmdKPalette({ onClose, onSelect, recents = [] }: {
             const Icon = a._recent ? null : a.group === 'Actions' ? <Sparkles size={12} strokeWidth={1.4} /> : a.group === 'Utilities' ? <Search size={14} strokeWidth={1.5} /> : <Layers size={13} strokeWidth={1.5} />;
             return (
               <button key={a.id + String(i)} onClick={() => { onSelect(a); onClose(); }} onMouseEnter={() => setIdx(i)}
-                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 8, border: 'none', cursor: 'pointer', background: isHov ? BRAND + '1a' : 'transparent', textAlign: 'left' }}>
-                <span style={{ display: 'flex', color: isHov ? BRAND_DEEP : 'var(--fg4)', flexShrink: 0 }}>{Icon}</span>
+                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 8, border: 'none', cursor: 'pointer', background: isHov ? 'var(--brand-light)' : 'transparent', textAlign: 'left' }}>
+                <span style={{ display: 'flex', color: isHov ? 'var(--brand-deep)' : 'var(--fg4)', flexShrink: 0 }}>{Icon}</span>
                 <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
-                  <span style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500, color: isHov ? BRAND_DEEP : 'var(--fg1)' }}>{a.label}</span>
+                  <span style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500, color: isHov ? 'var(--brand-deep)' : 'var(--fg1)' }}>{a.label}</span>
                   <span style={{ fontFamily: 'var(--sans)', fontSize: 11.5, color: 'var(--fg4)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.desc}</span>
                 </div>
                 <span style={{ fontFamily: 'var(--mono)', fontSize: 9.5, color: 'var(--fg4)', letterSpacing: '0.5px', textTransform: 'uppercase', flexShrink: 0 }}>{a.group}</span>
@@ -947,7 +945,7 @@ export function PresetSaveModal({ onClose, onSave, suggested = '' }: {
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'var(--overlay)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div onClick={e => e.stopPropagation()} style={{ width: 420, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, padding: '18px 20px', boxShadow: 'rgba(0,0,0,0.18) 0px 12px 36px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-          <span style={{ color: BRAND_DEEP, display: 'flex' }}><Bookmark size={13} strokeWidth={1.5} /></span>
+          <span style={{ color: 'var(--brand-deep)', display: 'flex' }}><Bookmark size={13} strokeWidth={1.5} /></span>
           <span style={{ fontFamily: 'var(--sans)', fontSize: 14, fontWeight: 600, color: 'var(--fg1)' }}>Save as preset</span>
         </div>
         <Field label="Preset name">
@@ -956,7 +954,7 @@ export function PresetSaveModal({ onClose, onSave, suggested = '' }: {
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
           <GhostBtn size="sm" onClick={onClose}>Cancel</GhostBtn>
           <button onClick={() => { if (name.trim()) { onSave(name.trim()); onClose(); } }} disabled={!name.trim()}
-            style={{ padding: '6px 14px', borderRadius: 9999, background: name.trim() ? BRAND : '#a8e8cf', color: '#0d0d0d', fontFamily: 'var(--sans)', fontSize: 12.5, fontWeight: 600, border: 'none', cursor: name.trim() ? 'pointer' : 'not-allowed' }}>
+            style={{ padding: '6px 14px', borderRadius: 9999, background: name.trim() ? 'var(--cta)' : 'var(--gray200)', color: name.trim() ? 'var(--on-cta)' : 'var(--fg4)', fontFamily: 'var(--sans)', fontSize: 12.5, fontWeight: 600, border: 'none', cursor: name.trim() ? 'pointer' : 'not-allowed' }}>
             Save preset
           </button>
         </div>

@@ -375,6 +375,7 @@ from docent.cli_doctor import (  # noqa: E402
     _check_feynman,
     _check_google_drive,
     _check_litellm_provider,
+    _check_mcp_http,
     _check_mendeley_mcp,
     _check_notebooklm_py,
     _check_opencode,
@@ -706,17 +707,36 @@ def whatsnew_command() -> None:
     )
 
 
+def _detect_upgrade_cmd() -> list[str]:
+    """Return the right upgrade command based on how Docent was installed."""
+    exe = sys.executable.lower()
+    if "uv" in exe and "tools" in exe:
+        return ["uv", "tool", "upgrade", "docent-cli"]
+    if "pipx" in exe:
+        return ["pipx", "upgrade", "docent-cli"]
+    return [sys.executable, "-m", "pip", "install", "--upgrade", "docent-cli"]
+
+
 @app.command("update", help="Upgrade Docent to the latest version on PyPI.")
 def update_command() -> None:
-    """Upgrade the installed docent-cli package via uv tool upgrade."""
+    """Upgrade the installed docent-cli package using the correct package manager."""
     import subprocess
 
     console = get_console()
+    cmd = _detect_upgrade_cmd()
     console.print(f"[dim]Installed version:[/] {__version__}")
-    console.print("[dim]Running:[/] uv tool upgrade docent-cli\n")
-    result = subprocess.run(["uv", "tool", "upgrade", "docent-cli"])
+    console.print(f"[dim]Running:[/] {' '.join(cmd)}\n")
+    result = subprocess.run(cmd)
     if result.returncode != 0:
-        console.print("\n[red]Upgrade failed.[/] Check the output above.")
+        if sys.platform == "win32":
+            console.print(
+                "\n[yellow]If the error above mentions 'file in use', the package "
+                "upgraded successfully but the executable is locked by the running "
+                "process.[/]\n[yellow]Restart your terminal and run "
+                "[cyan]docent --version[/cyan] to confirm.[/]"
+            )
+        else:
+            console.print("\n[red]Upgrade failed.[/] Check the output above.")
         raise typer.Exit(1)
     console.print("\n[green]Upgraded successfully.[/]")
     console.print("[dim]If you use Docent via MCP, restart Claude to load the new version.[/]")
@@ -1084,6 +1104,7 @@ def doctor_command(ctx: typer.Context) -> None:
             "docent studio config-set --key groq_api_key --value YOUR_KEY",
         ),
         lambda: _check_google_drive(),
+        lambda: _check_mcp_http(settings),
         # Archived backends (gemini, openrouter, mistral, cerebras) — not checked
     ]
     with ThreadPoolExecutor(max_workers=len(check_fns)) as pool:

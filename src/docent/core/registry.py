@@ -65,13 +65,20 @@ def register_tool(cls: type[T]) -> type[T]:
 
     if cls.name in _REGISTRY:
         existing = _REGISTRY[cls.name]
-        import sys
+        # Same class re-registering (e.g. plugin module reloaded) — silently replace.
+        if existing.__module__ == cls.__module__ and existing.__name__ == cls.__name__:
+            _REGISTRY[cls.name] = cls
+            return cls
+        import logging
 
-        print(
-            f"Warning: Tool name '{cls.name}' is already registered by "
-            f"{existing.__module__}.{existing.__name__}; skipping duplicate "
-            f"registration from {cls.__module__}.{cls.__name__}",
-            file=sys.stderr,
+        logging.getLogger("docent.registry").warning(
+            "Tool name '%s' is already registered by %s.%s; skipping duplicate "
+            "registration from %s.%s",
+            cls.name,
+            existing.__module__,
+            existing.__name__,
+            cls.__module__,
+            cls.__name__,
         )
         return cls
 

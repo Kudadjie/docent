@@ -91,6 +91,7 @@ _KNOWN_TOP_LEVEL_SECTIONS = frozenset(
     {
         "reading",
         "research",
+        "serve",
         "tools",
         # Root-level scalar keys (no section prefix)
         "default_model",

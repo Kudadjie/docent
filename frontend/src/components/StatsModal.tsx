@@ -114,7 +114,7 @@ export default function StatsModal({ entries, onClose }: Props) {
         <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: 20 }}>
           {/* Status */}
           <Section title="By status">
-            <Row label="Reading" value={reading} color="#0fa76e" />
+            <Row label="Reading" value={reading} color="#3f8f54" />
             <Row label="Queued"  value={queued} />
             <Row label="Done"    value={done}   color="var(--fg4)" />
             <Row label="Total"   value={entries.length} />

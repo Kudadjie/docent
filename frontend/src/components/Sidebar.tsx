@@ -3,66 +3,33 @@
 import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { LayoutDashboard, BookOpen, FlaskConical, BookText, Settings, Globe2, GripVertical, Wrench } from 'lucide-react';
+import { BookOpen, FlaskConical, BookText, Settings, Globe2, GripVertical, Wrench, ChevronsLeft, ChevronsRight, type LucideIcon } from 'lucide-react';
 import WelcomeModal, { type UserProfile } from './WelcomeModal';
 import { useAppRun } from '@/lib/app-run-context';
 
-const NAV_ORDER_KEY  = 'docent:nav-order';
-const USER_CACHE_KEY = 'docent:user-profile';
+const NAV_ORDER_KEY    = 'docent:nav-order';
+const USER_CACHE_KEY   = 'docent:user-profile';
+const NAV_COLLAPSE_KEY = 'docent:nav-collapsed';
+const W_EXPANDED = 220;
+const W_COLLAPSED = 64;
 
 interface NavItem {
   id: string;
   href: string;
   label: string;
-  icon: React.ReactNode;
+  Icon: LucideIcon;
 }
 
 const PLUGIN_NAV: NavItem[] = [
-  {
-    id: 'dashboard',
-    href: '/dashboard',
-    label: 'Dashboard',
-    icon: <LayoutDashboard size={16} strokeWidth={1.5} />,
-  },
-  {
-    id: 'reading',
-    href: '/reading',
-    label: 'Reading',
-    icon: <BookOpen size={16} strokeWidth={1.5} />,
-  },
-  {
-    id: 'studio',
-    href: '/studio',
-    label: 'Studio',
-    icon: <FlaskConical size={16} strokeWidth={1.5} />,
-  },
+  { id: 'reading',        href: '/reading',        label: 'Reading',        Icon: BookOpen },
+  { id: 'studio',         href: '/studio',         label: 'Studio',         Icon: FlaskConical },
+  { id: 'tools',          href: '/tools',          label: 'Tools',          Icon: Wrench },
 ];
 
 const UTILITY_NAV: NavItem[] = [
-  {
-    id: 'tools',
-    href: '/tools',
-    label: 'Tools',
-    icon: <Wrench size={15} strokeWidth={1.5} />,
-  },
-  {
-    id: 'ecosystem',
-    href: '/ecosystem',
-    label: 'Ecosystem',
-    icon: <Globe2 size={15} strokeWidth={1.5} />,
-  },
-  {
-    id: 'docs',
-    href: '/docs',
-    label: 'Docs',
-    icon: <BookText size={15} strokeWidth={1.5} />,
-  },
-  {
-    id: 'settings',
-    href: '/settings',
-    label: 'Settings',
-    icon: <Settings size={15} strokeWidth={1.5} />,
-  },
+  { id: 'ecosystem', href: '/ecosystem', label: 'Ecosystem', Icon: Globe2 },
+  { id: 'docs',      href: '/docs',      label: 'Docs',      Icon: BookText },
+  { id: 'settings',  href: '/settings',  label: 'Settings',  Icon: Settings },
 ];
 
 interface Props {
@@ -71,12 +38,19 @@ interface Props {
   dark?: boolean;
 }
 
-const REORDERABLE_IDS = PLUGIN_NAV.filter(n => n.id !== 'dashboard').map(n => n.id);
+const REORDERABLE_IDS = PLUGIN_NAV.map(n => n.id);
 
 function loadNavOrder(): string[] {
   try {
     const stored = JSON.parse(localStorage.getItem(NAV_ORDER_KEY) ?? 'null') as string[] | null;
-    if (Array.isArray(stored) && stored.every(id => REORDERABLE_IDS.includes(id))) return stored;
+    if (Array.isArray(stored)) {
+      const valid = stored.filter(id => REORDERABLE_IDS.includes(id));
+      const missing = REORDERABLE_IDS.filter(id => !valid.includes(id));
+      // Exact match — use as stored.
+      if (missing.length === 0 && valid.length === REORDERABLE_IDS.length) return valid;
+      // Partial (e.g. old localStorage missing 'tools') — append new ids to end.
+      if (valid.length > 0) return [...valid, ...missing];
+    }
   } catch {}
   return REORDERABLE_IDS;
 }
@@ -100,9 +74,29 @@ export default function Sidebar({ active, queueCount, dark: darkProp }: Props) {
   const [savedDatabaseDir, setSavedDatabaseDir] = useState<string>('');
   const [savedOutputDir, setSavedOutputDir] = useState<string>('');
   const [navOrder, setNavOrder] = useState<string[]>(REORDERABLE_IDS);
+  // Read collapsed synchronously so a fresh Sidebar (mounted on every client-side
+  // route change) starts at the correct width — no expand→collapse snap on tab change.
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem(NAV_COLLAPSE_KEY) === '1'; } catch { return false; }
+  });
+  // Gate the width transition until after first paint so the initial mount never animates.
+  const [navMounted, setNavMounted] = useState(false);
   const dragId = useRef<string | null>(null);
   const dragOverId = useRef<string | null>(null);
   const [hoveredNavId, setHoveredNavId] = useState<string | null>(null);
+
+  // One-time flag to enable the width transition only after first paint (avoids
+  // animating the sidebar on mount / cross-page navigation).
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { setNavMounted(true); }, []);
+
+  function toggleCollapsed() {
+    setCollapsed(c => {
+      const next = !c;
+      try { localStorage.setItem(NAV_COLLAPSE_KEY, next ? '1' : '0'); } catch {}
+      return next;
+    });
+  }
 
   useEffect(() => {
     if (darkProp === undefined) {
@@ -216,14 +210,17 @@ export default function Sidebar({ active, queueCount, dark: darkProp }: Props) {
 
       <nav
         aria-label="Main navigation"
+        suppressHydrationWarning
         style={{
-          width: 220,
+          width: collapsed ? W_COLLAPSED : W_EXPANDED,
           flexShrink: 0,
           height: '100%',
           display: 'flex',
           flexDirection: 'column',
           background: 'var(--bg-subtle)',
           borderRight: '1px solid var(--border)',
+          transition: navMounted ? 'width 0.16s ease' : 'none',
+          overflow: 'hidden',
         }}
       >
         {/* Logo — 48px to match StatusBanner height; borderBottom aligns as one top bar */}
@@ -232,41 +229,48 @@ export default function Sidebar({ active, queueCount, dark: darkProp }: Props) {
             height: 48,
             display: 'flex',
             alignItems: 'center',
-            padding: '0 18px',
+            justifyContent: collapsed ? 'center' : 'flex-start',
+            padding: collapsed ? '0' : '0 18px',
             borderBottom: '1px solid var(--border)',
           }}
         >
-          <Image
-            src={dark ? '/logo-dark.svg' : '/logo.svg'}
-            alt="docent"
-            height={28}
-            width={112}
-            style={{ display: 'block' }}
-            priority
-          />
+          {collapsed ? (
+            <Image src={dark ? '/favicon-dark.svg' : '/favicon.svg'} alt="docent" height={24} width={24} style={{ display: 'block' }} priority />
+          ) : (
+            <Image
+              src={dark ? '/logo-dark.svg' : '/logo.svg'}
+              alt="docent"
+              height={28}
+              width={112}
+              style={{ display: 'block' }}
+              priority
+            />
+          )}
         </div>
 
         {/* Plugin nav items */}
         <div
           style={{
             flex: 1,
-            padding: '10px 8px',
+            padding: collapsed ? '10px 8px' : '10px 8px',
             display: 'flex',
             flexDirection: 'column',
             gap: 2,
           }}
         >
-          {[
-            PLUGIN_NAV.find(n => n.id === 'dashboard')!,
-            ...navOrder.map(id => PLUGIN_NAV.find(n => n.id === id)!).filter(Boolean),
-          ].map((item) => {
+          {navOrder
+            .map(id => PLUGIN_NAV.find(n => n.id === id)!)
+            .filter(Boolean)
+            .map((item) => {
             const isActive = item.id === active;
-            const isDraggable = item.id !== 'dashboard';
+            const isDraggable = !collapsed;
+            const studioRunning = item.id === 'studio' && currentRun?.status === 'running';
             return (
               <Link
                 key={item.id}
                 href={item.href}
                 aria-current={isActive ? 'page' : undefined}
+                title={collapsed ? item.label : undefined}
                 draggable={isDraggable}
                 onDragStart={isDraggable ? () => onDragStart(item.id) : undefined}
                 onDragOver={isDraggable ? (e) => onDragOver(e, item.id) : undefined}
@@ -274,32 +278,38 @@ export default function Sidebar({ active, queueCount, dark: darkProp }: Props) {
                 onMouseEnter={() => setHoveredNavId(item.id)}
                 onMouseLeave={() => setHoveredNavId(null)}
                 style={{
+                  position: 'relative',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 9,
+                  justifyContent: collapsed ? 'center' : 'flex-start',
+                  gap: collapsed ? 0 : 9,
                   width: '100%',
-                  padding: '7px 10px',
+                  padding: collapsed ? '9px 0' : '7px 10px',
                   borderRadius: 8,
                   border: 'none',
                   textDecoration: 'none',
-                  background: isActive ? 'rgba(24,226,153,0.13)' : 'transparent',
-                  color: isActive ? '#0fa76e' : 'var(--fg3)',
+                  background: isActive ? 'var(--brand-light)' : 'transparent',
+                  color: isActive ? 'var(--brand-deep)' : 'var(--fg3)',
                   fontFamily: 'var(--sans)',
                   fontSize: 13,
                   fontWeight: isActive ? 500 : 400,
                   transition: 'background 0.1s, color 0.1s',
-                  boxShadow: isActive ? 'rgba(0,0,0,0.04) 0px 1px 3px' : 'none',
+                  boxShadow: isActive ? 'rgba(20,20,19,0.04) 0px 1px 3px' : 'none',
                   cursor: 'pointer',
                 }}
               >
-                <span style={{ display: 'flex', color: isActive ? '#0fa76e' : 'var(--fg4)' }}>
-                  {item.icon}
+                <span style={{ display: 'flex', color: isActive ? 'var(--brand-deep)' : 'var(--fg3)' }}>
+                  <item.Icon size={collapsed ? 19 : 16} strokeWidth={collapsed ? 1.85 : 1.5} />
                 </span>
-                <span>{item.label}</span>
-                {item.id === 'studio' && currentRun?.status === 'running' ? (
+                {/* Collapsed: small dot marks a running Studio job */}
+                {collapsed && studioRunning && (
+                  <span style={{ position: 'absolute', top: 6, right: 10, width: 6, height: 6, borderRadius: '50%', background: '#F59E0B', animation: 'logo-dot-blink 0.9s step-end infinite' }} />
+                )}
+                {!collapsed && <span>{item.label}</span>}
+                {!collapsed && (studioRunning ? (
                   <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--amber-text)', background: 'var(--amber-bg)', padding: '2px 7px', borderRadius: 9999, letterSpacing: '0.3px', textTransform: 'uppercase', fontWeight: 600 }}>
                     <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#F59E0B', animation: 'logo-dot-blink 0.9s step-end infinite' }} />
-                    {currentRun.currentPhase}
+                    {currentRun!.currentPhase}
                   </span>
                 ) : item.id === 'reading' && isActive ? (
                   <span
@@ -310,8 +320,8 @@ export default function Sidebar({ active, queueCount, dark: darkProp }: Props) {
                       fontWeight: 500,
                       padding: '1px 6px',
                       borderRadius: 9999,
-                      background: 'rgba(24,226,153,0.2)',
-                      color: '#0fa76e',
+                      background: 'var(--brand-light)',
+                      color: 'var(--brand-deep)',
                       textTransform: 'uppercase',
                       letterSpacing: '0.3px',
                     }}
@@ -322,26 +332,30 @@ export default function Sidebar({ active, queueCount, dark: darkProp }: Props) {
                   <span style={{ marginLeft: 'auto', color: 'var(--fg4)', display: 'flex', opacity: 0.5 }}>
                     <GripVertical size={12} strokeWidth={1.5} />
                   </span>
-                ) : null}
+                ) : null)}
               </Link>
             );
           })}
         </div>
 
-        {/* Utility nav (Docs + Settings) — pinned above user footer */}
-        <div
-          style={{
-            padding: '4px 18px 8px',
-            fontFamily: 'var(--mono)',
-            fontSize: 9,
-            color: 'var(--fg4)',
-            letterSpacing: '0.5px',
-            textTransform: 'uppercase',
-            opacity: 0.7,
-          }}
-        >
-          Drag tabs to reorder
-        </div>
+        {/* Reorder hint — only when expanded */}
+        {!collapsed && (
+          <div
+            style={{
+              padding: '4px 18px 8px',
+              fontFamily: 'var(--mono)',
+              fontSize: 9,
+              color: 'var(--fg4)',
+              letterSpacing: '0.5px',
+              textTransform: 'uppercase',
+              opacity: 0.7,
+            }}
+          >
+            Drag tabs to reorder
+          </div>
+        )}
+
+        {/* Utility nav (Ecosystem + Docs + Settings) — pinned above toggle/footer */}
         <div
           style={{
             padding: '8px 8px',
@@ -358,16 +372,18 @@ export default function Sidebar({ active, queueCount, dark: darkProp }: Props) {
                 key={item.id}
                 href={item.href}
                 aria-current={isActive ? 'page' : undefined}
+                title={collapsed ? item.label : undefined}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 8,
+                  justifyContent: collapsed ? 'center' : 'flex-start',
+                  gap: collapsed ? 0 : 8,
                   width: '100%',
-                  padding: '5px 10px',
+                  padding: collapsed ? '7px 0' : '5px 10px',
                   borderRadius: 6,
                   border: 'none',
                   textDecoration: 'none',
-                  background: 'transparent',
+                  background: collapsed && isActive ? 'var(--brand-light)' : 'transparent',
                   color: isActive ? 'var(--fg1)' : 'var(--fg4)',
                   fontFamily: 'var(--sans)',
                   fontSize: 12,
@@ -376,13 +392,40 @@ export default function Sidebar({ active, queueCount, dark: darkProp }: Props) {
                 }}
               >
                 <span style={{ display: 'flex', color: isActive ? 'var(--fg2)' : 'var(--fg4)' }}>
-                  {item.icon}
+                  <item.Icon size={collapsed ? 18 : 15} strokeWidth={collapsed ? 1.85 : 1.5} />
                 </span>
-                <span>{item.label}</span>
+                {!collapsed && <span>{item.label}</span>}
               </Link>
             );
           })}
         </div>
+
+        {/* Collapse / expand toggle */}
+        <button
+          onClick={toggleCollapsed}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          title={collapsed ? 'Expand' : 'Collapse'}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: collapsed ? 'center' : 'flex-start',
+            gap: 8,
+            width: '100%',
+            padding: collapsed ? '8px 0' : '8px 18px',
+            borderTop: '1px solid var(--border)',
+            borderLeft: 'none', borderRight: 'none', borderBottom: 'none',
+            background: 'transparent',
+            color: 'var(--fg4)',
+            fontFamily: 'var(--sans)',
+            fontSize: 11,
+            cursor: 'pointer',
+          }}
+        >
+          <span style={{ display: 'flex' }}>
+            {collapsed ? <ChevronsRight size={15} strokeWidth={1.5} /> : <ChevronsLeft size={15} strokeWidth={1.5} />}
+          </span>
+          {!collapsed && <span>Collapse</span>}
+        </button>
 
         {/* User footer — suppressHydrationWarning because server renders null user
             (setup button) while client immediately has the localStorage-cached
@@ -391,25 +434,26 @@ export default function Sidebar({ active, queueCount, dark: darkProp }: Props) {
         {profileSet ? (
           <button
             onClick={() => setShowWelcome(true)}
-            title="Edit profile"
+            title={collapsed ? `${displayName} — edit profile` : 'Edit profile'}
             style={{
               width: '100%',
-              padding: '12px 18px',
+              padding: collapsed ? '12px 0' : '12px 18px',
               borderTop: '1px solid var(--border)',
               borderLeft: 'none', borderRight: 'none', borderBottom: 'none',
               background: 'transparent',
-              display: 'flex', alignItems: 'center', gap: 8,
+              display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'flex-start', gap: 8,
               cursor: 'pointer', textAlign: 'left',
             }}
           >
             <div suppressHydrationWarning style={{
               width: 28, height: 28, borderRadius: '50%',
-              background: 'rgba(24,226,153,0.15)', color: '#0fa76e',
+              background: 'var(--brand-light)', color: 'var(--brand-deep)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontFamily: 'var(--sans)', fontWeight: 600, fontSize: 12, flexShrink: 0,
             }}>
               {initial}
             </div>
+            {!collapsed && (
             <div style={{ minWidth: 0 }}>
               <div suppressHydrationWarning style={{
                 fontFamily: 'var(--sans)', fontWeight: 500, fontSize: 12,
@@ -424,17 +468,19 @@ export default function Sidebar({ active, queueCount, dark: darkProp }: Props) {
                 {displayRole}
               </div>
             </div>
+            )}
           </button>
         ) : (
           <button
             onClick={() => setShowWelcome(true)}
+            title={collapsed ? 'Set up your profile' : undefined}
             style={{
               width: '100%',
-              padding: '12px 18px',
+              padding: collapsed ? '12px 0' : '12px 18px',
               borderTop: '1px solid var(--border)',
               borderLeft: 'none', borderRight: 'none', borderBottom: 'none',
               background: 'transparent',
-              display: 'flex', alignItems: 'center', gap: 8,
+              display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'flex-start', gap: 8,
               cursor: 'pointer',
               textAlign: 'left',
             }}
@@ -447,9 +493,10 @@ export default function Sidebar({ active, queueCount, dark: darkProp }: Props) {
             }}>
               ?
             </div>
+            {!collapsed && (
             <div style={{ minWidth: 0 }}>
               <div style={{
-                fontFamily: 'var(--sans)', fontWeight: 500, fontSize: 12, color: '#0fa76e',
+                fontFamily: 'var(--sans)', fontWeight: 500, fontSize: 12, color: 'var(--brand-deep)',
               }}>
                 Set up your profile
               </div>
@@ -459,6 +506,7 @@ export default function Sidebar({ active, queueCount, dark: darkProp }: Props) {
                 Name, program, level
               </div>
             </div>
+            )}
           </button>
         )}
         </div>

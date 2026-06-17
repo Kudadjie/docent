@@ -37,28 +37,11 @@ _ACTION_MAP: dict[str, tuple[str, str]] = {
 }
 
 
-def _read_config_reading():
-    from docent.ui_server import _read_config_reading as _rcr
-
-    return _rcr()
-
-
-def _get_database_files(path):
-    from docent.ui_server import _get_database_files as _gdf
-
-    return _gdf(path)
-
-
-def _audit(action: str, detail: str) -> None:
-    from docent.ui_server import _audit as _a
-
-    _a(action, detail)
-
-
-def _docent_dir():
-    from docent.ui_server import _docent_dir as _dd
-
-    return _dd()
+from docent.ui_routes._shared import (  # noqa: E402
+    _audit,
+    _get_database_files,
+    _read_config_reading,
+)
 
 
 @router.get("/api/queue")

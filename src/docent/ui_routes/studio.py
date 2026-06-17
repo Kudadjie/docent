@@ -5,7 +5,7 @@ import asyncio
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from docent.ui_server import (
+from docent.ui_routes._studio_request import (
     _STUDIO_ACTION_MAP,
     StudioRunBody,
     _form_to_studio_args,

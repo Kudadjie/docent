@@ -177,7 +177,7 @@ export default function BackupRestoreSection({ onSignalDot, onToast }: Props) {
             <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 8, background: 'var(--bg-subtle)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               {backupStatus.credentials_configured && backupStatus.deps_installed ? (
                 <>
-                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#18E299', flexShrink: 0 }} />
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#5db872', flexShrink: 0 }} />
                   <span style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg2)' }}>
                     Google Drive configured{backupStatus.token_exists ? ' · authenticated' : ' · will authenticate on first run'}
                   </span>

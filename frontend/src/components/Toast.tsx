@@ -36,15 +36,15 @@ export default function Toast({ toast, onDismiss, duration = 5000 }: Props) {
         gap: 10,
         padding: '12px 14px',
         borderRadius: 10,
-        border: `1px solid ${isError ? 'rgba(212,86,86,0.25)' : 'rgba(24,226,153,0.25)'}`,
-        background: isError ? 'rgba(212,86,86,0.08)' : 'rgba(24,226,153,0.08)',
+        border: `1px solid ${isError ? 'rgba(198,69,69,0.25)' : 'rgba(93,184,114,0.25)'}`,
+        background: isError ? 'rgba(198,69,69,0.08)' : 'rgba(93,184,114,0.10)',
         backdropFilter: 'blur(8px)',
         boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
         maxWidth: 360,
         animation: 'fadeInUp 0.18s ease forwards',
       }}
     >
-      <span style={{ color: isError ? '#D45656' : '#0fa76e', display: 'flex', flexShrink: 0, marginTop: 1 }}>
+      <span style={{ color: isError ? '#c64545' : '#3f8f54', display: 'flex', flexShrink: 0, marginTop: 1 }}>
         {isError
           ? <AlertCircle size={15} strokeWidth={1.8} />
           : <CheckCircle size={15} strokeWidth={1.8} />}

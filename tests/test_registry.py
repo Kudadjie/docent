@@ -73,7 +73,13 @@ def test_missing_input_schema_rejected(isolated_registry):
                 return None
 
 
-def test_double_registration_warns_and_skips(isolated_registry, capsys):
+def test_double_registration_warns_and_skips(isolated_registry, caplog, monkeypatch):
+    import logging
+
+    # configure_logging() (run by CLI tests earlier in the suite) sets
+    # propagate=False on the "docent" logger; caplog captures via the root
+    # handler, so re-enable propagation for this test.
+    monkeypatch.setattr(logging.getLogger("docent"), "propagate", True)
     """v1.2.0: duplicate registration prints a warning and skips instead of raising."""
 
     @register_tool
@@ -100,11 +106,11 @@ def test_double_registration_warns_and_skips(isolated_registry, capsys):
     # Only one entry in the registry
     assert len(all_tools()) >= 1
 
-    # Warning should have been printed to stderr
-    captured = capsys.readouterr()
-    assert "Warning" in captured.err
-    assert "already registered" in captured.err
-    assert "test-dup-xyz" in captured.err
+    # Warning should have been logged
+    assert any(
+        "already registered" in rec.getMessage() and "test-dup-xyz" in rec.getMessage()
+        for rec in caplog.records
+    )
 
 
 def test_litellm_lazy_import_invariant():

@@ -25,6 +25,9 @@ import {
 } from 'react';
 
 import { useAppRun } from '@/lib/app-run-context';
+// Side-effect import: patches window.fetch to attach X-Docent-Token on
+// mutating /api requests. Must load with the layout bundle, before any fetch.
+import { getApiToken } from '@/lib/api-token';
 
 import {
   findAction,
@@ -250,7 +253,10 @@ export function StudioRunProvider({ children }: { children: ReactNode }) {
     run.ws = ws;
 
     ws.onopen = () => {
-      ws.send(JSON.stringify({
+      void getApiToken().then(token => ws.send(JSON.stringify({
+        // Browsers can't set custom WS headers — the session token rides in
+        // the first message instead (checked server-side in opencode.py).
+        token,
         action_id:   actionId,
         topic:       form.topic,
         backend:     form.backend.toLowerCase(),
@@ -274,7 +280,7 @@ export function StudioRunProvider({ children }: { children: ReactNode }) {
         cite_direction:    form.citeDirection,
         cite_max:          form.citeMax,
         expand_citations:  form.expandCitations,
-      }));
+      })));
     };
 
     ws.onmessage = (e: MessageEvent) => {

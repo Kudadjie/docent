@@ -163,7 +163,12 @@ class TestPluginLoader:
         tools = all_tools()
         assert "fake-plugin-tool" in tools
 
-    def test_name_conflict_warns_and_skips(self, plugin_dirs, capsys):
+    def test_name_conflict_warns_and_skips(self, plugin_dirs, caplog, monkeypatch):
+        import logging
+
+        # See test_registry: "docent" logger may have propagate=False by the
+        # time this runs in the full suite; caplog needs propagation to root.
+        monkeypatch.setattr(logging.getLogger("docent"), "propagate", True)
         from pydantic import BaseModel
 
         class PreInputs(BaseModel):
@@ -180,9 +185,10 @@ class TestPluginLoader:
 
         _write_flat_plugin(plugin_dirs["user"], "conflict", CONFLICT_PLUGIN)
         load_plugins()
-        captured = capsys.readouterr()
-        assert "already registered" in captured.err
-        assert "conflict-tool" in captured.err
+        assert any(
+            "already registered" in rec.getMessage() and "conflict-tool" in rec.getMessage()
+            for rec in caplog.records
+        )
 
     def test_on_startup_hook_collected(self, plugin_dirs):
         _write_flat_plugin(plugin_dirs["user"], "startup", STARTUP_HOOK_PLUGIN)

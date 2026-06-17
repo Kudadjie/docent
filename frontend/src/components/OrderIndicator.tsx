@@ -12,10 +12,10 @@ function orderLevel(order: number): 'high' | 'medium' | 'low' | 'unordered' {
 }
 
 const LEVEL_COLOR = {
-  high:      '#D45656',
-  medium:    '#C37D0D',
-  low:       '#18E299',
-  unordered: '#888888',
+  high:      '#c64545',
+  medium:    '#d4a017',
+  low:       '#5db872',
+  unordered: '#8e8b82',
 };
 
 export default function OrderIndicator({ order }: Props) {

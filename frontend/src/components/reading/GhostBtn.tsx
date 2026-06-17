@@ -24,11 +24,11 @@ export default function GhostBtn({
         display: 'inline-flex',
         alignItems: 'center',
         gap: 6,
-        padding: '5px 12px',
-        borderRadius: 9999,
-        border: active ? '1px solid #18E299' : '1px solid var(--border-md)',
-        background: active ? 'rgba(24,226,153,0.1)' : hov ? 'var(--gray100)' : 'transparent',
-        color: active ? '#0fa76e' : 'var(--fg2)',
+        padding: '6px 12px',
+        borderRadius: 8,
+        border: active ? '1px solid var(--brand)' : '1px solid var(--border-md)',
+        background: active ? 'var(--brand-light)' : hov ? 'var(--gray100)' : 'transparent',
+        color: active ? 'var(--brand-deep)' : 'var(--fg2)',
         fontFamily: 'var(--sans)',
         fontSize: 13,
         fontWeight: 500,
@@ -38,7 +38,7 @@ export default function GhostBtn({
       }}
     >
       {icon && (
-        <span style={{ color: active ? '#0fa76e' : 'var(--fg4)', display: 'flex' }}>{icon}</span>
+        <span style={{ color: active ? 'var(--brand-deep)' : 'var(--fg4)', display: 'flex' }}>{icon}</span>
       )}
       {children}
     </button>

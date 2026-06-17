@@ -8,23 +8,24 @@ frontend auto-generates a form from each. A new plugin dropped into
 
 Endpoints:
   GET  /api/tools          → tool/action catalogue with JSON schemas
-  POST /api/tools/invoke   → run one action, return its JSON result
-
-Note: generator (streaming) actions are drained synchronously and only the
-final result is returned. Long-running Studio actions keep their dedicated
-streaming page (`/studio`); this surface targets quick CRUD-style actions.
+  POST /api/tools/invoke   → run one action, return its JSON result (sync)
+  POST /api/tools/stream   → run one action, stream ProgressEvents + result as SSE
 """
 
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
+import queue
+import threading
 
 from fastapi import APIRouter
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
-from docent.core.invoke import invoke_action_for_ui
+from docent.core.invoke import invoke_action_for_ui, make_context, run_action, serialize_result
+from docent.core.plugin_loader import list_plugins
 from docent.core.registry import all_tools, collect_actions
 
 router = APIRouter()
@@ -36,9 +37,21 @@ class InvokeBody(BaseModel):
     inputs: dict = {}
 
 
+def _tool_source(tool_cls: type, external_modules: set[str]) -> str:
+    """Return 'plugin' for user-installed tools, 'bundled' for shipped ones."""
+    module = inspect.getmodule(tool_cls)
+    mod_name = getattr(module, "__name__", "") if module else ""
+    return "plugin" if mod_name in external_modules else "bundled"
+
+
 @router.get("/api/tools")
 async def list_tools() -> JSONResponse:
-    """Return every registered tool, its actions, and each action's JSON schema."""
+    """Return every registered tool, its actions, and each action's JSON schema.
+
+    Each entry includes a ``source`` field: ``"bundled"`` for shipped tools,
+    ``"plugin"`` for tools loaded from ``~/.docent/plugins/``.
+    """
+    external_modules = {p["name"] for p in list_plugins() if p["source"] == "external"}
     catalogue = []
     for tool_name, tool_cls in sorted(all_tools().items()):
         actions_meta = collect_actions(tool_cls)
@@ -66,6 +79,7 @@ async def list_tools() -> JSONResponse:
                 "tool": tool_name,
                 "description": tool_cls.description,
                 "category": tool_cls.category,
+                "source": _tool_source(tool_cls, external_modules),
                 "actions": actions,
             }
         )
@@ -108,3 +122,114 @@ async def invoke_tool(body: InvokeBody) -> JSONResponse:
         return JSONResponse({"ok": False, "confirmation_required": True, "result": parsed})
 
     return JSONResponse({"ok": True, "result": parsed})
+
+
+@router.post("/api/tools/stream")
+async def stream_tool(body: InvokeBody) -> StreamingResponse:
+    """Run one action and stream its output as Server-Sent Events.
+
+    Each event is a ``data: <json>\\n\\n`` line. Three event shapes:
+
+    - ``{"type": "progress", "phase": "...", "message": "...", "level": "info"}``
+      — intermediate ProgressEvent from a generator action
+    - ``{"type": "result",  "ok": true,  "result": {...}}``
+      — final result (generator drained or sync action completed)
+    - ``{"type": "error",   "ok": false, "error": "...", ...}``
+      — validation failure, unknown action, or runtime error
+
+    Non-generator actions emit no progress events and go directly to ``result``.
+    The frontend shows the telemetry strip only when progress events arrive.
+    """
+    from docent.core.events import ProgressEvent
+    from docent.core.exceptions import ConfirmationRequired
+
+    event_q: queue.Queue[str | None] = queue.Queue()
+
+    def _worker() -> None:
+        try:
+            ctx = make_context(non_interactive=True, auto_confirm=True)
+            raw = run_action(body.tool, body.action, body.inputs, context=ctx)
+        except ConfirmationRequired as exc:
+            event_q.put(
+                json.dumps(
+                    {
+                        "type": "error",
+                        "ok": False,
+                        "confirmation_required": True,
+                        "notes": exc.notes,
+                    }
+                )
+            )
+            event_q.put(None)
+            return
+        except Exception as exc:
+            event_q.put(json.dumps({"type": "error", "ok": False, "error": str(exc)}))
+            event_q.put(None)
+            return
+
+        try:
+            if inspect.isgenerator(raw):
+                result_value = None
+                try:
+                    while True:
+                        evt = next(raw)
+                        if isinstance(evt, ProgressEvent):
+                            event_q.put(json.dumps({"type": "progress", **evt.model_dump()}))
+                        else:
+                            result_value = evt
+                except StopIteration as stop:
+                    result_value = stop.value
+            else:
+                result_value = raw
+
+            try:
+                parsed = json.loads(serialize_result(result_value))
+            except (json.JSONDecodeError, TypeError):
+                parsed = str(result_value)
+
+            if isinstance(parsed, dict) and parsed.get("confirmation_required"):
+                event_q.put(
+                    json.dumps(
+                        {
+                            "type": "error",
+                            "ok": False,
+                            "confirmation_required": True,
+                            "result": parsed,
+                        }
+                    )
+                )
+            else:
+                shapes_data: list[dict] | None = None
+                if hasattr(result_value, "to_shapes"):
+                    try:
+                        shapes_data = [s.model_dump() for s in result_value.to_shapes()]
+                    except Exception:
+                        shapes_data = None
+                result_event: dict[str, object] = {
+                    "type": "result",
+                    "ok": True,
+                    "result": parsed,
+                }
+                if shapes_data is not None:
+                    result_event["shapes"] = shapes_data
+                event_q.put(json.dumps(result_event))
+        except Exception as exc:
+            event_q.put(json.dumps({"type": "error", "ok": False, "error": str(exc)}))
+        finally:
+            event_q.put(None)
+
+    threading.Thread(target=_worker, daemon=True).start()
+
+    async def _generate():  # type: ignore[return]
+        loop = asyncio.get_event_loop()
+        while True:
+            msg: str | None = await loop.run_in_executor(None, event_q.get)
+            if msg is None:
+                break
+            yield f"data: {msg}\n\n"
+
+    return StreamingResponse(
+        _generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

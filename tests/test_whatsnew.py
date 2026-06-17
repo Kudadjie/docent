@@ -134,6 +134,20 @@ def test_ui_payload_new_until_seen(tmp_docent_home, tmp_path, monkeypatch):
     assert wn.ui_payload("2.2.0")["new"] is True
 
 
+# ── _ui_seen_key ─────────────────────────────────────────────────────────────
+
+
+def test_ui_seen_key_production_version_unchanged(tmp_path, monkeypatch):
+    _write_changelog(tmp_path, monkeypatch)
+    assert wn._ui_seen_key("2.1.0") == "2.1.0"
+
+
+def test_ui_seen_key_dev_build_uses_latest_tagged(tmp_path, monkeypatch):
+    _write_changelog(tmp_path, monkeypatch)
+    # Latest tagged release in _CHANGELOG is "2.1.0"
+    assert wn._ui_seen_key("2.0.5.dev60+gabc") == "2.1.0"
+
+
 # ── UI route (/api/whatsnew) ──────────────────────────────────────────────────
 
 
@@ -145,12 +159,12 @@ def test_ui_route_get_then_seen(tmp_docent_home, tmp_path, monkeypatch):
     _write_changelog(tmp_path, monkeypatch)
     client = TestClient(ui_server.app)
 
+    # Dev build: toast fires once (keyed on latest tagged release "2.1.0").
     data = client.get("/api/whatsnew").json()
-    # Dev builds (version contains ".dev") never set new=True — the toast should
-    # not fire on every reload for local development installs.
-    assert data["new"] is False
-    assert data["release"]["highlights"]  # still populated (Unreleased fallback)
+    assert data["new"] is True
+    assert data["release"]["highlights"]
 
+    # After dismiss the seen key is "2.1.0"; next load is quiet.
     assert client.post("/api/whatsnew/seen").status_code == 200
     assert client.get("/api/whatsnew").json()["new"] is False
 
@@ -161,9 +175,22 @@ def test_ui_payload_dev_build_falls_back_to_latest_when_unreleased_empty(
     empty_unreleased = "## [Unreleased]\n\n## [2.1.0] - 2026-06-01\n\n### What's New\n- Faster UI\n"
     _write_changelog(tmp_path, monkeypatch, text=empty_unreleased)
     payload = wn.ui_payload("1.0.0.dev5+gabcdef")
-    assert payload["new"] is False
+    # Falls back to latest tagged release and fires the toast.
+    assert payload["new"] is True
     assert payload["release"] is not None
     assert payload["release"]["version"] == "2.1.0"
+
+
+def test_ui_payload_dev_build_quiet_after_dismiss(tmp_docent_home, tmp_path, monkeypatch):
+    _write_changelog(tmp_path, monkeypatch)
+    # First load on dev: new=True (keyed on latest release "2.1.0")
+    assert wn.ui_payload("1.0.0.dev5+gabcdef")["new"] is True
+    # Dismiss (stored as "2.1.0", not the dev string)
+    wn.mark_ui_seen("1.0.0.dev5+gabcdef")
+    # Subsequent dev commits: same seen key → quiet
+    assert wn.ui_payload("1.0.0.dev6+gffffff")["new"] is False
+    # New tagged release: seen key changes → fires again
+    assert wn.ui_payload("1.0.0.dev6+gffffff")["new"] is False  # still on 2.1.0 latest
 
 
 # ── CLI command + banner ──────────────────────────────────────────────────────

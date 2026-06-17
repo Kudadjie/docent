@@ -12,8 +12,8 @@ import {
 import { type ActiveRunView } from '@/lib/studio-run-context';
 import { GhostBtn, CodeBlock, Chip, FieldLabel, Kbd } from './_form';
 
-const BRAND      = '#18E299';
-const BRAND_DEEP = '#0fa76e';
+const BRAND      = '#5db872';
+const BRAND_DEEP = '#3f8f54';
 const AMBER_BORDER = '#F59E0B';
 const AMBER      = '#C37D0D';
 const BLUE       = '#3772cf';
@@ -592,7 +592,7 @@ function CiteGraphPaperCard({ paper, index }: { paper: CiteGraphPaper; index: nu
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 3 }}>
             {paper.oa_url && (
-              <span style={{ flexShrink: 0, marginTop: 2, fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: '#0fa76e', background: 'rgba(24,226,153,0.12)', padding: '1px 6px', borderRadius: 4 }}>OA</span>
+              <span style={{ flexShrink: 0, marginTop: 2, fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: '#3f8f54', background: 'rgba(93,184,114,0.14)', padding: '1px 6px', borderRadius: 4 }}>OA</span>
             )}
             <div style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500, color: 'var(--fg1)', lineHeight: 1.4 }}>
               {href ? (
@@ -656,7 +656,7 @@ function ResultCiteGraph({ data }: { data: Record<string, unknown> | null }) {
           <span style={{ fontFamily: 'var(--sans)', fontSize: 12.5, color: 'var(--fg3)' }}>
             {totalFound} papers {dirLabel}
           </span>
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: '#0fa76e', background: 'rgba(24,226,153,0.1)', padding: '2px 8px', borderRadius: 9999 }}>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: '#3f8f54', background: 'rgba(93,184,114,0.12)', padding: '2px 8px', borderRadius: 9999 }}>
             {oaCount} open access
           </span>
           <span style={{ fontFamily: 'var(--sans)', fontSize: 11.5, color: 'var(--fg4)' }}>· showing {papers.length}</span>

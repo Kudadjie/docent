@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -20,7 +19,6 @@ import time
 from collections.abc import Generator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-from urllib.parse import parse_qsl, urlencode, urlparse
 
 from pydantic import BaseModel, Field
 
@@ -37,13 +35,6 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 from docent.utils.paths import data_dir as _docent_data_dir
-
-_LEARN_DIR = _docent_data_dir() / "notebook-learning"
-_SKILL_COMPAT_PATH = _LEARN_DIR / "source-compat.json"
-_SKILL_RUN_LOG_PATH = _LEARN_DIR / "run-log.jsonl"
-_SKILL_OVERRIDES_PATH = _LEARN_DIR / "active-overrides.json"
-# Bundled defaults shipped with the package — read-only, user data is merged on top
-_BUNDLED_COMPAT_PATH = Path(__file__).parent / "data" / "source-compat-defaults.json"
 
 _NOTEBOOK_MAP_FILENAME = ".notebook-map.json"
 
@@ -513,476 +504,37 @@ def _nlm_ask(
     return None
 
 
-# ---------------------------------------------------------------------------
-# URL utilities
-# ---------------------------------------------------------------------------
-
-
-def _strip_utm(url: str) -> str:
-    """Strip utm_* tracking parameters from a URL."""
-    try:
-        p = urlparse(url)
-        qs = [(k, v) for k, v in parse_qsl(p.query) if not k.startswith("utm_")]
-        return p._replace(query=urlencode(qs)).geturl()
-    except Exception:
-        return url
-
-
-def _load_merged_compat() -> dict:
-    """Merge bundled defaults with user-learned data. User data wins on conflicts."""
-
-    def _read(p: Path) -> dict:
-        try:
-            return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
-        except (json.JSONDecodeError, OSError):
-            return {}
-
-    bundled = _read(_BUNDLED_COMPAT_PATH)
-    user = _read(_SKILL_COMPAT_PATH)
-
-    domains: dict = {**bundled.get("domains", {}), **user.get("domains", {})}
-    always_skip: set = set(bundled.get("always_skip", [])) | set(user.get("always_skip", []))
-    return {"always_skip": list(always_skip), "domains": domains}
-
-
-def _nlm_compat_filter(urls: list[str]) -> list[str]:
-    """Filter URLs from known-bad domains using bundled + user-learned compat data."""
-    compat = _load_merged_compat()
-    always_skip = set(compat.get("always_skip", []))
-    domains_data = compat.get("domains", {})
-    result = []
-    for url in urls:
-        try:
-            domain = urlparse(url).netloc.lower().removeprefix("www.")
-        except Exception:
-            result.append(url)
-            continue
-        if domain in always_skip:
-            continue
-        rate = domains_data.get(domain, {}).get("rate", -1)
-        if rate != -1 and rate < 0.3:
-            continue
-        result.append(url)
-    return result
-
-
-def _update_compat(outcomes: list[tuple[str, bool]]) -> None:
-    """Update source-compat.json with per-domain success/fail outcomes from this run."""
-    if not outcomes:
-        return
-    try:
-        _LEARN_DIR.mkdir(parents=True, exist_ok=True)
-        compat = (
-            json.loads(_SKILL_COMPAT_PATH.read_text(encoding="utf-8"))
-            if _SKILL_COMPAT_PATH.exists()
-            else {}
-        )
-    except (json.JSONDecodeError, OSError):
-        compat = {}
-    domains_data = compat.setdefault("domains", {})
-    for domain, success in outcomes:
-        if not domain:
-            continue
-        entry = domains_data.setdefault(domain, {"success": 0, "fail": 0, "rate": -1, "notes": ""})
-        if success:
-            entry["success"] += 1
-        else:
-            entry["fail"] += 1
-        total = entry["success"] + entry["fail"]
-        entry["rate"] = round(entry["success"] / total, 2) if total else -1
-    import datetime
-
-    compat["last_updated"] = datetime.date.today().isoformat()
-    try:
-        _SKILL_COMPAT_PATH.write_text(
-            json.dumps(compat, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
-    except OSError:
-        pass
-
-
-def _append_run_log(entry: dict[str, Any]) -> None:
-    """Append one run entry to run-log.jsonl. Silent on failure."""
-    try:
-        _LEARN_DIR.mkdir(parents=True, exist_ok=True)
-        with _SKILL_RUN_LOG_PATH.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    except OSError:
-        pass
-
-
-def _read_overrides() -> dict[str, Any]:
-    """Read active-overrides.json. Returns defaults if missing or unreadable."""
-    defaults: dict[str, Any] = {
-        "wait_stable_max": 90,
-        "feynman_skip": False,
-        "youtube_min_views_low": False,
-        "youtube_skip_followup": False,
-        "skip_gap_analysis": False,
-    }
-    if not _SKILL_OVERRIDES_PATH.exists():
-        return defaults
-    try:
-        data = json.loads(_SKILL_OVERRIDES_PATH.read_text(encoding="utf-8"))
-        return {**defaults, **data}
-    except (json.JSONDecodeError, OSError):
-        return defaults
-
-
-def _domain_from_url(url: str) -> str:
-    """Extract bare domain (no www.) from a URL."""
-    try:
-        return urlparse(url).netloc.lower().removeprefix("www.")
-    except Exception:
-        return ""
-
-
-def _nlm_deduplicate(urls: list[str], notebook_id: str) -> list[str]:
-    """Remove URLs already present in the notebook."""
-    existing = _nlm_source_list(notebook_id)
-    existing_urls = {(s.get("url") or "").rstrip("/").lower() for s in existing if s.get("url")}
-    return [u for u in urls if u.rstrip("/").lower() not in existing_urls]
-
-
-# ---------------------------------------------------------------------------
-# Quality-gate parsing
-# ---------------------------------------------------------------------------
-
-_FOLLOWUP_PATTERN = re.compile(
-    r"\n+\s*(?:Would you like(?: me)? to|Do you (?:want|need)(?: me)? to|"
-    r"Shall I|Is there anything else|Let me know if|Can I help you|"
-    r"If you(?:'d like| want)|Feel free to ask)[\s\S]*$",
-    re.IGNORECASE,
+# ── Split modules — re-exported so existing imports of
+# docent.bundled_plugins.studio._notebook keep working (actions, UI routes, tests). ──
+from ._notebook_analysis import (  # noqa: E402, F401
+    _BACKEND_SUFFIXES,
+    _WORKFLOW_SUFFIXES,
+    _derive_topic,
+    _domain_authority,
+    _extract_gaps,
+    _extract_section,
+    _parse_perspectives,
+    _parse_quality_gate,
+    _parse_year,
+    _rank_sources,
+    _score_source,
+    _strip_followup,
 )
-
-
-def _strip_followup(text: str) -> str:
-    """Remove trailing conversational follow-up questions from a NLM response."""
-    return _FOLLOWUP_PATTERN.sub("", text).rstrip()
-
-
-def _extract_section(answer: str, section_name: str, max_chars: int = 500) -> str:
-    """Extract the body of a ### SECTION_NAME block, truncated to max_chars."""
-    m = re.search(
-        rf"###\s*{re.escape(section_name)}\s*\n(.*?)(?=###|\Z)",
-        answer,
-        re.DOTALL | re.IGNORECASE,
-    )
-    if not m:
-        return ""
-    text = m.group(1).strip()
-    if len(text) > max_chars:
-        text = text[:max_chars].rsplit(" ", 1)[0] + "…"
-    return text
-
-
-def _extract_gaps(answer: str) -> list[str]:
-    """Extract gap items from the GAPS section of a quality gate answer."""
-    match = re.search(r"###\s*GAPS\s*\n(.*?)(?=###|\Z)", answer, re.DOTALL | re.IGNORECASE)
-    if not match:
-        return []
-    section = match.group(1).strip()
-    items = re.findall(r"(?m)^(?:\d+\.\s*|[-*•]\s*)(.+?)$", section)
-    return [i.strip() for i in items if i.strip()][:5]
-
-
-def _parse_quality_gate(answer: str) -> dict[str, Any]:
-    """Parse quality gate answer into a structured dict."""
-    answer = _strip_followup(answer)
-    validation = "unknown"
-    val_m = re.search(r"###\s*VALIDATION\s*\n(.*?)(?=###|\Z)", answer, re.DOTALL | re.IGNORECASE)
-    if val_m:
-        t = val_m.group(1).strip().lower()
-        validation = (
-            "clean"
-            if re.search(r"\bclean\b|\bno issues\b|\bwell.?supported\b|\bfully supported\b", t)
-            else "issues found"
-        )
-
-    contradictions = 0
-    con_m = re.search(
-        r"###\s*CONTRADICTIONS\s*\n(.*?)(?=###|\Z)", answer, re.DOTALL | re.IGNORECASE
-    )
-    if con_m:
-        t = con_m.group(1).strip()
-        if not re.search(
-            r"\bnone\b|\bno contradictions\b|\bno source.?vs.?source\b", t, re.IGNORECASE
-        ):
-            numbered = re.findall(r"(?m)^\d+\.", t)
-            contradictions = len(numbered) if numbered else 1
-
-    return {
-        "validation": validation,
-        "contradictions": contradictions,
-        "gaps": _extract_gaps(answer),
-        "raw": answer,
-    }
-
-
-def _parse_perspectives(answer: str) -> dict[str, str]:
-    """Parse multi-perspective answer into {practitioner, skeptic, beginner}."""
-    answer = _strip_followup(answer)
-    out: dict[str, str] = {}
-    for key in ("PRACTITIONER", "SKEPTIC", "BEGINNER"):
-        m = re.search(rf"###\s*{key}\s*\n(.*?)(?=###|\Z)", answer, re.DOTALL | re.IGNORECASE)
-        out[key.lower()] = m.group(1).strip() if m else ""
-    return out
-
-
-# ---------------------------------------------------------------------------
-# Topic / source helpers
-# ---------------------------------------------------------------------------
-
-_BACKEND_SUFFIXES = ("-free", "-feynman", "-docent")
-_WORKFLOW_SUFFIXES = (
-    "-deep",
-    "-lit",
-    "-review",
-    "-compare",
-    "-replicate",
-    "-audit",
-    "-draft",
-    "-update",
-    "-verify",
-    "-analysis",
+from ._notebook_learning import (  # noqa: E402, F401
+    _BUNDLED_COMPAT_PATH,
+    _LEARN_DIR,
+    _SKILL_COMPAT_PATH,
+    _SKILL_OVERRIDES_PATH,
+    _SKILL_RUN_LOG_PATH,
+    _append_run_log,
+    _domain_from_url,
+    _load_merged_compat,
+    _nlm_compat_filter,
+    _nlm_deduplicate,
+    _read_overrides,
+    _strip_utm,
+    _update_compat,
 )
-
-
-def _derive_topic(out_path: Path) -> str:
-    """Derive a human-readable topic from a research output file.
-
-    Reads the first # heading from the file content when available — this is
-    always more accurate than the filename, especially for renamed or generic
-    files (e.g. "test 2.md" whose heading is "Plastic Pollution in Coastal
-    West Africa").  Strips Docent's own workflow/tier prefixes from the heading
-    (e.g. "Deep Research (Free Tier): " → bare topic).  Falls back to
-    stripping backend/workflow suffixes from the stem when no heading is found.
-    """
-    _HEADING_PREFIX = re.compile(
-        r"^(?:Deep Research|Literature Review|Peer Review|Research|Analysis)"
-        r"(?:\s*\([^)]*\))?\s*:\s*",
-        re.IGNORECASE,
-    )
-
-    # Prefer heading from file content
-    try:
-        for line in out_path.read_text(encoding="utf-8", errors="ignore").splitlines():
-            stripped = line.strip()
-            if stripped.startswith("#"):
-                heading = stripped.lstrip("#").strip()
-                heading = _HEADING_PREFIX.sub("", heading).strip()
-                if heading:
-                    return heading
-    except OSError:
-        pass
-
-    # Fallback: derive from filename
-    stem = out_path.stem
-    for suffix in _BACKEND_SUFFIXES:
-        if stem.endswith(suffix):
-            stem = stem[: -len(suffix)]
-            break
-    for suffix in _WORKFLOW_SUFFIXES:
-        if stem.endswith(suffix):
-            stem = stem[: -len(suffix)]
-            break
-    return stem.replace("-", " ").replace("_", " ")
-
-
-# ---------------------------------------------------------------------------
-# Source scoring helpers
-# ---------------------------------------------------------------------------
-
-# Domains whose content is treated as inherently authoritative.
-# Score 1.0 = top tier (intergovernmental, peer-reviewed journals, major health agencies).
-# Score 0.6 = reputable tier (established journalism, policy think-tanks).
-# Anything else defaults to 0.3.
-_AUTHORITY_TOP = frozenset(
-    {
-        # Health / science agencies
-        "who.int",
-        "cdc.gov",
-        "nih.gov",
-        "ncbi.nlm.nih.gov",
-        "pubmed.ncbi.nlm.nih.gov",
-        "emro.who.int",
-        "afro.who.int",
-        "euro.who.int",
-        # Intergovernmental
-        "un.org",
-        "undp.org",
-        "unep.org",
-        "worldbank.org",
-        "imf.org",
-        "oecd.org",
-        "ipcc.ch",
-        "iea.org",
-        "fao.org",
-        "ifad.org",
-        "wfp.org",
-        # Peer-reviewed journals
-        "nature.com",
-        "science.org",
-        "thelancet.com",
-        "nejm.org",
-        "cell.com",
-        "bmj.com",
-        "jamanetwork.com",
-        "plos.org",
-        "plosone.org",
-        "mdpi.com",
-        "frontiersin.org",
-        "wiley.com",
-        "springer.com",
-        "elsevier.com",
-        "oxfordjournals.org",
-        "cambridge.org",
-        "tandfonline.com",
-        # Preprint / open access
-        "arxiv.org",
-        "biorxiv.org",
-        "medrxiv.org",
-        "ssrn.com",
-        "researchgate.net",
-        "semanticscholar.org",
-    }
-)
-
-_AUTHORITY_REPUTABLE = frozenset(
-    {
-        "reuters.com",
-        "apnews.com",
-        "bbc.com",
-        "bbc.co.uk",
-        "theguardian.com",
-        "ft.com",
-        "economist.com",
-        "nytimes.com",
-        "washingtonpost.com",
-        "theatlantic.com",
-        "brookings.edu",
-        "cfr.org",
-        "rand.org",
-        "chathamhouse.org",
-        "pewresearch.org",
-        "statista.com",
-    }
-)
-
-_CURRENT_YEAR = 2026
-_MAX_PER_DOMAIN = 3  # never allocate more than this many slots to one domain
-
-
-def _parse_year(year_val: Any) -> int | None:
-    """Return an integer year or None."""
-    if isinstance(year_val, int):
-        return year_val
-    if isinstance(year_val, str) and year_val[:4].isdigit():
-        return int(year_val[:4])
-    return None
-
-
-def _domain_authority(domain: str) -> float:
-    """Return 0.0–1.0 authority score for a bare domain (no www.)."""
-    bare = domain.removeprefix("www.")
-    if bare in _AUTHORITY_TOP:
-        return 1.0
-    # .gov and .edu TLDs are unconditionally authoritative
-    if bare.endswith(".gov") or bare.endswith(".edu") or bare.endswith(".ac.uk"):
-        return 1.0
-    if bare in _AUTHORITY_REPUTABLE:
-        return 0.6
-    return 0.3
-
-
-def _score_source(source: dict, year_min: int | None, year_range: int) -> float:
-    """Compute a ranking score for one source.
-
-    Tier boundaries are wide apart so tier order never flips, but within each
-    tier sources are ordered by *relative* recency (papers) or domain authority
-    (web).
-
-    Recency is computed relative to the year spread of the current paper batch,
-    not against today — so a 2013 paper in a 2005–2015 query scores the same
-    as a 2023 paper in a 2015–2025 query.  This respects explicit year-range
-    searches and avoids penalising foundational older work.
-
-    Score bands:
-      Papers             100 – 120  (+ up to 20 for relative recency)
-      Web with full text  50 –  80  (+ up to 30 for domain authority)
-      Web snippet          0 –  30  (+ up to 30 for domain authority)
-    """
-    stype = source.get("source_type")
-    url = source.get("url", "")
-    domain = _domain_from_url(url).removeprefix("www.")
-
-    if stype == "paper":
-        base = 100.0
-        if year_min is not None and year_range > 0:
-            year = _parse_year(source.get("year"))
-            if year is not None:
-                relative_recency = (year - year_min) / year_range
-                base += relative_recency * 20.0
-        return base
-
-    if stype == "web":
-        base = 50.0 if source.get("full_text") else 0.0
-        base += _domain_authority(domain) * 30.0
-        return base
-
-    return 0.0
-
-
-def _rank_sources(sources: list[dict], max_sources: int) -> list[dict]:
-    """Rank sources by tier, recency, and domain authority; deduplicate by domain.
-
-    Priority order:
-      1. Papers (peer-reviewed / preprint) — sorted by relative recency within
-         the batch's own year range (honours explicit year-range queries).
-      2. Web sources with full page text — sorted by domain authority.
-      3. Web sources with snippet only — sorted by domain authority.
-
-    Within each tier, no single domain supplies more than _MAX_PER_DOMAIN slots
-    so one over-represented source doesn't crowd out everything else.
-    """
-    # URL-level deduplication first
-    seen_urls: set[str] = set()
-    unique: list[dict] = []
-    for s in sources:
-        url = (s.get("url") or "").rstrip("/")
-        if url and url not in seen_urls:
-            seen_urls.add(url)
-            unique.append(s)
-
-    # Compute year range across all papers in this batch for relative recency
-    paper_years = [
-        y
-        for s in unique
-        if s.get("source_type") == "paper"
-        for y in [_parse_year(s.get("year"))]
-        if y is not None
-    ]
-    year_min = min(paper_years) if paper_years else None
-    year_max = max(paper_years) if paper_years else None
-    year_range = (year_max - year_min) if (year_min is not None and year_max is not None) else 0
-
-    # Score and sort
-    scored = sorted(unique, key=lambda s: _score_source(s, year_min, year_range), reverse=True)
-
-    # Domain-level deduplication: keep at most _MAX_PER_DOMAIN per domain
-    domain_counts: dict[str, int] = {}
-    result: list[dict] = []
-    for s in scored:
-        if len(result) >= max_sources:
-            break
-        domain = _domain_from_url(s.get("url", "")).removeprefix("www.")
-        if domain_counts.get(domain, 0) >= _MAX_PER_DOMAIN:
-            continue
-        domain_counts[domain] = domain_counts.get(domain, 0) + 1
-        result.append(s)
-
-    return result
-
 
 # ---------------------------------------------------------------------------
 # Models

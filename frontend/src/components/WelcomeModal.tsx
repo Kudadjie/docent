@@ -72,11 +72,11 @@ export default function WelcomeModal({ onComplete, onCancel, initialProfile, ini
         }}>
           <div style={{
             width: 44, height: 44, borderRadius: '50%',
-            background: 'rgba(24,226,153,0.12)',
+            background: 'rgba(93,184,114,0.12)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             marginBottom: 14,
           }}>
-            <BookOpen size={20} strokeWidth={1.5} color="#0fa76e" />
+            <BookOpen size={20} strokeWidth={1.5} color="#3f8f54" />
           </div>
           <h2 style={{
             fontFamily: 'var(--sans)', fontSize: 18, fontWeight: 700,
@@ -163,7 +163,7 @@ export default function WelcomeModal({ onComplete, onCancel, initialProfile, ini
               type="submit"
               style={{
                 fontFamily: 'var(--sans)', fontSize: 14, fontWeight: 600,
-                color: '#fff', background: '#0fa76e',
+                color: '#fff', background: '#3f8f54',
                 border: 'none', borderRadius: 9999,
                 padding: '10px 20px', cursor: 'pointer', width: '100%',
               }}

@@ -1,4 +1,4 @@
-# Docent CLI v1.2
+# Docent CLI
 
 Docent is a personal CLI control center for grad-school workflows. It manages an academic reading queue and syncs with your reference manager (Mendeley or Zotero). All tools are also exposed as MCP (Model Context Protocol) tools so Claude Code can call them directly.
 
@@ -185,6 +185,10 @@ All registered actions are exposed automatically — run `docent list` to see th
 
 ### Setup: `.mcp.json`
 
+Docent supports two MCP transports. Choose the one that fits your workflow.
+
+#### Option A — stdio (recommended for local Claude Code)
+
 Create `.mcp.json` in your Claude Code project root (or add to `~/.claude/settings.json` for global access):
 
 ```json
@@ -209,14 +213,57 @@ Replace `/absolute/path/to/docent-repo` with the actual path. On Windows: `C:/Us
 
 Restart Claude Code after saving — the server starts automatically when needed.
 
+#### Option B — HTTP + SSE (always-on server, remote access)
+
+Start `docent ui` once to auto-generate an API key, then retrieve it:
+
+```bash
+docent ui   # generates key on first start; Ctrl+C after a moment
+grep api_key ~/.docent/config.toml
+```
+
+Then configure your MCP client:
+
+```json
+{
+  "mcpServers": {
+    "docent": {
+      "url": "http://localhost:7432/mcp/sse",
+      "headers": {
+        "Authorization": "Bearer YOUR_API_KEY_HERE"
+      }
+    }
+  }
+}
+```
+
+For remote access from another machine, replace `localhost` with the server's IP or hostname and ensure port 7432 is reachable. `docent ui` must be running on the server.
+
+> **Note — UI API session token:** the web UI's own `/api/*` endpoints (separate from `/mcp/*`) require a per-session token on all state-changing requests (POST/PUT/PATCH/DELETE). The browser UI handles this automatically. If you script against the API while `docent ui` is running, fetch the token first and send it back as a header:
+>
+> ```bash
+> TOKEN=$(curl -s http://localhost:7432/api/auth/token | jq -r .token)
+> curl -X POST http://localhost:7432/api/tools/invoke \
+>   -H "Content-Type: application/json" -H "X-Docent-Token: $TOKEN" \
+>   -d '{"tool": "reading", "action": "stats", "inputs": {}}'
+> ```
+>
+> GET endpoints stay open. The token rotates on every server restart.
+
 ### Verify Connection
 
-Test the server directly first:
+**stdio:** Test the server directly:
 
 ```bash
 docent serve
 # [docent] MCP server ready — 35 tools registered. Waiting for client…
 # (blocks on stdin — Ctrl+C to stop)
+```
+
+**HTTP:** With `docent ui` running, check the endpoint:
+
+```bash
+curl -H "Authorization: Bearer YOUR_API_KEY" http://localhost:7432/mcp/sse
 ```
 
 Then in Claude Code, try one of the example prompts below.
@@ -438,4 +485,4 @@ Upgrade to the latest PyPI release.
 docent update
 ```
 
-Equivalent to `uv tool upgrade docent-cli`. Only works if Docent was installed via `uv tool install`.
+Detects how Docent was installed (uv, pipx, or pip) and runs the correct upgrader automatically.
