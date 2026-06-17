@@ -19,6 +19,8 @@ subsection with 2–5 user-facing highlights — those are what the banner shows
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-06-17
+
 ### What's New
 - **A fresh look** — the whole app got a design pass: Schibsted Grotesk + serif
   headings, a cleaner white/ink palette, green primary actions, and a collapsible
