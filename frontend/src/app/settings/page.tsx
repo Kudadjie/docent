@@ -313,7 +313,6 @@ export default function SettingsPage() {
                 }}
               >
               <SectionCard
-                accentColor="#14B8A6"
                 icon={<BookOpen size={14} strokeWidth={1.5} color="#14B8A6" />}
                 title="Reading"
                 description="Controls how Docent syncs your reading queue with your reference manager and local paper database."
@@ -427,7 +426,6 @@ export default function SettingsPage() {
 
               {/* Studio settings */}
               <SectionCard
-                accentColor="#8B5CF6"
                 icon={<FlaskConical size={14} strokeWidth={1.5} color="#8B5CF6" />}
                 title="Studio"
                 description="Controls which AI model Feynman uses when running deep research and literature review tasks."
@@ -537,7 +535,6 @@ export default function SettingsPage() {
 
             {/* Right column: API keys */}
             <SectionCard
-              accentColor="#F59E0B"
               icon={<Key size={14} strokeWidth={1.5} color="#F59E0B" />}
               title="API keys"
               description={<>Keys for research backends and paper search. Stored in <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>~/.docent/config.toml</span> — never sent anywhere except the respective provider.</>}
@@ -579,7 +576,6 @@ export default function SettingsPage() {
             {/* Walkthrough tours — full width */}
             <section style={{ gridColumn: '1 / -1' }}>
               <SectionCard
-                accentColor="#06B6D4"
                 icon={<Zap size={14} strokeWidth={1.5} color="#06B6D4" />}
                 title="Walkthrough tours"
                 description="Each page has a guided walkthrough that runs the first time you visit it. Reset individual tours below or restart all of them at once."
@@ -647,7 +643,7 @@ export default function SettingsPage() {
             <section style={{ gridColumn: '1 / -1' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
                 <Trash2 size={13} strokeWidth={1.5} color="#D45656" />
-                <h2 style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600, color: '#D45656', margin: 0 }}>
+                <h2 className="serif-display" style={{ fontFamily: 'var(--serif)', fontSize: 15, fontWeight: 500, letterSpacing: '-0.01em', color: '#D45656', margin: 0 }}>
                   Danger zone
                 </h2>
               </div>
