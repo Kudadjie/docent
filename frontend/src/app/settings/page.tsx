@@ -284,10 +284,10 @@ export default function SettingsPage() {
           {/* Header */}
           <div style={{ position: 'relative', padding: '28px 32px 24px', borderBottom: '1px solid var(--border)' }}>
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-              <Settings size={16} strokeWidth={1.5} color="#0fa76e" />
-              <h1 style={{
-                fontFamily: 'var(--sans)', fontSize: 18, fontWeight: 600,
-                letterSpacing: '-0.3px', color: 'var(--fg1)', margin: 0,
+              <Settings size={20} strokeWidth={1.5} style={{ color: 'var(--fg2)' }} />
+              <h1 className="serif-display" style={{
+                fontFamily: 'var(--serif)', fontSize: 26, fontWeight: 500,
+                letterSpacing: '-0.01em', color: 'var(--fg1)', margin: 0,
               }}>
                 Settings
               </h1>
@@ -521,7 +521,7 @@ export default function SettingsPage() {
                             padding: '9px 20px', borderTop: '1px solid var(--border)',
                             background: 'var(--bg-subtle)',
                             fontFamily: 'var(--sans)', fontSize: 11.5,
-                            color: issues === 0 ? '#0fa76e' : '#C97B00',
+                            color: issues === 0 ? '#3f8f54' : '#C97B00',
                           }}>
                             {issues === 0 ? `All ${ok} checks passed` : `${issues} ${issues === 1 ? 'issue' : 'issues'} found`}
                           </div>
@@ -598,8 +598,8 @@ export default function SettingsPage() {
                         <span style={{
                           fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 600,
                           padding: '2px 7px', borderRadius: 9999,
-                          background: tourSeenMap[key] ? 'rgba(24,226,153,0.12)' : 'var(--gray100)',
-                          color: tourSeenMap[key] ? '#0fa76e' : 'var(--fg4)',
+                          background: tourSeenMap[key] ? 'rgba(93,184,114,0.12)' : 'var(--gray100)',
+                          color: tourSeenMap[key] ? '#3f8f54' : 'var(--fg4)',
                           textTransform: 'uppercase', letterSpacing: '0.4px',
                         }}>
                           {tourSeenMap[key] ? 'seen' : 'not yet'}

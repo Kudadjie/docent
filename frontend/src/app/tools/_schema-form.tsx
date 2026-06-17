@@ -4,7 +4,7 @@
 // Takes a Pydantic-generated JSON schema and renders one input per property.
 // No per-tool knowledge — a new plugin's action form is generated from here.
 
-const BRAND = '#18E299';
+const BRAND = 'var(--brand)';
 
 // ── Schema normalization ─────────────────────────────────────────────────────
 

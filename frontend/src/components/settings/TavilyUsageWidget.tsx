@@ -31,7 +31,7 @@ export default function TavilyUsageWidget({ keyIsSet }: { keyIsSet: boolean }) {
 
   const loading = usage === null;
   const pct = usage?.pct_used ?? null;
-  const barColor = pct === null ? 'var(--fg4)' : pct >= 90 ? '#D45656' : pct >= 70 ? '#C97B00' : '#18E299';
+  const barColor = pct === null ? 'var(--fg4)' : pct >= 90 ? '#D45656' : pct >= 70 ? '#C97B00' : '#5db872';
 
   return (
     <div style={{ padding: '10px 0 4px', borderBottom: '1px solid var(--border)' }}>

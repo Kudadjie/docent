@@ -32,7 +32,7 @@ export default function NotebookLMSection() {
   const nlmDot = nlmStatus === null ? '#999'
     : !nlmStatus.installed ? '#C97B00'
     : !nlmStatus.playwright_ok ? '#C97B00'
-    : nlmStatus.authenticated ? '#18E299' : '#D45656';
+    : nlmStatus.authenticated ? '#5db872' : '#D45656';
 
   const nlmLabel = nlmStatus === null ? 'Checking…'
     : !nlmStatus.installed ? 'Not installed'

@@ -8,8 +8,8 @@ import { useDarkMode } from '@/hooks/useDarkMode';
 import { useTour } from '@/hooks/useTour';
 
 // ── Colours ──────────────────────────────────────────────────────
-const BRAND      = '#18E299';
-const BRAND_DEEP = '#0fa76e';
+const BRAND      = '#5db872';
+const BRAND_DEEP = '#3f8f54';
 const BLUE       = '#3B82F6';
 const VIOLET     = '#8B5CF6';
 const PINK       = '#EC4899';
@@ -109,7 +109,7 @@ function InstallBlock({ command }: { command: string }) {
   return (
     <div style={{
       position: 'relative',
-      background: '#0d0d0d',
+      background: '#181d26',
       border: '1px solid rgba(255,255,255,0.08)',
       borderRadius: 10, padding: '12px 48px 12px 14px',
       fontFamily: 'var(--mono)', fontSize: 12.5, color: '#ededed',
@@ -253,7 +253,7 @@ function FooterCTA() {
         style={{
           display: 'inline-flex', alignItems: 'center', gap: 8,
           padding: '10px 18px', borderRadius: 9999,
-          background: '#0d0d0d', color: '#ededed',
+          background: '#181d26', color: '#ededed',
           fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500, textDecoration: 'none',
           border: '1px solid rgba(255,255,255,0.12)',
           transition: 'background 0.12s',
@@ -323,7 +323,7 @@ export default function EcosystemPage() {
                   Curated · {TOOLS.length} tools
                 </span>
               </div>
-              <h1 style={{ fontFamily: 'var(--sans)', fontSize: 44, fontWeight: 600, color: 'var(--fg1)', letterSpacing: '-1.1px', lineHeight: 1.05, marginBottom: 14, margin: '0 0 14px' }}>
+              <h1 className="serif-display" style={{ fontFamily: 'var(--serif)', fontSize: 52, fontWeight: 500, color: 'var(--fg1)', letterSpacing: '-0.015em', lineHeight: 1.05, marginBottom: 14, margin: '0 0 14px' }}>
                 Ecosystem
               </h1>
               <p style={{ fontFamily: 'var(--sans)', fontSize: 17, lineHeight: 1.55, color: 'var(--fg3)', maxWidth: 620, margin: 0 }}>

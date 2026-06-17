@@ -8,14 +8,14 @@ export interface DoctorCheck {
 }
 
 const STATUS_COLOR: Record<DoctorCheck['status'], string> = {
-  OK: '#0fa76e',
+  OK: '#3f8f54',
   WARN: '#C97B00',
   FAIL: '#D45656',
   SKIP: 'var(--fg4)',
 };
 
 const STATUS_BG: Record<DoctorCheck['status'], string> = {
-  OK: 'rgba(24,226,153,0.12)',
+  OK: 'rgba(93,184,114,0.12)',
   WARN: 'rgba(201,123,0,0.1)',
   FAIL: 'rgba(212,86,86,0.1)',
   SKIP: 'var(--gray100)',
@@ -36,7 +36,7 @@ export function DoctorStatusBadge({ status }: { status: DoctorCheck['status'] })
   );
 }
 
-export function SectionCard({ icon, title, description, children, accentColor = '#18E299' }: {
+export function SectionCard({ icon, title, description, children, accentColor = '#5db872' }: {
   icon: ReactNode;
   title: string;
   description: ReactNode;

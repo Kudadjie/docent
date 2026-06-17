@@ -18,10 +18,10 @@ const KBD_STYLE: React.CSSProperties = {
 };
 
 const DOT_COLOR: Record<DotState, string> = {
-  idle:    '#18E299',
-  working: '#F5A623',
-  error:   '#E53535',
-  done:    '#18E299',
+  idle:    'var(--success)',
+  working: 'var(--amber-accent)',
+  error:   'var(--error)',
+  done:    'var(--success)',
 };
 
 const DOT_ANIM: Record<DotState, string> = {
@@ -67,14 +67,14 @@ function Stat({ label, value }: { label: string; value: string | number }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
       <span style={{
-        fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 500,
-        color: 'var(--fg4)', letterSpacing: '0.7px', textTransform: 'uppercase',
+        fontFamily: 'var(--sans)', fontSize: 11, fontWeight: 500,
+        color: 'var(--fg4)', letterSpacing: '0.4px', textTransform: 'uppercase',
       }}>
         {label}
       </span>
       <span style={{
-        fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600,
-        color: 'var(--fg1)', letterSpacing: '0.4px',
+        fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 600,
+        color: 'var(--fg1)', letterSpacing: 0,
       }}>
         {value}
       </span>
@@ -83,10 +83,10 @@ function Stat({ label, value }: { label: string; value: string | number }) {
 }
 
 const NOTIF_ICON: Record<AppNotification['type'], React.ReactNode> = {
-  update:  <RefreshCw size={12} strokeWidth={2} color="#0fa76e" />,
-  info:    <Info size={12} strokeWidth={2} color="#3B82F6" />,
-  warning: <AlertTriangle size={12} strokeWidth={2} color="#F5A623" />,
-  error:   <XCircle size={12} strokeWidth={2} color="#E53535" />,
+  update:  <RefreshCw size={12} strokeWidth={2} style={{ color: 'var(--fg2)' }} />,
+  info:    <Info size={12} strokeWidth={2} color="#5db8a6" />,
+  warning: <AlertTriangle size={12} strokeWidth={2} color="#e8a55a" />,
+  error:   <XCircle size={12} strokeWidth={2} color="#c64545" />,
 };
 
 function notifHref(n: AppNotification): string | null {
@@ -203,11 +203,11 @@ function NotificationDropdown({
                   {n.body}
                 </div>
                 <div style={{
-                  fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--fg4)',
-                  marginTop: 4, letterSpacing: '0.3px',
+                  fontFamily: 'var(--sans)', fontSize: 11, color: 'var(--fg4)',
+                  marginTop: 4, letterSpacing: 0,
                 }}>
                   {formatAge(n.timestamp)}
-                  {href && <span style={{ marginLeft: 6, color: '#0fa76e' }}>→ go there</span>}
+                  {href && <span style={{ marginLeft: 6, color: 'var(--brand-deep)' }}>→ go there</span>}
                 </div>
               </div>
               <button
@@ -300,16 +300,16 @@ export default function StatusBanner({
               }}
             >
               <span style={{
-                fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 500,
-                color: 'var(--fg4)', letterSpacing: '0.7px', textTransform: 'uppercase',
+                fontFamily: 'var(--sans)', fontSize: 11, fontWeight: 500,
+                color: 'var(--fg4)', letterSpacing: '0.4px', textTransform: 'uppercase',
                 display: 'flex', alignItems: 'center', gap: 4,
               }}>
                 <FolderOpen size={11} strokeWidth={1.5} />
                 Folder
               </span>
               <span style={{
-                fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600,
-                color: 'var(--fg1)', letterSpacing: '0.4px',
+                fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 600,
+                color: 'var(--fg1)', letterSpacing: 0,
               }}>
                 {databaseCount ?? '—'}
               </span>
@@ -338,17 +338,17 @@ export default function StatusBanner({
       {/* Studio: history toggle */}
       {onOpenHistory && (
         <button onClick={onOpenHistory} title="Run history"
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 9999, border: `1px solid ${historyOpen ? '#18E299' : 'var(--border-md)'}`, background: historyOpen ? 'rgba(24,226,153,0.10)' : 'transparent', cursor: 'pointer', color: historyOpen ? '#0fa76e' : 'var(--fg3)', fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 9999, border: `1px solid ${historyOpen ? 'var(--brand)' : 'var(--border-md)'}`, background: historyOpen ? 'var(--brand-light)' : 'transparent', cursor: 'pointer', color: historyOpen ? 'var(--brand-deep)' : 'var(--fg3)', fontFamily: 'var(--sans)', fontSize: 11, fontWeight: 500, letterSpacing: '0.3px', textTransform: 'uppercase' }}>
           <RefreshCw size={11} strokeWidth={2} />
           History
-          {(runCount ?? 0) > 0 && <span style={{ color: historyOpen ? '#0fa76e' : 'var(--fg4)' }}>· {runCount}</span>}
+          {(runCount ?? 0) > 0 && <span style={{ color: historyOpen ? 'var(--brand-deep)' : 'var(--fg4)' }}>· {runCount}</span>}
         </button>
       )}
 
       {/* Studio: outputs panel toggle */}
       {onOpenOutputs && (
         <button onClick={onOpenOutputs} title="Research outputs"
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 9999, border: `1px solid ${outputsOpen ? '#18E299' : 'var(--border-md)'}`, background: outputsOpen ? 'rgba(24,226,153,0.10)' : 'transparent', cursor: 'pointer', color: outputsOpen ? '#0fa76e' : 'var(--fg3)', fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 9999, border: `1px solid ${outputsOpen ? 'var(--brand)' : 'var(--border-md)'}`, background: outputsOpen ? 'var(--brand-light)' : 'transparent', cursor: 'pointer', color: outputsOpen ? 'var(--brand-deep)' : 'var(--fg3)', fontFamily: 'var(--sans)', fontSize: 11, fontWeight: 500, letterSpacing: '0.3px', textTransform: 'uppercase' }}>
           <Search size={11} strokeWidth={2} />
           Outputs
         </button>
@@ -387,7 +387,7 @@ export default function StatusBanner({
           {unreadCount > 0 && (
             <span style={{
               position: 'absolute', top: -4, right: -4,
-              background: '#E53535', color: '#fff',
+              background: 'var(--error)', color: '#fff',
               borderRadius: 9999, minWidth: 14, height: 14,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontFamily: 'var(--sans)', fontSize: 9, fontWeight: 700,
@@ -414,8 +414,8 @@ export default function StatusBanner({
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         {activityLabel && (
           <span style={{
-            fontFamily: 'var(--mono)', fontSize: 10,
-            textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--fg4)',
+            fontFamily: 'var(--sans)', fontSize: 11, fontWeight: 500,
+            textTransform: 'uppercase', letterSpacing: '0.4px', color: 'var(--fg4)',
           }}>
             {activityLabel}
           </span>

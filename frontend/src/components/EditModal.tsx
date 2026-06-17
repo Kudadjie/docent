@@ -178,7 +178,7 @@ const cancelBtnStyle: React.CSSProperties = {
 
 const saveBtnStyle: React.CSSProperties = {
   fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 600,
-  color: '#fff', background: '#0fa76e',
+  color: '#fff', background: '#3f8f54',
   border: 'none', borderRadius: 9999,
   padding: '6px 16px', cursor: 'pointer',
 };

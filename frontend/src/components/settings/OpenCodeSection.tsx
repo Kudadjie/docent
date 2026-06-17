@@ -31,7 +31,7 @@ export default function OpenCodeSection() {
     }
   }
 
-  const dotColor = running === true ? '#18E299' : running === false ? '#D45656' : '#999';
+  const dotColor = running === true ? '#5db872' : running === false ? '#D45656' : '#999';
 
   return (
     <div>

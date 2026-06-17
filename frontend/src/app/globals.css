@@ -1,133 +1,176 @@
 @import "tailwindcss";
 
-/* ── Design tokens ─────────────────────────────────────────────── */
+/* ─────────────────────────────────────────────────────────────────
+   Docent design system — Claude-led editorial (cream + coral + serif),
+   Airtable layout discipline (signature cards, 96px rhythm, no-hover).
+   Light is the default theme; dark is a derived warm-navy variant.
+   Tokens keep their historical names so component styles need no rename.
+   ───────────────────────────────────────────────────────────────── */
+
+/* ── Default theme = LIGHT (cool white canvas, ink chrome) ─────── */
+/* Primary/chrome accent is near-black INK (Airtable model). Coral is
+   NOT the brand accent — it survives only as --sig-coral on signature
+   callout cards, used scarcely. Repointing --brand to ink neutralises
+   every "accent" surface (nav, buttons, tabs) automatically. */
 :root {
-  /* ── Always dark ─────────────────────────────────────── */
-  --brand:        #18E299;
-  --brand-light:  #d4fae8;
-  --brand-deep:   #0fa76e;
-  --violet:       #8B5CF6;
-  --blue-hero:    #3B82F6;
-  --error:        #D45656;
-  --warning:      #C37D0D;
+  /* Brand accent = near-black ink (drives neutral chrome: nav, tabs, badges) */
+  --brand:        #181d26;
+  --brand-light:  #eef0f2;   /* neutral active-nav / soft fill */
+  --brand-deep:   #0d1218;   /* press / active */
 
-  --bg:           #0d0d0d;
-  --bg-subtle:    #111111;
-  --bg-card:      #141414;
-  --fg1:          #ededed;
-  --fg2:          #c0c0c0;
-  --fg3:          #a0a0a0;
-  --fg4:          #606060;
-  --gray100:      #1e1e1e;
-  --gray200:      #2a2a2a;
-  --border:       rgba(255,255,255,0.06);
-  --border-md:    rgba(255,255,255,0.10);
-  --logo-border:  rgba(255,255,255,0.22);
-  --row-hover:    #1a1a1a;
+  /* Primary ACTION buttons — dark shade of the logo green #18E299.
+     Separate from --brand so chrome stays neutral; green is reserved for CTAs. */
+  --cta:          #0a7d54;
+  --cta-deep:     #086a47;   /* press / active */
+  --cta-light:    rgba(10,125,84,0.12);
+  --on-cta:       #ffffff;
+  --violet:       #5db8a6;   /* teal accent (legacy name kept) */
+  --blue-hero:    #5db8a6;   /* accent (legacy name kept) */
+  --error:        #c64545;
+  --warning:      #d4a017;
 
-  --hero-grad:
-    radial-gradient(ellipse 700px 280px at 12% 0%, #18E2991c, transparent 60%),
-    radial-gradient(ellipse 540px 240px at 88% 20%, #3B82F618, transparent 60%),
-    radial-gradient(ellipse 460px 200px at 50% 80%, #8B5CF612, transparent 60%);
+  /* Surfaces — cool white */
+  --bg:           #ffffff;   /* white canvas */
+  --bg-subtle:    #f8fafc;   /* surface-soft — sidebar, soft bands */
+  --bg-card:      #ffffff;   /* elevated panels (separated by hairline) */
+  --fg1:          #181d26;   /* ink */
+  --fg2:          #333840;   /* body */
+  --fg3:          #41454d;   /* muted */
+  --fg4:          #767b84;   /* muted-soft */
+  --gray100:      #eef0f2;   /* fills / inline code */
+  --gray200:      #e0e2e6;   /* strong fill */
+  --border:       rgba(20,23,30,0.09);
+  --border-md:    rgba(20,23,30,0.14);
+  --logo-border:  rgba(20,23,30,0.18);
+  --row-hover:    #f6f8fa;
 
-  --amber-bg:        rgba(245,158,11,0.10);
-  --amber-bg-strong: rgba(245,158,11,0.18);
-  --amber-text:      #F5A623;
-  --amber-border:    rgba(245,158,11,0.45);
-  --red-bg:          rgba(212,86,86,0.12);
-  --red-text:        #F87171;
-  --code-bg:         #0a0a0a;
-  --code-border:     rgba(255,255,255,0.08);
-  --overlay:         rgba(0,0,0,0.55);
+  /* Editorial serif display + surface tokens */
+  --serif:        'Tiempos Headline','Cormorant Garamond','EB Garamond',Georgia,serif;
+  --surface-feature:      #f8fafc;
+  --surface-cream-strong: #f5e9d4;
+  --surface-dark:         #181d26;
+  --surface-dark-el:      #1d1f25;
+  --surface-dark-soft:    #21242c;
+  --on-dark:              #ffffff;
+  --on-dark-soft:         #9297a0;
+  --on-primary:           #ffffff;
 
-  --sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --mono: 'Geist Mono', 'SFMono-Regular', Consolas, ui-monospace, monospace;
+  /* Signature card fills — used ONLY on full-bleed callout cards */
+  --sig-coral:    #cc785c;
+  --sig-forest:   #0a2e0e;
+  --sig-cream:    #f5e9d4;
+  --sig-navy:     #181d26;
+  --teal:         #5db8a6;
+  --amber-accent: #e8a55a;
+  --success:      #5db872;
+  --link:         #1b61c9;
+
+  /* Hero is calm white — no atmospheric wash (Airtable principle) */
+  --hero-grad:    none;
+
+  --amber-bg:        rgba(232,165,90,0.12);
+  --amber-bg-strong: rgba(232,165,90,0.20);
+  --amber-text:      #B45309;
+  --amber-border:    rgba(232,165,90,0.42);
+  --red-bg:          rgba(198,69,69,0.10);
+  --red-text:        #c64545;
+  --code-bg:         #f6f8fa;
+  --code-border:     rgba(20,23,30,0.09);
+  --overlay:         rgba(20,23,30,0.40);
+
+  --sans: 'Schibsted Grotesk', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, ui-monospace, monospace;
 }
 
-/* ── System preference: light (fires before any JS, no flash for matching users) */
-@media (prefers-color-scheme: light) {
+/* ── Derived DARK variant (warm navy product surfaces) ─────────── */
+/* System preference (fires before JS, no flash for matching users) */
+@media (prefers-color-scheme: dark) {
   :root {
-    --bg:           #f8f9fa;
-    --bg-subtle:    #f0f2f5;
-    --bg-card:      #ffffff;
-    --fg1:          #0d1117;
-    --fg2:          #24292f;
-    --fg3:          #57606a;
-    --fg4:          #8c959f;
-    --gray100:      #eaeef2;
-    --gray200:      #d0d7de;
-    --border:       rgba(0,0,0,0.08);
-    --border-md:    rgba(0,0,0,0.13);
-    --logo-border:  rgba(0,0,0,0.18);
-    --row-hover:    #f3f6fa;
-    --overlay:      rgba(0,0,0,0.4);
-    --code-bg:      #f3f6fa;
-    --code-border:  rgba(0,0,0,0.10);
-    --amber-bg:        rgba(245,158,11,0.10);
-    --amber-bg-strong: rgba(245,158,11,0.18);
-    --amber-text:      #B45309;
-    --amber-border:    rgba(245,158,11,0.4);
-    --red-bg:          rgba(212,86,86,0.10);
-    --red-text:        #DC2626;
-    --hero-grad:
-      radial-gradient(ellipse 700px 280px at 12% 0%, #18E29940, transparent 60%),
-      radial-gradient(ellipse 540px 240px at 88% 20%, #3B82F62e, transparent 60%),
-      radial-gradient(ellipse 460px 200px at 50% 80%, #8B5CF624, transparent 60%);
+    --brand:        #ededed;   /* inverted primary: light fill on dark */
+    --brand-light:  rgba(255,255,255,0.08);
+    --brand-deep:   #d0d0d0;
+    --on-primary:   #181d26;   /* dark text on the light primary */
+    --bg:           #14171c;
+    --bg-subtle:    #181d26;
+    --bg-card:      #1d1f25;
+    --fg1:          #f4f6f8;
+    --fg2:          #d6d9dd;
+    --fg3:          #9297a0;
+    --fg4:          #6b7280;
+    --gray100:      #252830;
+    --gray200:      #30343d;
+    --border:       rgba(255,255,255,0.08);
+    --border-md:    rgba(255,255,255,0.13);
+    --logo-border:  rgba(255,255,255,0.20);
+    --row-hover:    #1d2027;
+    --surface-feature:      #1d1f25;
+    --surface-cream-strong: #2a2825;
+    --overlay:      rgba(0,0,0,0.6);
+    --code-bg:      #0f1115;
+    --code-border:  rgba(255,255,255,0.08);
+    --link:         #6ba5f5;
+    --amber-text:      #e8a55a;
+    --red-text:        #e08585;
+    --hero-grad:    none;
   }
 }
 
-/* ── Explicit stored preference — overrides system default (comes later = wins) */
-[data-theme="dark"] {
-  --bg:           #0d0d0d;
-  --bg-subtle:    #111111;
-  --bg-card:      #141414;
-  --fg1:          #ededed;
-  --fg2:          #c0c0c0;
-  --fg3:          #a0a0a0;
-  --fg4:          #606060;
-  --gray100:      #1e1e1e;
-  --gray200:      #2a2a2a;
-  --border:       rgba(255,255,255,0.06);
-  --border-md:    rgba(255,255,255,0.10);
-  --logo-border:  rgba(255,255,255,0.22);
-  --row-hover:    #1a1a1a;
-  --overlay:      rgba(0,0,0,0.55);
-  --code-bg:      #0a0a0a;
-  --code-border:  rgba(255,255,255,0.08);
-  --amber-text:   #F5A623;
-  --red-text:     #F87171;
-  --hero-grad:
-    radial-gradient(ellipse 700px 280px at 12% 0%, #18E2991c, transparent 60%),
-    radial-gradient(ellipse 540px 240px at 88% 20%, #3B82F618, transparent 60%),
-    radial-gradient(ellipse 460px 200px at 50% 80%, #8B5CF612, transparent 60%);
-}
+/* ── Explicit stored preference — wins (set by layout.tsx pre-paint) */
 [data-theme="light"] {
-  --bg:           #f8f9fa;
-  --bg-subtle:    #f0f2f5;
+  --brand:        #181d26;
+  --brand-light:  #eef0f2;
+  --brand-deep:   #0d1218;
+  --on-primary:   #ffffff;
+  --bg:           #ffffff;
+  --bg-subtle:    #f8fafc;
   --bg-card:      #ffffff;
-  --fg1:          #0d1117;
-  --fg2:          #24292f;
-  --fg3:          #57606a;
-  --fg4:          #8c959f;
-  --gray100:      #eaeef2;
-  --gray200:      #d0d7de;
-  --border:       rgba(0,0,0,0.08);
-  --border-md:    rgba(0,0,0,0.13);
-  --logo-border:  rgba(0,0,0,0.18);
-  --row-hover:    #f3f6fa;
-  --overlay:      rgba(0,0,0,0.4);
-  --code-bg:      #f3f6fa;
-  --code-border:  rgba(0,0,0,0.10);
-  --amber-bg:        rgba(245,158,11,0.10);
-  --amber-bg-strong: rgba(245,158,11,0.18);
+  --fg1:          #181d26;
+  --fg2:          #333840;
+  --fg3:          #41454d;
+  --fg4:          #767b84;
+  --gray100:      #eef0f2;
+  --gray200:      #e0e2e6;
+  --border:       rgba(20,23,30,0.09);
+  --border-md:    rgba(20,23,30,0.14);
+  --logo-border:  rgba(20,23,30,0.18);
+  --row-hover:    #f6f8fa;
+  --surface-feature:      #f8fafc;
+  --surface-cream-strong: #f5e9d4;
+  --overlay:      rgba(20,23,30,0.40);
+  --code-bg:      #f6f8fa;
+  --code-border:  rgba(20,23,30,0.09);
+  --link:         #1b61c9;
   --amber-text:      #B45309;
-  --amber-border:    rgba(245,158,11,0.4);
-  --red-bg:          rgba(212,86,86,0.10);
-  --red-text:        #DC2626;
-  --hero-grad:
-    radial-gradient(ellipse 700px 280px at 12% 0%, #18E29940, transparent 60%),
-    radial-gradient(ellipse 540px 240px at 88% 20%, #3B82F62e, transparent 60%),
-    radial-gradient(ellipse 460px 200px at 50% 80%, #8B5CF624, transparent 60%);
+  --red-text:        #c64545;
+  --hero-grad:    none;
+}
+[data-theme="dark"] {
+  --brand:        #ededed;
+  --brand-light:  rgba(255,255,255,0.08);
+  --brand-deep:   #d0d0d0;
+  --on-primary:   #181d26;
+  --bg:           #14171c;
+  --bg-subtle:    #181d26;
+  --bg-card:      #1d1f25;
+  --fg1:          #f4f6f8;
+  --fg2:          #d6d9dd;
+  --fg3:          #9297a0;
+  --fg4:          #6b7280;
+  --gray100:      #252830;
+  --gray200:      #30343d;
+  --border:       rgba(255,255,255,0.08);
+  --border-md:    rgba(255,255,255,0.13);
+  --logo-border:  rgba(255,255,255,0.20);
+  --row-hover:    #1d2027;
+  --surface-feature:      #1d1f25;
+  --surface-cream-strong: #2a2825;
+  --overlay:      rgba(0,0,0,0.6);
+  --code-bg:      #0f1115;
+  --code-border:  rgba(255,255,255,0.08);
+  --link:         #6ba5f5;
+  --amber-text:      #e8a55a;
+  --red-text:        #e08585;
+  --hero-grad:    none;
 }
 
 /* ── Animations ────────────────────────────────────────────────── */
@@ -140,12 +183,12 @@
   50%       { opacity: 0; }
 }
 @keyframes logo-dot-done {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(24,226,153,0); }
-  50%       { box-shadow: 0 0 0 5px rgba(24,226,153,0.3); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(204,120,92,0); }
+  50%       { box-shadow: 0 0 0 5px rgba(204,120,92,0.3); }
 }
 @keyframes pulse-high {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(212,86,86,0.4); }
-  50%       { box-shadow: 0 0 0 4px rgba(212,86,86,0); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(198,69,69,0.4); }
+  50%       { box-shadow: 0 0 0 4px rgba(198,69,69,0); }
 }
 @keyframes spin {
   to { transform: rotate(360deg); }
@@ -171,10 +214,18 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Editorial serif display utility — Copernicus/Tiempos substitute.
+   Use on h1/h2 hero + page headlines. Weight 500, negative tracking. */
+.serif-display {
+  font-family: var(--serif);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
 /* ── Scrollbar ─────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.2); border-radius: 4px; }
+::-webkit-scrollbar-thumb { background: rgba(140,135,125,0.28); border-radius: 4px; }
 
 /* ── Studio log animations ─────────────────────────────────────── */
 @keyframes log-pulse {
@@ -215,64 +266,46 @@ body {
 .md-preview pre { background: var(--gray100); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; margin: 0 0 8px; overflow-x: auto; }
 .md-preview pre code { background: none; border: none; padding: 0; font-size: 11px; }
 .md-preview blockquote { border-left: 3px solid var(--border-md); padding-left: 12px; color: var(--fg3); margin: 0 0 8px; }
-.md-preview a { color: #0fa76e; text-decoration: none; }
+.md-preview a { color: var(--brand-deep); text-decoration: none; }
 .md-preview strong { color: var(--fg1); font-weight: 600; }
 .md-preview hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
 
-/* ── Dashboard color tokens ─────────────────────────────────────── */
+/* ── Dashboard color tokens (archived page; kept for any shared refs) ── */
 :root {
-  --dash-card-bg:     #111111;
-  --dash-card-border: rgba(255,255,255,0.08);
-  --dash-divider:     rgba(255,255,255,0.06);
-  --dash-section:     #606060;
-  --dash-muted:       #707070;
-  --dash-row-hover:   rgba(255,255,255,0.025);
-  --heat-0: rgba(255,255,255,0.04);
-  --heat-1: rgba(24,226,153,0.22);
-  --heat-2: rgba(24,226,153,0.48);
-  --heat-3: #18E299;
-  --dash-grad: linear-gradient(135deg, rgba(24,226,153,0.07) 0%, rgba(139,92,246,0.04) 45%, transparent 75%);
+  --dash-card-bg:     var(--bg-card);
+  --dash-card-border: var(--border);
+  --dash-divider:     var(--border);
+  --dash-section:     var(--fg4);
+  --dash-muted:       var(--fg4);
+  --dash-row-hover:   var(--row-hover);
+  --heat-0: rgba(20,23,30,0.05);
+  --heat-1: rgba(93,184,114,0.30);
+  --heat-2: rgba(93,184,114,0.60);
+  --heat-3: #5db872;
+  --dash-grad: none;
 }
-@media (prefers-color-scheme: light) {
+@media (prefers-color-scheme: dark) {
   :root {
-    --dash-card-bg:     #ffffff;
-    --dash-card-border: rgba(0,0,0,0.06);
-    --dash-divider:     rgba(0,0,0,0.05);
-    --dash-section:     #888888;
-    --dash-muted:       #888888;
-    --dash-row-hover:   rgba(0,0,0,0.025);
-    --heat-0: rgba(0,0,0,0.05);
-    --heat-1: rgba(24,226,153,0.30);
-    --heat-2: rgba(24,226,153,0.60);
-    --heat-3: #0fa76e;
-    --dash-grad: linear-gradient(135deg, rgba(24,226,153,0.22) 0%, rgba(139,92,246,0.13) 45%, transparent 75%);
+    --heat-0: rgba(255,255,255,0.05);
+    --heat-1: rgba(93,184,114,0.30);
+    --heat-2: rgba(93,184,114,0.60);
+    --heat-3: #5db872;
+    --dash-grad: none;
   }
 }
-[data-theme="dark"] {
-  --dash-card-bg:     #111111;
-  --dash-card-border: rgba(255,255,255,0.08);
-  --dash-divider:     rgba(255,255,255,0.06);
-  --dash-section:     #606060;
-  --dash-muted:       #707070;
-  --dash-row-hover:   rgba(255,255,255,0.025);
-  --heat-0: rgba(255,255,255,0.04);
-  --heat-1: rgba(24,226,153,0.22);
-  --heat-2: rgba(24,226,153,0.48);
-  --heat-3: #18E299;
-  --dash-grad: linear-gradient(135deg, rgba(24,226,153,0.07) 0%, rgba(139,92,246,0.04) 45%, transparent 75%);
-}
 [data-theme="light"] {
-  --dash-card-bg:     #ffffff;
-  --dash-card-border: rgba(0,0,0,0.06);
-  --dash-divider:     rgba(0,0,0,0.05);
-  --dash-section:     #888888;
-  --dash-muted:       #888888;
-  --dash-row-hover:   rgba(0,0,0,0.025);
-  --heat-0: rgba(0,0,0,0.05);
-  --heat-1: rgba(24,226,153,0.30);
-  --heat-2: rgba(24,226,153,0.60);
-  --heat-3: #0fa76e;
-  --dash-grad: linear-gradient(135deg, rgba(24,226,153,0.22) 0%, rgba(139,92,246,0.13) 45%, transparent 75%);
+  --heat-0: rgba(20,23,30,0.05);
+  --heat-1: rgba(93,184,114,0.30);
+  --heat-2: rgba(93,184,114,0.60);
+  --heat-3: #5db872;
+  --dash-grad: none;
+}
+[data-theme="dark"] {
+  --heat-0: rgba(255,255,255,0.05);
+  --heat-1: rgba(93,184,114,0.30);
+  --heat-2: rgba(93,184,114,0.60);
+  --heat-3: #5db872;
+  --dash-grad: none;
 }
 
 /* Dashboard gradient + dot background — uses CSS variables, no JS needed */
@@ -282,7 +315,7 @@ body {
   background-size: 100% 100%, 24px 24px;
 }
 
-/* ── Dashboard ─────────────────────────────────────────────────── */
+/* ── Interaction utilities ─────────────────────────────────────── */
 .cta-link { transition: opacity 0.12s ease; }
 .cta-link:hover { opacity: 0.72; }
 .qa-row { transition: background 0.12s ease; }
@@ -307,16 +340,17 @@ body {
   background: var(--bg-card) !important;
   border: 1px solid var(--border-md) !important;
   border-radius: 12px !important;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.45) !important;
+  box-shadow: 0 20px 60px rgba(20,20,19,0.18) !important;
   font-family: var(--sans) !important;
   padding: 20px !important;
   min-width: 280px !important;
   max-width: 340px !important;
 }
 .driver-popover-title {
-  font-family: var(--sans) !important;
-  font-size: 14px !important;
-  font-weight: 600 !important;
+  font-family: var(--serif) !important;
+  font-size: 17px !important;
+  font-weight: 500 !important;
+  letter-spacing: -0.01em !important;
   color: var(--fg1) !important;
   margin-bottom: 6px !important;
 }
@@ -342,16 +376,16 @@ body {
   font-size: 13px !important;
   font-weight: 500 !important;
   padding: 5px 14px !important;
-  border-radius: 6px !important;
+  border-radius: 8px !important;
   cursor: pointer !important;
   line-height: 1.4 !important;
 }
 .driver-popover-next-btn {
-  background: #0fa76e !important;
+  background: var(--cta) !important;
   border: none !important;
   color: #fff !important;
 }
-.driver-popover-next-btn:hover { background: #0d9460 !important; }
+.driver-popover-next-btn:hover { background: var(--cta-deep) !important; }
 .driver-popover-prev-btn {
   background: transparent !important;
   border: 1px solid var(--border-md) !important;

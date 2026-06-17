@@ -331,7 +331,7 @@ function Alert({ type, children }: { type: 'error' | 'warn' | 'success'; childre
   const styles = {
     error: { bg: 'var(--red-bg)', color: 'var(--red-text)' },
     warn: { bg: 'var(--amber-bg)', color: 'var(--amber-text)' },
-    success: { bg: 'rgba(24,226,153,0.10)', color: 'var(--brand)' },
+    success: { bg: 'rgba(93,184,114,0.12)', color: '#3f8f54' },
   }[type];
   return (
     <div style={{
@@ -449,7 +449,7 @@ function PBHistoryDrawer({
           </div>
         ) : entries.map(e => {
           const active = e.id === activeId;
-          const dotColor = e.status === 'error' ? '#E53535' : '#18E299';
+          const dotColor = e.status === 'error' ? '#c64545' : '#5db872';
           return (
             <div key={e.id} style={{ position: 'relative', marginBottom: 4 }} className="pb-history-item">
               <button
@@ -458,8 +458,8 @@ function PBHistoryDrawer({
                   width: '100%', textAlign: 'left',
                   padding: '10px 12px', paddingRight: 32,
                   borderRadius: 8,
-                  border: `1px solid ${active ? '#18E29966' : 'transparent'}`,
-                  background: active ? '#18E29910' : 'transparent',
+                  border: `1px solid ${active ? 'var(--border-md)' : 'transparent'}`,
+                  background: active ? 'var(--brand-light)' : 'transparent',
                   cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 5,
                 }}
               >
@@ -799,13 +799,13 @@ export default function PluginBuilderPage() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
                 <div style={{
                   padding: 10, borderRadius: 10,
-                  background: 'rgba(24,226,153,0.12)',
+                  background: 'var(--brand-light)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
                   <Blocks size={20} style={{ color: 'var(--brand)' }} />
                 </div>
                 <div style={{ flex: 1 }}>
-                  <h1 style={{ fontFamily: 'var(--sans)', fontSize: 20, fontWeight: 600, color: 'var(--fg1)', margin: 0, letterSpacing: '-0.3px' }}>
+                  <h1 className="serif-display" style={{ fontFamily: 'var(--serif)', fontSize: 28, fontWeight: 500, color: 'var(--fg1)', margin: 0, letterSpacing: '-0.01em' }}>
                     Plugin Builder
                   </h1>
                   <p style={{ fontFamily: 'var(--sans)', fontSize: 13, color: 'var(--fg3)', margin: '2px 0 0' }}>

@@ -82,8 +82,8 @@ export default function WhatsNewToast() {
           gap: 8,
           padding: '14px 16px',
           borderRadius: 12,
-          border: '1px solid rgba(24,226,153,0.25)',
-          background: 'rgba(24,226,153,0.08)',
+          border: '1px solid rgba(93,184,114,0.25)',
+          background: 'rgba(93,184,114,0.08)',
           backdropFilter: 'blur(8px)',
           boxShadow: '0 4px 16px rgba(0,0,0,0.14)',
           maxWidth: 360,
@@ -91,7 +91,7 @@ export default function WhatsNewToast() {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ color: '#0fa76e', display: 'flex', flexShrink: 0 }}>
+          <span style={{ color: '#3f8f54', display: 'flex', flexShrink: 0 }}>
             <Sparkles size={15} strokeWidth={1.8} />
           </span>
           <span
@@ -146,7 +146,7 @@ export default function WhatsNewToast() {
                 fontFamily: 'var(--sans)',
                 fontSize: 12,
                 fontWeight: 500,
-                color: '#0fa76e',
+                color: '#3f8f54',
                 background: 'none',
                 border: 'none',
                 cursor: 'pointer',
@@ -207,7 +207,7 @@ export default function WhatsNewToast() {
           >
             {/* Header */}
             <div style={{ display: 'flex', alignItems: 'center', marginBottom: 20 }}>
-              <span style={{ color: '#0fa76e', marginRight: 10, display: 'flex' }}>
+              <span style={{ color: '#3f8f54', marginRight: 10, display: 'flex' }}>
                 <Sparkles size={17} strokeWidth={1.8} />
               </span>
               <span
@@ -298,9 +298,9 @@ export default function WhatsNewToast() {
                   fontFamily: 'var(--sans)',
                   fontSize: 12.5,
                   fontWeight: 600,
-                  color: '#0fa76e',
+                  color: '#3f8f54',
                   background: 'none',
-                  border: '1px solid rgba(24,226,153,0.35)',
+                  border: '1px solid rgba(93,184,114,0.35)',
                   borderRadius: 6,
                   cursor: 'pointer',
                   padding: '6px 14px',

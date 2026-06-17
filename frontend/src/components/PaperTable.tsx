@@ -84,10 +84,10 @@ function PaperRow({
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
       style={{
-        borderTop: dropIndicator === 'before' ? '2px solid #0fa76e' : undefined,
-        borderBottom: dropIndicator === 'after' ? '2px solid #0fa76e' : '1px solid var(--border)',
+        borderTop: dropIndicator === 'before' ? '2px solid var(--brand-deep)' : undefined,
+        borderBottom: dropIndicator === 'after' ? '2px solid var(--brand-deep)' : '1px solid var(--border)',
         background: highlighted
-          ? 'rgba(24,226,153,0.08)'
+          ? 'var(--brand-light)'
           : hov ? 'var(--row-hover)' : 'transparent',
         opacity: isDragging ? 0.35 : 1,
         transition: 'background 0.3s, opacity 0.15s',
@@ -311,7 +311,7 @@ function PaperRow({
             <IconBtn
               icon={<Play size={14} strokeWidth={1.5} />}
               label="Start reading"
-              color="#0fa76e"
+              color="#181d26"
               onClick={() => onStart(entry.id)}
             />
           )}
@@ -319,7 +319,7 @@ function PaperRow({
             <IconBtn
               icon={<CheckCircle size={15} strokeWidth={1.5} />}
               label="Mark done"
-              color="#0fa76e"
+              color="#181d26"
               onClick={() => onMarkDone(entry.id)}
             />
           )}

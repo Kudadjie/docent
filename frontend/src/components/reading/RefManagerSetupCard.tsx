@@ -38,14 +38,14 @@ export default function RefManagerSetupCard({ onChoose, busy }: Props) {
           width: 48,
           height: 48,
           borderRadius: 14,
-          background: 'rgba(24,226,153,0.1)',
-          border: '1px solid rgba(24,226,153,0.25)',
+          background: 'rgba(93,184,114,0.1)',
+          border: '1px solid rgba(93,184,114,0.25)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           margin: '0 auto 20px',
         }}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#18E299" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5db872" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
             <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
           </svg>
@@ -93,8 +93,8 @@ export default function RefManagerSetupCard({ onChoose, busy }: Props) {
               }}
               onMouseEnter={e => {
                 if (!busy) {
-                  (e.currentTarget as HTMLButtonElement).style.borderColor = '#18E299';
-                  (e.currentTarget as HTMLButtonElement).style.background = 'rgba(24,226,153,0.04)';
+                  (e.currentTarget as HTMLButtonElement).style.borderColor = '#5db872';
+                  (e.currentTarget as HTMLButtonElement).style.background = 'rgba(93,184,114,0.04)';
                 }
               }}
               onMouseLeave={e => {
@@ -131,7 +131,7 @@ export default function RefManagerSetupCard({ onChoose, busy }: Props) {
           margin: '20px 0 0',
         }}>
           Need help? See the{' '}
-          <a href="/docs" style={{ color: 'var(--accent, #18E299)', textDecoration: 'underline' }}>
+          <a href="/docs" style={{ color: 'var(--accent, #5db872)', textDecoration: 'underline' }}>
             Reading Queue guide
           </a>
           {' '}for setup instructions.

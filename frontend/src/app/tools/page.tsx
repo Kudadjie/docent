@@ -12,8 +12,8 @@ import {
   type ResolvedField,
 } from './_schema-form';
 
-const BRAND = '#18E299';
-const BRAND_DEEP = '#0fa76e';
+const BRAND = '#5db872';
+const BRAND_DEEP = '#3f8f54';
 const INDIGO = '#6366f1';
 const RED = '#D45656';
 
@@ -219,8 +219,8 @@ export default function ToolsPage() {
         {/* Header */}
         <div style={{ padding: '20px 28px 16px', borderBottom: '1px solid var(--border)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-            <Wrench size={16} strokeWidth={1.5} color={BRAND_DEEP} />
-            <h1 style={{ fontFamily: 'var(--sans)', fontSize: 18, fontWeight: 600, letterSpacing: '-0.3px', color: 'var(--fg1)', margin: 0 }}>
+            <Wrench size={20} strokeWidth={1.5} style={{ color: 'var(--fg2)' }} />
+            <h1 className="serif-display" style={{ fontFamily: 'var(--serif)', fontSize: 26, fontWeight: 500, letterSpacing: '-0.01em', color: 'var(--fg1)', margin: 0 }}>
               Tools
             </h1>
           </div>
@@ -519,7 +519,7 @@ function ResultPanel({ result, onConfirm, running }: { result: InvokeResult; onC
   const hasShapes = ok && Array.isArray(result.shapes) && result.shapes.length > 0;
 
   const tone = confirmation ? '#C97B00' : ok ? BRAND_DEEP : RED;
-  const bg = confirmation ? 'rgba(201,123,0,0.07)' : ok ? 'rgba(24,226,153,0.06)' : 'rgba(212,86,86,0.05)';
+  const bg = confirmation ? 'rgba(201,123,0,0.07)' : ok ? 'rgba(93,184,114,0.08)' : 'rgba(212,86,86,0.05)';
 
   return (
     <div style={{ marginTop: 24, border: `1px solid ${tone}40`, borderRadius: 10, overflow: 'hidden', background: bg }}>
@@ -696,7 +696,7 @@ const MSG_COLOR: Record<string, string> = {
 };
 const MSG_BG: Record<string, string> = {
   info: 'var(--code-bg)',
-  success: 'rgba(24,226,153,0.09)',
+  success: 'rgba(93,184,114,0.10)',
   warning: 'rgba(201,123,0,0.09)',
   error: 'rgba(212,86,86,0.07)',
 };

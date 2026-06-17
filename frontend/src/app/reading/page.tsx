@@ -444,8 +444,8 @@ export default function ReadingPage() {
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 12pt; color: #1a1a1a; background: #fff; padding: 48px; max-width: 780px; margin: 0 auto; }
-  header { border-bottom: 2px solid #18E299; padding-bottom: 16px; margin-bottom: 36px; }
-  .logo { font-size: 22pt; font-weight: 700; letter-spacing: -0.5px; color: #0fa76e; }
+  header { border-bottom: 2px solid #181d26; padding-bottom: 16px; margin-bottom: 36px; }
+  .logo { font-family: Georgia, 'Times New Roman', serif; font-size: 24pt; font-weight: 600; letter-spacing: -0.5px; color: #181d26; }
   .header-sub { font-size: 10pt; color: #888; margin-top: 4px; }
   .summary { display: flex; gap: 24px; margin-bottom: 36px; }
   .summary-item { font-size: 10pt; color: #555; }
@@ -552,14 +552,14 @@ ${sectionsHtml}
               flexShrink: 0,
             }}
           >
-            <span style={{ fontFamily: 'var(--sans)', fontSize: 12, color: '#D45656' }}>
+            <span style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--error)' }}>
               Something doesn&apos;t seem right - the server may be unavailable.
             </span>
             <button
               onClick={() => { setServerError(false); refresh(); }}
               style={{
                 fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500,
-                color: '#D45656', background: 'transparent', border: '1px solid rgba(212,86,86,0.35)',
+                color: 'var(--error)', background: 'transparent', border: '1px solid rgba(212,86,86,0.35)',
                 borderRadius: 6, padding: '3px 10px', cursor: 'pointer', whiteSpace: 'nowrap',
               }}
             >
@@ -587,8 +587,8 @@ ${sectionsHtml}
             background: 'rgba(195,125,13,0.08)', borderBottom: '1px solid rgba(195,125,13,0.2)',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <AlertTriangle size={13} strokeWidth={2} color="#C37D0D" />
-              <span style={{ fontFamily: 'var(--sans)', fontSize: 12, color: '#C37D0D' }}>
+              <AlertTriangle size={13} strokeWidth={2} style={{ color: 'var(--amber-text)' }} />
+              <span style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--amber-text)' }}>
                 {flaggedEntries.length} {flaggedEntries.length === 1 ? 'entry is' : 'entries are'} no longer in your {refManagerName} collection.
               </span>
             </div>
@@ -596,7 +596,7 @@ ${sectionsHtml}
               onClick={() => setFlaggedModal(true)}
               style={{
                 fontFamily: 'var(--sans)', fontSize: 12, fontWeight: 500,
-                color: '#C37D0D', background: 'transparent',
+                color: 'var(--amber-text)', background: 'transparent',
                 border: '1px solid rgba(195,125,13,0.35)',
                 borderRadius: 6, padding: '3px 10px', cursor: 'pointer', whiteSpace: 'nowrap',
               }}
@@ -614,7 +614,7 @@ ${sectionsHtml}
             background: 'rgba(59,130,246,0.06)', borderBottom: '1px solid rgba(59,130,246,0.15)',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Info size={13} strokeWidth={2} color="#3B82F6" style={{ flexShrink: 0 }} />
+              <Info size={13} strokeWidth={2} color="#5db8a6" style={{ flexShrink: 0 }} />
               <span style={{ fontFamily: 'var(--sans)', fontSize: 12, color: 'var(--fg1)' }}>
                 <strong style={{ fontWeight: 500 }}>
                   {parentFlaggedEntries.length} {parentFlaggedEntries.length === 1 ? 'entry' : 'entries'}
@@ -661,8 +661,8 @@ ${sectionsHtml}
           >
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-                <BookOpen size={16} strokeWidth={1.5} color="#0fa76e" />
-                <h1 style={{ fontFamily: 'var(--sans)', fontSize: 18, fontWeight: 600, letterSpacing: '-0.3px', color: 'var(--fg1)', margin: 0 }}>
+                <BookOpen size={20} strokeWidth={1.5} style={{ color: 'var(--fg2)' }} />
+                <h1 className="serif-display" style={{ fontFamily: 'var(--serif)', fontSize: 30, fontWeight: 500, letterSpacing: '-0.01em', color: 'var(--fg1)', margin: 0, lineHeight: 1.1 }}>
                   Reading
                 </h1>
               </div>
@@ -678,7 +678,7 @@ ${sectionsHtml}
             {/* How to add button */}
             <button
               onClick={() => setShowInfo(true)}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 14px', borderRadius: 9999, border: '1px solid #8B5CF6', background: '#8B5CF6', color: '#ffffff', fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap' }}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, border: '1px solid var(--border-md)', background: 'var(--bg-card)', color: 'var(--fg1)', fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap' }}
             >
               <HelpCircle size={14} strokeWidth={1.5} />
               How to add?
@@ -703,7 +703,7 @@ ${sectionsHtml}
                 id="docent-sync-btn"
                 onClick={handleSync}
                 disabled={busy === 'sync'}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '4px 14px', borderRadius: 9999, border: '1px solid #18E299', background: '#18E299', color: '#0a1f15', fontFamily: 'var(--sans)', cursor: busy === 'sync' ? 'wait' : 'pointer', whiteSpace: 'nowrap' }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '5px 14px', borderRadius: 8, border: '1px solid var(--cta)', background: 'var(--cta)', color: 'var(--on-cta)', fontFamily: 'var(--sans)', cursor: busy === 'sync' ? 'wait' : 'pointer', whiteSpace: 'nowrap' }}
               >
                 <RefreshCw
                   size={13}
@@ -777,8 +777,8 @@ ${sectionsHtml}
                         style={{
                           display: 'block', width: '100%', padding: '8px 14px',
                           textAlign: 'left', border: 'none',
-                          background: sortBy === value ? 'rgba(24,226,153,0.08)' : 'transparent',
-                          color: sortBy === value ? '#0fa76e' : 'var(--fg2)',
+                          background: sortBy === value ? 'var(--brand-light)' : 'transparent',
+                          color: sortBy === value ? 'var(--brand-deep)' : 'var(--fg2)',
                           fontFamily: 'var(--sans)', fontSize: 13,
                           fontWeight: sortBy === value ? 500 : 400, cursor: 'pointer',
                         }}
@@ -813,8 +813,8 @@ ${sectionsHtml}
                         style={{
                           display: 'block', width: '100%', padding: '7px 14px',
                           textAlign: 'left', border: 'none',
-                          background: filter === value ? 'rgba(24,226,153,0.08)' : 'transparent',
-                          color: filter === value ? '#0fa76e' : 'var(--fg2)',
+                          background: filter === value ? 'var(--brand-light)' : 'transparent',
+                          color: filter === value ? 'var(--brand-deep)' : 'var(--fg2)',
                           fontFamily: 'var(--sans)', fontSize: 13,
                           fontWeight: filter === value ? 500 : 400, cursor: 'pointer',
                         }}
@@ -848,23 +848,23 @@ ${sectionsHtml}
                             display: 'flex', alignItems: 'center', gap: 8,
                             width: '100%', padding: '7px 14px',
                             textAlign: 'left', border: 'none',
-                            background: active ? 'rgba(24,226,153,0.08)' : 'transparent',
-                            color: active ? '#0fa76e' : 'var(--fg2)',
+                            background: active ? 'var(--brand-light)' : 'transparent',
+                            color: active ? 'var(--brand-deep)' : 'var(--fg2)',
                             fontFamily: 'var(--sans)', fontSize: 13,
                             fontWeight: active ? 500 : 400, cursor: 'pointer',
                           }}
                         >
                           <span style={{
                             width: 14, height: 14, borderRadius: 3, flexShrink: 0,
-                            border: `1.5px solid ${active ? '#18E299' : 'var(--border-md)'}`,
-                            background: active ? '#18E299' : 'transparent',
+                            border: `1.5px solid ${active ? 'var(--brand)' : 'var(--border-md)'}`,
+                            background: active ? 'var(--brand)' : 'transparent',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                           }}>
-                            {active && <span style={{ width: 6, height: 6, borderRadius: 1, background: '#0a1f15' }} />}
+                            {active && <span style={{ width: 6, height: 6, borderRadius: 1, background: 'var(--on-primary)' }} />}
                           </span>
                           {label}
                           {count !== undefined && count > 0 && (
-                            <span style={{ marginLeft: 'auto', fontFamily: 'var(--mono)', fontSize: 10, color: '#C37D0D' }}>{count}</span>
+                            <span style={{ marginLeft: 'auto', fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--amber-text)' }}>{count}</span>
                           )}
                         </button>
                       );
@@ -902,8 +902,8 @@ ${sectionsHtml}
                   style={{
                     display: 'inline-flex', alignItems: 'center', gap: 6,
                     padding: '8px 14px', border: 'none',
-                    borderBottom: isActive ? '2px solid #18E299' : '2px solid transparent',
-                    background: isActive ? 'rgba(24,226,153,0.06)' : 'transparent',
+                    borderBottom: isActive ? '2px solid var(--brand)' : '2px solid transparent',
+                    background: isActive ? 'var(--brand-light)' : 'transparent',
                     borderRadius: '6px 6px 0 0',
                     fontFamily: 'var(--sans)', fontSize: 13,
                     fontWeight: isActive ? 500 : 400,
@@ -914,8 +914,8 @@ ${sectionsHtml}
                   {label}
                   <span style={{
                     fontFamily: 'var(--mono)', fontSize: 10, padding: '1px 6px', borderRadius: 9999,
-                    background: isActive ? '#18E2991c' : 'transparent',
-                    color: isActive ? '#0fa76e' : 'var(--fg4)',
+                    background: isActive ? 'var(--brand-light)' : 'transparent',
+                    color: isActive ? 'var(--brand-deep)' : 'var(--fg4)',
                     transition: 'all 0.12s',
                   }}>
                     {count}
