@@ -11,6 +11,10 @@ wheels/
 
 # Virtual environments
 .venv
+.venv-wsl
+
+# Local test-run artifacts
+test-runs/
 
 # Local agent / Claude Code state
 .claude/

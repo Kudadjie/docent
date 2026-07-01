@@ -45,15 +45,19 @@ jobs:
       - name: Build UI
         run: python scripts/build_ui.py
 
+      # --all-extras: audit and test the full dependency surface, not just core.
+      - name: Install dependencies
+        run: uv sync --all-extras
+
       - name: Audit dependencies
         # CVE-2026-42203/42208/42271 affect litellm's proxy/server — Docent uses
         # litellm for outbound API calls only. Suppressed until a stable fix lands.
         # PYSEC-2026-196 is in pip itself (the build toolchain), not a Docent
         # runtime dependency — it is never shipped in the wheel. Suppressed.
-        run: uv run pip-audit --ignore-vuln CVE-2026-42203 --ignore-vuln CVE-2026-42208 --ignore-vuln CVE-2026-42271 --ignore-vuln PYSEC-2026-196
+        run: uv run --all-extras pip-audit --ignore-vuln CVE-2026-42203 --ignore-vuln CVE-2026-42208 --ignore-vuln CVE-2026-42271 --ignore-vuln PYSEC-2026-196
 
       - name: Lint
-        run: uv run ruff check src/ tests/
+        run: uv run --all-extras ruff check src/ tests/
 
       - name: Test
         env:
@@ -61,7 +65,7 @@ jobs:
           PYTHONUNBUFFERED: "1"
           DOCENT_NO_INTERACTIVE: "1"
         run: |
-          uv run python -u -m pytest \
+          uv run --all-extras python -u -m pytest \
             -m "not integration and not eval" \
             --timeout=30 \
             --tb=short \
