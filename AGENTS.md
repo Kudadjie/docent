@@ -9,7 +9,7 @@ It is not a feature list — read the individual tool descriptions for that.
 
 **Rule 1 — Tool names are `{tool}__{action}` with hyphens replaced by underscores.**
 Example: the `sync-from-mendeley` action on the `reading` tool is `reading__sync_from_mendeley`.
-All 19 tools follow this pattern; there are no exceptions.
+All tools follow this pattern; there are no exceptions.
 
 **Rule 2 — Every result is JSON. Generator actions prepend human-readable progress lines.**
 Sync actions return a single JSON object. Generator actions (e.g. `reading__sync_from_mendeley`)
@@ -20,6 +20,21 @@ Always parse the last JSON block — discard the progress prefix.
 Inputs are validated via Pydantic before the action runs. A missing required field returns
 an error string, not a `{"ok": false}` result. Check the `inputSchema` of each tool before
 calling to know which fields are required.
+
+**Rule 4 — Long-running studio actions run as background jobs. Poll; don't wait.**
+`studio__deep_research`, `studio__lit`, `studio__review`, and `studio__to_notebook`
+(with any backend except `free`) return immediately with
+`{"async": true, "job_id": "job-...", ...}` instead of running inline — their
+pipelines take minutes and would exceed the tool-call timeout. On receiving that
+payload:
+1. Tell the user the job is running.
+2. Poll `jobs__status` with the id every 30–60 seconds until `state` is `done`
+   (or `failed` / `cancelled` / `interrupted`).
+3. Call `jobs__result` to fetch the output. `jobs__cancel` stops a run;
+   `jobs__list` shows recent jobs.
+Jobs run inside the Docent server process — if it exits mid-run the job is
+marked `interrupted`; rerun the original action. The `free` backend still runs
+inline and returns its synthesis-offer flow directly.
 
 ---
 

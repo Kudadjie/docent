@@ -341,21 +341,49 @@ A `_blocked_connect` socket guard in `conftest.py` raises `OSError` if a unit te
 
 ---
 
+## Layer 13: Background Jobs (`core/jobs.py`)
+
+Submit → poll for long-running actions (ADR-006). `JobManager` runs any
+registered action on a daemon thread (the stack is sync generators — threads
+match the fan-out primitive and avoid asyncio collisions with FastAPI's loop).
+
+- **Admission:** `BoundedSemaphore(MAX_CONCURRENT=2)` — excess jobs sit `queued`.
+- **Persistence:** one JSON record per job in `~/.docent/data/jobs/`; last 50
+  kept; records left `queued`/`running` by a dead process are marked
+  `interrupted` on the next startup scan.
+- **Cancellation:** cooperative — honoured before start and between
+  ProgressEvents; a blocking single-shot action finishes before the cancel
+  lands.
+- **Surfaces:** `jobs` tool (`status`/`result`/`cancel`/`list`) exists on CLI,
+  MCP, and the web form page automatically via the tool contract;
+  `ui_routes/jobs.py` adds `GET /api/jobs[/{id}]` + `POST /api/jobs/{id}/cancel`
+  for UI polling.
+- **MCP async-by-default:** `mcp_server._ASYNC_ACTIONS` routes
+  studio `deep-research` / `lit` / `review` / `to-notebook` (backend ≠ `free`)
+  to `JobManager.submit` and returns `{"async": true, "job_id": ...}` with
+  polling instructions.
+
+---
+
 ## Studio Backend Matrix
 
 | Backend | What it does | Via MCP? | Via terminal? | Key required |
 |---------|-------------|----------|---------------|--------------|
-| `free` | Tavily + Semantic Scholar aggregation; YOU synthesise | ✓ | ✓ | Tavily (optional, falls back to DDG) |
-| `docent` | 6-stage AI pipeline via OpenCode | ✗ (timeout) | ✓ | Provider API key |
-| `feynman` | Full Feynman CLI deep research | ✗ (timeout) | ✓ | Feynman credits |
-| `groq` | LiteLLM → Groq | ✗ (timeout) | ✓ | `GROQ_API_KEY` |
-| `gemini` | LiteLLM → Gemini | ✗ (timeout) | ✓ | `GEMINI_API_KEY` |
-| `openrouter` | LiteLLM → OpenRouter | ✗ (timeout) | ✓ | `OPENROUTER_API_KEY` |
-| `anthropic` | LiteLLM → Anthropic | ✗ (timeout) | ✓ | `ANTHROPIC_API_KEY` |
-| `openai` | LiteLLM → OpenAI | ✗ (timeout) | ✓ | `OPENAI_API_KEY` |
-| `ollama` | LiteLLM → local Ollama | ✗ (timeout) | ✓ | None |
-| `lm_studio` | LiteLLM → LM Studio | ✗ (timeout) | ✓ | None |
-| `local` | LiteLLM → custom base URL | ✗ (timeout) | ✓ | None |
+| `free` | Tavily + Semantic Scholar aggregation; YOU synthesise | ✓ (inline) | ✓ | Tavily (optional, falls back to DDG) |
+| `docent` | 6-stage AI pipeline via OpenCode | ✓ (background job) | ✓ | Provider API key |
+| `feynman` | Full Feynman CLI deep research | ✓ (background job) | ✓ | Feynman credits |
+| `groq` | LiteLLM → Groq | ✓ (background job) | ✓ | `GROQ_API_KEY` |
+| `gemini` | LiteLLM → Gemini | ✓ (background job) | ✓ | `GEMINI_API_KEY` |
+| `openrouter` | LiteLLM → OpenRouter | ✓ (background job) | ✓ | `OPENROUTER_API_KEY` |
+| `anthropic` | LiteLLM → Anthropic | ✓ (background job) | ✓ | `ANTHROPIC_API_KEY` |
+| `openai` | LiteLLM → OpenAI | ✓ (background job) | ✓ | `OPENAI_API_KEY` |
+| `ollama` | LiteLLM → local Ollama | ✓ (background job) | ✓ | None |
+| `lm_studio` | LiteLLM → LM Studio | ✓ (background job) | ✓ | None |
+| `local` | LiteLLM → custom base URL | ✓ (background job) | ✓ | None |
 
-**Via MCP means**: a single tool call completes before the MCP connection times out. Only `free` reliably does this; all AI backends run a multi-minute pipeline. For AI backends, instruct users to run `docent studio <action> --backend <name> --topic "..."` in their terminal instead.
+**Via MCP:** `free` runs inline (fast, drives the synthesis-offer UX). All AI
+backends are submitted as background jobs — the MCP call returns a job id and
+the agent polls `jobs__status` / `jobs__result` (Layer 13). The old guidance to
+run AI backends in a terminal instead is obsolete, though the terminal path
+still works and streams progress live.
 

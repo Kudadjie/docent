@@ -449,6 +449,35 @@ Or via `DOCENT_RESEARCH__TAVILY_API_KEY` env var.
 
 ---
 
+## 6a. Background Jobs
+
+Long studio pipelines can run as background jobs: submit, keep working, poll
+for the result. Over MCP this is automatic — `deep-research`, `lit`, `review`,
+and `to-notebook` (any backend except `free`) return a job id immediately
+instead of blocking until the tool-call timeout kills them.
+
+| Command | Description |
+|---------|-------------|
+| `docent jobs status --id <job-id>` | State + recent progress events for one job |
+| `docent jobs result --id <job-id>` | Final output of a finished job |
+| `docent jobs cancel --id <job-id>` | Request cancellation (queued jobs stop before starting; running jobs stop at their next progress event) |
+| `docent jobs list` | Recent jobs, newest first |
+| `docent jobs list --limit 50` | Show more history |
+
+Job states: `queued → running → done` (or `failed` / `cancelled`). A job whose
+server process exited mid-run shows as `interrupted` — rerun the original
+action.
+
+Details:
+- At most **2 jobs execute concurrently**; extra submissions wait in `queued`.
+- The **last 50 job records are kept** (`~/.docent/data/jobs/`); older ones are
+  pruned automatically.
+- The web UI can poll the same data at `GET /api/jobs` and `GET /api/jobs/{id}`.
+- Jobs live inside the serving Docent process (`docent serve` or `docent ui`).
+  For multi-hour research runs prefer `docent ui`, which stays up.
+
+---
+
 ## 7. Plugin System
 
 Drop a `.py` file (or a Python package folder) into `~/.docent/plugins/` and Docent auto-discovers it on next run. Each plugin registers its own `@register_tool` class and gets its own MCP tools automatically.

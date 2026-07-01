@@ -10,6 +10,7 @@ alternatives. One file per decision, numbered in order.
 | [003](003-prompts-as-first-class-code.md) | Prompts are first-class code — registry + eval hash tripwire | 2026-05-30 |
 | [004](004-queue-schema-v2-reference-id.md) | Queue schema v2 — manager-neutral field names + auto-migration | 2026-05-31 |
 | [005](005-dependency-extras-split.md) | Heavy dependencies move to opt-in extras | 2026-07-01 |
+| [006](006-jobmanager-submit-poll.md) | Background JobManager — submit → poll for long-running actions | 2026-07-01 |
 
 ## Practice
 

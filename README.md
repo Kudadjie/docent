@@ -177,6 +177,9 @@ The `docent studio` tool runs AI-powered deep research, literature reviews, and 
 | `docent studio search-papers "query"` | Search alphaXiv for academic papers |
 | `docent studio get-paper "arxiv-id"` | AI-generated overview for a paper |
 | `docent studio tavily-usage` | This month's Tavily API request usage |
+| `docent jobs status --id <id>` | Poll a background research job |
+| `docent jobs result --id <id>` | Fetch a finished job's output |
+| `docent jobs cancel --id <id>` / `docent jobs list` | Cancel / list background jobs |
 | `docent studio config-show` | Show research settings |
 | `docent studio config-set --key <k> --value <v>` | Set config (e.g. `tavily_api_key`, `alphaxiv_api_key`) |
 
@@ -189,6 +192,8 @@ docent studio config-set --key tavily_api_key --value "tvly-..."
 ## 🔌 MCP — Use Docent from Claude Code
 
 `docent serve` starts an MCP server over stdio, exposing every action as an MCP tool. Claude Code can call your reading queue directly — no terminal needed.
+
+Long research pipelines (`deep-research`, `lit`, `review`, `to-notebook` on any AI backend) run as **background jobs** over MCP: the call returns a job id immediately and the agent polls `jobs__status` / fetches `jobs__result` — no more tool-call timeouts. See [`AGENTS.md`](AGENTS.md) for the calling contract.
 
 See [`docs/cli.md`](docs/cli.md) for the full setup guide and `.mcp.json` template.
 

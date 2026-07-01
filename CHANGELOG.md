@@ -19,6 +19,15 @@ subsection with 2–5 user-facing highlights — those are what the banner shows
 
 ## [Unreleased]
 
+### Added
+- **Background jobs — long research runs no longer time out over MCP.** Studio's
+  `deep-research`, `lit`, `review`, and `to-notebook` (any backend except
+  `free`) now start as background jobs when called via MCP and return a job id
+  immediately; agents poll `jobs__status` and fetch `jobs__result`. New
+  `docent jobs status|result|cancel|list` commands and `/api/jobs` endpoints
+  expose the same jobs on the CLI and web UI. At most 2 jobs run concurrently;
+  the last 50 records are kept under `~/.docent/data/jobs/`.
+
 ### Changed
 - **⚠ Lighter default install — heavy dependencies moved to extras.**
   `pip install docent-cli` now installs only the core (reading queue, web UI,

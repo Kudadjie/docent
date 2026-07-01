@@ -134,6 +134,57 @@ def build_mcp_tools() -> list[types.Tool]:
 # Re-exported from core.invoke so callers that imported _serialize from here keep working.
 from docent.core.invoke import serialize_result as _serialize  # noqa: F401
 
+# ---------------------------------------------------------------------------
+# Async-by-default routing for long-running actions (ADR-006)
+# ---------------------------------------------------------------------------
+# These (tool, action) pairs run multi-minute pipelines that cannot complete
+# inside an MCP tool-call timeout. Over MCP they are submitted as background
+# jobs and the caller polls jobs__status / jobs__result instead. The `free`
+# backend is the exception — it is aggregation-only and fast enough to run
+# inline (and its inline flow drives the synthesis-offer UX).
+
+_ASYNC_ACTIONS: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("studio", "deep-research"),
+        ("studio", "lit"),
+        ("studio", "review"),
+        ("studio", "to-notebook"),
+    }
+)
+
+
+def _should_run_async(tool_name: str, action_cli_name: str, arguments: dict[str, Any]) -> bool:
+    if (tool_name, action_cli_name) not in _ASYNC_ACTIONS:
+        return False
+    backend = str(arguments.get("backend") or "").strip().lower()
+    return backend != "free"
+
+
+def _submit_async_job(tool_name: str, action_cli_name: str, arguments: dict[str, Any]) -> str:
+    from docent.core.jobs import get_job_manager
+
+    job = get_job_manager().submit(tool_name, action_cli_name, arguments, via_mcp=True)
+    return json.dumps(
+        {
+            "ok": True,
+            "async": True,
+            "job_id": job.id,
+            "state": job.state,
+            "message": (
+                f"'{tool_name} {action_cli_name}' runs a long pipeline, so it was "
+                f"started as background job {job.id}. Poll jobs__status with "
+                f"id='{job.id}' every 30-60 seconds; when state is 'done', call "
+                "jobs__result to fetch the output. Tell the user the job is running "
+                "and roughly how to check on it."
+            ),
+            "note": (
+                "The job runs inside this Docent server process — if the server "
+                "exits before completion the job is marked 'interrupted'."
+            ),
+        },
+        indent=2,
+    )
+
 
 def _confirmation_payload(exc: Exception) -> str:
     return json.dumps(
@@ -163,6 +214,9 @@ def invoke_action(
     """
     from docent.core.exceptions import ConfirmationRequired
     from docent.core.invoke import make_context
+
+    if _should_run_async(tool_name, action_cli_name, arguments):
+        return _submit_async_job(tool_name, action_cli_name, arguments)
 
     mcp_context = make_context(via_mcp=True)
     try:
@@ -302,6 +356,10 @@ def build_mcp_server() -> Server:
 
         from docent.core.exceptions import ConfirmationRequired
         from docent.core.invoke import make_context, run_action
+
+        if _should_run_async(tool_name, action_cli_name, arguments or {}):
+            payload = _submit_async_job(tool_name, action_cli_name, arguments or {})
+            return [types.TextContent(type="text", text=payload)]
 
         mcp_context = make_context(via_mcp=True)
 

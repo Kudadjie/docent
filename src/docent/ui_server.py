@@ -157,6 +157,7 @@ from docent.ui_routes.config import router as _config_router  # noqa: E402
 from docent.ui_routes.docs import router as _docs_router  # noqa: E402
 from docent.ui_routes.doctor import router as _doctor_router  # noqa: E402
 from docent.ui_routes.filesystem import router as _fs_router  # noqa: E402
+from docent.ui_routes.jobs import router as _jobs_router  # noqa: E402
 from docent.ui_routes.opencode import router as _opencode_router  # noqa: E402
 from docent.ui_routes.reading import router as _reading_router  # noqa: E402
 from docent.ui_routes.studio import router as _studio_sse_router  # noqa: E402
@@ -168,6 +169,7 @@ _ROUTERS = (
     _config_router,
     _doctor_router,
     _fs_router,
+    _jobs_router,
     _opencode_router,
     _studio_sse_router,
     _backup_router,
