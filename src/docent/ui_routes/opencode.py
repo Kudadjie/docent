@@ -245,9 +245,9 @@ async def studio_run_ws(websocket: WebSocket):
         # Session-token check (browsers cannot set custom WS headers, so the
         # token rides inside the first message). The origin check alone would
         # still admit pages served from OTHER localhost ports (e.g. :3000).
-        from docent.ui_server import get_session_token
-
-        expected = get_session_token()
+        # Read from the serving app's state — not the module-level app — so
+        # the check binds to the token run_server() actually issued.
+        expected = getattr(websocket.app.state, "session_token", None)
         sent = body_raw.pop("token", None) if isinstance(body_raw, dict) else None
         if expected is not None and sent != expected:
             await websocket.close(code=1008)

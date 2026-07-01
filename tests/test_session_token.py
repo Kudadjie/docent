@@ -66,3 +66,20 @@ def test_no_token_set_means_no_enforcement():
         "/api/tools/invoke", json={"tool": "nonexistent-tool", "action": "run"}
     )
     assert resp.status_code != 403
+
+
+def test_create_app_instances_have_independent_tokens():
+    """The token is per-instance state on app.state — no module-global leakage."""
+    app_a = ui_server.create_app(session_token="token-a")
+    app_b = ui_server.create_app()  # no token → guard inactive
+
+    resp_a = TestClient(app_a).post("/api/tools/invoke", json={"tool": "x", "action": "run"})
+    assert resp_a.status_code == 403  # app_a enforces its token
+
+    resp_b = TestClient(app_b).post(
+        "/api/tools/invoke", json={"tool": "nonexistent-tool", "action": "run"}
+    )
+    assert resp_b.status_code != 403  # app_b unaffected by app_a's token
+
+    assert TestClient(app_a).get("/api/auth/token").json() == {"token": "token-a"}
+    assert TestClient(app_b).get("/api/auth/token").json() == {"token": None}

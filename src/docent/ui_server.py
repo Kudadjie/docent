@@ -91,20 +91,12 @@ class _LocalhostGuard(BaseHTTPMiddleware):
 # it back as X-Docent-Token on mutating requests. The WebSocket path receives
 # it inside the first JSON message instead (browsers can't set WS headers).
 #
-# The token is None under TestClient and direct ASGI use; enforcement only
+# The token lives on ``app.state.session_token`` — NOT in a module global — so
+# each create_app() instance carries its own and tests can't leak state into
+# each other. It is None under TestClient and direct ASGI use; enforcement only
 # activates when run_server() generates one.
 
-_session_token: str | None = None
 _MUTATING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
-
-
-def get_session_token() -> str | None:
-    return _session_token
-
-
-def set_session_token(token: str | None) -> None:
-    global _session_token
-    _session_token = token
 
 
 class _SessionTokenGuard(BaseHTTPMiddleware):
@@ -115,7 +107,7 @@ class _SessionTokenGuard(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        token = _session_token
+        token = getattr(request.app.state, "session_token", None)
         if (
             token is not None
             and request.method in _MUTATING_METHODS
@@ -156,26 +148,10 @@ class _RSCPathRewrite:
         await self.app(scope, receive, send)
 
 
-app = FastAPI(docs_url=None, redoc_url=None)
-app.add_middleware(GZipMiddleware, minimum_size=1000)  # compress JSON responses ≥ 1 KB
-app.add_middleware(_RSCPathRewrite)  # must be before LocalhostGuard so the rewrite fires first
-app.add_middleware(_SessionTokenGuard)
-app.add_middleware(_LocalhostGuard)
-
-
-@app.get("/api/auth/token")
-async def get_auth_token() -> JSONResponse:
-    """Hand the per-session API token to the frontend.
-
-    Safe to expose on a GET: responses carry no CORS headers, so a page on a
-    different origin (including a different localhost port) cannot read it.
-    """
-    return JSONResponse({"token": _session_token})
-
-
 # ── Route modules ────────────────────────────────────────────────────────────
 # Routes live in ui_routes/*; imported here so their @router decorators fire.
-# Each module's router is included before the static-file catch-all.
+# Routers are module-level singletons and can be included in any number of
+# app instances.
 from docent.ui_routes.backup import router as _backup_router  # noqa: E402
 from docent.ui_routes.config import router as _config_router  # noqa: E402
 from docent.ui_routes.docs import router as _docs_router  # noqa: E402
@@ -187,20 +163,64 @@ from docent.ui_routes.studio import router as _studio_sse_router  # noqa: E402
 from docent.ui_routes.tools import router as _tools_router  # noqa: E402
 from docent.ui_routes.whatsnew import router as _whatsnew_router  # noqa: E402
 
-app.include_router(_reading_router)
-app.include_router(_config_router)
-app.include_router(_doctor_router)
-app.include_router(_fs_router)
-app.include_router(_opencode_router)
-app.include_router(_studio_sse_router)
-app.include_router(_backup_router)
-app.include_router(_tools_router)
-app.include_router(_docs_router)
-app.include_router(_whatsnew_router)
+_ROUTERS = (
+    _reading_router,
+    _config_router,
+    _doctor_router,
+    _fs_router,
+    _opencode_router,
+    _studio_sse_router,
+    _backup_router,
+    _tools_router,
+    _docs_router,
+    _whatsnew_router,
+)
 
 
-if UI_DIST.is_dir():
-    app.mount("/", StaticFiles(directory=str(UI_DIST), html=True), name="ui")
+def create_app(*, session_token: str | None = None) -> FastAPI:
+    """Build a fully assembled UI app instance.
+
+    All per-instance state (currently the session token) lives on
+    ``app.state`` — the factory owns it, nothing lives at module level.
+    """
+    application = FastAPI(docs_url=None, redoc_url=None)
+    application.state.session_token = session_token
+    application.add_middleware(GZipMiddleware, minimum_size=1000)  # compress JSON ≥ 1 KB
+    application.add_middleware(_RSCPathRewrite)  # before LocalhostGuard so the rewrite fires first
+    application.add_middleware(_SessionTokenGuard)
+    application.add_middleware(_LocalhostGuard)
+
+    @application.get("/api/auth/token")
+    async def get_auth_token(request: Request) -> JSONResponse:
+        """Hand the per-session API token to the frontend.
+
+        Safe to expose on a GET: responses carry no CORS headers, so a page on
+        a different origin (including a different localhost port) cannot read it.
+        """
+        return JSONResponse({"token": request.app.state.session_token})
+
+    for router in _ROUTERS:
+        application.include_router(router)
+
+    if UI_DIST.is_dir():
+        application.mount("/", StaticFiles(directory=str(UI_DIST), html=True), name="ui")
+
+    return application
+
+
+# Module-level instance for TestClient use and historical importers
+# (`from docent.ui_server import app`). Token is None → guard inactive.
+app = create_app()
+
+
+def get_session_token() -> str | None:
+    """Token of the module-level app (back-compat accessor for tests)."""
+    return app.state.session_token
+
+
+def set_session_token(token: str | None) -> None:
+    """Set the token on the module-level app (back-compat mutator for tests)."""
+    app.state.session_token = token
 
 
 def run_server(host: str = "127.0.0.1", port: int = 7432) -> None:
@@ -216,8 +236,10 @@ def run_server(host: str = "127.0.0.1", port: int = 7432) -> None:
     load_plugins()
     cleanup_legacy_paper_dirs()
 
-    # Per-session token guarding all mutating /api requests (see _SessionTokenGuard).
-    set_session_token(secrets.token_urlsafe(32))
+    # Fresh instance with a per-session token guarding all mutating /api
+    # requests (see _SessionTokenGuard). The module-level `app` (token None)
+    # is never served.
+    application = create_app(session_token=secrets.token_urlsafe(32))
 
     # Generate API key on first start, then mount MCP HTTP transport.
     settings = load_settings()
@@ -227,7 +249,7 @@ def run_server(host: str = "127.0.0.1", port: int = 7432) -> None:
             api_key = secrets.token_urlsafe(32)
             write_setting("serve.api_key", api_key)
             _log.info("Generated MCP HTTP API key — stored in ~/.docent/config.toml")
-        mount_mcp_sse(app, api_key)
+        mount_mcp_sse(application, api_key)
         _log.info("MCP HTTP transport active at /mcp/sse (port %d)", port)
 
     # Set up audit log
@@ -244,7 +266,7 @@ def run_server(host: str = "127.0.0.1", port: int = 7432) -> None:
         _log.warning("Failed to initialise audit log at %s: %s", audit_log_path, exc)
 
     uvicorn.run(
-        app,
+        application,
         host=host,
         port=port,
         access_log=False,  # suppress per-request INFO lines; errors still surface as exceptions
