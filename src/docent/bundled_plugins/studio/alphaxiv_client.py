@@ -18,7 +18,12 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from typing import Any
 
-from alphaxiv import AlphaXivClient
+try:
+    from alphaxiv import AlphaXivClient
+except ImportError as _exc:  # alphaxiv-py lives in the 'studio' extra
+    from docent.errors import MissingExtraError
+
+    raise MissingExtraError.for_extra("Paper search (alphaXiv)", "studio", cause=_exc) from _exc
 
 
 class AlphaXivAuthError(RuntimeError):

@@ -52,6 +52,24 @@ def test_all_subclass_codes():
     assert ServiceUnavailableError.code == "D007"
 
 
+def test_missing_extra_error_names_feature_and_extra():
+    from docent.errors import MissingExtraError
+
+    err = MissingExtraError.for_extra("Paper search (alphaXiv)", "studio")
+    assert err.code == "D009"
+    assert "Paper search (alphaXiv)" in str(err)
+    assert "docent-cli[studio]" in str(err)
+
+
+def test_missing_extra_error_carries_cause():
+    from docent.errors import MissingExtraError
+
+    cause = ModuleNotFoundError("No module named 'pyzotero'")
+    err = MissingExtraError.for_extra("The Zotero backend", "zotero", cause=cause)
+    assert err.cause is cause
+    assert "ModuleNotFoundError" in err.formatted()
+
+
 def test_docent_error_is_runtime_error():
     err = DocentError("oops")
     assert isinstance(err, RuntimeError)

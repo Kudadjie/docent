@@ -17,8 +17,13 @@ from typing import Any
 
 
 def make_zotero(api_key: str, library_id: str, library_type: str = "user") -> Any:
-    """Construct a pyzotero client. Raises ImportError if pyzotero is missing."""
-    from pyzotero import zotero
+    """Construct a pyzotero client. Raises MissingExtraError if pyzotero is missing."""
+    try:
+        from pyzotero import zotero
+    except ImportError as exc:  # pyzotero lives in the 'zotero' extra
+        from docent.errors import MissingExtraError
+
+        raise MissingExtraError.for_extra("The Zotero backend", "zotero", cause=exc) from exc
 
     return zotero.Zotero(library_id, library_type, api_key)
 

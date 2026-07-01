@@ -102,7 +102,12 @@ class LiteLLMBackend:
         role: str = "default",
         timeout: int = 300,
     ) -> str:
-        import litellm
+        try:
+            import litellm
+        except ImportError as exc:  # litellm lives in the 'studio' extra
+            from docent.errors import MissingExtraError
+
+            raise MissingExtraError.for_extra("LLM backends", "studio", cause=exc) from exc
 
         litellm.suppress_debug_info = True
         litellm.set_verbose = False

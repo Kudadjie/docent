@@ -18,12 +18,12 @@ classifiers = [
     "Topic :: Utilities",
 ]
 requires-python = ">=3.12"
+# Core = reading queue + CLI + web UI + MCP server. Heavy research/AI deps
+# live in extras so `pip install docent-cli` stays light (see extras below).
 dependencies = [
     "filelock~=3.12",
-    "tavily-python~=0.7",
     "fastapi~=0.115",
     "httpx~=0.27",
-    "litellm~=1.83",
     "mcp~=1.0",
     "packaging>=24.0",
     "pydantic-settings~=2.14",
@@ -31,19 +31,34 @@ dependencies = [
     "tomli-w~=1.2",
     "typer~=0.24",
     "uvicorn[standard]~=0.30",
-    "notebooklm-py[browser]~=0.3",
-    "alphaxiv-py~=0.5",
-    "scholarly~=1.7",
-    "ddgs~=9.0",
     "tenacity~=9.0",
-    "pyzotero~=1.5",
 ]
 
 [project.optional-dependencies]
+# AI research pipeline: LLM routing, web/paper search, citation graph.
+studio = [
+    "litellm~=1.83",
+    "tavily-python~=0.7",
+    "ddgs~=9.0",
+    "scholarly~=1.7",
+    "alphaxiv-py~=0.5",
+]
+# NotebookLM push pipeline (pulls in browser automation).
+notebook = [
+    "notebooklm-py[browser]~=0.3",
+]
+# Zotero reference-manager backend.
+zotero = [
+    "pyzotero~=1.5",
+]
 backup = [
     "google-api-python-client~=2.100",
     "google-auth-oauthlib~=1.0",
     "google-auth-httplib2~=0.2",
+]
+# Everything — the pre-split install surface.
+all = [
+    "docent-cli[studio,notebook,zotero,backup]",
 ]
 
 [project.urls]
@@ -138,3 +153,16 @@ ignore_missing_imports = true
 warn_unused_ignores = false
 check_untyped_defs = true
 no_implicit_optional = true
+
+# Strictness ratchet: the dispatch seam and schema-safety-critical modules must
+# be fully annotated. Add modules here as they are brought up to standard —
+# never remove one.
+[[tool.mypy.overrides]]
+module = [
+    "docent.core.*",
+    "docent.config.*",
+    "docent.errors",
+    "docent.bundled_plugins.reading.reading_store",
+]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true

@@ -34,18 +34,33 @@
 ## 📦 Install
 
 ```bash
-# Recommended
-uv tool install docent-cli
+# Recommended — full install (all features)
+uv tool install "docent-cli[all]"
 
 # Or pipx
-pipx install docent-cli
+pipx install "docent-cli[all]"
 
 # Or plain pip
-pip install docent-cli
+pip install "docent-cli[all]"
 
 # Verify
 docent --version
 ```
+
+The base package (`docent-cli` with no extras) is intentionally light — it covers
+the reading queue, web UI, and MCP server. Optional features live in extras:
+
+| Extra | Enables | Pulls in |
+|-------|---------|----------|
+| `studio` | AI research pipelines, web/paper search, citation graph | litellm, tavily-python, ddgs, scholarly, alphaxiv-py |
+| `notebook` | NotebookLM push pipeline | notebooklm-py (+ browser automation) |
+| `zotero` | Zotero reference-manager backend | pyzotero |
+| `backup` | Google Drive backup sync | google-api-python-client + auth libs |
+| `all` | Everything above | — |
+
+Mix and match: `pip install "docent-cli[studio,zotero]"`. If you invoke a feature
+whose extra is missing, Docent exits with a `[D009]` message naming the exact
+extra to install.
 
 **Updates:**
 ```bash
@@ -161,7 +176,7 @@ The `docent studio` tool runs AI-powered deep research, literature reviews, and 
 | `docent studio cite-graph --doi "10.x/y"` | Explore the S2 citation graph around a paper |
 | `docent studio search-papers "query"` | Search alphaXiv for academic papers |
 | `docent studio get-paper "arxiv-id"` | AI-generated overview for a paper |
-| `docent studio usage` | Today's Feynman/OpenCode spend + Tavily requests |
+| `docent studio tavily-usage` | This month's Tavily API request usage |
 | `docent studio config-show` | Show research settings |
 | `docent studio config-set --key <k> --value <v>` | Set config (e.g. `tavily_api_key`, `alphaxiv_api_key`) |
 
@@ -224,10 +239,10 @@ cd docent
 # Install in editable mode (all dev deps)
 uv sync --all-extras
 
-# Make the `docent` command available globally.
+# Make the `docent` command available globally (with all extras).
 # uv tool install is a global operation and does not read .python-version,
 # so pass --python explicitly to match the project pin.
-uv tool install --python 3.13 --editable .
+uv tool install --python 3.13 --editable ".[all]"
 ```
 
 ### Running tests
@@ -256,16 +271,21 @@ Make sure the editable install is active (`uv tool install --python 3.13 --edita
 ```
 src/docent/
   cli.py                 # Typer app + command wiring
-  core.py                # Tool base class, registry, @action decorator
-  config.py              # Settings (Pydantic + TOML + env)
-  mcp_server.py          # MCP stdio adapter
+  mcp_server.py          # MCP adapter (stdio + HTTP/SSE)
+  ui_server.py           # FastAPI app assembly for the web UI
+  ui_routes/             # FastAPI route modules (reading, studio, config, …)
+  core/                  # Tool ABC, @action, registry, dispatcher, shapes
+  config/                # Settings (Pydantic + TOML + env) and loader
   bundled_plugins/
     reading/             # Reading queue tool (the reference implementation)
-  tools/                 # Auto-discovered on startup
+    studio/              # Research workflows (deep research, lit review, …)
+    backup/              # Backup + Google Drive sync
+  tools/                 # Flat single-file tools, auto-discovered on startup
 tests/                   # pytest suite
-src/docent/ui_server.py  # FastAPI backend for the web UI
 frontend/                # Next.js source (built by scripts/build_ui.py)
 ```
+
+See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full, maintained layout.
 
 ### Updating the version
 

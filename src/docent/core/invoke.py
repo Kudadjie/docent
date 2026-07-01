@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import logging
 from typing import Any
 
 from docent.core.context import Context
@@ -151,7 +152,14 @@ def serialize_result(result: Any) -> str:
         return result.model_dump_json(indent=2)
     try:
         return json.dumps(result, indent=2, default=str)
-    except Exception:
+    except Exception as exc:
+        # Degrading to str() keeps the surface alive, but a result that can't
+        # be JSON-serialized is a tool bug — don't let it fail silently.
+        logging.getLogger("docent.core").warning(
+            "serialize_result: %s is not JSON-serializable (%s); falling back to str()",
+            type(result).__name__,
+            exc,
+        )
         return str(result)
 
 

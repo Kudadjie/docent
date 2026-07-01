@@ -645,20 +645,13 @@ wheels = [
 name = "docent-cli"
 source = { editable = "." }
 dependencies = [
-    { name = "alphaxiv-py" },
-    { name = "ddgs" },
     { name = "fastapi" },
     { name = "filelock" },
     { name = "httpx" },
-    { name = "litellm" },
     { name = "mcp" },
-    { name = "notebooklm-py", extra = ["browser"] },
     { name = "packaging" },
     { name = "pydantic-settings" },
-    { name = "pyzotero" },
     { name = "rich" },
-    { name = "scholarly" },
-    { name = "tavily-python" },
     { name = "tenacity" },
     { name = "tomli-w" },
     { name = "typer" },
@@ -666,10 +659,35 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+all = [
+    { name = "alphaxiv-py" },
+    { name = "ddgs" },
+    { name = "google-api-python-client" },
+    { name = "google-auth-httplib2" },
+    { name = "google-auth-oauthlib" },
+    { name = "litellm" },
+    { name = "notebooklm-py", extra = ["browser"] },
+    { name = "pyzotero" },
+    { name = "scholarly" },
+    { name = "tavily-python" },
+]
 backup = [
     { name = "google-api-python-client" },
     { name = "google-auth-httplib2" },
     { name = "google-auth-oauthlib" },
+]
+notebook = [
+    { name = "notebooklm-py", extra = ["browser"] },
+]
+studio = [
+    { name = "alphaxiv-py" },
+    { name = "ddgs" },
+    { name = "litellm" },
+    { name = "scholarly" },
+    { name = "tavily-python" },
+]
+zotero = [
+    { name = "pyzotero" },
 ]
 
 [package.dev-dependencies]
@@ -683,29 +701,39 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "alphaxiv-py", specifier = "~=0.5" },
-    { name = "ddgs", specifier = "~=9.0" },
+    { name = "alphaxiv-py", marker = "extra == 'all'", specifier = "~=0.5" },
+    { name = "alphaxiv-py", marker = "extra == 'studio'", specifier = "~=0.5" },
+    { name = "ddgs", marker = "extra == 'all'", specifier = "~=9.0" },
+    { name = "ddgs", marker = "extra == 'studio'", specifier = "~=9.0" },
     { name = "fastapi", specifier = "~=0.115" },
     { name = "filelock", specifier = "~=3.12" },
+    { name = "google-api-python-client", marker = "extra == 'all'", specifier = "~=2.100" },
     { name = "google-api-python-client", marker = "extra == 'backup'", specifier = "~=2.100" },
+    { name = "google-auth-httplib2", marker = "extra == 'all'", specifier = "~=0.2" },
     { name = "google-auth-httplib2", marker = "extra == 'backup'", specifier = "~=0.2" },
+    { name = "google-auth-oauthlib", marker = "extra == 'all'", specifier = "~=1.0" },
     { name = "google-auth-oauthlib", marker = "extra == 'backup'", specifier = "~=1.0" },
     { name = "httpx", specifier = "~=0.27" },
-    { name = "litellm", specifier = "~=1.83" },
+    { name = "litellm", marker = "extra == 'all'", specifier = "~=1.83" },
+    { name = "litellm", marker = "extra == 'studio'", specifier = "~=1.83" },
     { name = "mcp", specifier = "~=1.0" },
-    { name = "notebooklm-py", extras = ["browser"], specifier = "~=0.3" },
+    { name = "notebooklm-py", extras = ["browser"], marker = "extra == 'all'", specifier = "~=0.3" },
+    { name = "notebooklm-py", extras = ["browser"], marker = "extra == 'notebook'", specifier = "~=0.3" },
     { name = "packaging", specifier = ">=24.0" },
     { name = "pydantic-settings", specifier = "~=2.14" },
-    { name = "pyzotero", specifier = "~=1.5" },
+    { name = "pyzotero", marker = "extra == 'all'", specifier = "~=1.5" },
+    { name = "pyzotero", marker = "extra == 'zotero'", specifier = "~=1.5" },
     { name = "rich", specifier = "~=15.0" },
-    { name = "scholarly", specifier = "~=1.7" },
-    { name = "tavily-python", specifier = "~=0.7" },
+    { name = "scholarly", marker = "extra == 'all'", specifier = "~=1.7" },
+    { name = "scholarly", marker = "extra == 'studio'", specifier = "~=1.7" },
+    { name = "tavily-python", marker = "extra == 'all'", specifier = "~=0.7" },
+    { name = "tavily-python", marker = "extra == 'studio'", specifier = "~=0.7" },
     { name = "tenacity", specifier = "~=9.0" },
     { name = "tomli-w", specifier = "~=1.2" },
     { name = "typer", specifier = "~=0.24" },
     { name = "uvicorn", extras = ["standard"], specifier = "~=0.30" },
 ]
-provides-extras = ["backup"]
+provides-extras = ["all", "backup", "notebook", "studio", "zotero"]
 
 [package.metadata.requires-dev]
 dev = [

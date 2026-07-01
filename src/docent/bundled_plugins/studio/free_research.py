@@ -115,7 +115,12 @@ def _web_search_ddg(query: str, max_results: int = 10) -> list[dict]:
     try:
         from ddgs import DDGS  # renamed from duckduckgo_search
     except ImportError:
-        from duckduckgo_search import DDGS  # type: ignore[no-redef]  # old name fallback
+        try:
+            from duckduckgo_search import DDGS  # type: ignore[no-redef]  # old name fallback
+        except ImportError as exc:  # ddgs lives in the 'studio' extra
+            from docent.errors import MissingExtraError
+
+            raise MissingExtraError.for_extra("DuckDuckGo web search", "studio", cause=exc) from exc
     results = []
     with DDGS() as ddgs:
         for r in ddgs.text(query, max_results=max_results):

@@ -47,7 +47,12 @@ class LLMClient:
         temperature: float = 0.7,
         max_tokens: int | None = None,
     ) -> LLMResponse:
-        import litellm
+        try:
+            import litellm
+        except ImportError as exc:  # litellm lives in the 'studio' extra
+            from docent.errors import MissingExtraError
+
+            raise MissingExtraError.for_extra("LLM completion", "studio", cause=exc) from exc
 
         messages: list[dict[str, str]] = []
         if system:

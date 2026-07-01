@@ -7,20 +7,34 @@ Docent is a personal CLI control center for grad-school workflows. It manages an
 ## 1. Installation
 
 ```bash
-# Requires Python 3.11+
+# Requires Python 3.12+
 
-# Recommended — uv (fastest):
-uv tool install docent-cli
+# Recommended — uv (fastest), full install:
+uv tool install "docent-cli[all]"
 
 # Or pipx:
-pipx install docent-cli
+pipx install "docent-cli[all]"
 
 # Or plain pip:
-pip install docent-cli
+pip install "docent-cli[all]"
 
 # Verify:
 docent --version
 ```
+
+The bare package (`docent-cli`) installs only the core: reading queue, web UI,
+and MCP server. Optional features are extras — install what you use:
+
+| Extra | Enables |
+|-------|---------|
+| `studio` | AI research pipelines, web/paper search, citation graph |
+| `notebook` | NotebookLM push pipeline |
+| `zotero` | Zotero reference-manager backend |
+| `backup` | Google Drive backup sync |
+| `all` | Everything above |
+
+Running a feature whose extra is missing exits with a `[D009]` error naming the
+exact extra to install (e.g. `pip install 'docent-cli[studio]'`).
 
 **Updates:**
 ```bash

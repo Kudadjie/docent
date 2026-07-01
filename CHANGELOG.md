@@ -19,6 +19,28 @@ subsection with 2–5 user-facing highlights — those are what the banner shows
 
 ## [Unreleased]
 
+### Changed
+- **⚠ Lighter default install — heavy dependencies moved to extras.**
+  `pip install docent-cli` now installs only the core (reading queue, web UI,
+  MCP server). AI research, NotebookLM, and Zotero support are opt-in extras:
+  - `docent-cli[studio]` — LLM pipelines, Tavily/DuckDuckGo/Semantic Scholar
+    search, alphaXiv, citation graph (litellm, tavily-python, ddgs, scholarly,
+    alphaxiv-py)
+  - `docent-cli[notebook]` — NotebookLM push pipeline (notebooklm-py + browser
+    automation)
+  - `docent-cli[zotero]` — Zotero reference-manager backend (pyzotero)
+  - `docent-cli[all]` — everything, matching the pre-split install
+  **Upgrading users who use Studio/NotebookLM/Zotero should reinstall with
+  `docent-cli[all]`.** A feature that needs a missing extra now exits with a
+  clear `[D009]` message telling you exactly what to install.
+
+### Fixed
+- CLI error messages containing square brackets (e.g. install hints like
+  `docent-cli[studio]`) are no longer partially swallowed by Rich markup
+  parsing.
+- Action results that fail JSON serialization now log a warning instead of
+  silently degrading to their string form on the MCP and web-UI surfaces.
+
 ## [2.2.0] - 2026-06-17
 
 ### What's New

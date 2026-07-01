@@ -77,3 +77,20 @@ class NetworkError(DocentError):
     """Network connectivity failure — no internet or server unreachable."""
 
     code: ClassVar[str] = "D008"
+
+
+class MissingExtraError(DocentError):
+    """Feature requires an optional dependency extra that is not installed."""
+
+    code: ClassVar[str] = "D009"
+
+    @classmethod
+    def for_extra(
+        cls, feature: str, extra: str, *, cause: BaseException | None = None
+    ) -> MissingExtraError:
+        return cls(
+            f"{feature} requires the '{extra}' extra.\n"
+            f"Install with: pip install 'docent-cli[{extra}]'\n"
+            f"(uv users:    uv tool install 'docent-cli[{extra}]')",
+            cause=cause,
+        )

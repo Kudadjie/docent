@@ -23,6 +23,7 @@ patch_rich_unicode_loader()
 import typer
 from pydantic import BaseModel
 from rich import box
+from rich.markup import escape as rich_escape
 from rich.panel import Panel
 from rich.progress import (
     BarColumn,
@@ -513,7 +514,9 @@ def _build_callback(
             result = _drive_progress(maybe) if inspect.isgenerator(maybe) else maybe
         except DocentError as exc:
             _log.error("%s", exc, exc_info=exc)
-            get_console().print(f"[red]Error:[/] {exc.formatted()}")
+            # escape(): error text is data, not markup — bracketed content like
+            # the extras hint "docent-cli[studio]" must print literally.
+            get_console().print(f"[red]Error:[/] {rich_escape(exc.formatted())}")
             raise typer.Exit(1)
         except Exception:
             _log.exception("Unhandled exception in action callback")

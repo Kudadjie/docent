@@ -367,8 +367,13 @@ def tavily_research(
     Raises ``InvalidAPIKeyError`` on auth failure, ``TimeoutError`` on
     timeout, and re-raises other Tavily errors.
     """
-    from tavily import TavilyClient
-    from tavily.errors import InvalidAPIKeyError, UsageLimitExceededError
+    try:
+        from tavily import TavilyClient
+        from tavily.errors import InvalidAPIKeyError, UsageLimitExceededError
+    except ImportError as exc:  # tavily-python lives in the 'studio' extra
+        from docent.errors import MissingExtraError
+
+        raise MissingExtraError.for_extra("Tavily research", "studio", cause=exc) from exc
 
     client = TavilyClient(api_key=api_key)
 
