@@ -353,7 +353,7 @@ Studio runs deep research, literature reviews, and peer reviews, backed by Feynm
 | Backend | How it works | Requires |
 |---------|-------------|---------|
 | `free` | Docent aggregates sources; the AI assistant synthesises in-conversation. Fast, no API cost. **Best for MCP use.** | Nothing |
-| `docent` | 6-stage pipeline via configured provider (default: opencode). **Terminal only — times out via MCP.** | OpenCode server |
+| `docent` | 6-stage pipeline via the provider set in `studio_backend` (default: groq) | That provider's key/server |
 | `groq` | 6-stage pipeline via Groq API | `GROQ_API_KEY` |
 | `gemini` | 6-stage pipeline via Gemini API | `GEMINI_API_KEY` |
 | `openrouter` | 6-stage pipeline via OpenRouter | `OPENROUTER_API_KEY` |
@@ -366,7 +366,10 @@ Studio runs deep research, literature reviews, and peer reviews, backed by Feynm
 | `local` | 6-stage pipeline via any OAI-compatible server | `local_base_url` config |
 | `feynman` | Full Feynman CLI deep research (10–30 min). **Terminal only — always times out via MCP.** | Feynman installed |
 
-> **MCP note:** `free` is the only backend reliable via MCP — all AI backends run a multi-minute pipeline that will time out. For AI backends from Claude Desktop, use the terminal command shown when you ask.
+> **MCP note:** `free` runs inline over MCP. All AI backends are submitted as
+> background jobs — the MCP call returns a job id immediately and the agent
+> polls `jobs__status` / `jobs__result` (see Background jobs below). The
+> terminal path still works and streams progress live.
 
 ### Citation verification
 
@@ -406,7 +409,7 @@ open-access papers. The extra papers are also added to the `*-sources.json` file
 
 | Key | Default | Notes |
 |---|---|---|
-| `studio_backend` | `feynman` | Default backend when `--backend` is omitted |
+| `studio_backend` | `groq` | Provider the `docent` backend resolves to (was `opencode` before v2.3) |
 | `output_dir` | `~/Documents/Docent/research` | Research output directory |
 | `oc_provider` | `opencode-go` | OpenCode provider (`opencode-go`, `anthropic`, `groq`, …) |
 | `oc_model_planner` / `oc_model_writer` / `oc_model_verifier` / `oc_model_reviewer` / `oc_model_researcher` | `glm-5.1` | Per-stage model overrides for the docent backend |

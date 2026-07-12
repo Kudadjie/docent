@@ -32,7 +32,12 @@ _EXTRA_VALID = {
 
 def _schema_flags() -> set[str]:
     from docent.core import all_tools, collect_actions, load_plugins
+    from docent.tools import discover_tools
 
+    # Both discovery paths — flat tools/ (e.g. jobs) AND bundled plugins.
+    # Without discover_tools() this gate only passed when an earlier test
+    # happened to import the flat tools first (order-dependent).
+    discover_tools()
     load_plugins()
     flags: set[str] = set()
     for tool_cls in all_tools().values():

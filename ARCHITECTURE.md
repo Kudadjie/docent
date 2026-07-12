@@ -370,7 +370,7 @@ match the fan-out primitive and avoid asyncio collisions with FastAPI's loop).
 | Backend | What it does | Via MCP? | Via terminal? | Key required |
 |---------|-------------|----------|---------------|--------------|
 | `free` | Tavily + Semantic Scholar aggregation; YOU synthesise | ✓ (inline) | ✓ | Tavily (optional, falls back to DDG) |
-| `docent` | 6-stage AI pipeline via OpenCode | ✓ (background job) | ✓ | Provider API key |
+| `docent` | 6-stage AI pipeline via the `studio_backend` provider (default: groq) | ✓ (background job) | ✓ | That provider's key |
 | `feynman` | Full Feynman CLI deep research | ✓ (background job) | ✓ | Feynman credits |
 | `groq` | LiteLLM → Groq | ✓ (background job) | ✓ | `GROQ_API_KEY` |
 | `gemini` | LiteLLM → Gemini | ✓ (background job) | ✓ | `GEMINI_API_KEY` |

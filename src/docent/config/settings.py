@@ -21,7 +21,10 @@ class ResearchSettings(BaseModel):
         None  # e.g. "anthropic/claude-sonnet-4-5" — passes --model to feynman
     )
     feynman_timeout: float = 1800.0  # seconds before killing stuck feynman runs (/review with code repo access needs ~20-25 min)
-    studio_backend: str = "opencode"  # active Docent-tier backend
+    # Backend the `docent` studio tier resolves to. Default was "opencode"
+    # until v2.3 — switched to groq (free tier) when the OpenCode Go
+    # subscription model went away; OpenCode still works if configured.
+    studio_backend: str = "groq"
     oc_provider: str = "opencode-go"
     oc_model_planner: str = "glm-5.1"
     oc_model_writer: str = "minimax-m2.7"

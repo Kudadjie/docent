@@ -97,6 +97,10 @@ def _mock_context(
     tavily_api_key: str | None = None,
     notebooklm_notebook_id: str | None = None,
     obsidian_vault: Path | None = None,
+    # This file's docent-backend tests mock OcClient, so the mock context pins
+    # the pre-v2.3 "opencode" resolution regardless of the shipped default
+    # (now "groq" since the OpenCode switch-off).
+    studio_backend: str = "opencode",
 ) -> Context:
     research = ResearchSettings(
         output_dir=output_dir or Path("/tmp/docent-test-research"),
@@ -104,6 +108,7 @@ def _mock_context(
         tavily_api_key=tavily_api_key,
         notebooklm_notebook_id=notebooklm_notebook_id,
         obsidian_vault=obsidian_vault,
+        studio_backend=studio_backend,
     )
     settings = MagicMock(spec=Settings)
     settings.research = research

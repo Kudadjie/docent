@@ -34,6 +34,11 @@ subsection with 2–5 user-facing highlights — those are what the banner shows
   the last 50 records are kept under `~/.docent/data/jobs/`.
 
 ### Changed
+- **`studio_backend` default changed from `opencode` to `groq`.** The `docent`
+  studio backend resolves to a LiteLLM provider; OpenCode is no longer the
+  default (it still works if you run `opencode serve` and set
+  `studio_backend = "opencode"` explicitly). Existing config files that set
+  `studio_backend` are unaffected.
 - **⚠ Lighter default install — heavy dependencies moved to extras.**
   `pip install docent-cli` now installs only the core (reading queue, web UI,
   MCP server). AI research, NotebookLM, and Zotero support are opt-in extras:
