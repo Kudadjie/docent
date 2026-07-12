@@ -1,11 +1,14 @@
 'use client';
 
 /**
- * StudioRunProvider — layout-level context for Studio WS runs.
+ * StudioRunProvider — layout-level context for Studio background-job runs.
  *
- * Holds MULTIPLE concurrent runs, each with its own WebSocket, keyed by runId.
- * Starting a run does NOT cancel the others — they stream in parallel inside one
- * tab. The output panel shows one "viewed" run at a time (chosen via the run
+ * Holds MULTIPLE concurrent runs, keyed by runId. Each run is submitted to the
+ * backend as a background job (POST /api/studio/submit) and polled via
+ * GET /api/jobs/{id} every POLL_MS — the single transport since the v2.3
+ * rewire (the WS-subprocess and SSE streams are gone; jobs survive page
+ * reloads server-side and poll batches arrive ~2s apart instead of instantly).
+ * The output panel shows one "viewed" run at a time (chosen via the run
  * switcher); the legacy flat fields (status/logs/sources/currentPhase/doneData)
  * are derived from that viewed run so existing consumers keep working.
  *
@@ -26,8 +29,9 @@ import {
 
 import { useAppRun } from '@/lib/app-run-context';
 // Side-effect import: patches window.fetch to attach X-Docent-Token on
-// mutating /api requests. Must load with the layout bundle, before any fetch.
-import { getApiToken } from '@/lib/api-token';
+// mutating /api requests (submit + cancel here). Must load with the layout
+// bundle, before any fetch.
+import '@/lib/api-token';
 
 import {
   findAction,
@@ -114,10 +118,17 @@ interface InternalRun {
   phase: string | null;
   doneData: Record<string, unknown> | null;
   startedAt: number;
-  ws: WebSocket | null;
+  /** Backend job id once submitted (null while client-queued / before submit). */
+  jobId: string | null;
+  pollTimer: ReturnType<typeof setInterval> | null;
+  /** Consecutive failed polls — the run fails after POLL_MAX_ERRORS. */
+  pollErrors: number;
   stopped: boolean;
   queuedReason?: string;
 }
+
+const POLL_MS = 2000;
+const POLL_MAX_ERRORS = 5; // ~10s of unreachable server → mark the run failed
 
 // ── Context + hook ────────────────────────────────────────────────────────────
 
@@ -240,23 +251,85 @@ export function StudioRunProvider({ children }: { children: ReactNode }) {
 
   const admitQueuedRef = useRef<() => void>(() => {});
 
-  // Open the WebSocket for a run and wire its lifecycle. Used by startRun and by
-  // tryAdmitQueued when a queued run is promoted.
-  const openWs = useCallback((run: InternalRun) => {
+  // Submit a run as a backend job and poll it to completion. Used by startRun
+  // and by tryAdmitQueued when a queued run is promoted.
+
+  const stopPolling = useCallback((run: InternalRun) => {
+    if (run.pollTimer !== null) { clearInterval(run.pollTimer); run.pollTimer = null; }
+  }, []);
+
+  const finishRun = useCallback((run: InternalRun, finalStatus: 'success' | 'failure' | 'stopped') => {
+    stopPolling(run);
+    run.status = finalStatus;
+    pushRun(run, finalStatus);
+    syncActiveRuns();
+    admitQueuedRef.current();
+  }, [pushRun, stopPolling, syncActiveRuns]);
+
+  const applyJobSnapshot = useCallback((run: InternalRun, job: Record<string, unknown>) => {
+    // Rebuild the log from the job's event list (bounded server-side at 500).
+    const events = Array.isArray(job.events) ? (job.events as Record<string, unknown>[]) : [];
+    run.logs = events.map(e => ({ phase: String(e.phase ?? ''), text: String(e.message ?? '') }));
+    if (events.length > 0) run.phase = String(events[events.length - 1].phase ?? '');
+
+    const state = String(job.state ?? '');
+    if (state === 'queued') {
+      // Admitted client-side but waiting for a server slot (serve.jobs_max_concurrent).
+      run.phase = 'queued';
+      syncActiveRuns();
+    } else if (state === 'running') {
+      syncActiveRuns();
+    } else if (state === 'done') {
+      let result: Record<string, unknown> | null = null;
+      try { result = JSON.parse(String(job.result_json ?? 'null')); } catch {}
+      const ok = !result || result.ok !== false;
+      if (result) {
+        // Same envelope the WS path used to build, so _output.tsx panels keep
+        // working: top-level convenience fields + the full result under `data`.
+        run.doneData = {
+          ok,
+          output_file: result.output_file,
+          notebook_id: result.notebook_id,
+          message: result.message,
+          data: result,
+        };
+        if (!ok && result.message) {
+          run.logs.push({ phase: 'error', text: String(result.message) });
+          run.phase = 'error';
+        }
+      }
+      finishRun(run, ok ? 'success' : 'failure');
+    } else if (state === 'failed' || state === 'interrupted') {
+      const err = String(job.error ?? 'Job failed — check the activity log.');
+      run.logs.push({ phase: 'error', text: err });
+      run.phase = 'error';
+      finishRun(run, 'failure');
+    } else if (state === 'cancelled') {
+      // Cancelled server-side (from this tab's stop() or elsewhere, e.g. the
+      // jobs CLI). stop() already pushed history for local stops.
+      stopPolling(run);
+      if (!run.stopped) finishRun(run, 'stopped');
+    }
+  }, [finishRun, stopPolling, syncActiveRuns]);
+
+  const startJob = useCallback((run: InternalRun) => {
     run.status = 'running';
     run.queuedReason = undefined;
     syncActiveRuns();
 
     const { actionId, form } = run.meta;
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${proto}//${window.location.host}/ws/studio/run`);
-    run.ws = ws;
+    const fail = (text: string) => {
+      const r = runsRef.current.get(run.runId);
+      if (!r || r.stopped) return;
+      r.logs.push({ phase: 'error', text });
+      r.phase = 'error';
+      finishRun(r, 'failure');
+    };
 
-    ws.onopen = () => {
-      void getApiToken().then(token => ws.send(JSON.stringify({
-        // Browsers can't set custom WS headers — the session token rides in
-        // the first message instead (checked server-side in opencode.py).
-        token,
+    fetch('/api/studio/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
         action_id:   actionId,
         topic:       form.topic,
         backend:     form.backend.toLowerCase(),
@@ -280,56 +353,47 @@ export function StudioRunProvider({ children }: { children: ReactNode }) {
         cite_direction:    form.citeDirection,
         cite_max:          form.citeMax,
         expand_citations:  form.expandCitations,
-      })));
-    };
-
-    ws.onmessage = (e: MessageEvent) => {
-      const r = runsRef.current.get(run.runId);
-      if (!r || r.stopped) return;
-      let evt: Record<string, unknown>;
-      try { evt = JSON.parse(e.data as string); } catch { return; }
-
-      if (evt.type === 'log') {
-        r.logs.push({ phase: String(evt.phase), text: String(evt.text) });
-        r.phase = String(evt.phase);
-        syncActiveRuns();
-      } else if (evt.type === 'done') {
-        const finalStatus = (evt.status as 'success' | 'failure') ?? 'success';
-        if (evt.raw) {
-          try { r.doneData = JSON.parse(evt.raw as string) as Record<string, unknown>; } catch {}
+      }),
+    })
+      .then(async res => {
+        if (!res.ok) {
+          const body = await res.json().catch(() => null);
+          throw new Error(String(body?.error ?? `Submit failed (HTTP ${res.status})`));
         }
-        r.status = finalStatus;
-        pushRun(r, finalStatus);
-        syncActiveRuns();
-        ws.close();
-        admitQueuedRef.current();
-      } else if (evt.type === 'error') {
-        r.logs.push({ phase: 'error', text: String(evt.message) });
-        r.phase = 'error';
-        r.status = 'failure';
-        pushRun(r, 'failure');
-        syncActiveRuns();
-        ws.close();
-        admitQueuedRef.current();
-      }
-    };
-
-    ws.onerror = () => {
-      const r = runsRef.current.get(run.runId);
-      if (!r || r.stopped) return;
-      r.logs.push({ phase: 'error', text: 'Connection error — is the server running?' });
-      r.phase = 'error';
-      r.status = 'failure';
-      pushRun(r, 'failure');
-      syncActiveRuns();
-      admitQueuedRef.current();
-    };
-
-    ws.onclose = () => {
-      const r = runsRef.current.get(run.runId);
-      if (r) r.ws = null;
-    };
-  }, [pushRun, syncActiveRuns]);
+        return res.json();
+      })
+      .then((data: { job_id?: string }) => {
+        const r = runsRef.current.get(run.runId);
+        if (!r) return;
+        if (!data.job_id) throw new Error('Submit returned no job id');
+        r.jobId = data.job_id;
+        if (r.stopped) {
+          // Stopped between submit and response — cancel the orphaned job.
+          void fetch(`/api/jobs/${data.job_id}/cancel`, { method: 'POST' }).catch(() => {});
+          return;
+        }
+        r.pollTimer = setInterval(() => {
+          const cur = runsRef.current.get(run.runId);
+          if (!cur || cur.stopped) { if (cur) stopPolling(cur); return; }
+          fetch(`/api/jobs/${cur.jobId}`)
+            .then(res => {
+              if (!res.ok) throw new Error(`HTTP ${res.status}`);
+              return res.json();
+            })
+            .then((job: Record<string, unknown>) => {
+              cur.pollErrors = 0;
+              applyJobSnapshot(cur, job);
+            })
+            .catch(() => {
+              cur.pollErrors += 1;
+              if (cur.pollErrors >= POLL_MAX_ERRORS) {
+                fail('Connection error — is the server running?');
+              }
+            });
+        }, POLL_MS);
+      })
+      .catch((exc: unknown) => fail(String(exc instanceof Error ? exc.message : exc)));
+  }, [applyJobSnapshot, finishRun, stopPolling, syncActiveRuns]);
 
   // Promote queued runs (oldest first) whose blocking condition has cleared.
   const tryAdmitQueued = useCallback(() => {
@@ -337,11 +401,11 @@ export function StudioRunProvider({ children }: { children: ReactNode }) {
       .filter(r => r.status === 'queued')
       .sort((a, b) => a.startedAt - b.startedAt);
     for (const r of queued) {
-      // admit() re-reads the live running set, which openWs() mutates as we go,
-      // so the cap and NLM exclusivity stay correct across the loop.
-      if (admit(r).start) openWs(r);
+      // admit() re-reads the live running set, which startJob() mutates as we
+      // go, so the cap stays correct across the loop.
+      if (admit(r).start) startJob(r);
     }
-  }, [admit, openWs]);
+  }, [admit, startJob]);
   useEffect(() => { admitQueuedRef.current = tryAdmitQueued; }, [tryAdmitQueued]);
 
   // ── startRun ─────────────────────────────────────────────────────────────────
@@ -357,7 +421,9 @@ export function StudioRunProvider({ children }: { children: ReactNode }) {
       phase: null,
       doneData: null,
       startedAt: Date.now(),
-      ws: null,
+      jobId: null,
+      pollTimer: null,
+      pollErrors: 0,
       stopped: false,
     };
     runsRef.current.set(runId, run);
@@ -367,13 +433,13 @@ export function StudioRunProvider({ children }: { children: ReactNode }) {
 
     const verdict = admit(run);
     if (verdict.start) {
-      openWs(run); // sets status='running' + syncs
+      startJob(run); // sets status='running' + syncs
     } else {
       run.queuedReason = verdict.reason;
       syncActiveRuns();
     }
     return runId;
-  }, [admit, openWs, syncActiveRuns]);
+  }, [admit, startJob, syncActiveRuns]);
 
   // ── viewRun ──────────────────────────────────────────────────────────────────
 
@@ -390,13 +456,16 @@ export function StudioRunProvider({ children }: { children: ReactNode }) {
     const r = runsRef.current.get(id);
     if (!r) return;
     r.stopped = true;
-    if (r.ws) { try { r.ws.close(); } catch {} r.ws = null; }
+    stopPolling(r);
+    // Server-side cancellation is cooperative (between progress events) and
+    // fire-and-forget — the UI marks the run stopped immediately either way.
+    if (r.jobId) void fetch(`/api/jobs/${r.jobId}/cancel`, { method: 'POST' }).catch(() => {});
     r.status = 'stopped';
     pushRun(r, 'stopped');
     syncActiveRuns();
     // Stopping a running run frees a slot — let a queued run take it.
     tryAdmitQueued();
-  }, [viewedRunId, pushRun, syncActiveRuns, tryAdmitQueued]);
+  }, [viewedRunId, pushRun, stopPolling, syncActiveRuns, tryAdmitQueued]);
 
   // ── reset ─────────────────────────────────────────────────────────────────────
   // Clears the output view. If the viewed run has finished, drop it from the

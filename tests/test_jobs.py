@@ -256,6 +256,35 @@ def test_mcp_invoke_submits_async_job(manager, jobfix_tool, monkeypatch):
 # ── /api/jobs routes ──────────────────────────────────────────────────────────
 
 
+def test_api_studio_submit_creates_pollable_job(manager, monkeypatch):
+    """POST /api/studio/submit — the web UI's sole studio transport (v2.3)."""
+    from fastapi.testclient import TestClient
+
+    # Route the submitted action to the fixture tool so no real studio deps run.
+    import docent.ui_routes.studio  # noqa: F401 — ensure module import
+    from docent.ui_server import app
+
+    client = TestClient(app)
+
+    resp = client.post("/api/studio/submit", json={"action_id": "does-not-exist"})
+    assert resp.status_code == 400
+
+    resp = client.post("/api/studio/submit", json={"action_id": "cfgshow"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True
+    job_id = body["job_id"]
+    assert job_id.startswith("job-")
+
+    finished = _wait(manager, job_id)
+    assert finished.tool == "studio"
+    assert finished.action == "config-show"
+    # The job is pollable over the same /api/jobs surface the frontend uses.
+    detail = client.get(f"/api/jobs/{job_id}")
+    assert detail.status_code == 200
+    assert detail.json()["state"] in ("done", "failed")
+
+
 def test_api_jobs_routes(manager, jobfix_tool):
     from fastapi.testclient import TestClient
 

@@ -15,6 +15,11 @@ from docent.config import write_setting
 from docent.core import Context, action
 
 
+def _mask_opt(key: str | None) -> str | None:
+    """Mask a secret if set; keep None as None (renderers show '(not set)')."""
+    return ConfigShowResult._mask_secret(key) if key else None
+
+
 class ConfigMixin:
     """Mixin providing config actions for StudioTool."""
 
@@ -37,14 +42,18 @@ class ConfigMixin:
             oc_model_verifier=rs.oc_model_verifier,
             oc_model_reviewer=rs.oc_model_reviewer,
             oc_model_researcher=rs.oc_model_researcher,
-            tavily_api_key=rs.tavily_api_key,
+            # Secrets are masked AT CONSTRUCTION so every surface that
+            # serializes this result (MCP, /api/tools, background jobs on
+            # disk) sees masked values — not just the browser path. Unset keys
+            # stay None; masking (first4...last4) is idempotent on re-mask.
+            tavily_api_key=_mask_opt(rs.tavily_api_key),
             tavily_research_timeout=rs.tavily_research_timeout,
-            semantic_scholar_api_key=rs.semantic_scholar_api_key,
+            semantic_scholar_api_key=_mask_opt(rs.semantic_scholar_api_key),
             feynman_model=rs.feynman_model,
             feynman_timeout=rs.feynman_timeout,
             notebooklm_notebook_id=rs.notebooklm_notebook_id,
             obsidian_vault=str(rs.obsidian_vault) if rs.obsidian_vault else None,
-            alphaxiv_api_key=rs.alphaxiv_api_key,
+            alphaxiv_api_key=_mask_opt(rs.alphaxiv_api_key),
         )
 
     @action(

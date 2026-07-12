@@ -5,20 +5,60 @@ import { AppRunProvider } from '@/lib/app-run-context';
 import { StudioRunProvider, useStudioRun } from '@/lib/studio-run-context';
 import type { FormState } from '@/app/studio/_shared';
 
-// ── Fake WebSocket so startRun can open "connections" without a server ──────────
-class FakeWS {
-  static instances: FakeWS[] = [];
-  url: string;
-  onopen: (() => void) | null = null;
-  onmessage: ((e: { data: string }) => void) | null = null;
-  onclose: (() => void) | null = null;
-  onerror: (() => void) | null = null;
-  readyState = 0;
-  constructor(url: string) { this.url = url; FakeWS.instances.push(this); }
-  send(_data: string) { /* no-op */ }
-  close() { this.readyState = 3; this.onclose?.(); }
-  // test helper
-  emit(obj: unknown) { this.onmessage?.({ data: JSON.stringify(obj) }); }
+// ── Fake backend: submit → job id, poll → mutable job snapshots ────────────────
+//
+// Runs are submitted via POST /api/studio/submit and polled via
+// GET /api/jobs/{id} (the jobs transport that replaced the WS path in v2.3).
+// Tests drive a run's lifecycle by mutating `jobs[id]` and advancing the fake
+// 2s poll clock.
+
+interface FakeJob {
+  state: string;
+  events: { ts: string; phase: string; message: string; level: string }[];
+  result_json?: string;
+  error?: string;
+}
+
+let jobs: Record<string, FakeJob>;
+let submitted: { url: string; body: Record<string, unknown> }[];
+let cancelled: string[];
+let jobSeq = 0;
+let maxParallel = 3;
+
+function installFakeBackend() {
+  jobs = {};
+  submitted = [];
+  cancelled = [];
+  jobSeq = 0;
+  const json = (body: unknown, ok = true) =>
+    ({ ok, status: ok ? 200 : 400, json: async () => body }) as unknown as Response;
+
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith('/api/config')) {
+      return json({ research: { max_parallel_studio_runs: maxParallel } });
+    }
+    if (url.endsWith('/api/studio/submit')) {
+      jobSeq += 1;
+      const id = `job-${jobSeq}`;
+      jobs[id] = { state: 'running', events: [] };
+      submitted.push({ url, body: JSON.parse(String(init?.body ?? '{}')) });
+      return json({ ok: true, job_id: id, state: 'queued' });
+    }
+    const cancel = url.match(/\/api\/jobs\/(job-\d+)\/cancel$/);
+    if (cancel) {
+      cancelled.push(cancel[1]);
+      const j = jobs[cancel[1]];
+      if (j) j.state = 'cancelled';
+      return json({ state: 'cancelled' });
+    }
+    const poll = url.match(/\/api\/jobs\/(job-\d+)$/);
+    if (poll) {
+      const j = jobs[poll[1]];
+      return j ? json(j) : json({ error: 'not found' }, false);
+    }
+    return json({});
+  }));
 }
 
 const form: FormState = {
@@ -34,111 +74,150 @@ const wrapper = ({ children }: { children: React.ReactNode }) => (
   <AppRunProvider><StudioRunProvider>{children}</StudioRunProvider></AppRunProvider>
 );
 
-describe('studio run-manager (concurrent runs)', () => {
-  beforeEach(() => {
-    FakeWS.instances = [];
-    vi.stubGlobal('WebSocket', FakeWS as unknown as typeof WebSocket);
-  });
-  afterEach(() => { vi.unstubAllGlobals(); });
+/** Flush the submit fetch promise chain (start → job id → poll timer armed). */
+async function flushSubmits() {
+  await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
+}
 
-  it('starting a second run does not cancel the first', () => {
+/** Advance past one poll tick and flush its fetch promise chain. */
+async function pollOnce() {
+  await act(async () => { await vi.advanceTimersByTimeAsync(2100); });
+}
+
+describe('studio run-manager (jobs polling)', () => {
+  beforeEach(() => {
+    maxParallel = 3;
+    installFakeBackend();
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('starting a second run does not cancel the first', async () => {
     const { result } = renderHook(() => useStudioRun(), { wrapper });
 
     act(() => { result.current.startRun({ actionId: 'deep', form }); });
     act(() => { result.current.startRun({ actionId: 'lit', form }); });
+    await flushSubmits();
 
     expect(result.current.activeRuns).toHaveLength(2);
     expect(result.current.activeRuns.every(r => r.status === 'running')).toBe(true);
-    // Both sockets are still open — neither was closed by the other's start.
-    expect(FakeWS.instances).toHaveLength(2);
-    expect(FakeWS.instances.every(ws => ws.readyState !== 3)).toBe(true);
+    // Both runs were submitted as separate backend jobs; nothing was cancelled.
+    expect(submitted).toHaveLength(2);
+    expect(cancelled).toHaveLength(0);
   });
 
-  it('one run finishing leaves the sibling running', () => {
+  it('submit body carries the action and form fields', async () => {
+    const { result } = renderHook(() => useStudioRun(), { wrapper });
+    act(() => { result.current.startRun({ actionId: 'deep', form: { ...form, topic: 'waves' } }); });
+    await flushSubmits();
+
+    expect(submitted).toHaveLength(1);
+    expect(submitted[0].body.action_id).toBe('deep');
+    expect(submitted[0].body.topic).toBe('waves');
+    expect(submitted[0].body.backend).toBe('free');
+    // No token field — the api-token fetch patch injects the header instead.
+    expect('token' in submitted[0].body).toBe(false);
+  });
+
+  it('one run finishing leaves the sibling running', async () => {
     const { result } = renderHook(() => useStudioRun(), { wrapper });
 
     act(() => { result.current.startRun({ actionId: 'deep', form }); });
     act(() => { result.current.startRun({ actionId: 'lit', form }); });
+    await flushSubmits();
 
-    // Finish the first run.
-    act(() => { FakeWS.instances[0].emit({ type: 'done', status: 'success', raw: '{}' }); });
+    // Finish the first job server-side; next poll picks it up.
+    jobs['job-1'] = { state: 'done', events: [], result_json: '{"ok": true, "output_file": "r.md"}' };
+    await pollOnce();
 
     const byId = Object.fromEntries(result.current.activeRuns.map(r => [r.actionId, r.status]));
     expect(byId.deep).toBe('success');
     expect(byId.lit).toBe('running');
-    // The finished run is recorded in history.
-    expect(result.current.runs.some(r => r.status === 'success')).toBe(true);
+    // The finished run is recorded in history with the parsed result envelope.
+    const rec = result.current.runs.find(r => r.status === 'success');
+    expect(rec).toBeDefined();
+    expect(rec?.doneData?.output_file).toBe('r.md');
+    expect((rec?.doneData?.data as Record<string, unknown>)?.ok).toBe(true);
   });
 
-  it('stop() targets the viewed run only', () => {
+  it('progress events become log lines with the latest phase', async () => {
+    const { result } = renderHook(() => useStudioRun(), { wrapper });
+    act(() => { result.current.startRun({ actionId: 'deep', form }); });
+    await flushSubmits();
+
+    jobs['job-1'].events = [
+      { ts: 't', phase: 'search', message: 'querying', level: 'info' },
+      { ts: 't', phase: 'synthesis', message: 'writing', level: 'info' },
+    ];
+    await pollOnce();
+
+    const run = result.current.activeRuns[0];
+    expect(run.logs.map(l => l.text)).toEqual(['querying', 'writing']);
+    expect(run.phase).toBe('synthesis');
+  });
+
+  it('a failed job marks the run failure with the error in the log', async () => {
+    const { result } = renderHook(() => useStudioRun(), { wrapper });
+    act(() => { result.current.startRun({ actionId: 'deep', form }); });
+    await flushSubmits();
+
+    jobs['job-1'] = { state: 'failed', events: [], error: 'RuntimeError: boom' };
+    await pollOnce();
+
+    expect(result.current.activeRuns[0].status).toBe('failure');
+    expect(result.current.activeRuns[0].logs.some(l => l.text.includes('boom'))).toBe(true);
+  });
+
+  it('stop() targets the viewed run only and cancels its backend job', async () => {
     const { result } = renderHook(() => useStudioRun(), { wrapper });
 
     let firstId = '';
     act(() => { firstId = result.current.startRun({ actionId: 'deep', form }); });
     act(() => { result.current.startRun({ actionId: 'lit', form }); });
+    await flushSubmits();
 
-    // View + stop the first run.
     act(() => { result.current.viewRun(firstId); });
     act(() => { result.current.stop(); });
+    await flushSubmits();
 
     const byId = Object.fromEntries(result.current.activeRuns.map(r => [r.actionId, r.status]));
     expect(byId.deep).toBe('stopped');
     expect(byId.lit).toBe('running');
+    expect(cancelled).toEqual(['job-1']);
   });
 
-  it('does NOT client-queue notebook-bound runs (NLM is serialized server-side)', () => {
+  it('does NOT client-queue notebook-bound runs (NLM is serialized server-side)', async () => {
     const { result } = renderHook(() => useStudioRun(), { wrapper });
 
-    // Two notebook-bound runs (a to-notebook and a deep→notebook) start together:
-    // their research runs concurrently; the server mutex serializes only the brief
-    // NLM auth/push moments. Client-queueing the whole run would waste concurrency.
     act(() => { result.current.startRun({ actionId: 'notebook', form }); });
     act(() => { result.current.startRun({ actionId: 'deep', form: { ...form, dest: 'Notebook' } }); });
+    await flushSubmits();
 
     expect(result.current.activeRuns.filter(r => r.status === 'running')).toHaveLength(2);
     expect(result.current.activeRuns.some(r => r.status === 'queued')).toBe(false);
-    expect(FakeWS.instances).toHaveLength(2); // both opened sockets immediately
-  });
-
-  it('sends the session token in the first WebSocket message', async () => {
-    const { result } = renderHook(() => useStudioRun(), { wrapper });
-
-    const sent: string[] = [];
-    act(() => { result.current.startRun({ actionId: 'deep', form }); });
-    const ws = FakeWS.instances[0];
-    ws.send = (data: string) => { sent.push(data); };
-
-    // onopen resolves getApiToken() asynchronously before sending.
-    await act(async () => {
-      ws.onopen?.();
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(sent).toHaveLength(1);
-    const first = JSON.parse(sent[0]);
-    // Contract: the token field is always present in the first message —
-    // opencode.py's WS gate reads it from there (headers are impossible).
-    expect('token' in first).toBe(true);
-    expect(first.action_id).toBe('deep');
+    expect(submitted).toHaveLength(2); // both submitted immediately
   });
 
   it('enforces the parallel cap from config', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      json: async () => ({ research: { max_parallel_studio_runs: 1 } }),
-    }));
+    maxParallel = 1;
     const { result } = renderHook(() => useStudioRun(), { wrapper });
     // Let the cap-fetch effect settle (fetch → .json() → capRef).
-    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    await flushSubmits();
 
     act(() => { result.current.startRun({ actionId: 'deep', form }); });
     act(() => { result.current.startRun({ actionId: 'lit', form }); });
+    await flushSubmits();
 
     expect(result.current.activeRuns.filter(r => r.status === 'running')).toHaveLength(1);
     expect(result.current.activeRuns.filter(r => r.status === 'queued')).toHaveLength(1);
 
     // Finishing the running one promotes the queued one.
-    act(() => { FakeWS.instances[0].emit({ type: 'done', status: 'success', raw: '{}' }); });
+    jobs['job-1'] = { state: 'done', events: [], result_json: '{"ok": true}' };
+    await pollOnce();
+    await flushSubmits();
     expect(result.current.activeRuns.filter(r => r.status === 'running')).toHaveLength(1);
   });
 });

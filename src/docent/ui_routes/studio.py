@@ -15,6 +15,26 @@ from docent.ui_routes._studio_request import (
 router: APIRouter = APIRouter()
 
 
+@router.post("/api/studio/submit")
+async def studio_submit(body: StudioRunBody) -> JSONResponse:
+    """Submit a Studio form as a background job. The client polls /api/jobs/{id}.
+
+    This is the web UI's ONLY studio execution path (the WS-subprocess and SSE
+    streaming transports were removed in the v2.3 rewire — ADR-006). Fast
+    actions (search, config-show, …) simply reach `done` by the first poll.
+    """
+    from docent.core.jobs import get_job_manager
+    from docent.ui_routes._shared import _audit
+    from docent.ui_routes._studio_request import build_studio_request
+
+    req = build_studio_request(body)
+    if req is None:
+        return JSONResponse({"error": f"Unknown action: {body.action_id!r}"}, status_code=400)
+    job = get_job_manager().submit("studio", req.action, req.kwargs)
+    _audit("studio.submit", f"{req.action} → {job.id}")
+    return JSONResponse({"ok": True, "job_id": job.id, "state": job.state})
+
+
 @router.post("/api/studio/run", response_model=None)
 async def studio_run(body: StudioRunBody):
     if body.action_id not in _STUDIO_ACTION_MAP:
