@@ -20,6 +20,11 @@ subsection with 2–5 user-facing highlights — those are what the banner shows
 ## [Unreleased]
 
 ### Added
+- `serve.jobs_max_concurrent` config key (default `2`) — how many background
+  jobs execute at once; extra submissions queue. Also settable via
+  `DOCENT_SERVE__JOBS_MAX_CONCURRENT`.
+- Weekly `pip-audit` CI workflow auditing the locked dependency set, plus a
+  coverage floor on the Linux test job.
 - **Background jobs — long research runs no longer time out over MCP.** Studio's
   `deep-research`, `lit`, `review`, and `to-notebook` (any backend except
   `free`) now start as background jobs when called via MCP and return a job id
@@ -43,7 +48,23 @@ subsection with 2–5 user-facing highlights — those are what the banner shows
   `docent-cli[all]`.** A feature that needs a missing extra now exits with a
   clear `[D009]` message telling you exactly what to install.
 
+### Security
+- Session-token and MCP bearer-key comparisons are now constant-time
+  (`secrets.compare_digest`) on all three surfaces (HTTP guard, WebSocket
+  gate, `/mcp/*` auth).
+- Patched CVE-flagged transitive dependencies: soupsieve ≥ 2.8.4
+  (CVE-2026-49476/49477), msgpack ≥ 1.2.1 (GHSA-6v7p-g79w-8964),
+  pip ≥ 26.1.2 (PYSEC-2026-196); upgraded pydantic-settings to 2.14.2
+  (GHSA-4xgf-cpjx-pc3j).
+
 ### Fixed
+- **A corrupt `queue.json` is now quarantined** (renamed to
+  `queue.json.corrupt-<timestamp>`) instead of being treated as empty in
+  place — previously the next save could permanently overwrite
+  recoverable data.
+- Background jobs no longer rewrite their full on-disk record on every
+  progress event (throttled to one write per 2s; the final record is always
+  complete).
 - CLI error messages containing square brackets (e.g. install hints like
   `docent-cli[studio]`) are no longer partially swallowed by Rich markup
   parsing.

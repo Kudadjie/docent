@@ -138,6 +138,36 @@ def test_active_records_marked_interrupted_on_load(tmp_path):
     assert mgr.get("job-stale00001").state == "interrupted"
 
 
+def test_max_concurrent_one_queues_second_job(tmp_path, jobfix_tool, monkeypatch):
+    mgr = JobManager(jobs_dir=tmp_path / "jobs", max_concurrent=1)
+    monkeypatch.setattr(jobs_mod, "_manager", mgr)
+    first = mgr.submit(jobfix_tool, "emit", {"n": 200, "slow": True})
+    second = mgr.submit(jobfix_tool, "emit", {"n": 1})
+    time.sleep(0.15)  # let the first job occupy the only slot
+    assert mgr.get(first.id).state == "running"
+    assert mgr.get(second.id).state == "queued"
+    mgr.cancel(first.id)
+    _wait(mgr, first.id)
+    assert _wait(mgr, second.id).state == "done"
+
+
+def test_max_concurrent_reads_settings(tmp_path, monkeypatch):
+    # load_settings self-invalidates on DOCENT_* env changes, so setenv is enough.
+    monkeypatch.setenv("DOCENT_SERVE__JOBS_MAX_CONCURRENT", "5")
+    mgr = JobManager(jobs_dir=tmp_path / "jobs")
+    assert mgr._slots._initial_value == 5
+
+
+def test_all_events_on_disk_after_finish_despite_throttle(manager, jobfix_tool, tmp_path):
+    # Events flush to disk at most every EVENT_PERSIST_INTERVAL, but _finish()
+    # writes the full record — nothing may be missing once the job is done.
+    job = manager.submit(jobfix_tool, "emit", {"n": 25})
+    _wait(manager, job.id)
+    on_disk = json.loads((tmp_path / "jobs" / f"{job.id}.json").read_text(encoding="utf-8"))
+    assert on_disk["state"] == "done"
+    assert len(on_disk["events"]) == 25
+
+
 def test_retention_prunes_oldest_beyond_limit(tmp_path):
     mgr = JobManager(jobs_dir=tmp_path / "jobs")
     for i in range(jobs_mod.RETENTION + 5):

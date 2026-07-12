@@ -100,6 +100,29 @@ describe('studio run-manager (concurrent runs)', () => {
     expect(FakeWS.instances).toHaveLength(2); // both opened sockets immediately
   });
 
+  it('sends the session token in the first WebSocket message', async () => {
+    const { result } = renderHook(() => useStudioRun(), { wrapper });
+
+    const sent: string[] = [];
+    act(() => { result.current.startRun({ actionId: 'deep', form }); });
+    const ws = FakeWS.instances[0];
+    ws.send = (data: string) => { sent.push(data); };
+
+    // onopen resolves getApiToken() asynchronously before sending.
+    await act(async () => {
+      ws.onopen?.();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(sent).toHaveLength(1);
+    const first = JSON.parse(sent[0]);
+    // Contract: the token field is always present in the first message —
+    // opencode.py's WS gate reads it from there (headers are impossible).
+    expect('token' in first).toBe(true);
+    expect(first.action_id).toBe('deep');
+  });
+
   it('enforces the parallel cap from config', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       json: async () => ({ research: { max_parallel_studio_runs: 1 } }),

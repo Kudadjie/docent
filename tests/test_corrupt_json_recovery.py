@@ -49,6 +49,29 @@ class TestQueueJsonRecovery:
         store.queue_path.write_text(json.dumps(entries), encoding="utf-8")
         assert store.load_queue() == entries
 
+    def test_corrupt_queue_json_is_quarantined_not_left_in_place(self, store):
+        corrupt = "NOT VALID JSON {{{"
+        store.queue_path.write_text(corrupt, encoding="utf-8")
+        assert store.load_queue() == []
+        # Original file moved aside — a subsequent save can't overwrite the bytes.
+        assert not store.queue_path.exists()
+        quarantined = list(store.root.glob("queue.json.corrupt-*"))
+        assert len(quarantined) == 1
+        assert quarantined[0].read_text(encoding="utf-8") == corrupt
+
+    def test_save_after_corrupt_load_preserves_quarantined_bytes(self, store):
+        corrupt = '[{"id": "recoverable-entry", "title": "half-written'
+        store.queue_path.write_text(corrupt, encoding="utf-8")
+        store.load_queue()
+        store.save_queue([{"id": "new-1", "title": "New"}])
+        # New queue saved fresh; corrupt original still on disk for recovery.
+        assert json.loads(store.queue_path.read_text(encoding="utf-8")) == [
+            {"id": "new-1", "title": "New"}
+        ]
+        quarantined = list(store.root.glob("queue.json.corrupt-*"))
+        assert len(quarantined) == 1
+        assert "recoverable-entry" in quarantined[0].read_text(encoding="utf-8")
+
 
 class TestQueueIndexJsonRecovery:
     def test_corrupt_index_returns_empty_dict(self, store):

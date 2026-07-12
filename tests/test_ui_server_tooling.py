@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 import docent.ui_routes.doctor as _doctor_mod
 from docent import ui_server
+from docent.ui_routes import _studio_request as studio_request
 
 
 def test_tooling_endpoint_reports_npm_tool_versions(monkeypatch):
@@ -83,8 +84,10 @@ def test_subprocess_builder_keeps_confirmed_for_deep_and_lit(monkeypatch):
 def test_inprocess_builder_confirmed_only_for_deep_and_lit():
     cases = {"draft": False, "deep": True, "lit": True}
     for action_id, want_confirmed in cases.items():
-        body = ui_server.StudioRunBody(action_id=action_id, topic="X", backend="free", dest="local")
-        _action, args = ui_server._parse_studio_body(body)
+        body = studio_request.StudioRunBody(
+            action_id=action_id, topic="X", backend="free", dest="local"
+        )
+        _action, args = studio_request._parse_studio_body(body)
         assert ("confirmed" in args) is want_confirmed
 
 
@@ -94,7 +97,7 @@ def test_inprocess_builder_confirmed_only_for_deep_and_lit():
 # lock that in so the two surfaces can never drift again (the original class of
 # bug: an arg added to one builder but not the other).
 
-_ALL_ACTION_IDS = list(ui_server._STUDIO_ACTION_MAP)
+_ALL_ACTION_IDS = list(studio_request._STUDIO_ACTION_MAP)
 
 
 def test_both_builders_agree_on_confirmed_gate(monkeypatch):
@@ -104,8 +107,10 @@ def test_both_builders_agree_on_confirmed_gate(monkeypatch):
 
     monkeypatch.setattr("shutil.which", lambda _name: "/usr/bin/docent")
     for action_id in _ALL_ACTION_IDS:
-        body = ui_server.StudioRunBody(action_id=action_id, topic="X", backend="free", dest="local")
-        parsed = ui_server._parse_studio_body(body)
+        body = studio_request.StudioRunBody(
+            action_id=action_id, topic="X", backend="free", dest="local"
+        )
+        parsed = studio_request._parse_studio_body(body)
         cmd = oc._build_studio_cmd(body)
         assert parsed is not None and cmd is not None
         kwargs_has_confirmed = "confirmed" in parsed[1]
@@ -114,8 +119,8 @@ def test_both_builders_agree_on_confirmed_gate(monkeypatch):
 
 
 def test_build_studio_request_unknown_action_returns_none():
-    body = ui_server.StudioRunBody(action_id="does-not-exist")
-    assert ui_server.build_studio_request(body) is None
+    body = studio_request.StudioRunBody(action_id="does-not-exist")
+    assert studio_request.build_studio_request(body) is None
 
 
 def test_subprocess_cmd_renders_request_argv(monkeypatch):
@@ -123,10 +128,10 @@ def test_subprocess_cmd_renders_request_argv(monkeypatch):
     import docent.ui_routes.opencode as oc
 
     monkeypatch.setattr("shutil.which", lambda _name: "/usr/bin/docent")
-    body = ui_server.StudioRunBody(
+    body = studio_request.StudioRunBody(
         action_id="lit", topic="reefs", backend="free", dest="local", expand_citations=True
     )
-    req = ui_server.build_studio_request(body)
+    req = studio_request.build_studio_request(body)
     cmd = oc._build_studio_cmd(body)
     assert cmd == ["/usr/bin/docent", "studio", req.action, *req.argv]
     # spot-check the lit-specific flags survive the round-trip

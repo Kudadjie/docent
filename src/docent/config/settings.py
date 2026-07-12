@@ -101,6 +101,7 @@ class ServeSettings(BaseModel):
     api_key: str | None = None
     host: str = "127.0.0.1"
     http_mcp_enabled: bool = True
+    jobs_max_concurrent: int = 2  # background jobs executing at once; excess sit queued
 
 
 class Settings(BaseSettings):

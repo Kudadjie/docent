@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import re
+import secrets
 import subprocess
 import sys
 from typing import Any
@@ -249,7 +250,11 @@ async def studio_run_ws(websocket: WebSocket):
         # the check binds to the token run_server() actually issued.
         expected = getattr(websocket.app.state, "session_token", None)
         sent = body_raw.pop("token", None) if isinstance(body_raw, dict) else None
-        if expected is not None and sent != expected:
+        # compare_digest: constant-time, and requires str — a non-str `sent`
+        # (missing token, JSON number) fails closed instead of raising.
+        if expected is not None and not (
+            isinstance(sent, str) and secrets.compare_digest(sent, expected)
+        ):
             await websocket.close(code=1008)
             return
         body = StudioRunBody(**body_raw)

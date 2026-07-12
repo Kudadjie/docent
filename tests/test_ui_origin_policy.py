@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from docent import ui_server
-from docent.ui_server import _is_localhost_origin
+from docent.ui_routes._shared import _is_localhost_origin
 
 
 class TestOriginHelper:

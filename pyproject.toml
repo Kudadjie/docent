@@ -94,7 +94,14 @@ artifacts = ["src/docent/ui_dist/**"]
 "docs/guides/studio-user-guide.md" = "docent/docs/guides/studio-user-guide.md"
 
 [dependency-groups]
-dev = ["pytest>=8.0", "pytest-timeout>=2.3", "pip-audit>=2.7", "ruff>=0.9", "mypy>=1.13"]
+dev = [
+    "pytest>=8.0",
+    "pytest-timeout>=2.3",
+    "pip-audit>=2.7",
+    "ruff>=0.9",
+    "mypy>=1.13",
+    "pytest-cov>=7.1.0",
+]
 
 [tool.uv]
 default-groups = ["dev"]
@@ -104,6 +111,9 @@ constraint-dependencies = [
     "idna>=3.15",        # CVE-2026-45409
     "starlette>=1.0.1",  # PYSEC-2026-161
     "urllib3>=2.7.0",    # PYSEC-2026-142, PYSEC-2026-141
+    "soupsieve>=2.8.4",  # CVE-2026-49476, CVE-2026-49477
+    "pip>=26.1.2",       # PYSEC-2026-196
+    "msgpack>=1.2.1",    # GHSA-6v7p-g79w-8964
 ]
 
 [tool.pytest.ini_options]

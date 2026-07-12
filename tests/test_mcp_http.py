@@ -82,7 +82,8 @@ def test_post_messages_with_correct_key_not_404(client: TestClient) -> None:
 
 def test_mcp_routes_exempt_from_localhost_guard() -> None:
     """Non-localhost Origin must be allowed on /mcp/* but blocked on other routes."""
-    from docent.ui_server import _is_localhost_origin, _LocalhostGuard
+    from docent.ui_routes._shared import _is_localhost_origin
+    from docent.ui_server import _LocalhostGuard
 
     # Verify that a non-localhost origin would normally be rejected.
     assert not _is_localhost_origin("http://evil.example.com")

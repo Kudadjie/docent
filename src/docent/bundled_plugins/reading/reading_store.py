@@ -129,13 +129,38 @@ class ReadingQueueStore:
                 "Queue is busy — another Docent process is currently writing. Retry in a moment."
             ) from None
 
+    def _quarantine_corrupt(self, path: Path, exc: Exception) -> None:
+        """Move an unparseable state file aside so the next save can't overwrite it.
+
+        Without this, load → [] → save would replace corrupt-but-recoverable
+        data with an empty file. The quarantined copy keeps the bytes on disk
+        for manual recovery.
+        """
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        target = path.with_name(f"{path.name}.corrupt-{stamp}")
+        try:
+            os.replace(path, target)
+            _logger.warning(
+                "%s is corrupt (%s) — quarantined to %s; treating as empty",
+                path.name,
+                exc,
+                target.name,
+            )
+        except OSError as move_exc:
+            _logger.warning(
+                "%s is corrupt (%s) and could not be quarantined (%s) — treating as empty",
+                path.name,
+                exc,
+                move_exc,
+            )
+
     def load_queue(self) -> list[dict[str, Any]]:
         if not self.queue_path.exists():
             return []
         try:
             entries: list[dict[str, Any]] = json.loads(self.queue_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-            _logger.warning("queue.json is corrupt (%s) — treating as empty queue", exc)
+            self._quarantine_corrupt(self.queue_path, exc)
             return []
         detected = _infer_schema_version(entries)
         if detected < _QUEUE_SCHEMA_VERSION:

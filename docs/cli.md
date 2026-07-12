@@ -469,7 +469,10 @@ server process exited mid-run shows as `interrupted` — rerun the original
 action.
 
 Details:
-- At most **2 jobs execute concurrently**; extra submissions wait in `queued`.
+- At most **2 jobs execute concurrently** by default; extra submissions wait in
+  `queued`. Configurable via `serve.jobs_max_concurrent` in
+  `~/.docent/config.toml` (or `DOCENT_SERVE__JOBS_MAX_CONCURRENT`); takes
+  effect on the next server start.
 - The **last 50 job records are kept** (`~/.docent/data/jobs/`); older ones are
   pruned automatically.
 - The web UI can poll the same data at `GET /api/jobs` and `GET /api/jobs/{id}`.

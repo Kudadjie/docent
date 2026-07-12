@@ -54,12 +54,24 @@ jobs:
         if: runner.os == 'Linux'
         run: uv run --all-extras mypy
 
-      - name: Unit tests
+      - name: Unit tests (Windows)
+        if: runner.os == 'Windows'
         env:
           LITELLM_LOCAL_MODEL_COST_MAP: "True"
           PYTHONUNBUFFERED: "1"
           DOCENT_NO_INTERACTIVE: "1"
         run: uv run --all-extras python -u -m pytest -m "not integration and not eval" --timeout=30 --tb=short -q -o addopts=""
+
+      # Coverage gate runs on Linux only (one measurement is enough). The floor
+      # is a ratchet: baseline was 50% (2026-07-12) — raise it as coverage
+      # grows, never lower it.
+      - name: Unit tests + coverage gate (Linux)
+        if: runner.os == 'Linux'
+        env:
+          LITELLM_LOCAL_MODEL_COST_MAP: "True"
+          PYTHONUNBUFFERED: "1"
+          DOCENT_NO_INTERACTIVE: "1"
+        run: uv run --all-extras python -u -m pytest -m "not integration and not eval" --timeout=30 --tb=short -q -o addopts="" --cov=docent --cov-report=term --cov-fail-under=48
 
   frontend:
     name: Frontend

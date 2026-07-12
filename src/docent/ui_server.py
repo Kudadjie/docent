@@ -9,6 +9,7 @@ historically imported them from ``docent.ui_server``).
 
 import logging
 import re as _re
+import secrets
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -20,7 +21,10 @@ from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
-# Re-exports — keep the historical ``docent.ui_server`` import surface working.
+# Re-exports — keep the historical ``docent.ui_server`` import surface working
+# for external callers. DEPRECATED: import from ``docent.ui_routes._shared`` /
+# ``docent.ui_routes._studio_request`` instead. First-party code and tests have
+# been migrated; these shims are scheduled for removal in v2.3.
 from docent.ui_routes._shared import (  # noqa: F401
     _audit,
     _audit_logger,
@@ -81,15 +85,20 @@ class _LocalhostGuard(BaseHTTPMiddleware):
 
 # ── Session token ─────────────────────────────────────────────────────────────
 # The Origin check above blocks cross-site browser requests, but NOT requests
-# from other localhost origins (e.g. a dev server on :3000) or local non-browser
-# processes. Any of those could otherwise POST /api/tools/invoke — which can run
-# tool actions that touch the filesystem or shell out. So every state-changing
-# /api request must also carry a per-session token.
+# from other localhost *browser* origins (e.g. a dev server on :3000). Such a
+# page could otherwise POST /api/tools/invoke — which can run tool actions that
+# touch the filesystem or shell out. So every state-changing /api request must
+# also carry a per-session token.
 #
 # Delivery: the frontend GETs /api/auth/token (same-origin only in practice —
 # without CORS headers a cross-origin page cannot READ the response) and sends
 # it back as X-Docent-Token on mutating requests. The WebSocket path receives
 # it inside the first JSON message instead (browsers can't set WS headers).
+#
+# Scope honesty: this defends against BROWSER-mediated cross-origin requests
+# only. A local non-browser process running as the same user can simply GET
+# /api/auth/token and read it — no localhost HTTP scheme can exclude same-user
+# processes, and we don't claim to. That boundary is the OS user account.
 #
 # The token lives on ``app.state.session_token`` — NOT in a module global — so
 # each create_app() instance carries its own and tests can't leak state into
@@ -112,7 +121,9 @@ class _SessionTokenGuard(BaseHTTPMiddleware):
             token is not None
             and request.method in _MUTATING_METHODS
             and request.url.path.startswith("/api/")
-            and request.headers.get("x-docent-token", "") != token
+            # compare_digest: constant-time — an attacker probing the guard
+            # can't recover the token byte-by-byte from response timing.
+            and not secrets.compare_digest(request.headers.get("x-docent-token", ""), token)
         ):
             _audit("token.denied", f"{request.method} {request.url.path}")
             return JSONResponse(
@@ -226,8 +237,6 @@ def set_session_token(token: str | None) -> None:
 
 
 def run_server(host: str = "127.0.0.1", port: int = 7432) -> None:
-    import secrets
-
     from docent.bundled_plugins.reading.reading_store import cleanup_legacy_paper_dirs
     from docent.config import load_settings, write_setting
     from docent.core import load_plugins

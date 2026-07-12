@@ -60,3 +60,4 @@ Desktop.ini
 
 # Local gstack security reports and session data
 .gstack/
+.coverage

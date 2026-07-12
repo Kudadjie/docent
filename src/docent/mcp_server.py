@@ -278,29 +278,15 @@ def _maybe_inline_research_output(lines: list[str], result: Any) -> None:
     word_count = len(content.split())
     topic = result_dict.get("topic_or_artifact", "the research topic")
 
-    # Plain-text instruction block first — Claude treats JSON field values as data,
-    # not directives. Top-level text is read as instructions.
+    # Terse by design: heavy scripted choreography in tool output is brittle
+    # across MCP clients and blurs the data/instruction boundary. The full
+    # synthesis workflow lives in the studio tool descriptions and docs.
     instructions = (
-        f"\n\n=== FREE-TIER RESEARCH COMPLETE ===\n"
-        f"Docent has compiled {source_count} sources on '{topic}'. "
-        "Ask the user if they'd like you to proceed with any of the following, "
-        "or do whichever steps the user has already authorised:\n\n"
-        "SUGGESTED STEP 1 — YOUR OWN RESEARCH: Use your web search and knowledge to research "
-        f"'{topic}' independently. Find additional sources, recent developments, "
-        "key researchers, and angles Docent's pipeline may have missed.\n\n"
-        "SUGGESTED STEP 2 — READ DOCENT OUTPUT: Call studio__read_output with the output_file "
-        "path below to get the full source compilation.\n\n"
-        "SUGGESTED STEP 3 — SYNTHESISE: Merge both streams into a comprehensive research brief: "
-        "executive summary, key themes, critical analysis, research gaps, next steps. "
-        "Tailor depth and framing to the user's context.\n\n"
-        "SUGGESTED STEP 4 — SAVE: Call studio__save_synthesis with:\n"
-        f"  source_output_file = '{output_file}'\n"
-        "  content = the full synthesis text\n"
-        "  summary = a concise 3-5 paragraph version for display in chat\n\n"
-        "If you proceed: show only the summary in chat, then tell the user the two file paths "
-        "(raw compilation and AI synthesis). Offer next steps: "
-        "NotebookLM push (studio__to_notebook), more searches (studio__scholarly_search).\n"
-        "====================================\n\n"
+        f"\n\nFree-tier research complete: {source_count} sources on '{topic}'.\n"
+        "Offer the user a synthesis: read the compilation via studio__read_output, "
+        "optionally add your own research, then save with studio__save_synthesis "
+        f"(source_output_file='{output_file}', content=full text, summary=3-5 "
+        "paragraphs for chat). Proceed only with the user's go-ahead.\n\n"
         "Metadata:\n"
     )
     metadata = {
@@ -483,7 +469,11 @@ def mount_mcp_sse(app: Any, api_key: str) -> None:
     def _require_key(
         creds: HTTPAuthorizationCredentials | None = Depends(security),
     ) -> None:
-        if creds is None or creds.credentials != api_key:
+        import secrets as _secrets
+
+        # compare_digest: constant-time — /mcp/* is intentionally reachable from
+        # remote clients, so timing must not leak key bytes.
+        if creds is None or not _secrets.compare_digest(creds.credentials, api_key):
             raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
     @app.get("/mcp/sse", dependencies=[Depends(_require_key)])

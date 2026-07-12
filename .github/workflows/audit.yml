@@ -1,0 +1,43 @@
+name: Dependency audit
+
+# pip-audit was in dev deps but never ran in CI. Weekly schedule catches new
+# advisories against unchanged code; the push trigger catches dependency
+# changes as they land. Findings feed [tool.uv] constraint-dependencies in
+# pyproject.toml (the CVE-floor list).
+
+on:
+  schedule:
+    - cron: "17 6 * * 1" # Mondays 06:17 UTC — off the whole-hour rush
+  workflow_dispatch:
+  push:
+    branches: [main, dev]
+    paths:
+      - "pyproject.toml"
+      - "uv.lock"
+
+jobs:
+  pip-audit:
+    name: pip-audit (all extras)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      # Audit the locked dependency set, not a fresh resolution: export the
+      # lockfile and check exactly what ships. --no-deps because the export is
+      # already a complete closure.
+      - name: Export locked requirements
+        run: uv export --all-extras --no-emit-project --no-hashes --format requirements-txt > requirements-audit.txt
+
+      - name: Run pip-audit
+        run: uv run pip-audit -r requirements-audit.txt --no-deps --strict

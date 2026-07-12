@@ -29,6 +29,7 @@ from __future__ import annotations
 import datetime
 import logging
 import threading
+import time
 import uuid
 from pathlib import Path
 from typing import Any, Literal
@@ -39,9 +40,14 @@ from docent.utils.paths import data_dir
 
 logger = logging.getLogger("docent.jobs")
 
-MAX_CONCURRENT = 2
+MAX_CONCURRENT = 2  # fallback when settings are unavailable; see serve.jobs_max_concurrent
 RETENTION = 50  # finished job records kept on disk
 MAX_EVENTS = 500  # progress-event ring buffer per job
+# Chatty pipelines can emit hundreds of ProgressEvents; rewriting the whole job
+# JSON per event is O(n²) disk churn. Events are flushed at most this often —
+# state transitions always persist immediately, and _finish() writes the full
+# record, so at most this window of *intermediate* events is lost on a crash.
+EVENT_PERSIST_INTERVAL = 2.0  # seconds
 
 JobState = Literal["queued", "running", "done", "failed", "cancelled", "interrupted"]
 
@@ -50,6 +56,20 @@ _ACTIVE_STATES: frozenset[str] = frozenset({"queued", "running"})
 
 def _now() -> str:
     return datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds")
+
+
+def _configured_max_concurrent() -> int:
+    """Read serve.jobs_max_concurrent, falling back to MAX_CONCURRENT.
+
+    Settings load can fail in stripped-down contexts (tests without a config
+    home); the job manager must still construct, so failure means fallback.
+    """
+    try:
+        from docent.config import load_settings
+
+        return int(load_settings().serve.jobs_max_concurrent)
+    except Exception:
+        return MAX_CONCURRENT
 
 
 class JobRecord(BaseModel):
@@ -92,12 +112,15 @@ class JobNotFoundError(KeyError):
 class JobManager:
     """In-process job table with thread-per-job execution and JSON persistence."""
 
-    def __init__(self, jobs_dir: Path | None = None) -> None:
+    def __init__(self, jobs_dir: Path | None = None, max_concurrent: int | None = None) -> None:
         self._dir = jobs_dir if jobs_dir is not None else data_dir() / "jobs"
         self._lock = threading.Lock()
         self._jobs: dict[str, JobRecord] = {}
         self._cancel_flags: dict[str, threading.Event] = {}
-        self._slots = threading.BoundedSemaphore(MAX_CONCURRENT)
+        self._last_event_flush: dict[str, float] = {}
+        if max_concurrent is None:
+            max_concurrent = _configured_max_concurrent()
+        self._slots = threading.BoundedSemaphore(max(1, max_concurrent))
         self._load_existing()
 
     # ── persistence ──────────────────────────────────────────────────────────
@@ -213,7 +236,8 @@ class JobManager:
             if error is not None:
                 job.error = error
             self._cancel_flags.pop(job.id, None)
-            self._persist(job)
+            self._last_event_flush.pop(job.id, None)
+            self._persist(job)  # full record incl. all events — supersedes throttled flushes
             self._prune()
 
     def _append_event(self, job: JobRecord, event: Any) -> None:
@@ -227,7 +251,13 @@ class JobManager:
             job.events.append(entry)
             if len(job.events) > MAX_EVENTS:
                 del job.events[: len(job.events) - MAX_EVENTS]
-            self._persist(job)
+            # Throttled flush (see EVENT_PERSIST_INTERVAL). In-memory state —
+            # what status() serves — is always current; only the on-disk crash
+            # record lags by at most the interval.
+            now = time.monotonic()
+            if now - self._last_event_flush.get(job.id, 0.0) >= EVENT_PERSIST_INTERVAL:
+                self._last_event_flush[job.id] = now
+                self._persist(job)
 
     def _run_job(self, job_id: str, via_mcp: bool, cancel_flag: threading.Event) -> None:
         import inspect
