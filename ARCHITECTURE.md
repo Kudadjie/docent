@@ -25,7 +25,7 @@ docent/
 │       ├── ui_server.py        # FastAPI app — serves UI on localhost:7432
 │       ├── ui_routes/          # FastAPI route modules (split from ui_server.py)
 │       │   ├── reading.py      # /api/queue, /api/actions, /api/database
-│       │   ├── studio.py       # /api/studio/* — SSE + WebSocket for research runs
+│       │   ├── studio.py       # /api/studio/* — job submission + utility endpoints
 │       │   ├── config.py       # /api/config — read/write settings
 │       │   ├── backup.py       # /api/backup/* — create, restore, list, Drive sync
 │       │   ├── doctor.py       # /api/doctor — health checks
@@ -286,7 +286,7 @@ That's the whole setup.
 
 **Route modules** (`ui_routes/`):
 - `reading.py` — `/api/queue` (reads through `load_queue_for_ui` with Mendeley overlay), `/api/actions` (mutations via `invoke_action_for_ui`), `/api/database`.
-- `studio.py` — `/api/studio/*` — SSE streaming for in-process studio runs; WebSocket for subprocess-based runs.
+- `studio.py` — `/api/studio/*` — `POST /api/studio/submit` starts a run as a background job (Layer 13); the frontend polls `/api/jobs/{id}`. This is the only studio transport since v2.3 (the SSE and WebSocket-subprocess streams were removed).
 - `filesystem.py` — `/api/fs/read` (GET) reads a file for Markdown preview; `/api/fs/open` (POST) opens in OS file manager. Both restricted to approved roots.
 - `config.py` — `/api/config` (GET/POST) — reads/writes settings.
 - `backup.py` — `/api/backup/*` — create, restore, list, Google Drive sync.
@@ -304,8 +304,7 @@ That's the whole setup.
 **Non-interactive vs consent (Context flags):** `Context` carries three orthogonal flags instead of the old overloaded `via_mcp`: `via_mcp` (MCP agent — governs `mcp_notes` and AI-agent output framing), `non_interactive` (no TTY — preflights raise structured errors and skip spinners), and `auto_confirm` (skip human confirmation gates). MCP sets all three; the web UI sets `non_interactive` + `auto_confirm` only, so UI users get human-facing output and an explicit (not accidental) auto-confirm. `make_context(via_mcp=True)` still implies the other two unless overridden.
 
 **Studio action mapping** (`build_studio_request`):
-- **One** source of truth. `build_studio_request(body)` resolves a `StudioRunBody` into a `StudioRequest` holding BOTH the in-process `kwargs` (for `run_action` on the SSE path) and the CLI `argv` (for the subprocess WebSocket path), built side by side in the same per-action branch. The two thin renderers — `_parse_studio_body` (ui_server) and `_build_studio_cmd` (ui_routes/opencode) — both derive from it, so a new action or argument is added in exactly one place and the two surfaces cannot drift. (Historically these were two hand-synced mappings; `test_ui_server_tooling.py::test_both_builders_agree_on_confirmed_gate` guards against regression.)
-- The live frontend uses the WebSocket subprocess path; the SSE path remains wired and unit-tested.
+- **One** source of truth. `build_studio_request(body)` resolves a `StudioRunBody` into a `StudioRequest` holding the `kwargs` fed to `run_action` when the form is submitted as a background job. (Historically it also rendered a subprocess argv for the WebSocket path and fed an SSE stream — both transports were deleted in v2.3 along with the dual-renderer drift problem they created.)
 
 ---
 

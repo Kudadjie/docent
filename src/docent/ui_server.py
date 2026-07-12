@@ -53,9 +53,7 @@ from docent.ui_routes._studio_request import (  # noqa: F401
     _STUDIO_ACTION_MAP,
     StudioRequest,
     StudioRunBody,
-    _form_to_studio_args,
     _parse_studio_body,
-    _stream_studio_run,
     build_studio_request,
 )
 
@@ -70,9 +68,9 @@ class _LocalhostGuard(BaseHTTPMiddleware):
     /mcp/* routes are exempt — they are API-key-protected and intentionally
     reachable from remote clients.
 
-    NOTE: Starlette's BaseHTTPMiddleware only runs on the `http` scope —
-    WebSocket handshakes bypass it entirely. WebSocket endpoints must enforce
-    the origin check themselves via `_is_localhost_origin` (see ui_routes/opencode.py).
+    NOTE: Starlette's BaseHTTPMiddleware only runs on the `http` scope — if a
+    WebSocket endpoint is ever added again, it must enforce the origin check
+    itself via `_is_localhost_origin` (the handshake bypasses this middleware).
     """
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:

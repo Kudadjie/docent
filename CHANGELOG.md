@@ -34,6 +34,13 @@ subsection with 2–5 user-facing highlights — those are what the banner shows
   the last 50 records are kept under `~/.docent/data/jobs/`.
 
 ### Changed
+- **Studio runs in the web UI now execute as background jobs.** The run panel
+  submits via `POST /api/studio/submit` and polls `/api/jobs/{id}` — runs
+  survive page reloads server-side, and Stop maps to cooperative job
+  cancellation. The WebSocket-subprocess and SSE streaming transports were
+  removed; progress updates now arrive in ~2-second batches instead of
+  instantly. `config-show` results carry masked API keys on every surface
+  (previously only the browser path masked).
 - **`studio_backend` default changed from `opencode` to `groq`.** The `docent`
   studio backend resolves to a LiteLLM provider; OpenCode is no longer the
   default (it still works if you run `opencode serve` and set

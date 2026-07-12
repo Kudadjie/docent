@@ -1,16 +1,11 @@
-"""Studio run SSE streaming endpoint + utility endpoints."""
+"""Studio job submission + utility endpoints."""
 
 import asyncio
 
 from fastapi import APIRouter
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse
 
-from docent.ui_routes._studio_request import (
-    _STUDIO_ACTION_MAP,
-    StudioRunBody,
-    _form_to_studio_args,
-    _stream_studio_run,
-)
+from docent.ui_routes._studio_request import StudioRunBody
 
 router: APIRouter = APIRouter()
 
@@ -33,19 +28,6 @@ async def studio_submit(body: StudioRunBody) -> JSONResponse:
     job = get_job_manager().submit("studio", req.action, req.kwargs)
     _audit("studio.submit", f"{req.action} → {job.id}")
     return JSONResponse({"ok": True, "job_id": job.id, "state": job.state})
-
-
-@router.post("/api/studio/run", response_model=None)
-async def studio_run(body: StudioRunBody):
-    if body.action_id not in _STUDIO_ACTION_MAP:
-        return JSONResponse({"error": f"Unknown action: {body.action_id!r}"}, status_code=400)
-    studio_action = _STUDIO_ACTION_MAP[body.action_id]
-    args = _form_to_studio_args(body.action_id, body)
-    return StreamingResponse(
-        _stream_studio_run(studio_action, args),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
 
 
 @router.get("/api/studio/tavily-usage")

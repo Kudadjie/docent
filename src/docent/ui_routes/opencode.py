@@ -1,49 +1,21 @@
 """OpenCode server management and WebSocket subprocess streaming."""
 
 import asyncio
-import json
 import logging
 import os
-import re
-import secrets
 import subprocess
 import sys
-from typing import Any
 
 import httpx
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 router: APIRouter = APIRouter()
-from docent.ui_routes._shared import _audit, _is_localhost_origin  # noqa: E402
-from docent.ui_routes._studio_request import (  # noqa: E402
-    StudioRunBody,
-    build_studio_request,
-)
+from docent.ui_routes._shared import _audit  # noqa: E402
 
 _log = logging.getLogger("docent.ui.opencode")
 
 _opencode_proc: subprocess.Popen | None = None
-
-
-def _build_studio_cmd(body: StudioRunBody) -> list[str] | None:
-    """Build the `docent studio <action> ...` subprocess command for the live
-    WebSocket path.
-
-    Renders from :func:`docent.ui_routes._studio_request.build_studio_request` —
-    the SAME source of truth as the in-process/SSE builder (`_parse_studio_body`).
-    Per-action argument handling lives in exactly one place, so the two surfaces
-    can no longer drift. This function only prepends the resolved `docent` executable.
-    """
-    import shutil as _sh
-
-    req = build_studio_request(body)
-    if req is None:
-        return None
-    docent_exe = _sh.which("docent")
-    if not docent_exe:
-        return None
-    return [docent_exe, "studio", req.action, *req.argv]
 
 
 @router.post("/api/opencode/start")
@@ -227,187 +199,3 @@ async def notebooklm_auth() -> JSONResponse:
         return JSONResponse({"ok": False, "error": err}, status_code=500)
     _audit("notebooklm-auth", "terminal opened")
     return JSONResponse({"ok": True, "message": "Terminal opened for authentication."})
-
-
-@router.websocket("/ws/studio/run")
-async def studio_run_ws(websocket: WebSocket):
-    """WebSocket endpoint — pipes `docent studio <action>` subprocess stdout live."""
-    # Cross-site WebSocket hijacking guard: _LocalhostGuard (an HTTP middleware)
-    # does NOT see WebSocket handshakes, so we must enforce the origin policy here.
-    # Without this, any web page the user visits could open this socket and drive
-    # studio subprocesses (spend API credits, write files via to-notebook output).
-    if not _is_localhost_origin(websocket.headers.get("origin", "")):
-        await websocket.close(code=1008)  # 1008 = policy violation
-        return
-    await websocket.accept()
-
-    try:
-        body_raw = await websocket.receive_json()
-        # Session-token check (browsers cannot set custom WS headers, so the
-        # token rides inside the first message). The origin check alone would
-        # still admit pages served from OTHER localhost ports (e.g. :3000).
-        # Read from the serving app's state — not the module-level app — so
-        # the check binds to the token run_server() actually issued.
-        expected = getattr(websocket.app.state, "session_token", None)
-        sent = body_raw.pop("token", None) if isinstance(body_raw, dict) else None
-        # compare_digest: constant-time, and requires str — a non-str `sent`
-        # (missing token, JSON number) fails closed instead of raising.
-        if expected is not None and not (
-            isinstance(sent, str) and secrets.compare_digest(sent, expected)
-        ):
-            await websocket.close(code=1008)
-            return
-        body = StudioRunBody(**body_raw)
-    except WebSocketDisconnect:
-        return
-    except Exception as exc:
-        try:
-            await websocket.send_json({"type": "error", "message": f"Bad request: {exc}"})
-        except Exception:
-            pass
-        return
-
-    cmd = _build_studio_cmd(body)
-    if cmd is None:
-        try:
-            await websocket.send_json(
-                {
-                    "type": "error",
-                    "message": (
-                        f"Action '{body.action_id}' not found or 'docent' not on PATH. "
-                        "Make sure docent is installed and on PATH."
-                    ),
-                }
-            )
-        except Exception:
-            pass
-        return
-
-    env = {
-        **os.environ,
-        "PYTHONIOENCODING": "utf-8",
-        "PYTHONUNBUFFERED": "1",
-        "NO_COLOR": "1",
-        "FORCE_COLOR": "0",
-        "TERM": "dumb",
-        "COLUMNS": "1000",
-        "DOCENT_UI_SUBPROCESS": "1",
-    }
-
-    proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
-        env=env,
-    )
-
-    output_file: str | None = None
-    notebook_id: str | None = None
-    result_ok: bool = True  # overridden by RESULT_MARKER if action sets ok=False
-    result_message: str | None = None
-    result_data: Any = None  # full structured result for the UI's result panels
-    _RESULT_MARKER = "\x00DOCENT_RESULT\x00"
-    _PROGRESS_MARKER = "\x00DOCENT_PROGRESS\x00"
-
-    try:
-        if proc.stdout is None:
-            raise RuntimeError("Subprocess stdout is None — was PIPE not set?")
-        async for raw_bytes in proc.stdout:
-            line = raw_bytes.decode("utf-8", errors="replace").rstrip()
-            if not line:
-                continue
-
-            # Structured result line (emitted at process end)
-            if _RESULT_MARKER in line:
-                try:
-                    payload = json.loads(line[line.index(_RESULT_MARKER) + len(_RESULT_MARKER) :])
-                    output_file = payload.get("output_file") or output_file
-                    notebook_id = payload.get("notebook_id") or notebook_id
-                    # Track ok/message so we can set status correctly even when
-                    # the subprocess exits 0 (e.g. Feynman credit failures).
-                    if "ok" in payload:
-                        result_ok = bool(payload["ok"])
-                    if "message" in payload:
-                        result_message = str(payload["message"])
-                    if "data" in payload:
-                        result_data = payload["data"]
-                except Exception:
-                    pass
-                continue
-
-            # Structured progress line — unambiguous, emitted by _drive_progress
-            # Format: \x00DOCENT_PROGRESS\x00<phase>\x00<message>
-            if _PROGRESS_MARKER in line:
-                rest = line[line.index(_PROGRESS_MARKER) + len(_PROGRESS_MARKER) :]
-                parts = rest.split("\x00", 1)
-                phase = parts[0]
-                # Unescape \x02 → \n (CLI escapes newlines to keep the marker on one line)
-                text = (parts[1] if len(parts) > 1 else "").replace("\x02", "\n")
-                if phase:
-                    try:
-                        await websocket.send_json({"type": "log", "phase": phase, "text": text})
-                    except Exception:
-                        proc.terminate()
-                        return
-                continue
-
-            # All other output (Rich console, tracebacks, preflight errors, etc.)
-            # is relayed as a "console" phase log so the UI shows a live stream
-            # of everything the CLI would print.  ANSI escape codes and carriage
-            # returns are stripped so the text is readable without a real terminal.
-            _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[mGKHFJA-Za-z]|\r")
-            stripped = _ANSI_RE.sub("", line).strip()
-            if stripped:
-                try:
-                    await websocket.send_json({"type": "log", "phase": "console", "text": stripped})
-                except Exception:
-                    proc.terminate()
-                    return
-
-    except WebSocketDisconnect:
-        proc.terminate()
-        return
-    except Exception as exc:
-        try:
-            await websocket.send_json({"type": "error", "message": str(exc)})
-        except Exception:
-            pass
-        proc.terminate()
-        return
-
-    await proc.wait()
-
-    result: dict[str, Any] = {}
-    if output_file:
-        result["output_file"] = output_file
-    if notebook_id:
-        result["notebook_id"] = notebook_id
-    if result_message:
-        result["message"] = result_message
-    if result_data is not None:
-        result["data"] = result_data
-
-    # Success only when the process exits 0 AND the action itself reported ok=True.
-    # Feynman (and similar tools) can exit 0 even on credit/quota failures; in that
-    # case the CLI emits ok=False in the RESULT_MARKER so we still surface a failure.
-    action_ok = proc.returncode == 0 and result_ok
-
-    try:
-        if action_ok:
-            await websocket.send_json(
-                {
-                    "type": "done",
-                    "status": "success",
-                    "raw": json.dumps(result),
-                }
-            )
-        else:
-            await websocket.send_json(
-                {
-                    "type": "done",
-                    "status": "failure",
-                    "raw": json.dumps(result),
-                }
-            )
-    except Exception:
-        pass

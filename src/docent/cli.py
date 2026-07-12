@@ -9,7 +9,6 @@ import warnings
 warnings.filterwarnings("ignore", category=SyntaxWarning, module=r"scholarly")
 
 import inspect
-import os
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -388,8 +387,6 @@ from docent.cli_doctor import (  # noqa: E402
     _dir_size_gb,  # noqa: F401 — re-exported for tests and external callers
 )
 
-_UI_PROGRESS_MARKER = "\x00DOCENT_PROGRESS\x00"
-
 
 def _drive_progress(gen: Any) -> Any:
     """Drive a generator-based action, rendering events with Rich Progress.
@@ -398,30 +395,7 @@ def _drive_progress(gen: Any) -> Any:
     a bar; events without it (or with level=warn/error) print a console line.
     The action's `return` value is captured from `StopIteration.value`.
 
-    When DOCENT_UI_SUBPROCESS=1 the Rich renderer is bypassed entirely and
-    each event is emitted as a machine-readable ``\\x00DOCENT_PROGRESS\\x00``
-    line so the WS handler can parse it unambiguously.
     """
-    import os as _os
-
-    if _os.environ.get("DOCENT_UI_SUBPROCESS"):
-        result: Any = None
-        try:
-            while True:
-                evt = next(gen)
-                if not isinstance(evt, ProgressEvent):
-                    continue
-                msg = evt.message or ""
-                # Escape newlines so the single-line PROGRESS marker isn't split
-                # across multiple stdout reads by the WS handler.
-                msg_safe = msg.replace("\n", "\x02")
-                print(f"{_UI_PROGRESS_MARKER}{evt.phase}\x00{msg_safe}", flush=True)
-        except StopIteration as stop:
-            result = stop.value
-        except KeyboardInterrupt:
-            pass
-        return result
-
     console = get_console()
     columns = (
         SpinnerColumn(),
@@ -522,46 +496,13 @@ def _build_callback(
             _log.exception("Unhandled exception in action callback")
             raise
         if result is not None:
-            if os.environ.get("DOCENT_UI_SUBPROCESS"):
-                # Emit a structured result line for the UI server to parse.
-                # This bypasses Rich console rendering entirely so the server gets
-                # reliable data rather than scraping wrapped console output.
-                _r: dict[str, object] = {}
-                for _attr in ("output_file", "notebook_id", "message", "ok"):
-                    _v = getattr(result, _attr, None)
-                    if _v is not None:
-                        _r[_attr] = _v
-                # Full structured result for the UI's bespoke panels (search rows,
-                # config table, paper details, notebook perspectives). Secret-bearing
-                # results expose a to_ui() that masks API keys; everything else dumps
-                # its Pydantic model. Best-effort: never let serialization break a run.
-                _to_ui = getattr(result, "to_ui", None)
-                try:
-                    if callable(_to_ui):
-                        _r["data"] = _to_ui()
-                    elif hasattr(result, "model_dump"):
-                        _r["data"] = result.model_dump(mode="json")
-                except Exception:
-                    pass
-                import json as _json
+            console = get_console()
+            if hasattr(result, "to_shapes"):
+                from docent.ui.renderers import render_shapes
 
-                print(f"\x00DOCENT_RESULT\x00{_json.dumps(_r, default=str)}", flush=True)
-                # When the action itself reports failure (ok=False), emit the
-                # error message as a progress log line and exit non-zero so the
-                # WS handler can surface it as status: 'failure'.
-                if not _r.get("ok", True):
-                    _msg = str(_r.get("message", "Action failed — check the activity log."))
-                    _msg_safe = _msg.replace("\n", "\x02")
-                    print(f"\x00DOCENT_PROGRESS\x00error\x00{_msg_safe}", flush=True)
-                    raise typer.Exit(1)
+                render_shapes(result.to_shapes(), console)
             else:
-                console = get_console()
-                if hasattr(result, "to_shapes"):
-                    from docent.ui.renderers import render_shapes
-
-                    render_shapes(result.to_shapes(), console)
-                else:
-                    console.print(result)
+                console.print(result)
 
     params = [
         inspect.Parameter("ctx", inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation=typer.Context),
