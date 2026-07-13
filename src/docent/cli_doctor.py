@@ -385,16 +385,6 @@ def _check_notebooklm_py() -> tuple[str, str, str, str]:
     return "NotebookLM", "OK", nlm_version, f"authenticated{update_hint}"
 
 
-def _check_opencode(settings: Settings) -> tuple[str, str, str, str]:
-    """Check OpenCode server availability (fast — no model call)."""
-    from docent.utils.model_health import check_opencode_server
-
-    return check_opencode_server(
-        provider=settings.research.oc_provider,
-        model=settings.research.oc_model_planner,
-    )
-
-
 def _check_litellm_provider(
     label: str, key: str | None, env_var: str, setup_cmd: str
 ) -> tuple[str, str, str, str]:

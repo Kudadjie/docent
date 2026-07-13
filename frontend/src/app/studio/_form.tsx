@@ -414,7 +414,7 @@ type SetFn = (k: keyof FormState, v: unknown) => void;
 const BACKEND_NOTES: Record<string, string> = {
   Free:       'Tavily search + source aggregation. No API key, no AI synthesis.',
   Feynman:    'Autonomous deep-research agent. Runs 3–30 min.',
-  Docent:     'Native 6-stage synthesis pipeline. Requires OpenCode server.',
+  Docent:     'Native 6-stage synthesis pipeline via your configured provider (default Groq).',
   Groq:       'Fast LLM synthesis via Groq. Requires groq_api_key.',
   Gemini:     'Google Gemini synthesis. Requires gemini_api_key.',
   OpenRouter: 'Synthesis via OpenRouter. Supports many models.',

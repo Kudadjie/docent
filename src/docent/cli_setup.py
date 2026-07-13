@@ -254,14 +254,12 @@ def _run_setup_flow(*, first_run: bool = False) -> None:
     console.print("[bold]External Tools[/]")
     from docent.bundled_plugins.studio import FeynmanNotFoundError, _find_feynman
 
-    # ── Node.js / npm (prerequisite for Feynman + OpenCode) ─────────────────
+    # ── Node.js / npm (prerequisite for Feynman) ─────────────────────────────
     npm_exe = shutil.which("npm")
     if npm_exe:
         console.print("  [green]Node.js / npm:[/] found")
     else:
-        console.print(
-            "  [yellow]Node.js / npm:[/] not installed  (required for Feynman and OpenCode)"
-        )
+        console.print("  [yellow]Node.js / npm:[/] not installed  (required for Feynman)")
         _os_name = _platform.system()
         if _os_name == "Windows":
             console.print("    winget install OpenJS.NodeJS.LTS")
@@ -283,25 +281,6 @@ def _run_setup_flow(*, first_run: bool = False) -> None:
         else:
             console.print("  [dim]Install Node.js first, then run:[/]")
             console.print("    npm install -g @companion-ai/feynman")
-    console.print()
-
-    # ── OpenCode ─────────────────────────────────────────────────────────────
-    oc_exe = shutil.which("opencode")
-    if oc_exe:
-        console.print("  [green]OpenCode:[/] installed")
-        console.print("  [dim]Start the server when needed:[/] opencode serve --port 4096")
-    else:
-        console.print(
-            "  [yellow]OpenCode:[/] not installed  (required for docent backend research)"
-        )
-        if npm_exe:
-            if typer.confirm("  Install OpenCode now?", default=False):
-                _run_tool_install(console, ["npm", "install", "-g", "opencode-ai"])
-                console.print("  [dim]Start the server with:[/] opencode serve --port 4096")
-        else:
-            console.print("  [dim]Install Node.js first, then run:[/]")
-            console.print("    npm install -g opencode-ai")
-            console.print("  [dim]Then start with:[/] opencode serve --port 4096")
     console.print()
 
     # ── NotebookLM ───────────────────────────────────────────────────────────

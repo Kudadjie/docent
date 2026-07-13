@@ -82,21 +82,5 @@ def test_subclass_is_docent_error():
     assert FeynmanNotFoundError.code == "D002"
 
 
-def test_oc_exceptions_are_docent_errors():
-    from docent.bundled_plugins.studio.oc_client import (
-        OcModelError,
-        OcUnavailableError,
-    )
-
-    assert issubclass(OcUnavailableError, DocentError)
-    assert issubclass(OcModelError, DocentError)
-    assert OcUnavailableError.code == "D007"
-    assert OcModelError.code == "D003"
-
-
-def test_oc_model_error_http_code():
-    from docent.bundled_plugins.studio.oc_client import OcModelError
-
-    err = OcModelError("rate limited", http_code=429)
-    assert err.http_code == 429
-    assert err.code == "D003"  # D-code unchanged
+# D003/D007 (OcModelError/OcUnavailableError) retired with the OpenCode
+# backend removal in v2.3 — do not reuse those codes.

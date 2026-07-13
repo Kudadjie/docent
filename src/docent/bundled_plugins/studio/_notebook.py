@@ -129,7 +129,7 @@ def _open_login_terminal() -> tuple[bool, str]:
     """Open `notebooklm login` in a visible OS terminal for interactive auth.
 
     Returns (launched, error). Shared by the UI auth endpoint
-    (ui_routes/opencode.py) and by in-run auth recovery when to-notebook runs
+    (ui_routes/notebooklm.py) and by in-run auth recovery when to-notebook runs
     as a UI subprocess (no TTY) — the inline `notebooklm login` can't prompt
     there, so we hand the user a real console with a browser-capable session.
     """

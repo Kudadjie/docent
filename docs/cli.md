@@ -411,8 +411,6 @@ open-access papers. The extra papers are also added to the `*-sources.json` file
 |---|---|---|
 | `studio_backend` | `groq` | Provider the `docent` backend resolves to (was `opencode` before v2.3) |
 | `output_dir` | `~/Documents/Docent/research` | Research output directory |
-| `oc_provider` | `opencode-go` | OpenCode provider (`opencode-go`, `anthropic`, `groq`, …) |
-| `oc_model_planner` / `oc_model_writer` / `oc_model_verifier` / `oc_model_reviewer` / `oc_model_researcher` | `glm-5.1` | Per-stage model overrides for the docent backend |
 | `groq_api_key` / `groq_model` | `llama-3.3-70b-versatile` | [Free at console.groq.com](https://console.groq.com) |
 | `gemini_api_key` / `gemini_model` | `gemini-2.0-flash` | [Free at aistudio.google.com](https://aistudio.google.com) |
 | `openrouter_api_key` / `openrouter_model` | `meta-llama/llama-3.3-70b-instruct:free` | [Free tier at openrouter.ai](https://openrouter.ai) |

@@ -69,7 +69,7 @@ _BACKEND_DEEP_DESC = (
     "  'free' — RECOMMENDED VIA MCP. Docent aggregates sources (Tavily + Semantic Scholar "
     "+ CrossRef) then YOU synthesise both streams here. No extra API cost. "
     "MODEL: Sonnet for everyday research; Opus for thesis-quality output.\n\n"
-    "  'docent' — 6-stage AI pipeline via OpenCode. "
+    "  'docent' — 6-stage AI pipeline via the configured studio_backend provider (default groq). "
     "TERMINAL ONLY — times out via MCP. Requires OpenCode server + Tavily key.\n\n"
     "  'feynman' — full AI deep research via Feynman CLI (10–30 min). "
     "TERMINAL ONLY — always times out via MCP.\n\n"
@@ -177,7 +177,7 @@ class ReviewInputs(BaseModel):
     artifact: str = Field(..., description="arXiv ID, local PDF path, or URL to review.")
     backend: str = Field(
         "feynman",
-        description="Research backend — ask the user which to use. Options: 'feynman' (requires Feynman CLI; slow via MCP — suggest terminal instead), 'docent' (requires OpenCode server + API credits).",
+        description="Research backend — ask the user which to use. Options: 'feynman' (requires Feynman CLI; slow via MCP — suggest terminal instead), 'docent' (6-stage pipeline via the configured studio_backend provider — default groq).",
     )
     output: Literal["local", "notebook", "vault"] = Field(
         "local", description=f"Output destination: {_OUTPUT_CHOICES}"
@@ -269,7 +269,7 @@ class CompareInputs(BaseModel):
     artifact_b: str = Field(..., description="Second artifact: arXiv ID, PDF path, or URL.")
     backend: str = Field(
         "feynman",
-        description="Research backend — ask the user which to use. Options: 'feynman' (requires Feynman CLI; slow via MCP — suggest terminal instead), 'docent' (requires OpenCode server + API credits).",
+        description="Research backend — ask the user which to use. Options: 'feynman' (requires Feynman CLI; slow via MCP — suggest terminal instead), 'docent' (6-stage pipeline via the configured studio_backend provider — default groq).",
     )
     output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
     guide_files: list[str] = _GUIDE_FILES_FIELD
@@ -288,7 +288,7 @@ class DraftInputs(BaseModel):
     topic: str = Field(..., description="Topic or section title to draft.")
     backend: str = Field(
         "feynman",
-        description="Research backend — ask the user which to use. Options: 'feynman' (requires Feynman CLI; slow via MCP — suggest terminal instead), 'docent' (requires OpenCode server + API credits).",
+        description="Research backend — ask the user which to use. Options: 'feynman' (requires Feynman CLI; slow via MCP — suggest terminal instead), 'docent' (6-stage pipeline via the configured studio_backend provider — default groq).",
     )
     output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
     guide_files: list[str] = _GUIDE_FILES_FIELD
@@ -310,7 +310,7 @@ class ReplicateInputs(BaseModel):
     artifact: str = Field(..., description="arXiv ID, PDF path, or URL of the paper to replicate.")
     backend: str = Field(
         "feynman",
-        description="Research backend — ask the user which to use. Options: 'feynman' (requires Feynman CLI; slow via MCP — suggest terminal instead), 'docent' (requires OpenCode server + API credits).",
+        description="Research backend — ask the user which to use. Options: 'feynman' (requires Feynman CLI; slow via MCP — suggest terminal instead), 'docent' (6-stage pipeline via the configured studio_backend provider — default groq).",
     )
     output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
     guide_files: list[str] = _GUIDE_FILES_FIELD
@@ -325,7 +325,7 @@ class AuditInputs(BaseModel):
     artifact: str = Field(..., description="arXiv ID, PDF path, or URL of the paper to audit.")
     backend: str = Field(
         "feynman",
-        description="Research backend — ask the user which to use. Options: 'feynman' (requires Feynman CLI; slow via MCP — suggest terminal instead), 'docent' (requires OpenCode server + API credits).",
+        description="Research backend — ask the user which to use. Options: 'feynman' (requires Feynman CLI; slow via MCP — suggest terminal instead), 'docent' (6-stage pipeline via the configured studio_backend provider — default groq).",
     )
     output: str = Field("local", description=f"Output destination: {_OUTPUT_CHOICES}")
     guide_files: list[str] = _GUIDE_FILES_FIELD

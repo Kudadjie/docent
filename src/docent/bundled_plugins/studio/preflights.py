@@ -10,30 +10,6 @@ from pydantic import BaseModel
 from docent.config import write_setting
 from docent.core import Context
 
-
-def _oc_unavailable_reason(oc: Any) -> str:
-    """Return a human-readable reason for an OcUnavailableError during model check.
-
-    Distinguishes between three cases:
-    - OpenCode server itself died (is_available returns False)
-    - No internet connection (server is up but can't reach external model provider)
-    - Model provider overloaded / transient timeout
-    """
-    from docent.bundled_plugins.studio.helpers import _check_connectivity
-
-    if not oc.is_available():
-        return (
-            "OpenCode server stopped responding. "
-            "Restart it with: [cyan]opencode serve --port 4096[/]"
-        )
-    if not _check_connectivity():
-        return (
-            "No internet connection — cannot reach the model provider. "
-            "Check your connection and retry."
-        )
-    return "Model provider timed out or is overloaded — try again in a moment."
-
-
 # ---------------------------------------------------------------------------
 # Tavily key resolver
 # ---------------------------------------------------------------------------
@@ -459,193 +435,47 @@ def _preflight_docent(inputs: BaseModel, context: Context) -> None:
     Progress takes over stdin).  Checks:
       0. Guide files are readable (all backends).
       1. Free-tier disclaimer + Tavily key guidance (backend='free').
-      2. LiteLLM backends: API key present.
-      3. OpenCode backends: server running, planner model usable, Tavily key set.
+      2. AI backends: provider resolvable + API key present (get_backend).
     """
     _preflight_guide_files(inputs)
     _preflight_free_backend(inputs, context)
     # Ensure NotebookLM auth up front when this run will push to it, so a stale
     # session fails fast instead of after the (expensive) research completes.
     _preflight_notebook_auth(inputs, context)
+    _preflight_ai_backend(inputs, context)
 
+
+def _preflight_ai_backend(inputs: BaseModel, context: Context) -> None:
+    """Validate an AI backend early for a clean error message.
+
+    get_backend resolves 'docent' → research.studio_backend and raises
+    AuthError (missing key) or ValueError (unknown provider, or the removed
+    'opencode' backend with a migration hint).
+    """
     from .backend import DOCENT_BACKEND_NAMES
 
     backend_name = getattr(inputs, "backend", None)
     if backend_name not in DOCENT_BACKEND_NAMES:
         return
+    from docent.errors import AuthError
 
-    # Resolve which provider is actually active
-    effective = (
-        context.settings.research.studio_backend if backend_name == "docent" else backend_name
-    )
-
-    if effective not in ("opencode", None, ""):
-        # LiteLLM backend — validate credentials early for a clean error message
-        from docent.errors import AuthError
-
-        try:
-            from .backend import get_backend
-
-            get_backend(context.settings, override=backend_name)
-        except (AuthError, ValueError) as e:
-            _bail(context, f"[red]Error:[/] {e}")
-        return  # No server or Tavily check needed for LiteLLM backends
-
-    # OpenCode checks
-    from docent.utils.model_health import verify_opencode_model
-
-    from .oc_client import OcClient, OcModelError, OcUnavailableError
-
-    oc = OcClient(provider=context.settings.research.oc_provider)
-    if not oc.is_available():
-        _bail(
-            context,
-            "[red]Error:[/] OpenCode server is not running. "
-            "Start it with: [cyan]opencode serve --port 4096[/]\n"
-            "Alternatives: --backend free  |  --backend groq  |  --backend feynman",
-            "OpenCode server is not running. "
-            "Start it with: opencode serve --port 4096\n"
-            "Alternatives: --backend free | --backend groq | --backend feynman",
-        )
-
-    planner = context.settings.research.oc_model_planner
     try:
-        if not context.non_interactive:
-            from docent.ui.console import get_console
+        from .backend import get_backend
 
-            console = get_console()
-            with console.status(f"Checking model availability: [cyan]{planner}[/]..."):
-                verify_opencode_model(planner, provider=context.settings.research.oc_provider)
-            console.print(f"[green]✓[/] Model [cyan]{planner}[/] is available")
-        else:
-            verify_opencode_model(planner, provider=context.settings.research.oc_provider)
-    except OcModelError as e:
-        _bail(
-            context,
-            f"[red]FAIL[/] Model [cyan]{planner}[/] is not usable: {e}",
-            f"Model {planner!r} is not usable: {e}",
-        )
-    except OcUnavailableError:
-        _bail(
-            context,
-            f"[red]FAIL[/] Model check failed: {_oc_unavailable_reason(oc)}",
-            f"Model check failed: {_oc_unavailable_reason(oc)}",
-        )
-    except Exception as e:
-        _bail(
-            context,
-            f"[red]FAIL[/] Model check failed for [cyan]{planner}[/] ({e})",
-            f"Model check failed for {planner!r}: {e}",
-        )
-
-    tavily_key = _resolve_tavily_key(context)
-    if not tavily_key:
-        _bail(
-            context,
-            "[red]Error:[/] Tavily API key is required for the [cyan]opencode[/] backend.\n"
-            "Get one at https://tavily.com — free tier 1,000 calls/month.\n"
-            "Or switch to --backend free (DuckDuckGo fallback) or --backend groq.",
-            "Tavily API key is required for the opencode backend. "
-            "Get one at https://tavily.com or switch to --backend free.",
-        )
-
-    # Non-blocking quota warning for CLI users (skip silently on any failure).
-    import os as _os
-
-    if not context.non_interactive and not _os.environ.get("DOCENT_UI_SUBPROCESS"):
-        try:
-            from .tavily_usage import fetch_tavily_usage
-
-            assert tavily_key is not None
-            _usage = fetch_tavily_usage(tavily_key, timeout=4.0)
-            _account = _usage.get("account", {})
-            _used = _account.get("plan_usage")
-            _limit = _account.get("plan_limit")
-            if _used is not None and _limit and _limit > 0:
-                _pct = _used / _limit * 100
-                if _pct >= 80:
-                    from docent.ui import get_console
-
-                    get_console().print(
-                        f"[yellow]⚠ Tavily quota:[/] {_used}/{_limit} credits used ({_pct:.0f}%). "
-                        "Running low — top up at app.tavily.com."
-                    )
-        except Exception:
-            pass
+        get_backend(context.settings, override=backend_name)
+    except (AuthError, ValueError) as e:
+        _bail(context, f"[red]Error:[/] {e}")
 
 
 def _preflight_oc_only(inputs: BaseModel, context: Context) -> None:
-    """Pre-flight check for review/compare/draft/replicate/audit (AI backend, no Tavily needed)."""
+    """Pre-flight check for review/compare/draft/replicate/audit (AI backend, no Tavily needed).
+
+    Historical name — 'oc' predates the OpenCode removal; it now validates
+    whichever AI provider the backend resolves to.
+    """
     # Ensure NotebookLM auth up front when --output notebook is selected.
     _preflight_notebook_auth(inputs, context)
-    from .backend import DOCENT_BACKEND_NAMES
-
-    backend_name = getattr(inputs, "backend", None)
-    if backend_name not in DOCENT_BACKEND_NAMES:
-        return
-
-    effective = (
-        context.settings.research.studio_backend if backend_name == "docent" else backend_name
-    )
-
-    if effective not in ("opencode", None, ""):
-        # LiteLLM backend — validate credentials early
-        from docent.errors import AuthError
-
-        try:
-            from .backend import get_backend
-
-            get_backend(context.settings, override=backend_name)
-        except (AuthError, ValueError) as e:
-            _bail(context, f"[red]Error:[/] {e}")
-        return
-
-    # OpenCode checks
-    from docent.utils.model_health import verify_opencode_model
-
-    from .oc_client import OcClient, OcModelError, OcUnavailableError
-
-    oc = OcClient(provider=context.settings.research.oc_provider)
-    if not oc.is_available():
-        _bail(
-            context,
-            "[red]Error:[/] OpenCode server is not running. "
-            "Start it with: [cyan]opencode serve --port 4096[/]\n"
-            "Alternatives: --backend groq  |  --backend feynman",
-            "OpenCode server is not running. "
-            "Start it with: opencode serve --port 4096\n"
-            "Alternatives: --backend groq | --backend feynman",
-        )
-
-    reviewer = context.settings.research.oc_model_reviewer
-    try:
-        if not context.non_interactive:
-            from docent.ui.console import get_console
-
-            console = get_console()
-            with console.status(f"Checking model availability: [cyan]{reviewer}[/]..."):
-                verify_opencode_model(reviewer, provider=context.settings.research.oc_provider)
-            console.print(f"[green]✓[/] Model [cyan]{reviewer}[/] is available")
-        else:
-            verify_opencode_model(reviewer, provider=context.settings.research.oc_provider)
-    except OcModelError as e:
-        _bail(
-            context,
-            f"[red]FAIL[/] Model [cyan]{reviewer}[/] is not usable: {e}",
-            f"Model {reviewer!r} is not usable: {e}",
-        )
-    except OcUnavailableError:
-        _bail(
-            context,
-            f"[red]FAIL[/] Model check failed: {_oc_unavailable_reason(oc)}",
-            f"Model check failed: {_oc_unavailable_reason(oc)}",
-        )
-    except Exception as e:
-        _bail(
-            context,
-            f"[red]FAIL[/] Model check failed for [cyan]{reviewer}[/] ({e})",
-            f"Model check failed for {reviewer!r}: {e}",
-        )
+    _preflight_ai_backend(inputs, context)
 
 
 # ---------------------------------------------------------------------------

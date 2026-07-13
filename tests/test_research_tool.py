@@ -97,10 +97,10 @@ def _mock_context(
     tavily_api_key: str | None = None,
     notebooklm_notebook_id: str | None = None,
     obsidian_vault: Path | None = None,
-    # This file's docent-backend tests mock OcClient, so the mock context pins
-    # the pre-v2.3 "opencode" resolution regardless of the shipped default
-    # (now "groq" since the OpenCode switch-off).
-    studio_backend: str = "opencode",
+    # docent-backend tests resolve to groq with a fake key; pipeline entry
+    # points are mocked so no LiteLLM call is ever made.
+    studio_backend: str = "groq",
+    groq_api_key: str | None = "gsk_test",
 ) -> Context:
     research = ResearchSettings(
         output_dir=output_dir or Path("/tmp/docent-test-research"),
@@ -109,6 +109,7 @@ def _mock_context(
         notebooklm_notebook_id=notebooklm_notebook_id,
         obsidian_vault=obsidian_vault,
         studio_backend=studio_backend,
+        groq_api_key=groq_api_key,
     )
     settings = MagicMock(spec=Settings)
     settings.research = research
@@ -244,17 +245,12 @@ class TestDeepFeynman:
         assert "quota exhausted" in result.message.lower()
         assert "docent studio config-set" in result.message
 
-    def test_deep_docent_backend_server_unavailable(self, tmp_path):
+    def test_deep_docent_backend_missing_key_bails(self, tmp_path):
         output_dir = tmp_path / "research"
-        ctx = _mock_context(output_dir=output_dir)
+        ctx = _mock_context(output_dir=output_dir, groq_api_key=None)
 
-        with patch("docent.bundled_plugins.studio.oc_client.OcClient") as MockOc:
-            mock_oc_instance = MagicMock()
-            mock_oc_instance.is_available.return_value = False
-            MockOc.return_value = mock_oc_instance
-
-            with pytest.raises(typer.Exit):
-                _preflight_docent(DeepInputs(topic="test", backend="docent"), ctx)
+        with pytest.raises(typer.Exit):
+            _preflight_docent(DeepInputs(topic="test", backend="docent"), ctx)
 
 
 class TestLitFeynman:
@@ -413,17 +409,12 @@ class TestToShapes:
 
 
 class TestLitDocent:
-    def test_lit_docent_server_unavailable(self, tmp_path):
+    def test_lit_docent_missing_key_bails(self, tmp_path):
         output_dir = tmp_path / "research"
-        ctx = _mock_context(output_dir=output_dir)
+        ctx = _mock_context(output_dir=output_dir, groq_api_key=None)
 
-        with patch("docent.bundled_plugins.studio.oc_client.OcClient") as MockOc:
-            mock_oc_instance = MagicMock()
-            mock_oc_instance.is_available.return_value = False
-            MockOc.return_value = mock_oc_instance
-
-            with pytest.raises(typer.Exit):
-                _preflight_docent(LitInputs(topic="test", backend="docent"), ctx)
+        with pytest.raises(typer.Exit):
+            _preflight_docent(LitInputs(topic="test", backend="docent"), ctx)
 
     @patch("docent.bundled_plugins.studio.pipeline.run_lit")
     def test_lit_docent_happy_path(self, mock_run_lit, tmp_path):
@@ -443,12 +434,7 @@ class TestLitDocent:
             }
         )
 
-        with patch("docent.bundled_plugins.studio.oc_client.OcClient") as MockOc:
-            mock_oc_instance = MagicMock()
-            mock_oc_instance.is_available.return_value = True
-            MockOc.return_value = mock_oc_instance
-
-            result = _drain(tool.lit(LitInputs(topic="climate change", backend="docent"), ctx))
+        result = _drain(tool.lit(LitInputs(topic="climate change", backend="docent"), ctx))
 
         assert result.ok is True
         assert result.backend == "docent"
@@ -457,17 +443,12 @@ class TestLitDocent:
 
 
 class TestReviewDocent:
-    def test_review_docent_server_unavailable(self, tmp_path):
+    def test_review_docent_missing_key_bails(self, tmp_path):
         output_dir = tmp_path / "research"
-        ctx = _mock_context(output_dir=output_dir)
+        ctx = _mock_context(output_dir=output_dir, groq_api_key=None)
 
-        with patch("docent.bundled_plugins.studio.oc_client.OcClient") as MockOc:
-            mock_oc_instance = MagicMock()
-            mock_oc_instance.is_available.return_value = False
-            MockOc.return_value = mock_oc_instance
-
-            with pytest.raises(typer.Exit):
-                _preflight_oc_only(ReviewInputs(artifact="2401.12345", backend="docent"), ctx)
+        with pytest.raises(typer.Exit):
+            _preflight_oc_only(ReviewInputs(artifact="2401.12345", backend="docent"), ctx)
 
     @patch("docent.bundled_plugins.studio.pipeline.run_review")
     def test_review_docent_happy_path(self, mock_run_review, tmp_path):
@@ -486,12 +467,7 @@ class TestReviewDocent:
             }
         )
 
-        with patch("docent.bundled_plugins.studio.oc_client.OcClient") as MockOc:
-            mock_oc_instance = MagicMock()
-            mock_oc_instance.is_available.return_value = True
-            MockOc.return_value = mock_oc_instance
-
-            result = _drain(tool.review(ReviewInputs(artifact="2401.12345", backend="docent"), ctx))
+        result = _drain(tool.review(ReviewInputs(artifact="2401.12345", backend="docent"), ctx))
 
         assert result.ok is True
         assert result.backend == "docent"
@@ -858,19 +834,12 @@ class TestCompareAction:
             }
         )
 
-        with patch("docent.bundled_plugins.studio.oc_client.OcClient") as MockOc:
-            mock_oc_instance = MagicMock()
-            mock_oc_instance.is_available.return_value = True
-            MockOc.return_value = mock_oc_instance
-
-            result = _drain(
-                tool.compare(
-                    CompareInputs(
-                        artifact_a="2401.12345", artifact_b="2402.67890", backend="docent"
-                    ),
-                    ctx,
-                )
+        result = _drain(
+            tool.compare(
+                CompareInputs(artifact_a="2401.12345", artifact_b="2402.67890", backend="docent"),
+                ctx,
             )
+        )
 
         assert result.ok is True
         assert result.backend == "docent"
@@ -926,14 +895,9 @@ class TestDraftAction:
             }
         )
 
-        with patch("docent.bundled_plugins.studio.oc_client.OcClient") as MockOc:
-            mock_oc_instance = MagicMock()
-            mock_oc_instance.is_available.return_value = True
-            MockOc.return_value = mock_oc_instance
-
-            result = _drain(
-                tool.draft(DraftInputs(topic="storm surge modelling", backend="docent"), ctx)
-            )
+        result = _drain(
+            tool.draft(DraftInputs(topic="storm surge modelling", backend="docent"), ctx)
+        )
 
         assert result.ok is True
         assert result.backend == "docent"
@@ -954,14 +918,9 @@ class TestDraftAction:
             }
         )
 
-        with patch("docent.bundled_plugins.studio.oc_client.OcClient") as MockOc:
-            mock_oc_instance = MagicMock()
-            mock_oc_instance.is_available.return_value = True
-            MockOc.return_value = mock_oc_instance
-
-            result = _drain(
-                tool.draft(DraftInputs(topic="storm surge modelling", backend="docent"), ctx)
-            )
+        result = _drain(
+            tool.draft(DraftInputs(topic="storm surge modelling", backend="docent"), ctx)
+        )
 
         assert result.ok is False
         assert "Writer failed" in result.message
@@ -1013,14 +972,9 @@ class TestReplicateAction:
             }
         )
 
-        with patch("docent.bundled_plugins.studio.oc_client.OcClient") as MockOc:
-            mock_oc_instance = MagicMock()
-            mock_oc_instance.is_available.return_value = True
-            MockOc.return_value = mock_oc_instance
-
-            result = _drain(
-                tool.replicate(ReplicateInputs(artifact="2401.12345", backend="docent"), ctx)
-            )
+        result = _drain(
+            tool.replicate(ReplicateInputs(artifact="2401.12345", backend="docent"), ctx)
+        )
 
         assert result.ok is True
         assert result.backend == "docent"
@@ -1074,12 +1028,7 @@ class TestAuditAction:
             }
         )
 
-        with patch("docent.bundled_plugins.studio.oc_client.OcClient") as MockOc:
-            mock_oc_instance = MagicMock()
-            mock_oc_instance.is_available.return_value = True
-            MockOc.return_value = mock_oc_instance
-
-            result = _drain(tool.audit(AuditInputs(artifact="2401.12345", backend="docent"), ctx))
+        result = _drain(tool.audit(AuditInputs(artifact="2401.12345", backend="docent"), ctx))
 
         assert result.ok is True
         assert result.backend == "docent"
@@ -1101,12 +1050,7 @@ class TestAuditAction:
             }
         )
 
-        with patch("docent.bundled_plugins.studio.oc_client.OcClient") as MockOc:
-            mock_oc_instance = MagicMock()
-            mock_oc_instance.is_available.return_value = True
-            MockOc.return_value = mock_oc_instance
-
-            result = _drain(tool.audit(AuditInputs(artifact="2401.12345", backend="docent"), ctx))
+        result = _drain(tool.audit(AuditInputs(artifact="2401.12345", backend="docent"), ctx))
 
         assert result.ok is False
         assert "Audit failed" in result.message

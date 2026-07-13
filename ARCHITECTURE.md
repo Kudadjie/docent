@@ -30,7 +30,8 @@ docent/
 │       │   ├── backup.py       # /api/backup/* — create, restore, list, Drive sync
 │       │   ├── doctor.py       # /api/doctor — health checks
 │       │   ├── filesystem.py   # /api/fs/read, /api/fs/open — path-approved file access
-│       │   └── opencode.py     # /api/opencode/* — start/stop OpenCode subprocess
+│       │   ├── jobs.py         # /api/jobs — background-job polling + cancel
+│       │   └── notebooklm.py   # /api/notebooklm/* — auth status + login terminal
 │       ├── core/
 │       │   ├── registry.py     # Tool registry (the plugin system)
 │       │   ├── tool.py         # Base Tool interface/protocol + @action decorator
@@ -80,8 +81,7 @@ docent/
 │       │   │   ├── free_research.py    # Tavily Research API primary path (replaces stages 1-5)
 │       │   │   ├── _notebook.py        # NotebookLM push pipeline internals
 │       │   │   ├── feynman.py          # Feynman CLI wrapper (hardened Windows subprocess)
-│       │   │   ├── backend.py          # StudioBackend Protocol (OcClient, FeynmanBackend)
-│       │   │   ├── oc_client.py        # OpenCode in-process client
+│       │   │   ├── backend.py          # StudioBackend Protocol + LiteLLMBackend factory
 │       │   │   ├── alphaxiv_client.py  # alphaXiv SDK wrapper
 │       │   │   ├── scholarly_client.py # Google Scholar / Semantic Scholar wrapper
 │       │   │   ├── citation_verifier.py # Automated citation verification
@@ -97,7 +97,6 @@ docent/
 │           ├── prompt.py       # prompt_for_path with quote-strip + validation
 │           ├── logging.py      # Structured logging setup
 │           ├── update_check.py # GitHub release update checker
-│           ├── model_health.py # LiteLLM model health probing
 │           └── rich_compat.py  # Rich compatibility helpers
 ├── tests/
 └── ~/.docent/              # User data (created at runtime)
@@ -291,13 +290,13 @@ That's the whole setup.
 - `config.py` — `/api/config` (GET/POST) — reads/writes settings.
 - `backup.py` — `/api/backup/*` — create, restore, list, Google Drive sync.
 - `doctor.py` — `/api/doctor` — health checks.
-- `opencode.py` — `/api/opencode/*` — start/stop the OpenCode subprocess.
+- `notebooklm.py` — `/api/notebooklm/*` — auth status + interactive login terminal.
 
 **Security model (localhost-only):**
 - `_LocalhostGuard` middleware rejects any request whose `Origin` header is not `localhost` or `127.0.0.1`. This prevents malicious web pages from making cross-site requests to the UI server.
 - `_check_approved_path()` validates all file-path inputs against `research.output_dir` and the Docent home directory before reading or opening.
 - `/api/fs/open` is POST-only (not GET) so standard links can't trigger it.
-- Audit logging (`~/.docent/audit.log`) records sensitive operations: file open, config write, queue clear, OpenCode start/stop.
+- Audit logging (`~/.docent/audit.log`) records sensitive operations: file open, config write, queue clear, job submit/cancel.
 - Bind address defaults to `127.0.0.1` — the server is never exposed beyond localhost without explicit configuration.
 - **SSRF guard on page fetching** (`studio/search.py::fetch_page` → `_url_is_fetchable`): page URLs come from search providers, so they are attacker-influenceable. Each URL — and each redirect hop, since redirects are followed manually — must use an http(s) scheme and resolve to a public IP; loopback / private / link-local / reserved targets (e.g. `169.254.169.254`, localhost services) are refused.
 

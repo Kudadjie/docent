@@ -183,7 +183,7 @@ The `docent studio` tool runs AI-powered deep research, literature reviews, and 
 | `docent studio config-show` | Show research settings |
 | `docent studio config-set --key <k> --value <v>` | Set config (e.g. `tavily_api_key`, `alphaxiv_api_key`) |
 
-**Backends:** [Feynman CLI](https://www.feynman.is/) (primary) or Docent-native pipeline via OpenCode Go models (fallback).  
+**Backends:** [Feynman CLI](https://www.feynman.is/) (primary) or the Docent-native 6-stage pipeline via any configured LiteLLM provider (default: Groq free tier).  
 **Web search:** [Tavily](https://tavily.com/) (free tier: 1,000 calls/month). Set your key:
 ```bash
 docent studio config-set --key tavily_api_key --value "tvly-..."

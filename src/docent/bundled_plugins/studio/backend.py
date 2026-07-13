@@ -25,8 +25,10 @@ _PROVIDER_SPECS: dict[str, dict] = {
     },
 }
 
-# All valid backend names for the Docent tier
-DOCENT_BACKEND_NAMES: frozenset[str] = frozenset({"docent", "opencode"} | set(_PROVIDER_SPECS))
+# All valid backend names for the Docent tier. "opencode" was removed in v2.3
+# (the OpenCode Go subscription model was discontinued); get_backend raises a
+# migration hint for configs that still point at it.
+DOCENT_BACKEND_NAMES: frozenset[str] = frozenset({"docent"} | set(_PROVIDER_SPECS))
 
 
 @runtime_checkable
@@ -41,43 +43,6 @@ class StudioBackend(Protocol):
     ) -> str: ...
 
     def is_available(self) -> bool: ...
-
-
-class OcBackend:
-    """Wraps OcClient — maps role hints to configured OpenCode models."""
-
-    _ROLE_ATTRS = {
-        "planner": "oc_model_planner",
-        "writer": "oc_model_writer",
-        "verifier": "oc_model_verifier",
-        "reviewer": "oc_model_reviewer",
-        "researcher": "oc_model_researcher",
-    }
-
-    def __init__(self, settings: Settings) -> None:
-        from .oc_client import OcClient
-
-        self._oc = OcClient(
-            provider=settings.research.oc_provider,
-        )
-        self._research = settings.research
-
-    def call(
-        self,
-        prompt: str,
-        *,
-        system: str | None = None,
-        role: str = "default",
-        timeout: int = 300,
-    ) -> str:
-        attr = self._ROLE_ATTRS.get(role, "oc_model_planner")
-        model = getattr(self._research, attr)
-        if system:
-            prompt = f"{system}\n\n{prompt}"
-        return self._oc.call(prompt, model=model, timeout=timeout)
-
-    def is_available(self) -> bool:
-        return self._oc.is_available()
 
 
 class LiteLLMBackend:
@@ -151,13 +116,18 @@ class LiteLLMBackend:
 def get_backend(settings: Settings, *, override: str | None = None) -> StudioBackend:
     """Return the correct StudioBackend.
 
-    override: a provider name ("groq", "gemini", ...) or "docent"/"opencode".
+    override: a provider name ("groq", ...) or "docent".
     "docent" and None both fall through to settings.research.studio_backend.
     """
     name = override if override and override != "docent" else settings.research.studio_backend
 
     if name in ("opencode", None, ""):
-        return OcBackend(settings)
+        raise ValueError(
+            "The 'opencode' backend was removed in v2.3 (OpenCode Go subscription "
+            "discontinued). Point research.studio_backend at a provider instead, e.g.:\n"
+            "  docent studio config-set --key studio_backend --value groq\n"
+            f"Valid providers: {', '.join(sorted(_PROVIDER_SPECS))}"
+        )
 
     if name not in _PROVIDER_SPECS:
         raise ValueError(

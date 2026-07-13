@@ -90,8 +90,7 @@ class _LocalhostGuard(BaseHTTPMiddleware):
 #
 # Delivery: the frontend GETs /api/auth/token (same-origin only in practice —
 # without CORS headers a cross-origin page cannot READ the response) and sends
-# it back as X-Docent-Token on mutating requests. The WebSocket path receives
-# it inside the first JSON message instead (browsers can't set WS headers).
+# it back as X-Docent-Token on mutating requests.
 #
 # Scope honesty: this defends against BROWSER-mediated cross-origin requests
 # only. A local non-browser process running as the same user can simply GET
@@ -167,9 +166,9 @@ from docent.ui_routes.docs import router as _docs_router  # noqa: E402
 from docent.ui_routes.doctor import router as _doctor_router  # noqa: E402
 from docent.ui_routes.filesystem import router as _fs_router  # noqa: E402
 from docent.ui_routes.jobs import router as _jobs_router  # noqa: E402
-from docent.ui_routes.opencode import router as _opencode_router  # noqa: E402
+from docent.ui_routes.notebooklm import router as _notebooklm_router  # noqa: E402
 from docent.ui_routes.reading import router as _reading_router  # noqa: E402
-from docent.ui_routes.studio import router as _studio_sse_router  # noqa: E402
+from docent.ui_routes.studio import router as _studio_router  # noqa: E402
 from docent.ui_routes.tools import router as _tools_router  # noqa: E402
 from docent.ui_routes.whatsnew import router as _whatsnew_router  # noqa: E402
 
@@ -179,8 +178,8 @@ _ROUTERS = (
     _doctor_router,
     _fs_router,
     _jobs_router,
-    _opencode_router,
-    _studio_sse_router,
+    _notebooklm_router,
+    _studio_router,
     _backup_router,
     _tools_router,
     _docs_router,

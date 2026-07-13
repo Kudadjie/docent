@@ -75,11 +75,11 @@ def _run_tavily_pipeline(
     semantic_scholar_api_key: str | None = None,
     alphaxiv_api_key: str | None = None,
 ) -> Generator[ProgressEvent, None, dict]:
-    """Run Tavily research + OpenCode adversarial review.
+    """Run Tavily research + AI-backend adversarial review.
 
     This replaces stages 1-5 of the manual pipeline with a single Tavily
     Research API call that produces a fully cited report. Then runs an
-    OpenCode reviewer (stage 6) for value-add adversarial analysis.
+    backend reviewer (stage 6) for value-add adversarial analysis.
 
     Yields ProgressEvent items, returns result dict.
     """

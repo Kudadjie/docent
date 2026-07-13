@@ -208,27 +208,6 @@ async def get_doctor() -> JSONResponse:
         lib_id = cfg_reading.get("zotero_library_id")
         return _row("Zotero", "OK", detail=f"configured ({lib_type} library {lib_id})")
 
-    async def _opencode_row() -> dict:
-        try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                r = await client.get("http://127.0.0.1:4096/global/health")
-                if r.status_code == 200:
-                    return _row("OpenCode", "OK", detail="server reachable at :4096")
-        except Exception:
-            pass
-        oc_exe = shutil.which("opencode")
-        if oc_exe is None:
-            return _row(
-                "OpenCode",
-                "FAIL",
-                detail="Not installed — npm install -g opencode-ai (requires Node.js)",
-            )
-        return _row(
-            "OpenCode",
-            "WARN",
-            detail="Installed but not running — click 'Start server' in Settings, or run: opencode serve --port 4096",
-        )
-
     async def _feynman_row() -> dict:
         from pathlib import Path as _P
 
@@ -383,7 +362,6 @@ async def get_doctor() -> JSONResponse:
         npm_row,
         feynman_row,
         mendeley_row,
-        opencode_row,
         nlm_row,
         ax_row,
     ) = await asyncio.gather(
@@ -393,7 +371,6 @@ async def get_doctor() -> JSONResponse:
         _cli_row("npm", ["npm", "--version"], "Install npm: https://nodejs.org"),
         _feynman_row(),
         _mendeley_row(),
-        _opencode_row(),
         asyncio.to_thread(_notebooklm_sync),
         asyncio.to_thread(_alphaxiv_sync),
     )
@@ -413,7 +390,6 @@ async def get_doctor() -> JSONResponse:
         feynman_row,
         mendeley_row,
         zotero_row,
-        opencode_row,
         nlm_row,
         ax_row,
         db_row,

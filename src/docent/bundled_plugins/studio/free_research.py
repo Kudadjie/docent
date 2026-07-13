@@ -46,7 +46,7 @@ FREE_TIER_DISCLAIMER = """\
     research briefs, use one of the AI-powered backends:
 
       [cyan]--backend feynman[/]  →  Feynman deep-research pipeline (requires FEYNMAN_API_KEY or subscription)
-      [cyan]--backend docent[/]   →  Docent OpenCode pipeline (requires OpenCode server + Tavily key)
+      [cyan]--backend docent[/]   →  6-stage AI pipeline via the configured provider (default groq)
       [cyan]--backend groq[/]     →  Groq fast inference (requires GROQ_API_KEY — free tier at console.groq.com)
 
   • [bold]Using Docent via MCP?[/] If you called this tool from an AI assistant

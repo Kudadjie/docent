@@ -25,6 +25,8 @@ class ResearchSettings(BaseModel):
     # until v2.3 — switched to groq (free tier) when the OpenCode Go
     # subscription model went away; OpenCode still works if configured.
     studio_backend: str = "groq"
+    # DEPRECATED (v2.3): the OpenCode backend was removed. These oc_* fields
+    # stay for schema safety (additive-only rule) but nothing reads them.
     oc_provider: str = "opencode-go"
     oc_model_planner: str = "glm-5.1"
     oc_model_writer: str = "minimax-m2.7"

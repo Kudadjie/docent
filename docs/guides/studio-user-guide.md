@@ -10,7 +10,7 @@ Studio is Docent's research tool. It runs deep research, literature reviews, pee
 # Instant, no API key required
 docent studio deep-research --topic "storm surge Ghana" --backend free
 
-# Full AI pipeline (requires OpenCode server + API credits)
+# Full AI pipeline (runs via the configured provider — default groq)
 docent studio deep-research --topic "storm surge Ghana" --backend docent
 
 # Literature review (AI, Feynman)
@@ -28,7 +28,7 @@ docent studio to-notebook
 |---------|------|-------------|----------|
 | `free` | Free | None (Tavily optional) | Quick sweeps, no API key (deep-research & lit only) |
 | `feynman` | AI credits | Feynman CLI (`npm install -g @companion-ai/feynman@latest`) | Comprehensive long-form research |
-| `docent` | AI credits | `opencode serve --port 4096` | Structured 6-stage pipeline |
+| `docent` | Provider's cost (groq default: free tier) | The configured `studio_backend` provider's API key | Structured 6-stage pipeline |
 | `groq` | Free tier available | `GROQ_API_KEY` | Fast, cheap AI |
 | `gemini` | Free tier available | `GEMINI_API_KEY` | Affordable AI |
 | `anthropic` | Paid | `ANTHROPIC_API_KEY` | Claude models |
@@ -323,9 +323,7 @@ Settings are stored in `~/.docent/config.toml` under `[research]`.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `output_dir` | `~/Documents/Docent/research` | Where research files are saved |
-| `oc_provider` | `opencode-go` | OpenCode provider for docent backend |
-| `oc_model_planner` | `glm-5.1` | Model for the planner stage |
-| `oc_model_writer` | `glm-5.1` | Model for the writer stage |
+| `studio_backend` | `groq` | Provider the `docent` backend resolves to |
 | `feynman_model` | _(Feynman default)_ | Override the Feynman model |
 | `feynman_timeout` | `900` | Feynman timeout in seconds |
 | `tavily_api_key` | _(not set)_ | Tavily web search key (optional) |
@@ -347,17 +345,18 @@ Settings are stored in `~/.docent/config.toml` under `[research]`.
 Your Anthropic (or other provider) API account has no credits. Either top up at the provider's billing page, or switch to a free backend:
 
 ```bash
-docent studio config-set --key oc_provider --value groq
+docent studio config-set --key studio_backend --value groq
 # or
 docent studio deep-research --topic "..." --backend free
 ```
 
-### "OpenCode server is not running"
+### "The 'opencode' backend was removed in v2.3"
 
-The `docent` backend requires OpenCode to be running:
+Your config still points `studio_backend` at the retired OpenCode integration.
+Switch it to a provider:
 
 ```bash
-opencode serve --port 4096
+docent studio config-set --key studio_backend --value groq
 ```
 
 ### "Tavily research failed… falling back to manual search"

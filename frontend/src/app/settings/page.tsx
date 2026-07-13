@@ -14,7 +14,6 @@ import ConfigRow from '@/components/settings/ConfigRow';
 import SecretKeyRow from '@/components/settings/SecretKeyRow';
 import TavilyUsageWidget from '@/components/settings/TavilyUsageWidget';
 import { DoctorStatusBadge, SectionCard, KeyGroup, type DoctorCheck } from '@/components/settings/SettingsPrimitives';
-import OpenCodeSection from '@/components/settings/OpenCodeSection';
 import NotebookLMSection from '@/components/settings/NotebookLMSection';
 import BackupRestoreSection from '@/components/settings/BackupRestoreSection';
 
@@ -559,11 +558,6 @@ export default function SettingsPage() {
                 ))}
               </KeyGroup>
             </SectionCard>
-
-            {/* OpenCode server */}
-            <section style={{ gridColumn: '1 / -1' }}>
-              <OpenCodeSection />
-            </section>
 
             {/* NotebookLM auth */}
             <section style={{ gridColumn: '1 / -1' }}>

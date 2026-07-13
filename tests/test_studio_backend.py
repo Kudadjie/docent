@@ -10,7 +10,6 @@ from docent.bundled_plugins.studio.backend import (
     _PROVIDER_SPECS,
     DOCENT_BACKEND_NAMES,
     LiteLLMBackend,
-    OcBackend,
     get_backend,
 )
 from docent.config.settings import ResearchSettings, Settings
@@ -43,9 +42,10 @@ class TestBackendNames:
     def test_all_provider_specs_in_names(self):
         assert set(_PROVIDER_SPECS).issubset(DOCENT_BACKEND_NAMES)
 
-    def test_docent_and_opencode_in_names(self):
+    def test_docent_in_names_opencode_removed(self):
         assert "docent" in DOCENT_BACKEND_NAMES
-        assert "opencode" in DOCENT_BACKEND_NAMES
+        # The OpenCode backend was removed in v2.3.
+        assert "opencode" not in DOCENT_BACKEND_NAMES
 
     def test_free_and_feynman_not_in_names(self):
         # Those are separate tiers, not Docent-tier backends
@@ -59,17 +59,25 @@ class TestBackendNames:
 
 
 class TestGetBackendRouting:
-    def test_no_override_opencode_default(self):
+    def test_opencode_settings_raise_migration_hint(self):
+        # Configs that still point at the removed backend get a clear fix.
         s = _settings(studio_backend="opencode")
-        assert isinstance(get_backend(s), OcBackend)
+        with pytest.raises(ValueError, match="removed in v2.3"):
+            get_backend(s)
 
-    def test_override_docent_resolves_opencode(self):
-        s = _settings(studio_backend="opencode")
-        assert isinstance(get_backend(s, override="docent"), OcBackend)
+    def test_override_docent_resolves_settings_default(self):
+        s = _settings(studio_backend="groq", groq_api_key="gsk_test")
+        assert isinstance(get_backend(s, override="docent"), LiteLLMBackend)
 
-    def test_override_opencode_returns_oc_backend(self):
+    def test_override_opencode_raises_migration_hint(self):
         s = _settings()
-        assert isinstance(get_backend(s, override="opencode"), OcBackend)
+        with pytest.raises(ValueError, match="removed in v2.3"):
+            get_backend(s, override="opencode")
+
+    def test_empty_studio_backend_raises_migration_hint(self):
+        s = _settings(studio_backend="")
+        with pytest.raises(ValueError, match="studio_backend"):
+            get_backend(s)
 
     def test_studio_backend_groq_returns_litellm(self):
         s = _settings(studio_backend="groq", groq_api_key="gsk_test")
@@ -283,96 +291,3 @@ class TestLiteLLMBackendCall:
         with patch("litellm.completion", return_value=_mock_litellm_response("")):
             result = b.call("test")
         assert result == ""
-
-
-# ---------------------------------------------------------------------------
-# OcBackend role mapping
-# ---------------------------------------------------------------------------
-
-
-class TestOcBackendRoleMapping:
-    @pytest.fixture
-    def mock_oc(self, monkeypatch):
-        mock = MagicMock()
-        mock.call.return_value = "response"
-        mock.is_available.return_value = True
-        import docent.bundled_plugins.studio.backend as bmod
-
-        monkeypatch.setattr(
-            bmod,
-            "OcBackend.__init__",
-            lambda self, settings: (
-                setattr(self, "_oc", mock) or setattr(self, "_research", settings.research)
-            ),
-        )
-        return mock
-
-    def test_planner_role_uses_planner_model(self):
-        s = _settings(oc_model_planner="glm-5.1")
-        b = OcBackend.__new__(OcBackend)
-        mock_oc = MagicMock()
-        mock_oc.call.return_value = "ok"
-        b._oc = mock_oc
-        b._research = s.research
-
-        b.call("prompt", role="planner")
-        mock_oc.call.assert_called_once_with("prompt", model="glm-5.1", timeout=300)
-
-    def test_writer_role_uses_writer_model(self):
-        s = _settings(oc_model_writer="minimax-m2.7")
-        b = OcBackend.__new__(OcBackend)
-        mock_oc = MagicMock()
-        mock_oc.call.return_value = "ok"
-        b._oc = mock_oc
-        b._research = s.research
-
-        b.call("prompt", role="writer")
-        mock_oc.call.assert_called_once_with("prompt", model="minimax-m2.7", timeout=300)
-
-    def test_reviewer_role_uses_reviewer_model(self):
-        s = _settings(oc_model_reviewer="deepseek-v4-pro")
-        b = OcBackend.__new__(OcBackend)
-        mock_oc = MagicMock()
-        mock_oc.call.return_value = "ok"
-        b._oc = mock_oc
-        b._research = s.research
-
-        b.call("prompt", role="reviewer")
-        mock_oc.call.assert_called_once_with("prompt", model="deepseek-v4-pro", timeout=300)
-
-    def test_unknown_role_falls_back_to_planner(self):
-        s = _settings(oc_model_planner="glm-5.1")
-        b = OcBackend.__new__(OcBackend)
-        mock_oc = MagicMock()
-        mock_oc.call.return_value = "ok"
-        b._oc = mock_oc
-        b._research = s.research
-
-        b.call("prompt", role="somefuturerole")
-        mock_oc.call.assert_called_once_with("prompt", model="glm-5.1", timeout=300)
-
-    def test_system_prompt_prepended_to_user_prompt(self):
-        s = _settings()
-        b = OcBackend.__new__(OcBackend)
-        mock_oc = MagicMock()
-        mock_oc.call.return_value = "ok"
-        b._oc = mock_oc
-        b._research = s.research
-
-        b.call("user content", system="you are helpful")
-        call_args = mock_oc.call.call_args[0][0]
-        assert "you are helpful" in call_args
-        assert "user content" in call_args
-
-    def test_timeout_forwarded(self):
-        s = _settings()
-        b = OcBackend.__new__(OcBackend)
-        mock_oc = MagicMock()
-        mock_oc.call.return_value = "ok"
-        b._oc = mock_oc
-        b._research = s.research
-
-        b.call("prompt", timeout=600)
-        mock_oc.call.assert_called_once_with(
-            "prompt", model=s.research.oc_model_planner, timeout=600
-        )

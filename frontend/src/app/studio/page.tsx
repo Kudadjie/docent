@@ -45,7 +45,7 @@ export default function StudioPage() {
     {
       popover: {
         title: 'Choose your backend',
-        description: 'Four backends are available: Free (source aggregation, no AI cost), Docent (native multi-stage pipeline, requires OpenCode), Feynman (autonomous long-form research), and Groq (fast LLM via Groq API).',
+        description: 'Four backends are available: Free (source aggregation, no AI cost), Docent (native multi-stage pipeline via your configured provider), Feynman (autonomous long-form research), and Groq (fast LLM via Groq API).',
       },
     },
     {

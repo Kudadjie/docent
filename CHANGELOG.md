@@ -33,6 +33,16 @@ subsection with 2–5 user-facing highlights — those are what the banner shows
   expose the same jobs on the CLI and web UI. At most 2 jobs run concurrently;
   the last 50 records are kept under `~/.docent/data/jobs/`.
 
+### Removed
+- **The OpenCode integration is gone** (the OpenCode Go subscription model was
+  discontinued). Removed: the `opencode` studio backend and its in-process
+  client, the OpenCode server checks in `docent doctor` / `docent setup`, the
+  `/api/opencode/*` routes, and the Settings "OpenCode server" panel. A config
+  that still sets `studio_backend = "opencode"` gets a clear error with the
+  one-line fix (`config-set --key studio_backend --value groq`). The `oc_*`
+  config keys are ignored but still load (no migration needed). NotebookLM
+  auth endpoints moved to `/api/notebooklm/*` unchanged.
+
 ### Changed
 - **Studio runs in the web UI now execute as background jobs.** The run panel
   submits via `POST /api/studio/submit` and polls `/api/jobs/{id}` — runs
