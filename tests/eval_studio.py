@@ -6,7 +6,7 @@ Run all eval tests:
 Skip in normal CI (fast suite):
     uv run pytest -m "not eval"
 
-Each test mocks external API calls (Tavily, OcClient, academic search) with
+Each test mocks external API calls (Tavily, the AI backend, academic search) with
 pre-captured fixtures, runs the real pipeline logic end-to-end, and scores the
 result against expected structural properties.
 
@@ -75,7 +75,6 @@ def _make_tavily_gen(mock_result: dict):
 @pytest.mark.parametrize("fixture", _load_fixtures(), ids=lambda f: f["id"])
 def test_pipeline_golden(fixture: dict) -> None:
     """Run the full pipeline with mocked API calls and score the result."""
-    from docent.bundled_plugins.studio.oc_client import OcClient
     from docent.bundled_plugins.studio.pipeline import run_deep, run_lit
 
     mock = fixture["mock"]
@@ -85,10 +84,16 @@ def test_pipeline_golden(fixture: dict) -> None:
     }
     academic_sources = mock.get("academic_sources", [])
 
-    oc_responses = iter([mock["oc_review"], mock["oc_refiner"]])
+    responses = iter([mock["oc_review"], mock["oc_refiner"]])
 
-    def fake_oc_call(prompt: str, model: str = "", timeout: float = 300) -> str:
-        return next(oc_responses, "(mock fallback)")
+    class FakeBackend:
+        """Satisfies the StudioBackend protocol with canned fixture responses."""
+
+        def call(self, prompt: str, *, system=None, role="default", timeout=300) -> str:
+            return next(responses, "(mock fallback)")
+
+        def is_available(self) -> bool:
+            return True
 
     action = fixture["action"]
     pipeline_fn = run_deep if action == "run_deep" else run_lit
@@ -102,10 +107,8 @@ def test_pipeline_golden(fixture: dict) -> None:
             "docent.bundled_plugins.studio.pipeline.academic_search_parallel",
             return_value=academic_sources,
         ),
-        patch.object(OcClient, "call", fake_oc_call),
     ):
-        oc = OcClient()
-        gen = pipeline_fn(fixture["topic"], oc, tavily_api_key="tvly-mock")
+        gen = pipeline_fn(fixture["topic"], FakeBackend(), tavily_api_key="tvly-mock")
         result = _drain(gen)
 
     score_result = _scorer()
